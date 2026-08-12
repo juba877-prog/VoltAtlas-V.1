@@ -278,7 +278,29 @@ fun GeneratorInstanceCard(
                         )
                     }
 
-                    val connectedLoads = (state as? UiState.Success)?.circuits?.filter { it.generatorIncluded } ?: emptyList()
+                    val success = state as? UiState.Success
+                    val atsList = success?.atsList ?: emptyList()
+                    val atsFeedingThisGen = atsList.filter { it.emergencySourceId == item.generatorId || (it.emergencySourceId.isNullOrBlank() && item.generatorId == "GEN-01") }.map { it.atsId }.toSet()
+                    val connectedLoads = success?.circuits?.filter { circ ->
+                        if (circ.assignedAtsId != null) {
+                            atsFeedingThisGen.contains(circ.assignedAtsId) || (circ.assignedAtsId == "ATS-01" && item.generatorId == "GEN-01")
+                        } else if (circ.assignedGeneratorId != null) {
+                            circ.assignedGeneratorId == item.generatorId
+                        } else {
+                            circ.generatorIncluded && item.generatorId == "GEN-01"
+                        }
+                    } ?: emptyList()
+
+                    val aggregatedKW = connectedLoads.sumOf { it.loadKVA * it.pf }
+                    if (aggregatedKW > 0.0 && item.additionalEssentialLoadKW > 0.0) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "ℹ️ Note: Manual additional load (${"%.2f".format(item.additionalEssentialLoadKW)} kW) is added on top of ${"%.2f".format(aggregatedKW)} kW aggregated from assigned circuits. Ensure this manual value does not double-count already-assigned circuits.",
+                            color = SleekWarning,
+                            fontSize = 12.sp
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(16.dp))
                     Text("CONNECTED LOADS", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
                     HorizontalDivider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
@@ -527,7 +549,13 @@ fun AtsInstanceCard(
                         )
                     }
 
-                    val connectedLoads = (state as? UiState.Success)?.circuits?.filter { it.atsIncluded } ?: emptyList()
+                    val connectedLoads = (state as? UiState.Success)?.circuits?.filter { circ ->
+                        if (circ.assignedAtsId != null) {
+                            circ.assignedAtsId == item.atsId
+                        } else {
+                            circ.atsIncluded && item.atsId == "ATS-01"
+                        }
+                    } ?: emptyList()
                     Spacer(modifier = Modifier.height(16.dp))
                     Text("CONNECTED LOADS", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
                     HorizontalDivider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))

@@ -599,7 +599,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
             }
 
             val totalConnectedLoad = transformerResults.values.sumOf { it.connectedLoad }
-            val generatorResult = com.example.engine.GeneratorEngine.calculate(genSet, normalizedCircuits, totalConnectedLoad)
+            val generatorResult = com.example.engine.GeneratorEngine.calculate(genSet, normalizedCircuits, totalConnectedLoad, atsList.value)
             
             val shortCircuitResults = com.example.engine.ShortCircuitEngine.calculate(
                 resolvedCircuits = resolvedList,

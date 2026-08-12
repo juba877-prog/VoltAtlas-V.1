@@ -2576,6 +2576,12 @@ fun CircuitEditDialog(
             else -> "NORMAL"
         }
     ) }
+    var assignedGeneratorId by rememberSaveable { mutableStateOf(circuit?.assignedGeneratorId ?: "None") }
+    var assignedAtsId by rememberSaveable { mutableStateOf(circuit?.assignedAtsId ?: "None") }
+    val projectGenerators = viewModel?.generatorsList?.collectAsState()?.value ?: emptyList()
+    val generatorOptions = remember(projectGenerators) { listOf("None") + projectGenerators.map { it.generatorId } }
+    val projectAtsList = viewModel?.atsList?.collectAsState()?.value ?: emptyList()
+    val atsOptions = remember(projectAtsList) { listOf("None") + projectAtsList.map { it.atsId } }
     var phases by rememberSaveable { mutableStateOf(circuit?.phases ?: "3P+N") }
     var voltageV by rememberSaveable { mutableStateOf(circuit?.voltageV?.toString() ?: defaultV3P.toString()) }
     var pf by rememberSaveable { mutableStateOf(circuit?.pf?.toString() ?: "0.85") }
@@ -2973,6 +2979,37 @@ fun CircuitEditDialog(
                         onSelect = { loadType = it },
                         label = "Supply Category (NORMAL / EMERGENCY / UPS)"
                     )
+
+                    if (loadType.contains("EMERGENCY")) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                com.example.ui.components.VoltAtlasDropdown(
+                                    value = assignedAtsId,
+                                    options = atsOptions,
+                                    onSelect = { selected ->
+                                        assignedAtsId = selected
+                                        if (selected.isNotBlank() && selected != "None") {
+                                            assignedGeneratorId = "None"
+                                        }
+                                    },
+                                    label = "Assigned ATS Source"
+                                )
+                            }
+                            Box(modifier = Modifier.weight(1f)) {
+                                com.example.ui.components.VoltAtlasDropdown(
+                                    value = assignedGeneratorId,
+                                    options = generatorOptions,
+                                    onSelect = { selected ->
+                                        assignedGeneratorId = selected
+                                        if (selected.isNotBlank() && selected != "None") {
+                                            assignedAtsId = "None"
+                                        }
+                                    },
+                                    label = "Assigned Generator Source"
+                                )
+                            }
+                        }
+                    }
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -3572,6 +3609,8 @@ fun CircuitEditDialog(
                         maxVDpct = doubleMaxVD,
                         generatorIncluded = isGen,
                         atsIncluded = isGen,
+                        assignedGeneratorId = assignedGeneratorId.takeIf { it.isNotBlank() && it != "None" },
+                        assignedAtsId = assignedAtsId.takeIf { it.isNotBlank() && it != "None" },
                         upsBacked = isUps,
                         isHarmonic = isHarmonic,
                         loadNature = loadNature,
@@ -3620,6 +3659,8 @@ fun CircuitEditDialog(
                         maxVDpct = doubleMaxVD,
                         generatorIncluded = isGen,
                         atsIncluded = isGen,
+                        assignedGeneratorId = assignedGeneratorId.takeIf { it.isNotBlank() && it != "None" },
+                        assignedAtsId = assignedAtsId.takeIf { it.isNotBlank() && it != "None" },
                         upsBacked = isUps,
                         isHarmonic = isHarmonic,
                         loadNature = loadNature,

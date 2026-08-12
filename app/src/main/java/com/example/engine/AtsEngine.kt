@@ -40,7 +40,16 @@ object AtsEngine {
         isc3PhaseAtTransformer: Double,
         circuits: List<CircuitEntity>
     ): AtsResult {
-        if (circuits.none { it.atsIncluded }) {
+        val atsId = settings.atsId
+        val atsCircuits = circuits.filter { circ ->
+            if (circ.assignedAtsId != null) {
+                circ.assignedAtsId == atsId
+            } else {
+                circ.atsIncluded && atsId == "ATS-01"
+            }
+        }
+
+        if (atsCircuits.isEmpty()) {
             return buildNullResult(settings, isc3PhaseAtTransformer, isc3PhaseAtTransformer * 2.2, "MCCB/switch-based", "4P (3P+N)", "SELECT_LOADS", emptyList())
         }
 

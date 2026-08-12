@@ -1,5 +1,6 @@
 package com.example
 
+import com.example.data.AtsEntity
 import com.example.data.CircuitEntity
 import com.example.data.GeneratorEntity
 import com.example.engine.GeneratorEngine
@@ -122,5 +123,36 @@ class GeneratorEngineTest {
 
         assertEquals(250.0, result.finalSize ?: 0.0, 0.1)
         assertNotEquals("Manual Override Active", result.status)
+    }
+
+    @Test
+    fun testMultiInstanceGeneratorAggregation() {
+        val gen1Settings = GeneratorEntity(generatorId = "GEN-01")
+        val gen2Settings = GeneratorEntity(generatorId = "GEN-02")
+
+        val circuits = listOf(
+            CircuitEntity(id = 1, circuitName = "GEN1-LOAD", loadKVA = 100.0, assignedGeneratorId = "GEN-01", pf = 1.0),
+            CircuitEntity(id = 2, circuitName = "GEN2-LOAD", loadKVA = 200.0, assignedGeneratorId = "GEN-02", pf = 1.0)
+        )
+
+        val res1 = GeneratorEngine.calculate(gen1Settings, circuits, 300.0)
+        val res2 = GeneratorEngine.calculate(gen2Settings, circuits, 300.0)
+
+        assertEquals(100.0, res1.essentialLoadKVA, 0.1)
+        assertEquals(200.0, res2.essentialLoadKVA, 0.1)
+    }
+
+    @Test
+    fun testAtsIndirectGeneratorAggregation() {
+        val gen2Settings = GeneratorEntity(generatorId = "GEN-02")
+        val ats1Settings = AtsEntity(atsId = "ATS-01", emergencySourceId = "GEN-02")
+
+        val circuits = listOf(
+            CircuitEntity(id = 3, circuitName = "ATS-LOAD", loadKVA = 150.0, assignedAtsId = "ATS-01", pf = 1.0)
+        )
+
+        val resGen2 = GeneratorEngine.calculate(gen2Settings, circuits, 150.0, listOf(ats1Settings))
+
+        assertEquals(150.0, resGen2.essentialLoadKVA, 0.1)
     }
 }

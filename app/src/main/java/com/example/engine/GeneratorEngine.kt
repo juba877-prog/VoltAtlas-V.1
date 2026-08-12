@@ -24,9 +24,23 @@ object GeneratorEngine {
     fun calculate(
         settings: GeneratorEntity,
         circuits: List<CircuitEntity>,
-        totalConnectedLoad: Double
+        totalConnectedLoad: Double,
+        atsList: List<com.example.data.AtsEntity> = emptyList()
     ): GeneratorResult {
-        val generatorCircuits = circuits.filter { it.generatorIncluded }
+        val genId = settings.generatorId
+        val atsFeedingThisGen = atsList.filter { it.emergencySourceId == genId || (it.emergencySourceId.isNullOrBlank() && genId == "GEN-01") }.map { it.atsId }.toSet()
+
+        val generatorCircuits = circuits.filter { circ ->
+            if (circ.assignedAtsId != null) {
+                // Decision 1 defensive fallback: assignedAtsId takes priority
+                atsFeedingThisGen.contains(circ.assignedAtsId) || (circ.assignedAtsId == "ATS-01" && genId == "GEN-01")
+            } else if (circ.assignedGeneratorId != null) {
+                circ.assignedGeneratorId == genId
+            } else {
+                // Legacy fallback for single-instance projects
+                circ.generatorIncluded && genId == "GEN-01"
+            }
+        }
         
         if (generatorCircuits.isEmpty() && settings.additionalEssentialLoadKW == 0.0) {
             val statusStr = if (circuits.isEmpty()) "SELECT_LOADS" else "No Generator Required"
