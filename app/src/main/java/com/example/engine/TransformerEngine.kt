@@ -144,8 +144,8 @@ object TransformerEngine {
         // D. Loading %
         val loadingPct = if (selectedSize > 0.0) (requiredKVA / selectedSize) * 100.0 else 0.0
 
-        // E. Full-load current FLC (secondary = 400 V)
-        val secondaryVoltage = 400.0
+        // E. Full-load current FLC & Fault impedance basis (Secondary LV System)
+        val secondaryVoltage = if (tx.voltage in 100..1000) tx.voltage.toDouble() else 400.0
         val flc = if (selectedSize > 0.0) (selectedSize * 1000.0) / (sqrt(3.0) * secondaryVoltage) else 0.0
 
         // F. Short-circuit basis (per transformer) in milliohms

@@ -179,4 +179,64 @@ class TransformerEngineTest {
         assertEquals(30.0, resManual.connectedLoad, 0.01)
         assertEquals(1000.0, resManual.selectedSize, 0.01)
     }
+
+    @Test
+    fun testTransformerSecondaryVoltage_415V() {
+        val tx415 = TransformerEntity(
+            transformerId = "TX-415V",
+            kVA = 1000.0,
+            voltage = 415,
+            percentZ = 5.0,
+            xr = 6.0,
+            status = "Active",
+            sizeMode = "Manual",
+            manualKVA = 1000.0
+        )
+        val res = TransformerEngine.calculate(tx415, emptyList())
+        assertEquals(415.0, res.voltage, 0.01)
+        // FLC = (1000 * 1000) / (sqrt(3) * 415) = 1391.24 A
+        assertEquals(1391.24, res.flc, 0.05)
+        // Zt = (415^2 / (1000 * 1000)) * 0.05 * 1000 = 8.61125 mOhm
+        assertEquals(8.61125, res.zt, 0.001)
+    }
+
+    @Test
+    fun testTransformerSecondaryVoltage_380V() {
+        val tx380 = TransformerEntity(
+            transformerId = "TX-380V",
+            kVA = 1000.0,
+            voltage = 380,
+            percentZ = 5.0,
+            xr = 6.0,
+            status = "Active",
+            sizeMode = "Manual",
+            manualKVA = 1000.0
+        )
+        val res = TransformerEngine.calculate(tx380, emptyList())
+        assertEquals(380.0, res.voltage, 0.01)
+        // FLC = (1000 * 1000) / (sqrt(3) * 380) = 1519.34 A
+        assertEquals(1519.34, res.flc, 0.05)
+        // Zt = (380^2 / (1000 * 1000)) * 0.05 * 1000 = 7.22 mOhm
+        assertEquals(7.22, res.zt, 0.001)
+    }
+
+    @Test
+    fun testTransformerSecondaryVoltage_400V_Regression() {
+        val tx400 = TransformerEntity(
+            transformerId = "TX-400V",
+            kVA = 1000.0,
+            voltage = 400,
+            percentZ = 5.0,
+            xr = 6.0,
+            status = "Active",
+            sizeMode = "Manual",
+            manualKVA = 1000.0
+        )
+        val res = TransformerEngine.calculate(tx400, emptyList())
+        assertEquals(400.0, res.voltage, 0.001)
+        // FLC = (1000 * 1000) / (sqrt(3) * 400) = 1443.37567 A
+        assertEquals(1443.37567, res.flc, 0.001)
+        // Zt = (400^2 / (1000 * 1000)) * 0.05 * 1000 = 8.0 mOhm
+        assertEquals(8.0, res.zt, 0.0001)
+    }
 }
