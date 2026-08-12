@@ -71,6 +71,13 @@ class DatabaseMigrationTest {
     }
 
     @Test
+    fun testMigration18To19SQLDefinition() {
+        val migration = com.example.data.MIGRATION_18_19
+        assertEquals(18, migration.startVersion)
+        assertEquals(19, migration.endVersion)
+    }
+
+    @Test
     fun testNavigationRecoveryOutOfRangeIndex() {
         val visibleTabs = listOf("Dashboard", "Circuits", "Transformers", "Power Systems", "Protection", "Conduits", "BOQ / Procurement")
 

@@ -558,4 +558,123 @@ class MigrationTest {
         stateCollector.cancel()
         println("MISSING_TRANSFORMER_GUARD_VERIFIED_I_PASS")
     }
+
+    @Test
+    fun testMigration18To19_ExistingProjectLoadsWithDefaults() {
+        val openHelper = FrameworkSQLiteOpenHelperFactory().create(
+            androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(ApplicationProvider.getApplicationContext())
+                .name(null)
+                .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(18) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL("""
+                            CREATE TABLE IF NOT EXISTS `generator_settings` (
+                                `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
+                                `id` INTEGER NOT NULL,
+                                `additionalEssentialLoadKW` REAL NOT NULL,
+                                `largestMotorKW` REAL NOT NULL,
+                                `motorStartMethod` TEXT NOT NULL,
+                                `motorPf` REAL NOT NULL,
+                                `generatorPf` REAL NOT NULL,
+                                `demandFactor` REAL NOT NULL,
+                                `diversityFactor` REAL NOT NULL,
+                                `stepLoadPct` REAL NOT NULL,
+                                `oversizingFactor` REAL NOT NULL,
+                                `enableManualOverride` INTEGER NOT NULL,
+                                `manualSizeKVA` REAL,
+                                PRIMARY KEY(`projectId`, `id`)
+                            )
+                        """.trimIndent())
+                        db.execSQL("""
+                            CREATE TABLE IF NOT EXISTS `ats_settings` (
+                                `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
+                                `id` INTEGER NOT NULL,
+                                `systemVoltage` INTEGER NOT NULL,
+                                `systemFrequency` INTEGER NOT NULL,
+                                `numberOfSources` INTEGER NOT NULL,
+                                `atsLocation` TEXT NOT NULL,
+                                `transferType` TEXT NOT NULL,
+                                `utilizationCategory` TEXT NOT NULL,
+                                `atsClass` TEXT NOT NULL,
+                                `loadCoverage` TEXT NOT NULL,
+                                `ambientTemp` INTEGER NOT NULL,
+                                `designSafetyFactor` REAL NOT NULL,
+                                `futureGrowthFactor` REAL NOT NULL,
+                                `approvedManufacturer` TEXT NOT NULL,
+                                `mainsFailureDetectionDelay` INTEGER NOT NULL,
+                                `generatorStartSignalDelay` INTEGER NOT NULL,
+                                `generatorWarmUp` INTEGER NOT NULL,
+                                `mainsReturnDetectionDelay` INTEGER NOT NULL,
+                                `reTransferDelay` INTEGER NOT NULL,
+                                `generatorCooldown` INTEGER NOT NULL,
+                                `enclosureIpRating` TEXT NOT NULL,
+                                `normalSourceId` TEXT,
+                                `emergencySourceId` TEXT,
+                                `outputBoardId` INTEGER,
+                                PRIMARY KEY(`projectId`, `id`)
+                            )
+                        """.trimIndent())
+                        db.execSQL("""
+                            CREATE TABLE IF NOT EXISTS `ups_settings` (
+                                `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
+                                `id` INTEGER NOT NULL,
+                                `systemVoltage` INTEGER NOT NULL,
+                                `systemFrequency` INTEGER NOT NULL,
+                                `upsPf` REAL NOT NULL,
+                                `upsEfficiency` REAL NOT NULL,
+                                `batteryType` TEXT NOT NULL,
+                                `autonomyMinutes` INTEGER NOT NULL,
+                                `batteryEodVoltage` REAL NOT NULL,
+                                `ambientTemp` INTEGER NOT NULL,
+                                `tempDeratingFactor` REAL NOT NULL,
+                                `agingFactor` REAL NOT NULL,
+                                `designMarginPct` REAL NOT NULL,
+                                PRIMARY KEY(`projectId`, `id`)
+                            )
+                        """.trimIndent())
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+                })
+                .build()
+        )
+
+        val db = openHelper.writableDatabase
+        db.execSQL("INSERT INTO `generator_settings` (`projectId`, `id`, `additionalEssentialLoadKW`, `largestMotorKW`, `motorStartMethod`, `motorPf`, `generatorPf`, `demandFactor`, `diversityFactor`, `stepLoadPct`, `oversizingFactor`, `enableManualOverride`, `manualSizeKVA`) VALUES ('PROJ-MIG', 1, 150.0, 45.0, 'DOL', 0.85, 0.8, 0.8, 1.0, 50.0, 1.0, 0, NULL)")
+        db.execSQL("INSERT INTO `ats_settings` (`projectId`, `id`, `systemVoltage`, `systemFrequency`, `numberOfSources`, `atsLocation`, `transferType`, `utilizationCategory`, `atsClass`, `loadCoverage`, `ambientTemp`, `designSafetyFactor`, `futureGrowthFactor`, `approvedManufacturer`, `mainsFailureDetectionDelay`, `generatorStartSignalDelay`, `generatorWarmUp`, `mainsReturnDetectionDelay`, `reTransferDelay`, `generatorCooldown`, `enclosureIpRating`, `normalSourceId`, `emergencySourceId`, `outputBoardId`) VALUES ('PROJ-MIG', 1, 400, 50, 2, 'After Main Device', 'Open Transition', 'AC-31A (Resistive)', 'PC (Transfer Switch)', 'Emergency Only', 45, 1.25, 10.0, 'ABB', 3, 0, 7, 60, 10, 300, 'IP54', NULL, NULL, NULL)")
+        db.execSQL("INSERT INTO `ups_settings` (`projectId`, `id`, `systemVoltage`, `systemFrequency`, `upsPf`, `upsEfficiency`, `batteryType`, `autonomyMinutes`, `batteryEodVoltage`, `ambientTemp`, `tempDeratingFactor`, `agingFactor`, `designMarginPct`) VALUES ('PROJ-MIG', 1, 400, 50, 0.9, 94.0, 'VRLA', 20, 1.67, 25, 1.0, 1.25, 20.0)")
+
+        // Run Migration 18 -> 19
+        MIGRATION_18_19.migrate(db)
+
+        // Verify Generator Migration
+        val genCursor = db.query("SELECT * FROM `generator_settings` WHERE `projectId` = 'PROJ-MIG' AND `id` = 1")
+        assertTrue(genCursor.moveToFirst())
+        assertEquals(150.0, genCursor.getDouble(genCursor.getColumnIndexOrThrow("additionalEssentialLoadKW")), 0.01)
+        assertEquals("GEN-01", genCursor.getString(genCursor.getColumnIndexOrThrow("generatorId")))
+        assertEquals("Generator 1", genCursor.getString(genCursor.getColumnIndexOrThrow("generatorName")))
+        genCursor.close()
+
+        // Verify ATS Migration
+        val atsCursor = db.query("SELECT * FROM `ats_settings` WHERE `projectId` = 'PROJ-MIG' AND `id` = 1")
+        assertTrue(atsCursor.moveToFirst())
+        assertEquals(400, atsCursor.getInt(atsCursor.getColumnIndexOrThrow("systemVoltage")))
+        assertEquals("ATS-01", atsCursor.getString(atsCursor.getColumnIndexOrThrow("atsId")))
+        assertEquals("ATS 1", atsCursor.getString(atsCursor.getColumnIndexOrThrow("atsName")))
+        assertEquals(0, atsCursor.getInt(atsCursor.getColumnIndexOrThrow("enableManualOverride")))
+        assertTrue(atsCursor.isNull(atsCursor.getColumnIndexOrThrow("manualSizeAmp")))
+        atsCursor.close()
+
+        // Verify UPS Migration
+        val upsCursor = db.query("SELECT * FROM `ups_settings` WHERE `projectId` = 'PROJ-MIG' AND `id` = 1")
+        assertTrue(upsCursor.moveToFirst())
+        assertEquals(20, upsCursor.getInt(upsCursor.getColumnIndexOrThrow("autonomyMinutes")))
+        assertEquals("UPS-01", upsCursor.getString(upsCursor.getColumnIndexOrThrow("upsId")))
+        assertEquals("UPS 1", upsCursor.getString(upsCursor.getColumnIndexOrThrow("upsName")))
+        assertEquals(0, upsCursor.getInt(upsCursor.getColumnIndexOrThrow("enableManualOverride")))
+        assertTrue(upsCursor.isNull(upsCursor.getColumnIndexOrThrow("manualSizeKVA")))
+        upsCursor.close()
+
+        db.close()
+        println("MIGRATION_18_TO_19_FUNCTIONAL_VERIFICATION_PASS")
+    }
 }

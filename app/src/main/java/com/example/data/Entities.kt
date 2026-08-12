@@ -137,6 +137,10 @@ data class GeneratorEntity(
     @ColumnInfo(defaultValue = "'DEFAULT_PROJECT'")
     val projectId: String = "DEFAULT_PROJECT",
     val id: Int = 1,
+    @ColumnInfo(defaultValue = "'GEN-01'")
+    val generatorId: String = "GEN-01",
+    @ColumnInfo(defaultValue = "'Generator 1'")
+    val generatorName: String = "Generator 1",
     val additionalEssentialLoadKW: Double = 0.0,
     val largestMotorKW: Double = 0.0,
     val motorStartMethod: String = "DOL",
@@ -158,6 +162,10 @@ data class AtsEntity(
     @ColumnInfo(defaultValue = "'DEFAULT_PROJECT'")
     val projectId: String = "DEFAULT_PROJECT",
     val id: Int = 1,
+    @ColumnInfo(defaultValue = "'ATS-01'")
+    val atsId: String = "ATS-01",
+    @ColumnInfo(defaultValue = "'ATS 1'")
+    val atsName: String = "ATS 1",
     val systemVoltage: Int = 400,
     val systemFrequency: Int = 50,
     val numberOfSources: Int = 2,
@@ -179,7 +187,10 @@ data class AtsEntity(
     val enclosureIpRating: String = "IP54",
     val normalSourceId: String? = null,
     val emergencySourceId: String? = null,
-    val outputBoardId: Int? = null
+    val outputBoardId: Int? = null,
+    @ColumnInfo(defaultValue = "0")
+    val enableManualOverride: Boolean = false,
+    val manualSizeAmp: Double? = null
 )
 
 @Entity(
@@ -190,6 +201,10 @@ data class UpsEntity(
     @ColumnInfo(defaultValue = "'DEFAULT_PROJECT'")
     val projectId: String = "DEFAULT_PROJECT",
     val id: Int = 1,
+    @ColumnInfo(defaultValue = "'UPS-01'")
+    val upsId: String = "UPS-01",
+    @ColumnInfo(defaultValue = "'UPS 1'")
+    val upsName: String = "UPS 1",
     val systemVoltage: Int = 400,
     val systemFrequency: Int = 50,
     val upsPf: Double = 0.9,
@@ -200,7 +215,10 @@ data class UpsEntity(
     val ambientTemp: Int = 25,
     val tempDeratingFactor: Double = 1.0,
     val agingFactor: Double = 1.25,
-    val designMarginPct: Double = 20.0
+    val designMarginPct: Double = 20.0,
+    @ColumnInfo(defaultValue = "0")
+    val enableManualOverride: Boolean = false,
+    val manualSizeKVA: Double? = null
 )
 
 @Entity(
