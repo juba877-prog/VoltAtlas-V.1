@@ -3,11 +3,7 @@ package com.example.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.data.AppDatabase
-import com.example.data.Catalog
-import com.example.data.CircuitEntity
-import com.example.data.EngineeringRepository
-import com.example.data.TransformerEntity
+import com.example.data.*
 import com.example.engine.BoqEngine
 import com.example.engine.CableSizingEngine
 import com.example.engine.DrumScheduleEngine
@@ -75,14 +71,29 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val generatorsList = activeProjectId.flatMapLatest { projectId ->
+        if (projectId != null) repository.generatorsFlow(projectId) else kotlinx.coroutines.flow.flowOf(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val atsSettings = activeProjectId.flatMapLatest { projectId ->
         if (projectId != null) repository.atsSettingsFlow(projectId) else kotlinx.coroutines.flow.flowOf(null)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val atsList = activeProjectId.flatMapLatest { projectId ->
+        if (projectId != null) repository.atsListFlow(projectId) else kotlinx.coroutines.flow.flowOf(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val upsSettings = activeProjectId.flatMapLatest { projectId ->
         if (projectId != null) repository.upsSettingsFlow(projectId) else kotlinx.coroutines.flow.flowOf(null)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val upsList = activeProjectId.flatMapLatest { projectId ->
+        if (projectId != null) repository.upsListFlow(projectId) else kotlinx.coroutines.flow.flowOf(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val pfGlobalSettings = activeProjectId.flatMapLatest { projectId ->
@@ -739,9 +750,12 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 procurement = procurement,
                 panels = panels,
                 generatorResult = generatorResult,
+                generators = generatorsList.value,
                 atsResult = atsResult,
                 atsEntity = atsSetResolved,
+                atsList = atsList.value,
                 upsResult = upsResult,
+                upsList = upsList.value,
                 pfCorrectionResults = pfCorrectionResults,
                 shortCircuitResults = shortCircuitResults,
                 adsResults = adsResults,
@@ -868,6 +882,78 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             val withPrj = transformer.copy(projectId = prj)
             repository.updateTransformer(withPrj)
+        }
+    }
+
+    fun addGenerator(settings: GeneratorEntity = GeneratorEntity()) {
+        val prj = _activeProjectId.value ?: return
+        viewModelScope.launch {
+            val existing = generatorsList.value
+            val nextIdNum = (existing.maxOfOrNull { it.id } ?: 0) + 1
+            val genIdStr = String.format("GEN-%02d", nextIdNum)
+            val genNameStr = "Generator $nextIdNum"
+            val newEntity = settings.copy(
+                projectId = prj,
+                id = nextIdNum,
+                generatorId = genIdStr,
+                generatorName = genNameStr
+            )
+            repository.saveGeneratorSettings(newEntity)
+        }
+    }
+
+    fun deleteGenerator(generatorId: String) {
+        val prj = _activeProjectId.value ?: return
+        viewModelScope.launch {
+            repository.deleteGenerator(prj, generatorId)
+        }
+    }
+
+    fun addAts(settings: AtsEntity = AtsEntity()) {
+        val prj = _activeProjectId.value ?: return
+        viewModelScope.launch {
+            val existing = atsList.value
+            val nextIdNum = (existing.maxOfOrNull { it.id } ?: 0) + 1
+            val atsIdStr = String.format("ATS-%02d", nextIdNum)
+            val atsNameStr = "ATS $nextIdNum"
+            val newEntity = settings.copy(
+                projectId = prj,
+                id = nextIdNum,
+                atsId = atsIdStr,
+                atsName = atsNameStr
+            )
+            repository.saveAtsSettings(newEntity)
+        }
+    }
+
+    fun deleteAts(atsId: String) {
+        val prj = _activeProjectId.value ?: return
+        viewModelScope.launch {
+            repository.deleteAts(prj, atsId)
+        }
+    }
+
+    fun addUps(settings: UpsEntity = UpsEntity()) {
+        val prj = _activeProjectId.value ?: return
+        viewModelScope.launch {
+            val existing = upsList.value
+            val nextIdNum = (existing.maxOfOrNull { it.id } ?: 0) + 1
+            val upsIdStr = String.format("UPS-%02d", nextIdNum)
+            val upsNameStr = "UPS $nextIdNum"
+            val newEntity = settings.copy(
+                projectId = prj,
+                id = nextIdNum,
+                upsId = upsIdStr,
+                upsName = upsNameStr
+            )
+            repository.saveUpsSettings(newEntity)
+        }
+    }
+
+    fun deleteUps(upsId: String) {
+        val prj = _activeProjectId.value ?: return
+        viewModelScope.launch {
+            repository.deleteUps(prj, upsId)
         }
     }
 

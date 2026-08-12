@@ -58,4 +58,40 @@ class PowerSystemsUiStateTest {
         assertEquals("TX-MAIN", roomLoadedSettings.normalSourceId)
         assertEquals("GEN-STDBY", roomLoadedSettings.emergencySourceId)
     }
+
+    @Test
+    fun testUiStateSuccessMultiInstanceLists() {
+        val genList = listOf(GeneratorEntity(generatorId = "GEN-01"), GeneratorEntity(generatorId = "GEN-02"))
+        val atsList = listOf(AtsEntity(atsId = "ATS-01"), AtsEntity(atsId = "ATS-02"))
+        val upsList = listOf(UpsEntity(upsId = "UPS-01"))
+
+        val successState = UiState.Success(
+            circuits = emptyList(),
+            transformers = emptyList(),
+            sizingResults = emptyMap(),
+            transformerResults = emptyMap(),
+            boq = emptyList(),
+            drums = emptyList(),
+            procurement = emptyList(),
+            panels = emptyList(),
+            generatorResult = null,
+            generators = genList,
+            atsResult = null,
+            atsList = atsList,
+            upsResult = null,
+            upsList = upsList,
+            pfCorrectionResults = emptyList()
+        )
+
+        assertEquals(2, successState.generators.size)
+        assertEquals("GEN-01", successState.generators[0].generatorId)
+        assertEquals("GEN-02", successState.generators[1].generatorId)
+
+        assertEquals(2, successState.atsList.size)
+        assertEquals("ATS-01", successState.atsList[0].atsId)
+        assertEquals("ATS-02", successState.atsList[1].atsId)
+
+        assertEquals(1, successState.upsList.size)
+        assertEquals("UPS-01", successState.upsList[0].upsId)
+    }
 }

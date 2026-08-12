@@ -42,9 +42,12 @@ sealed interface UiState {
         val procurement: List<ProcurementItem>,
         val panels: List<PanelScheduleResult>,
         val generatorResult: GeneratorResult?,
+        val generators: List<com.example.data.GeneratorEntity> = emptyList(),
         val atsResult: AtsResult?,
         val atsEntity: com.example.data.AtsEntity? = null,
+        val atsList: List<com.example.data.AtsEntity> = emptyList(),
         val upsResult: UpsResult?,
+        val upsList: List<com.example.data.UpsEntity> = emptyList(),
         val pfCorrectionResults: List<PfCorrectionResult>,
 
         // Protection / Short Circuit

@@ -794,7 +794,13 @@ fun MainLayout(viewModel: EngineeringViewModel) {
                                         onSaveAts = { viewModel.saveAtsSettings(it) },
                                         onSaveUps = { viewModel.saveUpsSettings(it) },
                                         onSavePfGlobal = { viewModel.savePfGlobalSettings(it) },
-                                        onSavePfTransformer = { viewModel.savePfTransformerSettings(it) }
+                                        onSavePfTransformer = { viewModel.savePfTransformerSettings(it) },
+                                        onAddGenerator = { viewModel.addGenerator() },
+                                        onDeleteGenerator = { viewModel.deleteGenerator(it) },
+                                        onAddAts = { viewModel.addAts() },
+                                        onDeleteAts = { viewModel.deleteAts(it) },
+                                        onAddUps = { viewModel.addUps() },
+                                        onDeleteUps = { viewModel.deleteUps(it) }
                                     )
                                 }
                                 4 -> ProtectionScreen(uiStateVal, onSaveEarthing = { viewModel.onSaveEarthing(it) })

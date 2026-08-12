@@ -20,13 +20,19 @@ class EngineeringRepository(
     private val powerSystemsDao = db.powerSystemsDao()
     
     fun generatorSettingsFlow(projectId: String) = powerSystemsDao.getGeneratorSettings(projectId)
+    fun generatorsFlow(projectId: String) = powerSystemsDao.getAllGeneratorSettings(projectId)
     suspend fun saveGeneratorSettings(settings: GeneratorEntity) = powerSystemsDao.saveGeneratorSettings(settings)
+    suspend fun deleteGenerator(projectId: String, generatorId: String) = powerSystemsDao.deleteGeneratorSettings(projectId, generatorId)
     
     fun atsSettingsFlow(projectId: String) = powerSystemsDao.getAtsSettings(projectId)
+    fun atsListFlow(projectId: String) = powerSystemsDao.getAllAtsSettings(projectId)
     suspend fun saveAtsSettings(settings: AtsEntity) = powerSystemsDao.saveAtsSettings(settings)
+    suspend fun deleteAts(projectId: String, atsId: String) = powerSystemsDao.deleteAtsSettings(projectId, atsId)
     
     fun upsSettingsFlow(projectId: String) = powerSystemsDao.getUpsSettings(projectId)
+    fun upsListFlow(projectId: String) = powerSystemsDao.getAllUpsSettings(projectId)
     suspend fun saveUpsSettings(settings: UpsEntity) = powerSystemsDao.saveUpsSettings(settings)
+    suspend fun deleteUps(projectId: String, upsId: String) = powerSystemsDao.deleteUpsSettings(projectId, upsId)
     
     fun pfGlobalSettingsFlow(projectId: String) = powerSystemsDao.getPfGlobalSettings(projectId)
     suspend fun savePfGlobalSettings(settings: PfGlobalEntity) = powerSystemsDao.savePfGlobalSettings(settings)

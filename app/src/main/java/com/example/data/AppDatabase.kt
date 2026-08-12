@@ -500,20 +500,32 @@ interface PowerSystemsDao {
     // Generator
     @Query("SELECT * FROM generator_settings WHERE projectId = :projectId AND id = 1")
     fun getGeneratorSettings(projectId: String): Flow<GeneratorEntity?>
+    @Query("SELECT * FROM generator_settings WHERE projectId = :projectId ORDER BY id ASC")
+    fun getAllGeneratorSettings(projectId: String): Flow<List<GeneratorEntity>>
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveGeneratorSettings(settings: GeneratorEntity)
+    @Query("DELETE FROM generator_settings WHERE projectId = :projectId AND generatorId = :generatorId")
+    suspend fun deleteGeneratorSettings(projectId: String, generatorId: String)
     
     // ATS
     @Query("SELECT * FROM ats_settings WHERE projectId = :projectId AND id = 1")
     fun getAtsSettings(projectId: String): Flow<AtsEntity?>
+    @Query("SELECT * FROM ats_settings WHERE projectId = :projectId ORDER BY id ASC")
+    fun getAllAtsSettings(projectId: String): Flow<List<AtsEntity>>
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveAtsSettings(settings: AtsEntity)
+    @Query("DELETE FROM ats_settings WHERE projectId = :projectId AND atsId = :atsId")
+    suspend fun deleteAtsSettings(projectId: String, atsId: String)
     
     // UPS
     @Query("SELECT * FROM ups_settings WHERE projectId = :projectId AND id = 1")
     fun getUpsSettings(projectId: String): Flow<UpsEntity?>
+    @Query("SELECT * FROM ups_settings WHERE projectId = :projectId ORDER BY id ASC")
+    fun getAllUpsSettings(projectId: String): Flow<List<UpsEntity>>
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveUpsSettings(settings: UpsEntity)
+    @Query("DELETE FROM ups_settings WHERE projectId = :projectId AND upsId = :upsId")
+    suspend fun deleteUpsSettings(projectId: String, upsId: String)
     
     // PF Global
     @Query("SELECT * FROM pf_global_settings WHERE projectId = :projectId AND id = 1")
