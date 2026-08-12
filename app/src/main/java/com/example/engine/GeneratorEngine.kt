@@ -133,6 +133,10 @@ object GeneratorEngine {
             "Error: Could not determine size"
         }
 
+        if (isManualOverride && recommended != null && recommended < designCapacity) {
+            messages.add("Warning: Manual Generator size (${recommended} kVA) is below design requirement (${designCapacity} kVA).")
+        }
+
         if (recommended != null && recommended > 0.0 && motorStartingKVA / recommended > 0.3) {
             messages.add("Warning: Motor starting may cause >15% voltage dip.")
         }

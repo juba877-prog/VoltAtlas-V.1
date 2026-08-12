@@ -76,13 +76,24 @@ object AtsEngine {
             return buildNullResult(settings, requiredIcw, requiredIcm, recommendedConstruction, numberOfPoles, "N/A — No Generator", emptyList())
         }
 
-        val finalRating = standardAtsRatings.firstOrNull { it >= governingCurrent }
+        var finalRating = standardAtsRatings.firstOrNull { it >= governingCurrent }
+        var isManualOverride = false
+        if (settings.enableManualOverride && settings.manualSizeAmp != null) {
+            finalRating = settings.manualSizeAmp
+            isManualOverride = true
+        }
 
         val finalLoadingPct = if (finalRating != null && finalRating > 0) {
             Math.round((governingCurrent / finalRating * 100.0) * 10.0) / 10.0
         } else null
 
-        val status = if (finalRating == null) "No ATS Required / Exceeds Standards" else "Valid ATS Sized"
+        val status = if (isManualOverride) {
+            "Manual Override Active"
+        } else if (finalRating == null) {
+            "No ATS Required / Exceeds Standards"
+        } else {
+            "Valid ATS Sized"
+        }
 
         val totalTransferToGenerator = settings.mainsFailureDetectionDelay + settings.generatorStartSignalDelay + settings.generatorWarmUp
         val transferStatus = if (totalTransferToGenerator <= 10) {
@@ -106,6 +117,9 @@ object AtsEngine {
         }
 
         val messages = mutableListOf<String>()
+        if (isManualOverride && finalRating != null && finalRating < governingCurrent) {
+            messages.add("Warning: Manual ATS rating (${finalRating} A) is below governing current requirement (${governingCurrent} A).")
+        }
         if (settings.utilizationCategory.contains("AC-33B", ignoreCase = true)) {
             messages.add("Warning: For motor-heavy loads, verify motor inrush does not exceed ATS making capacity (Icm).")
         }

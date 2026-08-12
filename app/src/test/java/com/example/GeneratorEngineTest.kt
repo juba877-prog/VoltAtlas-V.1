@@ -85,4 +85,42 @@ class GeneratorEngineTest {
         assertEquals("No Generator Required", result.status)
         assertNull(result.finalSize)
     }
+
+    @Test
+    fun testGeneratorManualOverride_ValidSize() {
+        val settings = GeneratorEntity(
+            enableManualOverride = true,
+            manualSizeKVA = 500.0
+        )
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-MDB", loadKVA = 250.0, generatorIncluded = true))
+        val result = GeneratorEngine.calculate(settings, circuits, 250.0)
+
+        assertEquals("Manual Override Active", result.status)
+        assertEquals(500.0, result.finalSize ?: 0.0, 0.1)
+        assertTrue(result.messages.none { it.contains("below design requirement") })
+    }
+
+    @Test
+    fun testGeneratorManualOverride_UndersizedWarning() {
+        val settings = GeneratorEntity(
+            enableManualOverride = true,
+            manualSizeKVA = 100.0
+        )
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-MDB", loadKVA = 250.0, generatorIncluded = true))
+        val result = GeneratorEngine.calculate(settings, circuits, 250.0)
+
+        assertEquals("Manual Override Active", result.status)
+        assertEquals(100.0, result.finalSize ?: 0.0, 0.1)
+        assertTrue(result.messages.any { it.contains("below design requirement") })
+    }
+
+    @Test
+    fun testGeneratorDefaultAutoSizingRegression() {
+        val settings = GeneratorEntity(enableManualOverride = false, manualSizeKVA = null)
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-MDB", loadKVA = 250.0, generatorIncluded = true))
+        val result = GeneratorEngine.calculate(settings, circuits, 250.0)
+
+        assertEquals(250.0, result.finalSize ?: 0.0, 0.1)
+        assertNotEquals("Manual Override Active", result.status)
+    }
 }

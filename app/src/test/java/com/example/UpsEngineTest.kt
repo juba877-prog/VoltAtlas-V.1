@@ -77,4 +77,36 @@ class UpsEngineTest {
         assertEquals("recommendedSize match", 200.0, result.recommendedSize ?: 0.0, 0.1)
         assertEquals("estimatedBatteryStrings match", 1, result.estimatedBatteryStrings ?: 0)
     }
+
+    @Test
+    fun testUpsManualOverride_ValidSize() {
+        val settings = UpsEntity(enableManualOverride = true, manualSizeKVA = 100.0)
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "CRITICAL-SERVER", loadKVA = 55.56, pf = 0.9, upsBacked = true))
+        val result = UpsEngine.calculate(settings, circuits)
+
+        assertEquals("Manual Override Active", result.status)
+        assertEquals(100.0, result.recommendedSize ?: 0.0, 0.1)
+        assertTrue(result.messages.none { it.contains("below design requirement") })
+    }
+
+    @Test
+    fun testUpsManualOverride_UndersizedWarning() {
+        val settings = UpsEntity(enableManualOverride = true, manualSizeKVA = 15.0)
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "CRITICAL-SERVER", loadKVA = 55.56, pf = 0.9, upsBacked = true))
+        val result = UpsEngine.calculate(settings, circuits)
+
+        assertEquals("Manual Override Active", result.status)
+        assertEquals(15.0, result.recommendedSize ?: 0.0, 0.1)
+        assertTrue(result.messages.any { it.contains("below design requirement") })
+    }
+
+    @Test
+    fun testUpsDefaultAutoSizingRegression() {
+        val settings = UpsEntity(enableManualOverride = false, manualSizeKVA = null)
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "CRITICAL-SERVER", loadKVA = 55.56, pf = 0.9, upsBacked = true))
+        val result = UpsEngine.calculate(settings, circuits)
+
+        assertEquals(100.0, result.recommendedSize ?: 0.0, 0.1)
+        assertNotEquals("Manual Override Active", result.status)
+    }
 }

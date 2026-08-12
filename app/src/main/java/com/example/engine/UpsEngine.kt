@@ -81,11 +81,24 @@ object UpsEngine {
         val standardUpsSizes = listOf(1.0, 2.0, 3.0, 5.0, 6.0, 8.0, 10.0, 15.0, 20.0, 30.0, 40.0, 60.0, 80.0, 100.0, 120.0, 160.0, 200.0, 250.0, 300.0, 400.0, 500.0, 600.0, 800.0)
         
         val d = designUpsKVA / 0.8
-        val recommendedSize = standardUpsSizes.firstOrNull { it >= d }
+        var recommendedSize = standardUpsSizes.firstOrNull { it >= d }
+        var isManualOverride = false
+        if (settings.enableManualOverride && settings.manualSizeKVA != null) {
+            recommendedSize = settings.manualSizeKVA
+            isManualOverride = true
+        }
+
+        val messages = mutableListOf<String>()
+        if (isManualOverride && recommendedSize != null && recommendedSize < designUpsKVA) {
+            messages.add("Warning: Manual UPS size (${recommendedSize} kVA) is below design requirement (${designUpsKVA} kVA).")
+        }
 
         val status: String
         val loadingPct: Double?
-        if (recommendedSize != null) {
+        if (isManualOverride) {
+            loadingPct = if (recommendedSize != null && recommendedSize > 0) designUpsKVA / recommendedSize * 100.0 else null
+            status = "Manual Override Active"
+        } else if (recommendedSize != null) {
             loadingPct = designUpsKVA / recommendedSize * 100.0
             status = when {
                 loadingPct <= 60.0 -> "Under-loaded (<60%)"
@@ -117,7 +130,7 @@ object UpsEngine {
             batteryBankRequired = batteryBankRequired,
             estimatedBatteryStrings = estimatedBatteryStrings,
             autonomyAtFullLoad = autonomyAtFullLoad,
-            messages = emptyList()
+            messages = messages
         )
     }
 }

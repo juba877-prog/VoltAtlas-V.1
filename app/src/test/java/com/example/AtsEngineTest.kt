@@ -94,4 +94,36 @@ class AtsEngineTest {
         assertEquals("Icw match", 47.36, result.requiredIcw, 0.01)
         assertEquals("Icm match", 104.19, result.requiredIcm, 0.05)
     }
+
+    @Test
+    fun testAtsManualOverride_ValidSize() {
+        val settings = AtsEntity(enableManualOverride = true, manualSizeAmp = 630.0)
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-PANEL", loadKVA = 200.0, atsIncluded = true))
+        val result = AtsEngine.calculate(settings = settings, totalConnectedLoad = 500.0, essentialLoadKVA = 200.0, generatorSelectedSize = 0.0, transformerFLC = 721.7, isc3PhaseAtTransformer = 25.0, circuits = circuits)
+
+        assertEquals("Manual Override Active", result.status)
+        assertEquals(630.0, result.finalRating ?: 0.0, 0.1)
+        assertTrue(result.messages.none { it.contains("below governing current requirement") })
+    }
+
+    @Test
+    fun testAtsManualOverride_UndersizedWarning() {
+        val settings = AtsEntity(enableManualOverride = true, manualSizeAmp = 100.0)
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-PANEL", loadKVA = 200.0, atsIncluded = true))
+        val result = AtsEngine.calculate(settings = settings, totalConnectedLoad = 500.0, essentialLoadKVA = 200.0, generatorSelectedSize = 0.0, transformerFLC = 721.7, isc3PhaseAtTransformer = 25.0, circuits = circuits)
+
+        assertEquals("Manual Override Active", result.status)
+        assertEquals(100.0, result.finalRating ?: 0.0, 0.1)
+        assertTrue(result.messages.any { it.contains("below governing current requirement") })
+    }
+
+    @Test
+    fun testAtsDefaultAutoSizingRegression() {
+        val settings = AtsEntity(enableManualOverride = false, manualSizeAmp = null)
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-PANEL", loadKVA = 200.0, atsIncluded = true))
+        val result = AtsEngine.calculate(settings = settings, totalConnectedLoad = 500.0, essentialLoadKVA = 200.0, generatorSelectedSize = 0.0, transformerFLC = 721.7, isc3PhaseAtTransformer = 25.0, circuits = circuits)
+
+        assertEquals(400.0, result.finalRating ?: 0.0, 0.1)
+        assertEquals("Valid ATS Sized", result.status)
+    }
 }
