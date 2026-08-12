@@ -698,7 +698,7 @@ fun PanelScheduleScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = StatusFail),
                     modifier = Modifier.testTag("confirm_delete_panel_btn")
                 ) {
-                    Text(if (childCircuits.isNotEmpty()) "Reassign & Delete Panel" else "Delete Panel", color = Color.White)
+                    Text(if (childCircuits.isNotEmpty()) "Reassign & Delete Panel" else "Delete Panel", color = MaterialTheme.colorScheme.onError)
                 }
             },
             dismissButton = {

@@ -117,7 +117,7 @@ fun EarthingPanel(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = SleekPrimary)
                 ) {
-                    Text("Apply Layout", color = Color.White)
+                    Text("Apply Layout", color = MaterialTheme.colorScheme.onPrimary)
                 }
             },
             dismissButton = {
@@ -440,6 +440,7 @@ fun EarthingPanel(
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
@@ -735,7 +736,7 @@ fun ElectrodeCandidateCard(
                 colors = ButtonDefaults.buttonColors(containerColor = if (isRecommended) SleekPass else SleekPrimary),
                 modifier = Modifier.height(36.dp)
             ) {
-                Text("Apply Layout", fontSize = 11.sp, color = Color.White)
+                Text("Apply Layout", fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimary)
             }
         }
     }
