@@ -1,0 +1,2 @@
+circ=DP-G3, matchedTx=TX-01, txMap.keys=[tx-01]
+isDisconnected=false, resolvedParentNodeId=tx_TX-01

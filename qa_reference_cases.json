@@ -1,0 +1,112 @@
+{
+  "meta": {
+    "totalCableCases": 8,
+    "totalTransformerCases": 2,
+    "project": "QA Reference"
+  },
+  "cableCases": [
+    {
+      "id": "TC-CABLE-001",
+      "circuit": "MDB-1",
+      "input": {
+        "id": 1,
+        "circuitName": "MDB-1",
+        "loadKVA": 160.0,
+        "loadType": "Normal",
+        "noCircuits": 1,
+        "voltageV": 400,
+        "transformer": "TX-01",
+        "fedFrom": "Transformer",
+        "safetyFactor": 1.0,
+        "formation": "Flat",
+        "overrideDeviceType": "MCCB",
+        "manufacturer": "Elsewedy",
+        "spacing": "Touching",
+        "installation": "Laid in Ducts",
+        "airTempC": 40,
+        "gndTempC": 40,
+        "burialDepth_m": 0.6,
+        "soilRes": 125,
+        "phases": "3P+N",
+        "maxVDpct": 0.02,
+        "pf": 0.8,
+        "cableType": "Cu/XLPE/STA/PVC - 4C",
+        "parallelRuns": 1,
+        "length_m": 50.0,
+        "overrideDeviceSize": 0
+      },
+      "expected": {
+        "deviceType": "MCCB",
+        "deviceSize_A": 250.0,
+        "cTotalDerating": 0.95,
+        "capacity_derated_Iz_A": 274.5,
+        "cableSize_mm2": "120 mm\u00b2",
+        "ratedI_table_A": 289.0,
+        "utilizationPct": 84.15,
+        "cumulativeVDpct": 0.38,
+        "voltDrop_V": 1.52,
+        "status": "\u2713 PASS"
+      }
+    }
+  ],
+  "transformerCases": [
+    {
+      "id": "TC-TX-01",
+      "txId": "TX-01",
+      "input": {
+        "percentZ": 4.0,
+        "demandFactor": 1.0,
+        "vectorGroup": "Dyn11",
+        "voltageV": 400,
+        "diversity": 1.0,
+        "manualKVA": 200.0,
+        "pf": 0.8,
+        "safety": 1.0,
+        "z0OverZ1": 0.9,
+        "xr": 10.0,
+        "growth": 1.0,
+        "sizeMode": "Manual"
+      },
+      "expected": {
+        "connectedLoad": 160.0,
+        "demandLoad": 160.0,
+        "requiredKVA": 200.0,
+        "recommendedSize": 200.0,
+        "selectedSize": 200.0,
+        "isc3Phase": 7.58,
+        "isc1Phase": 7.84,
+        "flc": 288.68,
+        "zt": 32.0
+      }
+    },
+    {
+      "id": "TC-TX-02",
+      "txId": "TX-02",
+      "input": {
+        "percentZ": 6.0,
+        "demandFactor": 0.8,
+        "vectorGroup": "Dyn11",
+        "voltageV": 400,
+        "diversity": 1.0,
+        "manualKVA": 400.0,
+        "pf": 0.8,
+        "safety": 1.0,
+        "z0OverZ1": 0.95,
+        "xr": 8.0,
+        "growth": 1.0,
+        "sizeMode": "Auto"
+      },
+      "expected": {
+        "connectedLoad": 300.0,
+        "demandLoad": 240.0,
+        "requiredKVA": 300.0,
+        "recommendedSize": 400.0,
+        "selectedSize": 400.0,
+        "isc3Phase": 10.1,
+        "isc1Phase": 10.27,
+        "flc": 577.35,
+        "zt": 24.0
+      }
+    }
+  ]
+}

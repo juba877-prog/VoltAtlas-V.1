@@ -1,0 +1,23 @@
+[
+  { "id": "PVC_20", "conduitType": "Rigid PVC", "tradeSize": "20 mm", "internalDiameterMm": 15.8, "areaTotalMm2": 196.1, "maxFill40PctMm2": 78.4, "provenance": "EXCEL_REFERENCE", "status": "APPROVED" },
+  { "id": "PVC_25", "conduitType": "Rigid PVC", "tradeSize": "25 mm", "internalDiameterMm": 21.0, "areaTotalMm2": 346.4, "maxFill40PctMm2": 138.5, "provenance": "EXCEL_REFERENCE", "status": "APPROVED" },
+  { "id": "PVC_32", "conduitType": "Rigid PVC", "tradeSize": "32 mm", "internalDiameterMm": 27.8, "areaTotalMm2": 607.0, "maxFill40PctMm2": 242.8, "provenance": "EXCEL_REFERENCE", "status": "APPROVED" },
+  { "id": "PVC_40", "conduitType": "Rigid PVC", "tradeSize": "40 mm", "internalDiameterMm": 35.1, "areaTotalMm2": 967.6, "maxFill40PctMm2": 387.0, "provenance": "EXCEL_REFERENCE", "status": "APPROVED" },
+  { "id": "PVC_50", "conduitType": "Rigid PVC", "tradeSize": "50 mm", "internalDiameterMm": 44.3, "areaTotalMm2": 1541.3, "maxFill40PctMm2": 616.5, "provenance": "EXCEL_REFERENCE", "status": "APPROVED" },
+  { "id": "PVC_63", "conduitType": "Rigid PVC", "tradeSize": "63 mm", "internalDiameterMm": 56.0, "areaTotalMm2": 2463.0, "maxFill40PctMm2": 985.2, "provenance": "EXCEL_REFERENCE", "status": "APPROVED" },
+  { "id": "PVC_75", "conduitType": "Rigid PVC", "tradeSize": "75 mm", "internalDiameterMm": 67.8, "areaTotalMm2": 3610.3, "maxFill40PctMm2": 1444.1, "provenance": "EXCEL_REFERENCE", "status": "APPROVED" },
+  { "id": "PVC_90", "conduitType": "Rigid PVC", "tradeSize": "90 mm", "internalDiameterMm": 81.4, "areaTotalMm2": 5203.9, "maxFill40PctMm2": 2081.6, "provenance": "EXCEL_REFERENCE", "status": "APPROVED" },
+  { "id": "PVC_110", "conduitType": "Rigid PVC", "tradeSize": "110 mm", "internalDiameterMm": 100.0, "areaTotalMm2": 7854.0, "maxFill40PctMm2": 3141.6, "provenance": "EXCEL_REFERENCE", "status": "APPROVED" },
+  { "id": "PVC_160", "conduitType": "Rigid PVC", "tradeSize": "160 mm", "internalDiameterMm": 147.6, "areaTotalMm2": 17110.3, "maxFill40PctMm2": 6844.1, "provenance": "EXCEL_REFERENCE", "status": "APPROVED" },
+  { "id": "PVC_200", "conduitType": "Rigid PVC", "tradeSize": "200 mm", "internalDiameterMm": 184.6, "areaTotalMm2": 26764.4, "maxFill40PctMm2": 10705.8, "provenance": "EXCEL_REFERENCE", "status": "APPROVED" },
+  { "id": "EMT_20", "conduitType": "EMT Steel", "tradeSize": "20 mm (3/4 in)", "internalDiameterMm": 20.9, "areaTotalMm2": 343.1, "maxFill40PctMm2": 137.2, "provenance": "ANSI_C80.3", "status": "APPROVED" },
+  { "id": "EMT_25", "conduitType": "EMT Steel", "tradeSize": "25 mm (1 in)", "internalDiameterMm": 26.6, "areaTotalMm2": 555.7, "maxFill40PctMm2": 222.3, "provenance": "ANSI_C80.3", "status": "APPROVED" },
+  { "id": "EMT_32", "conduitType": "EMT Steel", "tradeSize": "32 mm (1-1/4 in)", "internalDiameterMm": 35.1, "areaTotalMm2": 967.6, "maxFill40PctMm2": 387.0, "provenance": "ANSI_C80.3", "status": "APPROVED" },
+  { "id": "EMT_40", "conduitType": "EMT Steel", "tradeSize": "40 mm (1-1/2 in)", "internalDiameterMm": 40.9, "areaTotalMm2": 1313.9, "maxFill40PctMm2": 525.6, "provenance": "ANSI_C80.3", "status": "APPROVED" },
+  { "id": "EMT_50", "conduitType": "EMT Steel", "tradeSize": "50 mm (2 in)", "internalDiameterMm": 52.5, "areaTotalMm2": 2164.8, "maxFill40PctMm2": 865.9, "provenance": "ANSI_C80.3", "status": "APPROVED" },
+  { "id": "GI_20", "conduitType": "GI Steel (RMC)", "tradeSize": "20 mm", "internalDiameterMm": 17.2, "areaTotalMm2": 232.4, "maxFill40PctMm2": 92.9, "provenance": "BS_4568_CLASS4", "status": "APPROVED" },
+  { "id": "GI_25", "conduitType": "GI Steel (RMC)", "tradeSize": "25 mm", "internalDiameterMm": 22.0, "areaTotalMm2": 380.1, "maxFill40PctMm2": 152.1, "provenance": "BS_4568_CLASS4", "status": "APPROVED" },
+  { "id": "GI_32", "conduitType": "GI Steel (RMC)", "tradeSize": "32 mm", "internalDiameterMm": 28.8, "areaTotalMm2": 651.4, "maxFill40PctMm2": 260.6, "provenance": "BS_4568_CLASS4", "status": "APPROVED" },
+  { "id": "GI_40", "conduitType": "GI Steel (RMC)", "tradeSize": "40 mm", "internalDiameterMm": 36.6, "areaTotalMm2": 1052.1, "maxFill40PctMm2": 420.8, "provenance": "BS_4568_CLASS4", "status": "APPROVED" },
+  { "id": "GI_50", "conduitType": "GI Steel (RMC)", "tradeSize": "50 mm", "internalDiameterMm": 48.0, "areaTotalMm2": 1809.6, "maxFill40PctMm2": 723.8, "provenance": "BS_4568_CLASS4", "status": "APPROVED" }
+]

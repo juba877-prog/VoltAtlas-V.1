@@ -1,0 +1,21 @@
+{
+  "status": "VALIDATION_FAILED",
+  "changed": false,
+  "baseline": 99,
+  "generated": 99,
+  "supported_families": 30,
+  "unsupported_families": 0,
+  "rejected": 0,
+  "ambiguous": 0,
+  "unmapped": 0,
+  "qa_passed": true,
+  "build_success": false,
+  "rollback_status": "NONE",
+  "reports": [
+    "catalog_migration/reports/source_inventory.md",
+    "catalog_migration/reports/cable_validation.md",
+    "catalog_migration/reports/shadow_regression.md",
+    "catalog_migration/reports/breaker_audit.json",
+    "catalog_migration/reports/accessory_audit.json"
+  ]
+}

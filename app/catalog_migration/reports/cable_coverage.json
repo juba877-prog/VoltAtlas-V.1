@@ -1,0 +1,101 @@
+{
+  "source_entries": 99,
+  "generated_entries": 99,
+  "rejected_entries": 0,
+  "source_families": 33,
+  "runtime_families": 33,
+  "supported_families": 30,
+  "unsupported_families": 0,
+  "ambiguous_mappings": 0,
+  "unmapped_mappings": 0,
+  "missing_rx_sizes": 0,
+  "duplicates": 0,
+  "size_range_per_family": {
+    "Cu/PVC/PVC - 3C": [
+      1.5,
+      500.0
+    ],
+    "Cu/PVC/PVC - 4C": [
+      1.5,
+      400.0
+    ],
+    "Cu/PVC/SWA/PVC - 3C": [],
+    "Cu/PVC/SWA/PVC - 4C": [],
+    "Al/PVC/PVC - 3C": [],
+    "Al/PVC/PVC - 4C": [],
+    "Cu/XLPE/PVC - 3C": [
+      1.5,
+      500.0
+    ],
+    "Cu/XLPE/SWA/PVC - 3C": [],
+    "Al/XLPE/PVC - 3C": [],
+    "Al/XLPE/SWA/PVC - 3C": [],
+    "Cu/PVC - Single Core": [],
+    "Al/PVC - Single Core": [],
+    "Cu/XLPE - Single Core": [],
+    "Al/XLPE - Single Core": [],
+    "Cu/XLPE/PVC - 4C": [
+      1.5,
+      500.0
+    ],
+    "Cu/XLPE/SWA/PVC - 4C": [],
+    "Al/XLPE/SWA/PVC - 4C": [],
+    "Cu/PVC/STA/PVC - 3C": [],
+    "Cu/PVC/STA/PVC - 4C": [],
+    "Al/PVC/STA/PVC - 3C": [],
+    "Al/PVC/STA/PVC - 4C": [],
+    "Cu/XLPE/STA/PVC - 3C": [],
+    "Cu/XLPE/STA/PVC - 4C": [
+      6.0,
+      500.0
+    ],
+    "Al/XLPE/STA/PVC - 3C": [],
+    "Al/XLPE/STA/PVC - 4C": [
+      16.0,
+      500.0
+    ],
+    "Cu/PVC/AWA/PVC - Single Core": [],
+    "Al/PVC/AWA/PVC - Single Core": [],
+    "Cu/XLPE/AWA/PVC - Single Core": [],
+    "Al/XLPE/AWA/PVC - Single Core": [],
+    "Cu/Mica/XLPE/LSZH - 1C": [],
+    "Cu/Mica/XLPE/LSZH - 2C": [],
+    "Cu/Mica/XLPE/LSZH - 3C": [],
+    "Cu/Mica/XLPE/SWA/LSZH - 4C": []
+  },
+  "record_count_per_family": {
+    "Cu/PVC/PVC - 3C": 18,
+    "Cu/PVC/PVC - 4C": 17,
+    "Cu/PVC/SWA/PVC - 3C": 0,
+    "Cu/PVC/SWA/PVC - 4C": 0,
+    "Al/PVC/PVC - 3C": 0,
+    "Al/PVC/PVC - 4C": 0,
+    "Cu/XLPE/PVC - 3C": 18,
+    "Cu/XLPE/SWA/PVC - 3C": 0,
+    "Al/XLPE/PVC - 3C": 0,
+    "Al/XLPE/SWA/PVC - 3C": 0,
+    "Cu/PVC - Single Core": 0,
+    "Al/PVC - Single Core": 0,
+    "Cu/XLPE - Single Core": 0,
+    "Al/XLPE - Single Core": 0,
+    "Cu/XLPE/PVC - 4C": 18,
+    "Cu/XLPE/SWA/PVC - 4C": 0,
+    "Al/XLPE/SWA/PVC - 4C": 0,
+    "Cu/PVC/STA/PVC - 3C": 0,
+    "Cu/PVC/STA/PVC - 4C": 0,
+    "Al/PVC/STA/PVC - 3C": 0,
+    "Al/PVC/STA/PVC - 4C": 0,
+    "Cu/XLPE/STA/PVC - 3C": 0,
+    "Cu/XLPE/STA/PVC - 4C": 15,
+    "Al/XLPE/STA/PVC - 3C": 0,
+    "Al/XLPE/STA/PVC - 4C": 13,
+    "Cu/PVC/AWA/PVC - Single Core": 0,
+    "Al/PVC/AWA/PVC - Single Core": 0,
+    "Cu/XLPE/AWA/PVC - Single Core": 0,
+    "Al/XLPE/AWA/PVC - Single Core": 0,
+    "Cu/Mica/XLPE/LSZH - 1C": 0,
+    "Cu/Mica/XLPE/LSZH - 2C": 0,
+    "Cu/Mica/XLPE/LSZH - 3C": 0,
+    "Cu/Mica/XLPE/SWA/LSZH - 4C": 0
+  }
+}

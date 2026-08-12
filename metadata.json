@@ -1,0 +1,8 @@
+{
+  "name": "VoltAtlas",
+  "description": "Integrated Electrical Design Platform for electrical network calculations, cable sizing, SLD layout, and protection coordination.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

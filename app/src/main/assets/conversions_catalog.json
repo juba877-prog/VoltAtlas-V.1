@@ -1,0 +1,291 @@
+{
+  "categories": [
+    {
+      "id": "cables",
+      "titleEn": "Cable & Conductor Cross-Section",
+      "tools": [
+        {
+          "id": "awg_to_mm2",
+          "titleEn": "AWG to mm² (American Wire Gauge)",
+          "descriptionEn": "Convert American Wire Gauge (AWG) to mm² with True Area, Nearest IEC 60228, and Safe Up-Size selection.",
+          "icon": "Cable",
+          "isCable": true,
+          "inputType": "awg_selector",
+          "defaultInput": "10"
+        },
+        {
+          "id": "swg_to_mm2",
+          "titleEn": "SWG to mm² (Standard Wire Gauge)",
+          "descriptionEn": "Convert Standard Wire Gauge (SWG 7/0 to 30) to mm² with True Area, Nearest IEC, and Safe Up-Size.",
+          "icon": "Cable",
+          "isCable": true,
+          "inputType": "swg_selector",
+          "defaultInput": "10"
+        },
+        {
+          "id": "kcmil_to_mm2",
+          "titleEn": "kcmil / MCM to mm²",
+          "descriptionEn": "Convert thousand circular mils (kcmil/MCM) to mm² with True Area and Safe Up-Size (up to 1000 mm²).",
+          "icon": "Cable",
+          "isCable": true,
+          "inputType": "numeric",
+          "inputLabelEn": "Conductor Size (kcmil / MCM)",
+          "defaultInput": "250"
+        },
+        {
+          "id": "mm2_to_awg",
+          "titleEn": "mm² to AWG",
+          "descriptionEn": "Convert metric cross-section area in mm² to the closest equivalent AWG gauge.",
+          "icon": "Cable",
+          "isCable": false,
+          "inputType": "numeric",
+          "inputLabelEn": "Area in mm²",
+          "defaultInput": "5.26"
+        },
+        {
+          "id": "voltage_drop_mv",
+          "titleEn": "Cable Voltage Drop Calculator (mV/A/m)",
+          "descriptionEn": "Calculate voltage drop (V and %) based on R (Ω/km), X (Ω/km), current, and cable length.",
+          "icon": "Cable",
+          "isCable": false,
+          "inputType": "vdrop_inputs",
+          "inputLabelEn": "Resistance R (Ω/km)",
+          "inputLabel2En": "Reactance X (Ω/km)",
+          "inputLabel3En": "Current (A)",
+          "defaultInput": "0.727",
+          "defaultInput2": "0.08",
+          "defaultInput3": "100"
+        }
+      ]
+    },
+    {
+      "id": "power_motors",
+      "titleEn": "Power & Motor Conversions",
+      "tools": [
+        {
+          "id": "power_triangle",
+          "titleEn": "Power Triangle (kVA ↔ kW ↔ kVAR)",
+          "descriptionEn": "Calculate active power P (kW), reactive power Q (kVAR), and apparent power S (kVA) from power factor.",
+          "icon": "Power",
+          "isCable": false,
+          "inputType": "dual_numeric",
+          "inputLabelEn": "Apparent Power (kVA)",
+          "inputLabel2En": "Power Factor (cosφ)",
+          "defaultInput": "100",
+          "defaultInput2": "0.8"
+        },
+        {
+          "id": "current_to_power",
+          "titleEn": "Current to Power (Amps ↔ kW / kVA)",
+          "descriptionEn": "Convert current in Amps to electrical power (kW / kVA) for 3-Phase or 1-Phase systems.",
+          "icon": "Device",
+          "isCable": false,
+          "inputType": "dual_numeric_with_variant",
+          "inputLabelEn": "Current (Amps)",
+          "inputLabel2En": "Line Voltage (V)",
+          "defaultInput": "100",
+          "defaultInput2": "400",
+          "variantLabelEn": "System Phase Mode",
+          "variants": [
+            { "id": "3P", "labelEn": "3-Phase System (400V)" },
+            { "id": "1P", "labelEn": "1-Phase System (230V)" }
+          ]
+        },
+        {
+          "id": "hp_to_kw",
+          "titleEn": "Horsepower (HP) to Kilowatts (kW)",
+          "descriptionEn": "Convert mechanical or metric horsepower to electrical kilowatts.",
+          "icon": "Power",
+          "isCable": false,
+          "inputType": "numeric_with_variant",
+          "inputLabelEn": "Power in HP",
+          "defaultInput": "10",
+          "variantLabelEn": "HP Standard",
+          "variants": [
+            { "id": "mechanical", "labelEn": "Mechanical HP (0.7457 kW)" },
+            { "id": "metric", "labelEn": "Metric PS (0.7355 kW)" }
+          ]
+        },
+        {
+          "id": "kw_to_hp",
+          "titleEn": "Kilowatts (kW) to Horsepower (HP)",
+          "descriptionEn": "Convert electrical kilowatts to mechanical or metric horsepower.",
+          "icon": "Power",
+          "isCable": false,
+          "inputType": "numeric_with_variant",
+          "inputLabelEn": "Power in kW",
+          "defaultInput": "7.5",
+          "variantLabelEn": "HP Standard",
+          "variants": [
+            { "id": "mechanical", "labelEn": "Mechanical HP (0.7457 kW)" },
+            { "id": "metric", "labelEn": "Metric PS (0.7355 kW)" }
+          ]
+        },
+        {
+          "id": "freq_to_rpm",
+          "titleEn": "Frequency & Motor Speed (Freq ↔ RPM)",
+          "descriptionEn": "Calculate motor synchronous speed N = 120·f / p based on frequency and pole count.",
+          "icon": "Sync",
+          "isCable": false,
+          "inputType": "numeric_with_variant",
+          "inputLabelEn": "Frequency (Hz)",
+          "defaultInput": "50",
+          "variantLabelEn": "Motor Poles",
+          "variants": [
+            { "id": "2", "labelEn": "2 Poles (3000 RPM @ 50Hz)" },
+            { "id": "4", "labelEn": "4 Poles (1500 RPM @ 50Hz)" },
+            { "id": "6", "labelEn": "6 Poles (1000 RPM @ 50Hz)" },
+            { "id": "8", "labelEn": "8 Poles (750 RPM @ 50Hz)" },
+            { "id": "10", "labelEn": "10 Poles (600 RPM @ 50Hz)" },
+            { "id": "12", "labelEn": "12 Poles (500 RPM @ 50Hz)" }
+          ]
+        },
+        {
+          "id": "torque_power_rpm",
+          "titleEn": "Motor Torque (N·m) ↔ Power & RPM",
+          "descriptionEn": "Calculate motor shaft torque T = 9549.3 · P(kW) / N(RPM).",
+          "icon": "Tune",
+          "isCable": false,
+          "inputType": "dual_numeric",
+          "inputLabelEn": "Power in kW",
+          "inputLabel2En": "Speed in RPM",
+          "defaultInput": "15",
+          "defaultInput2": "1450"
+        },
+        {
+          "id": "tx_quick_sc",
+          "titleEn": "Transformer Quick Short Circuit Current",
+          "descriptionEn": "Quick estimate of transformer full load current (IFLC) and 3-phase short circuit current (Isc kA) without IEC 60909 c-factor.",
+          "icon": "Power",
+          "isCable": false,
+          "inputType": "dual_numeric",
+          "inputLabelEn": "Transformer Rating (kVA)",
+          "inputLabel2En": "Impedance (%Z)",
+          "defaultInput": "1000",
+          "defaultInput2": "5.0"
+        }
+      ]
+    },
+    {
+      "id": "capacitance",
+      "titleEn": "Reactive Power & Capacitors (µF ↔ kVAR)",
+      "tools": [
+        {
+          "id": "uf_to_kvar",
+          "titleEn": "Capacitor µF to kVAR",
+          "descriptionEn": "Convert capacitance in µF to kVAR for Single Phase, 3-Phase Star, or 3-Phase Delta configurations.",
+          "icon": "Flash",
+          "isCable": false,
+          "inputType": "cap_inputs",
+          "inputLabelEn": "Capacitance (µF)",
+          "defaultInput": "100",
+          "inputLabel2En": "Line Voltage (V)",
+          "defaultInput2": "400",
+          "inputLabel3En": "Frequency (Hz)",
+          "defaultInput3": "50",
+          "variantLabelEn": "Capacitor Connection",
+          "variants": [
+            { "id": "delta", "labelEn": "3-Phase Delta (3× Q)" },
+            { "id": "single_star", "labelEn": "Single Phase / 3P Star" }
+          ]
+        },
+        {
+          "id": "kvar_to_uf",
+          "titleEn": "Capacitor kVAR to µF",
+          "descriptionEn": "Convert reactive power in kVAR to required capacitance in µF for Star or Delta connections.",
+          "icon": "Flash",
+          "isCable": false,
+          "inputType": "cap_inputs",
+          "inputLabelEn": "Reactive Power (kVAR)",
+          "defaultInput": "15",
+          "inputLabel2En": "Line Voltage (V)",
+          "defaultInput2": "400",
+          "inputLabel3En": "Frequency (Hz)",
+          "defaultInput3": "50",
+          "variantLabelEn": "Capacitor Connection",
+          "variants": [
+            { "id": "delta", "labelEn": "3-Phase Delta (3× Q)" },
+            { "id": "single_star", "labelEn": "Single Phase / 3P Star" }
+          ]
+        },
+        {
+          "id": "pfc_needed",
+          "titleEn": "Power Factor Correction (kVAR Needed)",
+          "descriptionEn": "Calculate required capacitor rating in kVAR and current reduction ΔI to improve power factor from cosφ1 to cosφ2.",
+          "icon": "Flash",
+          "isCable": false,
+          "inputType": "cap_inputs",
+          "inputLabelEn": "Active Power (kW)",
+          "inputLabel2En": "Initial Power Factor (cosφ1)",
+          "inputLabel3En": "Target Power Factor (cosφ2)",
+          "defaultInput": "100",
+          "defaultInput2": "0.8",
+          "defaultInput3": "0.95"
+        }
+      ]
+    },
+    {
+      "id": "units_temp",
+      "titleEn": "General Unit, Battery & Energy",
+      "tools": [
+        {
+          "id": "battery_capacity",
+          "titleEn": "Battery Capacity (Ah ↔ kWh)",
+          "descriptionEn": "Convert battery capacity between Ah and kWh taking DOD and efficiency into account.",
+          "icon": "Device",
+          "isCable": false,
+          "inputType": "dual_numeric",
+          "inputLabelEn": "Capacity (Ah)",
+          "inputLabel2En": "Nominal DC Voltage (Vdc)",
+          "defaultInput": "100",
+          "defaultInput2": "48"
+        },
+        {
+          "id": "voltage_units",
+          "titleEn": "Voltage Units (mV ↔ V ↔ kV)",
+          "descriptionEn": "Convert voltage between mV, Volts, and kV.",
+          "icon": "Device",
+          "isCable": false,
+          "inputType": "numeric_with_unit_dropdown",
+          "inputLabelEn": "Voltage Value",
+          "defaultInput": "400",
+          "variants": [
+            { "id": "V", "labelEn": "Volts (V)" },
+            { "id": "kV", "labelEn": "Kilovolts (kV)" },
+            { "id": "mV", "labelEn": "Millivolts (mV)" }
+          ]
+        },
+        {
+          "id": "current_units",
+          "titleEn": "Current Units (mA ↔ A ↔ kA)",
+          "descriptionEn": "Convert current between mA, Amperes, and kA.",
+          "icon": "Device",
+          "isCable": false,
+          "inputType": "numeric_with_unit_dropdown",
+          "inputLabelEn": "Current Value",
+          "defaultInput": "100",
+          "variants": [
+            { "id": "A", "labelEn": "Amperes (A)" },
+            { "id": "kA", "labelEn": "Kiloamperes (kA)" },
+            { "id": "mA", "labelEn": "Milliamperes (mA)" }
+          ]
+        },
+        {
+          "id": "temp_conversion",
+          "titleEn": "Temperature (°C ↔ °F ↔ K)",
+          "descriptionEn": "Convert temperature between Celsius (°C), Fahrenheit (°F), and Kelvin (K).",
+          "icon": "Thermal",
+          "isCable": false,
+          "inputType": "numeric_with_unit_dropdown",
+          "inputLabelEn": "Temperature",
+          "defaultInput": "40",
+          "variants": [
+            { "id": "C", "labelEn": "Celsius (°C)" },
+            { "id": "F", "labelEn": "Fahrenheit (°F)" },
+            { "id": "K", "labelEn": "Kelvin (K)" }
+          ]
+        }
+      ]
+    }
+  ]
+}

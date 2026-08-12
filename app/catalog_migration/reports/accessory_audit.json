@@ -1,0 +1,17 @@
+{
+  "manufacturers": [
+    "CMP"
+  ],
+  "categories": [
+    "Cable Gland"
+  ],
+  "gland_types": [
+    "Plastic",
+    "Brass",
+    "Armoured Glands"
+  ],
+  "armour_compatibility": true,
+  "core_compatibility": true,
+  "overlaps": [],
+  "gaps": []
+}

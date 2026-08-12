@@ -1,0 +1,392 @@
+{
+  "CU_PVC_PVC_3C": {
+    "canonicalId": "CU_PVC_PVC_3C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "UNARM",
+      "sheath": "PVC",
+      "cores": "3C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Cu/PVC/PVC - 3C"
+  },
+  "CU_PVC_PVC_4C": {
+    "canonicalId": "CU_PVC_PVC_4C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "UNARM",
+      "sheath": "PVC",
+      "cores": "4C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Cu/PVC/PVC - 4C"
+  },
+  "CU_PVC_SWA_PVC_3C": {
+    "canonicalId": "CU_PVC_SWA_PVC_3C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "SWA",
+      "sheath": "PVC",
+      "cores": "3C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Cu/PVC/SWA/PVC - 3C"
+  },
+  "CU_PVC_SWA_PVC_4C": {
+    "canonicalId": "CU_PVC_SWA_PVC_4C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "SWA",
+      "sheath": "PVC",
+      "cores": "4C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Cu/PVC/SWA/PVC - 4C"
+  },
+  "AL_PVC_PVC_3C": {
+    "canonicalId": "AL_PVC_PVC_3C",
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "PVC",
+      "armour": "UNARM",
+      "sheath": "PVC",
+      "cores": "3C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Al/PVC/PVC - 3C"
+  },
+  "AL_PVC_PVC_4C": {
+    "canonicalId": "AL_PVC_PVC_4C",
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "PVC",
+      "armour": "UNARM",
+      "sheath": "PVC",
+      "cores": "4C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Al/PVC/PVC - 4C"
+  },
+  "CU_XLPE_PVC_3C": {
+    "canonicalId": "CU_XLPE_PVC_3C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "UNARM",
+      "sheath": "PVC",
+      "cores": "3C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60331"
+    },
+    "originalCableType": "Cu/Mica/XLPE/LSZH - 3C"
+  },
+  "CU_XLPE_SWA_PVC_3C": {
+    "canonicalId": "CU_XLPE_SWA_PVC_3C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "SWA",
+      "sheath": "PVC",
+      "cores": "3C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Cu/XLPE/SWA/PVC - 3C"
+  },
+  "AL_XLPE_PVC_3C": {
+    "canonicalId": "AL_XLPE_PVC_3C",
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "XLPE",
+      "armour": "UNARM",
+      "sheath": "PVC",
+      "cores": "3C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Al/XLPE/PVC - 3C"
+  },
+  "AL_XLPE_SWA_PVC_3C": {
+    "canonicalId": "AL_XLPE_SWA_PVC_3C",
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "XLPE",
+      "armour": "SWA",
+      "sheath": "PVC",
+      "cores": "3C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Al/XLPE/SWA/PVC - 3C"
+  },
+  "CU_PVC_PVC_1C": {
+    "canonicalId": "CU_PVC_PVC_1C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "UNARM",
+      "sheath": "PVC",
+      "cores": "1C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Cu/PVC - Single Core"
+  },
+  "AL_PVC_PVC_1C": {
+    "canonicalId": "AL_PVC_PVC_1C",
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "PVC",
+      "armour": "UNARM",
+      "sheath": "PVC",
+      "cores": "1C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Al/PVC - Single Core"
+  },
+  "CU_XLPE_PVC_1C": {
+    "canonicalId": "CU_XLPE_PVC_1C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "UNARM",
+      "sheath": "PVC",
+      "cores": "1C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60331"
+    },
+    "originalCableType": "Cu/Mica/XLPE/LSZH - 1C"
+  },
+  "AL_XLPE_PVC_1C": {
+    "canonicalId": "AL_XLPE_PVC_1C",
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "XLPE",
+      "armour": "UNARM",
+      "sheath": "PVC",
+      "cores": "1C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Al/XLPE - Single Core"
+  },
+  "CU_XLPE_PVC_4C": {
+    "canonicalId": "CU_XLPE_PVC_4C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "UNARM",
+      "sheath": "PVC",
+      "cores": "4C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Cu/XLPE/PVC - 4C"
+  },
+  "CU_XLPE_SWA_PVC_4C": {
+    "canonicalId": "CU_XLPE_SWA_PVC_4C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "SWA",
+      "sheath": "PVC",
+      "cores": "4C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60331"
+    },
+    "originalCableType": "Cu/Mica/XLPE/SWA/LSZH - 4C"
+  },
+  "AL_XLPE_SWA_PVC_4C": {
+    "canonicalId": "AL_XLPE_SWA_PVC_4C",
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "XLPE",
+      "armour": "SWA",
+      "sheath": "PVC",
+      "cores": "4C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Al/XLPE/SWA/PVC - 4C"
+  },
+  "CU_PVC_STA_PVC_3C": {
+    "canonicalId": "CU_PVC_STA_PVC_3C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "STA",
+      "sheath": "PVC",
+      "cores": "3C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Cu/PVC/STA/PVC - 3C"
+  },
+  "CU_PVC_STA_PVC_4C": {
+    "canonicalId": "CU_PVC_STA_PVC_4C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "STA",
+      "sheath": "PVC",
+      "cores": "4C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Cu/PVC/STA/PVC - 4C"
+  },
+  "AL_PVC_STA_PVC_3C": {
+    "canonicalId": "AL_PVC_STA_PVC_3C",
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "PVC",
+      "armour": "STA",
+      "sheath": "PVC",
+      "cores": "3C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Al/PVC/STA/PVC - 3C"
+  },
+  "AL_PVC_STA_PVC_4C": {
+    "canonicalId": "AL_PVC_STA_PVC_4C",
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "PVC",
+      "armour": "STA",
+      "sheath": "PVC",
+      "cores": "4C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Al/PVC/STA/PVC - 4C"
+  },
+  "CU_XLPE_STA_PVC_3C": {
+    "canonicalId": "CU_XLPE_STA_PVC_3C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "STA",
+      "sheath": "PVC",
+      "cores": "3C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Cu/XLPE/STA/PVC - 3C"
+  },
+  "CU_XLPE_STA_PVC_4C": {
+    "canonicalId": "CU_XLPE_STA_PVC_4C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "STA",
+      "sheath": "PVC",
+      "cores": "4C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Cu/XLPE/STA/PVC - 4C"
+  },
+  "AL_XLPE_STA_PVC_3C": {
+    "canonicalId": "AL_XLPE_STA_PVC_3C",
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "XLPE",
+      "armour": "STA",
+      "sheath": "PVC",
+      "cores": "3C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Al/XLPE/STA/PVC - 3C"
+  },
+  "AL_XLPE_STA_PVC_4C": {
+    "canonicalId": "AL_XLPE_STA_PVC_4C",
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "XLPE",
+      "armour": "STA",
+      "sheath": "PVC",
+      "cores": "4C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Al/XLPE/STA/PVC - 4C"
+  },
+  "CU_PVC_AWA_PVC_1C": {
+    "canonicalId": "CU_PVC_AWA_PVC_1C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "AWA",
+      "sheath": "PVC",
+      "cores": "1C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Cu/PVC/AWA/PVC - Single Core"
+  },
+  "AL_PVC_AWA_PVC_1C": {
+    "canonicalId": "AL_PVC_AWA_PVC_1C",
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "PVC",
+      "armour": "AWA",
+      "sheath": "PVC",
+      "cores": "1C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Al/PVC/AWA/PVC - Single Core"
+  },
+  "CU_XLPE_AWA_PVC_1C": {
+    "canonicalId": "CU_XLPE_AWA_PVC_1C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "AWA",
+      "sheath": "PVC",
+      "cores": "1C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Cu/XLPE/AWA/PVC - Single Core"
+  },
+  "AL_XLPE_AWA_PVC_1C": {
+    "canonicalId": "AL_XLPE_AWA_PVC_1C",
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "XLPE",
+      "armour": "AWA",
+      "sheath": "PVC",
+      "cores": "1C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60502"
+    },
+    "originalCableType": "Al/XLPE/AWA/PVC - Single Core"
+  },
+  "CU_XLPE_PVC_2C": {
+    "canonicalId": "CU_XLPE_PVC_2C",
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "UNARM",
+      "sheath": "PVC",
+      "cores": "2C",
+      "voltage": "0.6/1",
+      "standard": "IEC 60331"
+    },
+    "originalCableType": "Cu/Mica/XLPE/LSZH - 2C"
+  }
+}

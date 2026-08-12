@@ -1,0 +1,69 @@
+package com.example.ui
+
+import com.example.data.CircuitEntity
+import com.example.data.TransformerEntity
+import com.example.engine.SizingResult
+import com.example.engine.TransformerResult
+import com.example.engine.BoqItem
+import com.example.engine.DrumItem
+import com.example.engine.DrumAllocation
+import com.example.engine.ProcurementItem
+import com.example.engine.PanelScheduleResult
+
+import com.example.engine.GeneratorResult
+import com.example.engine.AtsResult
+import com.example.engine.UpsResult
+import com.example.engine.PfCorrectionResult
+
+
+import com.example.engine.AdsResult
+import com.example.engine.CoordinationResult
+import com.example.engine.ConduitFillResult
+import com.example.engine.ConduitProcurementGroup
+
+data class ProjectValidationSummary(
+    val totalFailures: Int = 0,
+    val totalReviewsRequired: Int = 0,
+    val totalWarnings: Int = 0,
+    val overallStatus: String = "100% COMPLIANT / PASS",
+    val openIssues: List<com.example.sld.SldValidationIssue> = emptyList()
+)
+
+sealed interface UiState {
+    object Loading : UiState
+    data class Error(val message: String) : UiState
+    data class Success(
+        val circuits: List<CircuitEntity>,
+        val transformers: List<TransformerEntity>,
+        val sizingResults: Map<Int, SizingResult>,
+        val transformerResults: Map<String, TransformerResult>,
+        val boq: List<BoqItem>,
+        val drums: List<DrumAllocation>,
+        val procurement: List<ProcurementItem>,
+        val panels: List<PanelScheduleResult>,
+        val generatorResult: GeneratorResult?,
+        val atsResult: AtsResult?,
+        val atsEntity: com.example.data.AtsEntity? = null,
+        val upsResult: UpsResult?,
+        val pfCorrectionResults: List<PfCorrectionResult>,
+
+        // Protection / Short Circuit
+        val shortCircuitResults: Map<Int, com.example.engine.ShortCircuitResult> = emptyMap(),
+        val adsResults: Map<Int, AdsResult> = emptyMap(),
+        val protectionResults: Map<Int, com.example.engine.ProtectionResult> = emptyMap(),
+        val coordinationResults: List<CoordinationResult> = emptyList(),
+        val earthingResult: com.example.engine.EarthingResult? = null,
+        val earthingEntity: com.example.data.EarthingEntity? = null,
+
+        // Conduits Module
+        val conduitResults: Map<Int, ConduitFillResult> = emptyMap(),
+        val conduitProcurement: List<ConduitProcurementGroup> = emptyList(),
+
+        // Network chain for downstream engines
+        val resolvedCircuits: List<CircuitEntity> = emptyList(),
+        val circuitParents: Map<Int, Int> = emptyMap(), // child circuit id -> parent circuit id
+        val drumAllocations: List<DrumAllocation> = emptyList(),
+        val validationSummary: ProjectValidationSummary = ProjectValidationSummary()
+    ) : UiState
+}
+

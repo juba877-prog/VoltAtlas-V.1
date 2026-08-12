@@ -1,0 +1,40 @@
+build/
+app/build/
+.gradle/
+.kotlin/
+.cxx/
+*.log
+*.hprof
+*.apk
+local.properties
+patch_*.py
+fix_*.py
+fix_*.sh
+update_*.py
+
+# Temp & Cache artifacts
+hsperfdata_root/
+node-compile-cache/
+kotlin-compiler-in-*
+*.zip
+sqlite-3.41.2.2-*
+*.so
+*.so.lck
+*.alive
+.antigravity/
+
+# Secrets, Keystores & Environment Credentials
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.keystore.base64
+*.pepk
+keystore.properties
+# Backups
+.git-corrupted-backup-*
+*_FULL_BACKUP_*
+
+
+

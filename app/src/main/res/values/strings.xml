@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">VoltAtlas</string>
+    <string name="voltatlas_wordmark">VoltAtlas</string>
+    <string name="voltatlas_subtitle">Integrated Electrical Design Platform</string>
+    <string name="startup_preparing_workspace">Preparing engineering workspace</string>
+    <string name="startup_loading_catalogs">Loading engineering catalogs</string>
+    <string name="startup_opening_database">Opening project database</string>
+    <string name="startup_preparing_project">Preparing project</string>
+    <string name="startup_error">Unable to initialize VoltAtlas</string>
+    <string name="startup_retry">Retry</string>
+    <string name="voltatlas_logo_description">VoltAtlas logo</string>
+</resources>

@@ -1,0 +1,270 @@
+{
+  "schema_version": "1.0",
+  "source_sheet": "_DERATING",
+  "standards": [
+    "IEC 60287",
+    "IEC 60364-5-52"
+  ],
+  "reference_conditions": {
+    "air_base_temp_C": 40,
+    "ground_base_temp_C": 35,
+    "note": "At base conditions the temperature factor Ct = 1.0. All factors are multiplicative."
+  },
+  "air_temperature": {
+    "20": {
+      "PVC": 1.29,
+      "XLPE": 1.18
+    },
+    "25": {
+      "PVC": 1.22,
+      "XLPE": 1.14
+    },
+    "30": {
+      "PVC": 1.15,
+      "XLPE": 1.1
+    },
+    "35": {
+      "PVC": 1.08,
+      "XLPE": 1.05
+    },
+    "40": {
+      "PVC": 1.0,
+      "XLPE": 1.0
+    },
+    "45": {
+      "PVC": 0.95,
+      "XLPE": 0.9
+    },
+    "50": {
+      "PVC": 0.82,
+      "XLPE": 0.89
+    },
+    "55": {
+      "PVC": 0.71,
+      "XLPE": 0.84
+    }
+  },
+  "ground_temperature": {
+    "15": {
+      "PVC": 1.25,
+      "XLPE": 1.16
+    },
+    "20": {
+      "PVC": 1.19,
+      "XLPE": 1.13
+    },
+    "25": {
+      "PVC": 1.13,
+      "XLPE": 1.09
+    },
+    "30": {
+      "PVC": 1.07,
+      "XLPE": 1.04
+    },
+    "35": {
+      "PVC": 1.0,
+      "XLPE": 1.0
+    },
+    "40": {
+      "PVC": 0.93,
+      "XLPE": 0.95
+    },
+    "45": {
+      "PVC": 0.85,
+      "XLPE": 0.9
+    },
+    "50": {
+      "PVC": 0.76,
+      "XLPE": 0.85
+    }
+  },
+  "soil_resistivity": {
+    "unit": "°C·cm/W",
+    "factors": {
+      "80": 1.17,
+      "90": 1.12,
+      "100": 1.07,
+      "120": 1.0,
+      "150": 0.91,
+      "200": 0.8,
+      "250": 0.73,
+      "300": 0.67
+    },
+    "note": ">=300 use 0.67 or engineer judgement"
+  },
+  "burial_depth": {
+    "unit": "m",
+    "factors": {
+      "0.5": 1.0,
+      "0.6": 0.99,
+      "0.8": 0.97,
+      "1.0": 0.95,
+      "1.25": 0.94,
+      "1.5": 0.93,
+      "1.75": 0.92,
+      "2.0": 0.91
+    }
+  },
+  "grouping": {
+    "columns": [
+      "Nr1",
+      "Nr2",
+      "Nr3",
+      "Nr4",
+      "Nr5",
+      "Nr6"
+    ],
+    "note": "Index by number of grouped circuits (1..6).",
+    "factors": {
+      "Buried_Trefoil_Touching": [
+        1,
+        0.77,
+        0.66,
+        0.6,
+        0.56,
+        0.53
+      ],
+      "Buried_Flat_Touching": [
+        1,
+        0.8,
+        0.69,
+        0.63,
+        0.59,
+        0.57
+      ],
+      "Buried_Trefoil_0.15m": [
+        1,
+        0.82,
+        0.73,
+        0.68,
+        0.64,
+        0.61
+      ],
+      "Buried_Flat_0.15m": [
+        1,
+        0.85,
+        0.76,
+        0.71,
+        0.67,
+        0.64
+      ],
+      "Buried_Trefoil_0.30m": [
+        1,
+        0.88,
+        0.8,
+        0.74,
+        0.72,
+        0.7
+      ],
+      "Buried_Flat_0.30m": [
+        1,
+        0.91,
+        0.83,
+        0.77,
+        0.75,
+        0.73
+      ],
+      "Air_Trefoil_Touching": [
+        1,
+        0.81,
+        0.69,
+        0.62,
+        0.58,
+        0.54
+      ],
+      "Air_Flat_Touching": [
+        1,
+        0.81,
+        0.7,
+        0.63,
+        0.6,
+        0.56
+      ],
+      "Air_Trefoil_0.15m": [
+        1,
+        0.87,
+        0.76,
+        0.72,
+        0.66,
+        0.63
+      ],
+      "Air_Flat_0.15m": [
+        1,
+        0.87,
+        0.78,
+        0.74,
+        0.7,
+        0.67
+      ],
+      "Air_Trefoil_0.30m": [
+        1,
+        0.91,
+        0.82,
+        0.77,
+        0.73,
+        0.7
+      ],
+      "Air_Flat_0.30m": [
+        1,
+        0.91,
+        0.84,
+        0.81,
+        0.78,
+        0.76
+      ],
+      "Duct_Trefoil_Touching": [
+        1,
+        0.77,
+        0.66,
+        0.6,
+        0.56,
+        0.53
+      ],
+      "Duct_Flat_Touching": [
+        1,
+        0.8,
+        0.69,
+        0.63,
+        0.59,
+        0.57
+      ],
+      "Duct_Trefoil_0.15m": [
+        1,
+        0.82,
+        0.73,
+        0.68,
+        0.64,
+        0.61
+      ],
+      "Duct_Flat_0.15m": [
+        1,
+        0.85,
+        0.76,
+        0.71,
+        0.67,
+        0.64
+      ],
+      "Duct_Trefoil_0.30m": [
+        1,
+        0.88,
+        0.8,
+        0.74,
+        0.72,
+        0.7
+      ],
+      "Duct_Flat_0.30m": [
+        1,
+        0.91,
+        0.83,
+        0.77,
+        0.75,
+        0.73
+      ]
+    }
+  },
+  "notes": {
+    "total_derating": "C_total = Ct * (Cs or Cd) * Cg",
+    "current_required": "I_required = Ib / C_total  (per cable if parallel: Ib / (parallel * C_total))",
+    "reference": "IEC 60287 reference ambient temps: 40°C air, 35°C ground (soil ρ 120 °C·cm/W)."
+  }
+}

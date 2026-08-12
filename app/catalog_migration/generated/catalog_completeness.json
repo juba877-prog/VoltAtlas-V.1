@@ -1,0 +1,11 @@
+{
+  "definedTypes": 33,
+  "supportedTypes": 30,
+  "unsupportedTypes": 0,
+  "totalCableEntries": 99,
+  "missingRxSizes": 0,
+  "orphanTypeCodes": 0,
+  "duplicateKeys": 0,
+  "rejectedEntries": 0,
+  "validationStatus": "PARTIAL"
+}

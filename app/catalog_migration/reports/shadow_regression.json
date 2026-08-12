@@ -1,0 +1,7 @@
+{
+  "pass_a_status": "PASS",
+  "pass_b_status": "PASS",
+  "regression_failures": [],
+  "resolved_cable_type_diffs": [],
+  "volt_drop_diffs": []
+}

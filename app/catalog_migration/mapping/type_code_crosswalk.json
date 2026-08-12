@@ -1,0 +1,464 @@
+[
+  {
+    "canonicalId": "CU_PVC_PVC_3C",
+    "sourceTypeCode": 1,
+    "currentRuntimeTypeCode": 1,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "UNARM",
+      "cores": "3C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_PVC_PVC_4C",
+    "sourceTypeCode": 2,
+    "currentRuntimeTypeCode": 2,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "UNARM",
+      "cores": "4C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_PVC_SWA_PVC_3C",
+    "sourceTypeCode": 3,
+    "currentRuntimeTypeCode": 3,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "SWA",
+      "cores": "3C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_PVC_SWA_PVC_4C",
+    "sourceTypeCode": 4,
+    "currentRuntimeTypeCode": 4,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "SWA",
+      "cores": "4C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "AL_PVC_PVC_3C",
+    "sourceTypeCode": 5,
+    "currentRuntimeTypeCode": 5,
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "PVC",
+      "armour": "UNARM",
+      "cores": "3C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "AL_PVC_PVC_4C",
+    "sourceTypeCode": 6,
+    "currentRuntimeTypeCode": 6,
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "PVC",
+      "armour": "UNARM",
+      "cores": "4C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_XLPE_PVC_3C",
+    "sourceTypeCode": 7,
+    "currentRuntimeTypeCode": 7,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "UNARM",
+      "cores": "3C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_XLPE_SWA_PVC_3C",
+    "sourceTypeCode": 8,
+    "currentRuntimeTypeCode": 8,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "SWA",
+      "cores": "3C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "AL_XLPE_PVC_3C",
+    "sourceTypeCode": 9,
+    "currentRuntimeTypeCode": 9,
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "XLPE",
+      "armour": "UNARM",
+      "cores": "3C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "AL_XLPE_SWA_PVC_3C",
+    "sourceTypeCode": 10,
+    "currentRuntimeTypeCode": 10,
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "XLPE",
+      "armour": "SWA",
+      "cores": "3C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_PVC_PVC_1C",
+    "sourceTypeCode": 11,
+    "currentRuntimeTypeCode": 11,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "UNARM",
+      "cores": "1C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "AL_PVC_PVC_1C",
+    "sourceTypeCode": 12,
+    "currentRuntimeTypeCode": 12,
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "PVC",
+      "armour": "UNARM",
+      "cores": "1C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_XLPE_PVC_1C",
+    "sourceTypeCode": 13,
+    "currentRuntimeTypeCode": 13,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "UNARM",
+      "cores": "1C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "AL_XLPE_PVC_1C",
+    "sourceTypeCode": 14,
+    "currentRuntimeTypeCode": 14,
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "XLPE",
+      "armour": "UNARM",
+      "cores": "1C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_XLPE_PVC_4C",
+    "sourceTypeCode": 15,
+    "currentRuntimeTypeCode": 15,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "UNARM",
+      "cores": "4C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_XLPE_SWA_PVC_4C",
+    "sourceTypeCode": 16,
+    "currentRuntimeTypeCode": 16,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "SWA",
+      "cores": "4C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "AL_XLPE_SWA_PVC_4C",
+    "sourceTypeCode": 17,
+    "currentRuntimeTypeCode": 17,
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "XLPE",
+      "armour": "SWA",
+      "cores": "4C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_PVC_STA_PVC_3C",
+    "sourceTypeCode": 66,
+    "currentRuntimeTypeCode": 66,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "STA",
+      "cores": "3C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_PVC_STA_PVC_4C",
+    "sourceTypeCode": 67,
+    "currentRuntimeTypeCode": 67,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "STA",
+      "cores": "4C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "AL_PVC_STA_PVC_3C",
+    "sourceTypeCode": 68,
+    "currentRuntimeTypeCode": 68,
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "PVC",
+      "armour": "STA",
+      "cores": "3C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "AL_PVC_STA_PVC_4C",
+    "sourceTypeCode": 69,
+    "currentRuntimeTypeCode": 69,
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "PVC",
+      "armour": "STA",
+      "cores": "4C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_XLPE_STA_PVC_3C",
+    "sourceTypeCode": 70,
+    "currentRuntimeTypeCode": 70,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "STA",
+      "cores": "3C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_XLPE_STA_PVC_4C",
+    "sourceTypeCode": 71,
+    "currentRuntimeTypeCode": 71,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "STA",
+      "cores": "4C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "AL_XLPE_STA_PVC_3C",
+    "sourceTypeCode": 72,
+    "currentRuntimeTypeCode": 72,
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "XLPE",
+      "armour": "STA",
+      "cores": "3C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "AL_XLPE_STA_PVC_4C",
+    "sourceTypeCode": 73,
+    "currentRuntimeTypeCode": 73,
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "XLPE",
+      "armour": "STA",
+      "cores": "4C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_PVC_AWA_PVC_1C",
+    "sourceTypeCode": 74,
+    "currentRuntimeTypeCode": 74,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "PVC",
+      "armour": "AWA",
+      "cores": "1C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "AL_PVC_AWA_PVC_1C",
+    "sourceTypeCode": 75,
+    "currentRuntimeTypeCode": 75,
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "PVC",
+      "armour": "AWA",
+      "cores": "1C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_XLPE_AWA_PVC_1C",
+    "sourceTypeCode": 76,
+    "currentRuntimeTypeCode": 76,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "AWA",
+      "cores": "1C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "AL_XLPE_AWA_PVC_1C",
+    "sourceTypeCode": 77,
+    "currentRuntimeTypeCode": 77,
+    "normalizedAttributes": {
+      "conductor": "AL",
+      "insulation": "XLPE",
+      "armour": "AWA",
+      "cores": "1C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_XLPE_PVC_1C",
+    "sourceTypeCode": 90,
+    "currentRuntimeTypeCode": 90,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "UNARM",
+      "cores": "1C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_XLPE_PVC_2C",
+    "sourceTypeCode": 91,
+    "currentRuntimeTypeCode": 91,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "UNARM",
+      "cores": "2C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_XLPE_PVC_3C",
+    "sourceTypeCode": 92,
+    "currentRuntimeTypeCode": 92,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "UNARM",
+      "cores": "3C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  },
+  {
+    "canonicalId": "CU_XLPE_SWA_PVC_4C",
+    "sourceTypeCode": 94,
+    "currentRuntimeTypeCode": 94,
+    "normalizedAttributes": {
+      "conductor": "CU",
+      "insulation": "XLPE",
+      "armour": "SWA",
+      "cores": "4C",
+      "voltage": "0.6/1"
+    },
+    "mappingStatus": "EXACT",
+    "confidenceReason": "Direct attribute matching and verified correct template loading."
+  }
+]

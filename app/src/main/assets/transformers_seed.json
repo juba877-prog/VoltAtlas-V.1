@@ -1,0 +1,68 @@
+[
+  {
+    "transformerId": "TX-100",
+    "kVA": 100,
+    "primaryVoltageV": 11000,
+    "secondaryVoltageV": 400,
+    "percentZ": 4,
+    "xrRatio": 3.5,
+    "rtMOhm": 1,
+    "xtMOhm": 3,
+    "iscKA": 3.5
+  },
+  {
+    "transformerId": "TX-250",
+    "kVA": 250,
+    "primaryVoltageV": 11000,
+    "secondaryVoltageV": 400,
+    "percentZ": 4,
+    "xrRatio": 4,
+    "rtMOhm": 0.5,
+    "xtMOhm": 2,
+    "iscKA": 9
+  },
+  {
+    "transformerId": "TX-500",
+    "kVA": 500,
+    "primaryVoltageV": 11000,
+    "secondaryVoltageV": 400,
+    "percentZ": 4.5,
+    "xrRatio": 4.5,
+    "rtMOhm": 0.25,
+    "xtMOhm": 1,
+    "iscKA": 16
+  },
+  {
+    "transformerId": "TX-1000",
+    "kVA": 1000,
+    "primaryVoltageV": 11000,
+    "secondaryVoltageV": 400,
+    "percentZ": 5,
+    "xrRatio": 5,
+    "rtMOhm": 0.1,
+    "xtMOhm": 0.5,
+    "iscKA": 28
+  },
+  {
+    "transformerId": "TX-1600",
+    "kVA": 1600,
+    "primaryVoltageV": 11000,
+    "secondaryVoltageV": 400,
+    "percentZ": 6,
+    "xrRatio": 5.5,
+    "rtMOhm": 0.05,
+    "xtMOhm": 0.2,
+    "iscKA": 38
+  },
+  {
+    "transformerId": "TX-2000",
+    "kVA": 2000,
+    "primaryVoltageV": 11000,
+    "secondaryVoltageV": 400,
+    "percentZ": 6,
+    "xrRatio": 6,
+    "rtMOhm": 0.04,
+    "xtMOhm": 0.15,
+    "iscKA": 48
+  }
+]

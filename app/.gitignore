@@ -1,0 +1,16 @@
+*.iml
+.gradle
+/build
+/app/build
+/.idea
+.DS_Store
+/captures
+.externalNativeBuild
+.cxx
+*.so
+*.so.lck
+*.alive
+hsperfdata_root/
+node-compile-cache/
+.antigravity/
+repo.zip
