@@ -199,6 +199,38 @@ fun GlobalSettingsScreen(
 
                         HorizontalDivider(color = BorderColor)
 
+                        // Replay Welcome Guide
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Welcome & Quick Start Guide",
+                                    color = ThemeTextColor,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Re-open the first-launch guide explaining core VoltAtlas workflows.",
+                                    color = SlateTextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            OutlinedButton(
+                                onClick = { preferences.setHasCompletedFirstLaunch(false) },
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, SleekPrimary),
+                                modifier = Modifier.testTag("replay_welcome_guide_btn")
+                            ) {
+                                Text("Show Guide", fontSize = 12.sp, color = SleekPrimary)
+                            }
+                        }
+
+                        HorizontalDivider(color = BorderColor)
+
                         // Startup Screen Behavior
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Text(

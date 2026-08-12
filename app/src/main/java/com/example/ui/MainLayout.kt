@@ -125,6 +125,32 @@ fun MainLayout(viewModel: EngineeringViewModel) {
     val showGlobalSettings by viewModel.showGlobalSettings.collectAsState()
     val confirmDestructiveActions by viewModel.preferences.confirmDestructiveActions.collectAsState()
 
+    var currentTab by rememberSaveable { mutableStateOf(0) }
+
+    val hasCompletedFirstLaunch by viewModel.preferences.hasCompletedFirstLaunch.collectAsState()
+    var showWelcomeSheet by remember { mutableStateOf(!hasCompletedFirstLaunch) }
+
+    LaunchedEffect(hasCompletedFirstLaunch) {
+        if (!hasCompletedFirstLaunch) {
+            showWelcomeSheet = true
+        }
+    }
+
+    if (showWelcomeSheet) {
+        com.example.ui.components.WelcomeGuideSheet(
+            onDismiss = {
+                viewModel.preferences.setHasCompletedFirstLaunch(true)
+                showWelcomeSheet = false
+            },
+            onNavigateToMethodology = {
+                viewModel.preferences.setHasCompletedFirstLaunch(true)
+                showWelcomeSheet = false
+                viewModel.closeGlobalSettings()
+                currentTab = 11
+            }
+        )
+    }
+
     var showPdfExportDialog by rememberSaveable { mutableStateOf(false) }
     val pdfScope = rememberCoroutineScope()
     var currentReportOptions by remember { mutableStateOf(com.example.pdf.ReportOptions()) }
@@ -200,7 +226,6 @@ fun MainLayout(viewModel: EngineeringViewModel) {
     val projectName = activeProject?.projectName ?: "VoltAtlas"
 
     
-    var currentTab by rememberSaveable { mutableStateOf(0) }
     var panelScheduleReturnTab by rememberSaveable { mutableStateOf(9) }
     var isSldFullscreen by rememberSaveable { mutableStateOf(false) }
     val sldManualPositions = remember(activeProject?.projectId) { androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.geometry.Offset>() }
