@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.*
+import androidx.compose.animation.core.spring
+import com.example.ui.theme.VoltAtlasMotion
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.BorderStroke
@@ -1270,7 +1272,11 @@ fun PanelScheduleRowCard(
                 }
             }
 
-            AnimatedVisibility(visible = isExpanded) {
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
+                exit = fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
+            ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
                     HorizontalDivider(color = ThemeBorderSubtle.copy(alpha = 0.5f))
                     Spacer(modifier = Modifier.height(10.dp))
