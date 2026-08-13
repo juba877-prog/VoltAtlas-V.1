@@ -745,29 +745,12 @@ fun MainLayout(viewModel: EngineeringViewModel) {
                             targetState = currentTab,
                             transitionSpec = {
                                 if (reduceMotion) {
-                                    fadeIn(animationSpec = tween(100)) togetherWith fadeOut(animationSpec = tween(100))
+                                    VoltAtlasMotion.tabReducedMotionTransition
                                 } else {
-                                    val isForward = targetState > initialState
-                                    if (isForward) {
-                                        (fadeIn(animationSpec = tween(200)) + slideInHorizontally(
-                                            animationSpec = spring(stiffness = Spring.StiffnessLow),
-                                            initialOffsetX = { fullWidth -> fullWidth / 12 }
-                                        )) togetherWith (
-                                            fadeOut(animationSpec = tween(150)) + slideOutHorizontally(
-                                                animationSpec = spring(stiffness = Spring.StiffnessLow),
-                                                targetOffsetX = { fullWidth -> -fullWidth / 12 }
-                                            )
-                                        )
+                                    if (targetState > initialState) {
+                                        VoltAtlasMotion.tabForwardTransition
                                     } else {
-                                        (fadeIn(animationSpec = tween(200)) + slideInHorizontally(
-                                            animationSpec = spring(stiffness = Spring.StiffnessLow),
-                                            initialOffsetX = { fullWidth -> -fullWidth / 12 }
-                                        )) togetherWith (
-                                            fadeOut(animationSpec = tween(150)) + slideOutHorizontally(
-                                                animationSpec = spring(stiffness = Spring.StiffnessLow),
-                                                targetOffsetX = { fullWidth -> fullWidth / 12 }
-                                            )
-                                        )
+                                        VoltAtlasMotion.tabBackwardTransition
                                     }
                                 }
                             },
