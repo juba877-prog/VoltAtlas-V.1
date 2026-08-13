@@ -1,7 +1,10 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.example.ui
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
+import com.example.ui.theme.LocalReduceMotion
 import com.example.ui.theme.VoltAtlasMotion
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -28,6 +31,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.*
 import com.example.engine.*
+
+private val STANDARD_GENERATOR_SIZES_KVA = listOf(
+    10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 62.5, 75.0, 100.0,
+    125.0, 150.0, 200.0, 250.0, 300.0, 350.0, 400.0, 500.0, 625.0,
+    750.0, 800.0, 1000.0, 1250.0, 1500.0, 2000.0, 2500.0
+)
+
+private val STANDARD_ATS_SIZES_AMP = listOf(
+    32.0, 45.0, 63.0, 100.0, 125.0, 160.0, 200.0, 250.0, 400.0,
+    630.0, 800.0, 1000.0, 1250.0, 1600.0, 2000.0, 3200.0
+)
+
+private val STANDARD_UPS_SIZES_KVA = listOf(
+    1.0, 2.0, 3.0, 5.0, 6.0, 8.0, 10.0, 15.0, 20.0, 30.0, 40.0,
+    60.0, 80.0, 100.0, 150.0, 200.0, 250.0, 300.0, 350.0, 400.0
+)
+
+private fun formatRatingVal(value: Double): String {
+    return if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
+}
 
 @Composable
 fun PowerSystemsScreen(
@@ -240,10 +263,11 @@ fun GeneratorInstanceCard(
                 }
             }
 
+            val reduceMotion = LocalReduceMotion.current
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
-                exit = fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
+                enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
+                exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
             ) {
                 Column(modifier = Modifier.padding(top = 12.dp)) {
                     HorizontalDivider(color = BorderColor, modifier = Modifier.padding(bottom = 12.dp))
@@ -277,12 +301,63 @@ fun GeneratorInstanceCard(
                     }
                     if (item.enableManualOverride) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = item.manualSizeKVA?.toString() ?: "",
-                            onValueChange = { val str = it.trim(); onSave(item.copy(manualSizeKVA = str.toDoubleOrNull())) },
-                            label = { Text("Manual Generator Size (kVA)") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        var textBuffer by remember(item.id, item.manualSizeKVA) {
+                            mutableStateOf(item.manualSizeKVA?.let { formatRatingVal(it) } ?: "")
+                        }
+                        var dropdownExpanded by remember { mutableStateOf(false) }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ExposedDropdownMenuBox(
+                                expanded = dropdownExpanded,
+                                onExpandedChange = { dropdownExpanded = !dropdownExpanded },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                OutlinedTextField(
+                                    value = if (item.manualSizeKVA != null) "${formatRatingVal(item.manualSizeKVA!!)} kVA" else "Standard Size",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Standard Size") },
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
+                                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = dropdownExpanded,
+                                    onDismissRequest = { dropdownExpanded = false }
+                                ) {
+                                    STANDARD_GENERATOR_SIZES_KVA.forEach { size ->
+                                        DropdownMenuItem(
+                                            text = { Text("${formatRatingVal(size)} kVA") },
+                                            onClick = {
+                                                dropdownExpanded = false
+                                                textBuffer = formatRatingVal(size)
+                                                onSave(item.copy(manualSizeKVA = size))
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = textBuffer,
+                                onValueChange = { newText ->
+                                    textBuffer = newText
+                                    val trimmed = newText.trim()
+                                    if (trimmed.isEmpty()) {
+                                        onSave(item.copy(manualSizeKVA = null))
+                                    } else {
+                                        trimmed.toDoubleOrNull()?.let { parsed ->
+                                            onSave(item.copy(manualSizeKVA = parsed))
+                                        }
+                                    }
+                                },
+                                label = { Text("Custom (kVA)") },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
 
                     val success = state as? UiState.Success
@@ -491,10 +566,11 @@ fun AtsInstanceCard(
                 }
             }
 
+            val reduceMotion = LocalReduceMotion.current
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
-                exit = fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
+                enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
+                exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
             ) {
                 Column(modifier = Modifier.padding(top = 12.dp)) {
                     HorizontalDivider(color = BorderColor, modifier = Modifier.padding(bottom = 12.dp))
@@ -568,12 +644,63 @@ fun AtsInstanceCard(
                     }
                     if (item.enableManualOverride) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = item.manualSizeAmp?.toString() ?: "",
-                            onValueChange = { val str = it.trim(); onSave(item.copy(manualSizeAmp = str.toDoubleOrNull())) },
-                            label = { Text("Manual ATS Rating (Amps)") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        var textBuffer by remember(item.id, item.manualSizeAmp) {
+                            mutableStateOf(item.manualSizeAmp?.let { formatRatingVal(it) } ?: "")
+                        }
+                        var dropdownExpanded by remember { mutableStateOf(false) }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ExposedDropdownMenuBox(
+                                expanded = dropdownExpanded,
+                                onExpandedChange = { dropdownExpanded = !dropdownExpanded },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                OutlinedTextField(
+                                    value = if (item.manualSizeAmp != null) "${formatRatingVal(item.manualSizeAmp!!)} A" else "Standard Frame",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Standard Frame") },
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
+                                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = dropdownExpanded,
+                                    onDismissRequest = { dropdownExpanded = false }
+                                ) {
+                                    STANDARD_ATS_SIZES_AMP.forEach { size ->
+                                        DropdownMenuItem(
+                                            text = { Text("${formatRatingVal(size)} A") },
+                                            onClick = {
+                                                dropdownExpanded = false
+                                                textBuffer = formatRatingVal(size)
+                                                onSave(item.copy(manualSizeAmp = size))
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = textBuffer,
+                                onValueChange = { newText ->
+                                    textBuffer = newText
+                                    val trimmed = newText.trim()
+                                    if (trimmed.isEmpty()) {
+                                        onSave(item.copy(manualSizeAmp = null))
+                                    } else {
+                                        trimmed.toDoubleOrNull()?.let { parsed ->
+                                            onSave(item.copy(manualSizeAmp = parsed))
+                                        }
+                                    }
+                                },
+                                label = { Text("Custom (Amps)") },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
 
                     val connectedLoads = (state as? UiState.Success)?.circuits?.filter { circ ->
@@ -733,10 +860,11 @@ fun UpsInstanceCard(
                 }
             }
 
+            val reduceMotion = LocalReduceMotion.current
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
-                exit = fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
+                enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
+                exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
             ) {
                 Column(modifier = Modifier.padding(top = 12.dp)) {
                     HorizontalDivider(color = BorderColor, modifier = Modifier.padding(bottom = 12.dp))
@@ -769,12 +897,63 @@ fun UpsInstanceCard(
                     }
                     if (item.enableManualOverride) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = item.manualSizeKVA?.toString() ?: "",
-                            onValueChange = { val str = it.trim(); onSave(item.copy(manualSizeKVA = str.toDoubleOrNull())) },
-                            label = { Text("Manual UPS Capacity (kVA)") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        var textBuffer by remember(item.id, item.manualSizeKVA) {
+                            mutableStateOf(item.manualSizeKVA?.let { formatRatingVal(it) } ?: "")
+                        }
+                        var dropdownExpanded by remember { mutableStateOf(false) }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ExposedDropdownMenuBox(
+                                expanded = dropdownExpanded,
+                                onExpandedChange = { dropdownExpanded = !dropdownExpanded },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                OutlinedTextField(
+                                    value = if (item.manualSizeKVA != null) "${formatRatingVal(item.manualSizeKVA!!)} kVA" else "Standard Size",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Standard Size") },
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
+                                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = dropdownExpanded,
+                                    onDismissRequest = { dropdownExpanded = false }
+                                ) {
+                                    STANDARD_UPS_SIZES_KVA.forEach { size ->
+                                        DropdownMenuItem(
+                                            text = { Text("${formatRatingVal(size)} kVA") },
+                                            onClick = {
+                                                dropdownExpanded = false
+                                                textBuffer = formatRatingVal(size)
+                                                onSave(item.copy(manualSizeKVA = size))
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = textBuffer,
+                                onValueChange = { newText ->
+                                    textBuffer = newText
+                                    val trimmed = newText.trim()
+                                    if (trimmed.isEmpty()) {
+                                        onSave(item.copy(manualSizeKVA = null))
+                                    } else {
+                                        trimmed.toDoubleOrNull()?.let { parsed ->
+                                            onSave(item.copy(manualSizeKVA = parsed))
+                                        }
+                                    }
+                                },
+                                label = { Text("Custom (kVA)") },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
 
                     val connectedLoads = (state as? UiState.Success)?.circuits?.filter { circ ->
