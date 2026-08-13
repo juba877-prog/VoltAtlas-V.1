@@ -27,7 +27,14 @@ object UpsEngine {
         settings: UpsEntity,
         circuits: List<CircuitEntity>
     ): UpsResult {
-        val criticalCircuits = circuits.filter { it.upsBacked }
+        val upsId = settings.upsId
+        val criticalCircuits = circuits.filter { circ ->
+            if (circ.assignedUpsId != null) {
+                circ.assignedUpsId == upsId
+            } else {
+                circ.upsBacked && upsId == "UPS-01"
+            }
+        }
         val totalCriticalLoadKVA = criticalCircuits.sumOf { it.loadKVA }
 
         if (totalCriticalLoadKVA == 0.0) {
@@ -132,5 +139,15 @@ object UpsEngine {
             autonomyAtFullLoad = autonomyAtFullLoad,
             messages = messages
         )
+    }
+
+    fun calculateAll(
+        upsList: List<UpsEntity>,
+        circuits: List<CircuitEntity>
+    ): Map<String, UpsResult> {
+        if (upsList.isEmpty()) return emptyMap()
+        return upsList.associate { ups ->
+            ups.upsId to calculate(ups, circuits)
+        }
     }
 }

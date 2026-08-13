@@ -22,17 +22,84 @@ class EngineeringRepository(
     fun generatorSettingsFlow(projectId: String) = powerSystemsDao.getGeneratorSettings(projectId)
     fun generatorsFlow(projectId: String) = powerSystemsDao.getAllGeneratorSettings(projectId)
     suspend fun saveGeneratorSettings(settings: GeneratorEntity) = powerSystemsDao.saveGeneratorSettings(settings)
-    suspend fun deleteGenerator(projectId: String, generatorId: String) = powerSystemsDao.deleteGeneratorSettings(projectId, generatorId)
+    suspend fun deleteGenerator(projectId: String, generatorId: String) {
+        val circuits = circuitDao.getCircuitsListForProject(projectId)
+        circuits.filter { it.assignedGeneratorId == generatorId }.forEach { c ->
+            circuitDao.insertCircuit(c.copy(assignedGeneratorId = null))
+        }
+        val atsList = powerSystemsDao.getAllAtsSettings(projectId).firstOrNull() ?: emptyList()
+        atsList.filter { it.emergencySourceId == generatorId }.forEach { ats ->
+            powerSystemsDao.saveAtsSettings(ats.copy(emergencySourceId = null))
+        }
+        powerSystemsDao.deleteGeneratorSettings(projectId, generatorId)
+    }
+
+    suspend fun createGeneratorAtomic(projectId: String, baseSettings: GeneratorEntity = GeneratorEntity()): GeneratorEntity {
+        val maxId = powerSystemsDao.getMaxGeneratorId(projectId)
+        val nextId = maxId + 1
+        val genIdStr = "GEN-%02d".format(nextId)
+        val genNameStr = "Generator $nextId"
+        val newEntity = baseSettings.copy(
+            projectId = projectId,
+            id = nextId,
+            generatorId = genIdStr,
+            generatorName = genNameStr
+        )
+        powerSystemsDao.saveGeneratorSettings(newEntity)
+        return newEntity
+    }
     
     fun atsSettingsFlow(projectId: String) = powerSystemsDao.getAtsSettings(projectId)
     fun atsListFlow(projectId: String) = powerSystemsDao.getAllAtsSettings(projectId)
     suspend fun saveAtsSettings(settings: AtsEntity) = powerSystemsDao.saveAtsSettings(settings)
-    suspend fun deleteAts(projectId: String, atsId: String) = powerSystemsDao.deleteAtsSettings(projectId, atsId)
+    suspend fun deleteAts(projectId: String, atsId: String) {
+        val circuits = circuitDao.getCircuitsListForProject(projectId)
+        circuits.filter { it.assignedAtsId == atsId }.forEach { c ->
+            circuitDao.insertCircuit(c.copy(assignedAtsId = null))
+        }
+        powerSystemsDao.deleteAtsSettings(projectId, atsId)
+    }
+
+    suspend fun createAtsAtomic(projectId: String, baseSettings: AtsEntity = AtsEntity()): AtsEntity {
+        val maxId = powerSystemsDao.getMaxAtsId(projectId)
+        val nextId = maxId + 1
+        val atsIdStr = "ATS-%02d".format(nextId)
+        val atsNameStr = "ATS $nextId"
+        val newEntity = baseSettings.copy(
+            projectId = projectId,
+            id = nextId,
+            atsId = atsIdStr,
+            atsName = atsNameStr
+        )
+        powerSystemsDao.saveAtsSettings(newEntity)
+        return newEntity
+    }
     
     fun upsSettingsFlow(projectId: String) = powerSystemsDao.getUpsSettings(projectId)
     fun upsListFlow(projectId: String) = powerSystemsDao.getAllUpsSettings(projectId)
     suspend fun saveUpsSettings(settings: UpsEntity) = powerSystemsDao.saveUpsSettings(settings)
-    suspend fun deleteUps(projectId: String, upsId: String) = powerSystemsDao.deleteUpsSettings(projectId, upsId)
+    suspend fun deleteUps(projectId: String, upsId: String) {
+        val circuits = circuitDao.getCircuitsListForProject(projectId)
+        circuits.filter { it.assignedUpsId == upsId }.forEach { c ->
+            circuitDao.insertCircuit(c.copy(assignedUpsId = null))
+        }
+        powerSystemsDao.deleteUpsSettings(projectId, upsId)
+    }
+
+    suspend fun createUpsAtomic(projectId: String, baseSettings: UpsEntity = UpsEntity()): UpsEntity {
+        val maxId = powerSystemsDao.getMaxUpsId(projectId)
+        val nextId = maxId + 1
+        val upsIdStr = "UPS-%02d".format(nextId)
+        val upsNameStr = "UPS $nextId"
+        val newEntity = baseSettings.copy(
+            projectId = projectId,
+            id = nextId,
+            upsId = upsIdStr,
+            upsName = upsNameStr
+        )
+        powerSystemsDao.saveUpsSettings(newEntity)
+        return newEntity
+    }
     
     fun pfGlobalSettingsFlow(projectId: String) = powerSystemsDao.getPfGlobalSettings(projectId)
     suspend fun savePfGlobalSettings(settings: PfGlobalEntity) = powerSystemsDao.savePfGlobalSettings(settings)
@@ -167,6 +234,9 @@ class EngineeringRepository(
             obj.put("generatorIncluded", c.generatorIncluded)
             obj.put("atsIncluded", c.atsIncluded)
             obj.put("upsBacked", c.upsBacked)
+            obj.put("assignedGeneratorId", c.assignedGeneratorId ?: "")
+            obj.put("assignedAtsId", c.assignedAtsId ?: "")
+            obj.put("assignedUpsId", c.assignedUpsId ?: "")
             obj.put("loadNature", c.loadNature)
             obj.put("startingMethod", c.startingMethod ?: "")
             obj.put("startingCurrentMultiplier", c.startingCurrentMultiplier ?: 1.0)
@@ -214,10 +284,14 @@ class EngineeringRepository(
         }
         root.put("transformers", transformersArr)
 
-        // Add Power Systems Settings
-        val gen = powerSystemsDao.getGeneratorSettings(projectId).firstOrNull()
-        if (gen != null) {
+        // Add Multi-Instance Generators
+        val generatorsList = powerSystemsDao.getAllGeneratorSettings(projectId).firstOrNull() ?: emptyList()
+        val genArr = org.json.JSONArray()
+        generatorsList.forEach { gen ->
             val genObj = org.json.JSONObject()
+            genObj.put("id", gen.id)
+            genObj.put("generatorId", gen.generatorId)
+            genObj.put("generatorName", gen.generatorName)
             genObj.put("additionalEssentialLoadKW", gen.additionalEssentialLoadKW)
             genObj.put("largestMotorKW", gen.largestMotorKW)
             genObj.put("motorStartMethod", gen.motorStartMethod)
@@ -229,12 +303,21 @@ class EngineeringRepository(
             genObj.put("oversizingFactor", gen.oversizingFactor)
             genObj.put("enableManualOverride", gen.enableManualOverride)
             genObj.put("manualSizeKVA", gen.manualSizeKVA ?: 0.0)
-            root.put("generatorSettings", genObj)
+            genArr.put(genObj)
+        }
+        root.put("generators", genArr)
+        if (generatorsList.isNotEmpty()) {
+            root.put("generatorSettings", genArr.getJSONObject(0))
         }
 
-        val ats = powerSystemsDao.getAtsSettings(projectId).firstOrNull()
-        if (ats != null) {
+        // Add Multi-Instance ATS
+        val atsList = powerSystemsDao.getAllAtsSettings(projectId).firstOrNull() ?: emptyList()
+        val atsArr = org.json.JSONArray()
+        atsList.forEach { ats ->
             val atsObj = org.json.JSONObject()
+            atsObj.put("id", ats.id)
+            atsObj.put("atsId", ats.atsId)
+            atsObj.put("atsName", ats.atsName)
             atsObj.put("systemVoltage", ats.systemVoltage)
             atsObj.put("systemFrequency", ats.systemFrequency)
             atsObj.put("numberOfSources", ats.numberOfSources)
@@ -257,7 +340,36 @@ class EngineeringRepository(
             atsObj.put("normalSourceId", ats.normalSourceId ?: "")
             atsObj.put("emergencySourceId", ats.emergencySourceId ?: "")
             atsObj.put("outputBoardId", ats.outputBoardId ?: -1)
-            root.put("atsSettings", atsObj)
+            atsObj.put("enableManualOverride", ats.enableManualOverride)
+            atsObj.put("manualSizeAmp", ats.manualSizeAmp ?: 0.0)
+            atsArr.put(atsObj)
+        }
+        root.put("ats", atsArr)
+        if (atsList.isNotEmpty()) {
+            root.put("atsSettings", atsArr.getJSONObject(0))
+        }
+
+        // Add Multi-Instance UPS
+        val upsList = powerSystemsDao.getAllUpsSettings(projectId).firstOrNull() ?: emptyList()
+        val upsArr = org.json.JSONArray()
+        upsList.forEach { ups ->
+            val upsObj = org.json.JSONObject()
+            upsObj.put("id", ups.id)
+            upsObj.put("upsId", ups.upsId)
+            upsObj.put("upsName", ups.upsName)
+            upsObj.put("systemVoltage", ups.systemVoltage)
+            upsObj.put("systemFrequency", ups.systemFrequency)
+            upsObj.put("upsPf", ups.upsPf)
+            upsObj.put("upsEfficiency", ups.upsEfficiency)
+            upsObj.put("batteryType", ups.batteryType)
+            upsObj.put("autonomyMinutes", ups.autonomyMinutes)
+            upsObj.put("enableManualOverride", ups.enableManualOverride)
+            upsObj.put("manualSizeKVA", ups.manualSizeKVA ?: 0.0)
+            upsArr.put(upsObj)
+        }
+        root.put("ups", upsArr)
+        if (upsList.isNotEmpty()) {
+            root.put("upsSettings", upsArr.getJSONObject(0))
         }
 
         return root.toString(2)
@@ -337,6 +449,9 @@ class EngineeringRepository(
                     generatorIncluded = obj.optBoolean("generatorIncluded", false),
                     atsIncluded = obj.optBoolean("atsIncluded", false),
                     upsBacked = obj.optBoolean("upsBacked", false),
+                    assignedGeneratorId = obj.optString("assignedGeneratorId").takeIf { !it.isNullOrBlank() },
+                    assignedAtsId = obj.optString("assignedAtsId").takeIf { !it.isNullOrBlank() },
+                    assignedUpsId = obj.optString("assignedUpsId").takeIf { !it.isNullOrBlank() },
                     loadNature = obj.optString("loadNature", "Static"),
                     startingMethod = obj.optString("startingMethod").takeIf { !it.isNullOrBlank() },
                     startingCurrentMultiplier = if (obj.has("startingCurrentMultiplier")) obj.optDouble("startingCurrentMultiplier") else null,
@@ -360,10 +475,37 @@ class EngineeringRepository(
             }
         }
 
-        if (root.has("generatorSettings")) {
+        if (root.has("generators")) {
+            val arr = root.getJSONArray("generators")
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val idNum = obj.optInt("id", i + 1)
+                val gen = GeneratorEntity(
+                    projectId = newId,
+                    id = idNum,
+                    generatorId = obj.optString("generatorId", "GEN-%02d".format(idNum)),
+                    generatorName = obj.optString("generatorName", "Generator $idNum"),
+                    additionalEssentialLoadKW = obj.optDouble("additionalEssentialLoadKW", 0.0),
+                    largestMotorKW = obj.optDouble("largestMotorKW", 0.0),
+                    motorStartMethod = obj.optString("motorStartMethod", "DOL"),
+                    motorPf = obj.optDouble("motorPf", 0.85),
+                    generatorPf = obj.optDouble("generatorPf", 0.8),
+                    demandFactor = obj.optDouble("demandFactor", 0.8),
+                    diversityFactor = obj.optDouble("diversityFactor", 1.0),
+                    stepLoadPct = obj.optDouble("stepLoadPct", 50.0),
+                    oversizingFactor = obj.optDouble("oversizingFactor", 1.0),
+                    enableManualOverride = obj.optBoolean("enableManualOverride", false),
+                    manualSizeKVA = if (obj.has("manualSizeKVA") && obj.optDouble("manualSizeKVA") > 0) obj.optDouble("manualSizeKVA") else null
+                )
+                powerSystemsDao.saveGeneratorSettings(gen)
+            }
+        } else if (root.has("generatorSettings")) {
             val obj = root.getJSONObject("generatorSettings")
             val gen = GeneratorEntity(
                 projectId = newId,
+                id = 1,
+                generatorId = "GEN-01",
+                generatorName = "Generator 1",
                 additionalEssentialLoadKW = obj.optDouble("additionalEssentialLoadKW", 0.0),
                 largestMotorKW = obj.optDouble("largestMotorKW", 0.0),
                 motorStartMethod = obj.optString("motorStartMethod", "DOL"),
@@ -379,10 +521,50 @@ class EngineeringRepository(
             powerSystemsDao.saveGeneratorSettings(gen)
         }
 
-        if (root.has("atsSettings")) {
+        if (root.has("ats")) {
+            val arr = root.getJSONArray("ats")
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val idNum = obj.optInt("id", i + 1)
+                val ats = AtsEntity(
+                    projectId = newId,
+                    id = idNum,
+                    atsId = obj.optString("atsId", "ATS-%02d".format(idNum)),
+                    atsName = obj.optString("atsName", "ATS $idNum"),
+                    systemVoltage = obj.optInt("systemVoltage", 400),
+                    systemFrequency = obj.optInt("systemFrequency", 50),
+                    numberOfSources = obj.optInt("numberOfSources", 2),
+                    atsLocation = obj.optString("atsLocation", "After Main Device"),
+                    transferType = obj.optString("transferType", "Open Transition"),
+                    utilizationCategory = obj.optString("utilizationCategory", "AC-31A (Resistive)"),
+                    atsClass = obj.optString("atsClass", "PC (Transfer Switch)"),
+                    loadCoverage = obj.optString("loadCoverage", "Emergency Only"),
+                    ambientTemp = obj.optInt("ambientTemp", 45),
+                    designSafetyFactor = obj.optDouble("designSafetyFactor", 1.25),
+                    futureGrowthFactor = obj.optDouble("futureGrowthFactor", 10.0),
+                    approvedManufacturer = obj.optString("approvedManufacturer", "ABB"),
+                    mainsFailureDetectionDelay = obj.optInt("mainsFailureDetectionDelay", 3),
+                    generatorStartSignalDelay = obj.optInt("generatorStartSignalDelay", 0),
+                    generatorWarmUp = obj.optInt("generatorWarmUp", 7),
+                    mainsReturnDetectionDelay = obj.optInt("mainsReturnDetectionDelay", 60),
+                    reTransferDelay = obj.optInt("reTransferDelay", 10),
+                    generatorCooldown = obj.optInt("generatorCooldown", 300),
+                    enclosureIpRating = obj.optString("enclosureIpRating", "IP54"),
+                    normalSourceId = obj.optString("normalSourceId").takeIf { it.isNotBlank() },
+                    emergencySourceId = obj.optString("emergencySourceId").takeIf { it.isNotBlank() },
+                    outputBoardId = if (obj.has("outputBoardId") && obj.optInt("outputBoardId") != -1) obj.optInt("outputBoardId") else null,
+                    enableManualOverride = obj.optBoolean("enableManualOverride", false),
+                    manualSizeAmp = if (obj.has("manualSizeAmp") && obj.optDouble("manualSizeAmp") > 0) obj.optDouble("manualSizeAmp") else null
+                )
+                powerSystemsDao.saveAtsSettings(ats)
+            }
+        } else if (root.has("atsSettings")) {
             val obj = root.getJSONObject("atsSettings")
             val ats = AtsEntity(
                 projectId = newId,
+                id = 1,
+                atsId = "ATS-01",
+                atsName = "ATS 1",
                 systemVoltage = obj.optInt("systemVoltage", 400),
                 systemFrequency = obj.optInt("systemFrequency", 50),
                 numberOfSources = obj.optInt("numberOfSources", 2),
@@ -407,6 +589,47 @@ class EngineeringRepository(
                 outputBoardId = if (obj.has("outputBoardId") && obj.optInt("outputBoardId") != -1) obj.optInt("outputBoardId") else null
             )
             powerSystemsDao.saveAtsSettings(ats)
+        }
+
+        if (root.has("ups")) {
+            val arr = root.getJSONArray("ups")
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val idNum = obj.optInt("id", i + 1)
+                val ups = UpsEntity(
+                    projectId = newId,
+                    id = idNum,
+                    upsId = obj.optString("upsId", "UPS-%02d".format(idNum)),
+                    upsName = obj.optString("upsName", "UPS $idNum"),
+                    systemVoltage = obj.optInt("systemVoltage", 400),
+                    systemFrequency = obj.optInt("systemFrequency", 50),
+                    upsPf = obj.optDouble("upsPf", 0.9),
+                    upsEfficiency = obj.optDouble("upsEfficiency", 94.0),
+                    batteryType = obj.optString("batteryType", "VRLA"),
+                    autonomyMinutes = obj.optInt("autonomyMinutes", 15),
+                    enableManualOverride = obj.optBoolean("enableManualOverride", false),
+                    manualSizeKVA = if (obj.has("manualSizeKVA") && obj.optDouble("manualSizeKVA") > 0) obj.optDouble("manualSizeKVA") else null
+                )
+                powerSystemsDao.saveUpsSettings(ups)
+            }
+        } else if (root.has("upsSettings")) {
+            val obj = root.getJSONObject("upsSettings")
+            val idNum = 1
+            val ups = UpsEntity(
+                projectId = newId,
+                id = idNum,
+                upsId = "UPS-01",
+                upsName = "UPS 1",
+                systemVoltage = obj.optInt("systemVoltage", 400),
+                systemFrequency = obj.optInt("systemFrequency", 50),
+                upsPf = obj.optDouble("upsPf", 0.9),
+                upsEfficiency = obj.optDouble("upsEfficiency", 94.0),
+                batteryType = obj.optString("batteryType", "VRLA"),
+                autonomyMinutes = obj.optInt("autonomyMinutes", 15),
+                enableManualOverride = obj.optBoolean("enableManualOverride", false),
+                manualSizeKVA = if (obj.has("manualSizeKVA") && obj.optDouble("manualSizeKVA") > 0) obj.optDouble("manualSizeKVA") else null
+            )
+            powerSystemsDao.saveUpsSettings(ups)
         }
 
         return newId

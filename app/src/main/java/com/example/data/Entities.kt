@@ -64,6 +64,7 @@ data class CircuitEntity(
     val atsIncluded: Boolean = false,
     val assignedGeneratorId: String? = null,
     val assignedAtsId: String? = null,
+    val assignedUpsId: String? = null,
     @ColumnInfo(defaultValue = "'Static'")
     val loadNature: String = "Static",
     val startingMethod: String? = null,

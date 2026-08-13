@@ -195,4 +195,36 @@ object AtsEngine {
             messages = messages
         )
     }
+
+    fun calculateAll(
+        atsList: List<AtsEntity>,
+        circuits: List<CircuitEntity>,
+        generatorSelectedSizes: Map<String, Double> = emptyMap(),
+        transformerFLC: Double = 0.0,
+        isc3PhaseAtTransformer: Double = 0.0,
+        totalConnectedLoad: Double = 0.0
+    ): Map<String, AtsResult> {
+        if (atsList.isEmpty()) return emptyMap()
+        return atsList.associate { ats ->
+            val emergencyGenId = ats.emergencySourceId ?: "GEN-01"
+            val genSize = generatorSelectedSizes[emergencyGenId] ?: 0.0
+            val atsCircuits = circuits.filter { circ ->
+                if (circ.assignedAtsId != null) {
+                    circ.assignedAtsId == ats.atsId
+                } else {
+                    circ.atsIncluded && ats.atsId == "ATS-01"
+                }
+            }
+            val essentialLoadKVA = atsCircuits.sumOf { it.loadKVA }
+            ats.atsId to calculate(
+                settings = ats,
+                totalConnectedLoad = totalConnectedLoad,
+                essentialLoadKVA = essentialLoadKVA,
+                generatorSelectedSize = genSize,
+                transformerFLC = transformerFLC,
+                isc3PhaseAtTransformer = isc3PhaseAtTransformer,
+                circuits = circuits
+            )
+        }
+    }
 }

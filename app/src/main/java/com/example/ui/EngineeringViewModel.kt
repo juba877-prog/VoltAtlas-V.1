@@ -444,8 +444,25 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
         projectTransformersFlow,
         recalculationToken,
         powerSettingsFlow,
-        conduitSettingsFlow
-    ) { circuits, transformers, _, settings, conduitSettings ->
+        conduitSettingsFlow,
+        generatorsList,
+        atsList,
+        upsList
+    ) { flows ->
+        @Suppress("UNCHECKED_CAST")
+        val circuits = flows[0] as List<CircuitEntity>
+        @Suppress("UNCHECKED_CAST")
+        val transformers = flows[1] as List<TransformerEntity>
+        val settings = flows[3] as PowerSettingsData
+        @Suppress("UNCHECKED_CAST")
+        val conduitSettings = flows[4] as List<com.example.data.ConduitSettingsEntity>
+        @Suppress("UNCHECKED_CAST")
+        val genList = flows[5] as List<com.example.data.GeneratorEntity>
+        @Suppress("UNCHECKED_CAST")
+        val atsEntitiesList = flows[6] as List<com.example.data.AtsEntity>
+        @Suppress("UNCHECKED_CAST")
+        val upsEntitiesList = flows[7] as List<com.example.data.UpsEntity>
+
         val upsSet = settings.ups ?: com.example.data.UpsEntity()
         val pfGlob = settings.pfG ?: com.example.data.PfGlobalEntity()
         val pfTrans = settings.pfT
@@ -599,7 +616,8 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
             }
 
             val totalConnectedLoad = transformerResults.values.sumOf { it.connectedLoad }
-            val generatorResult = com.example.engine.GeneratorEngine.calculate(genSet, normalizedCircuits, totalConnectedLoad, atsList.value)
+            val generatorResults = com.example.engine.GeneratorEngine.calculateAll(genList, atsEntitiesList, normalizedCircuits, totalConnectedLoad)
+            val generatorResult = generatorResults["GEN-01"] ?: generatorResults.values.firstOrNull()
             
             val shortCircuitResults = com.example.engine.ShortCircuitEngine.calculate(
                 resolvedCircuits = resolvedList,
@@ -610,22 +628,24 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
 
             // Look up the localized short-circuit current at the ATS-included circuits
             val atsCircuitIsc = resolvedList
-                .filter { it.atsIncluded }
+                .filter { it.atsIncluded || it.assignedAtsId != null }
                 .mapNotNull { shortCircuitResults[it.id]?.iscKA }
                 .maxOrNull() ?: (transformerResults.values.firstOrNull()?.isc3Phase ?: 0.0)
 
             val transformerFLC = transformerResults.values.firstOrNull()?.flc ?: 0.0
-            val atsResult = com.example.engine.AtsEngine.calculate(
-                atsSetResolved,
-                totalConnectedLoad,
-                generatorResult.essentialLoadKVA,
-                generatorResult.finalSize ?: 0.0,
-                transformerFLC,
-                atsCircuitIsc,
-                normalizedCircuits
+            val generatorSizesMap = generatorResults.mapValues { it.value.finalSize ?: 0.0 }
+            val atsResults = com.example.engine.AtsEngine.calculateAll(
+                atsList = atsEntitiesList,
+                circuits = normalizedCircuits,
+                generatorSelectedSizes = generatorSizesMap,
+                transformerFLC = transformerFLC,
+                isc3PhaseAtTransformer = atsCircuitIsc,
+                totalConnectedLoad = totalConnectedLoad
             )
+            val atsResult = atsResults["ATS-01"] ?: atsResults.values.firstOrNull()
             
-            val upsResult = com.example.engine.UpsEngine.calculate(upsSet, normalizedCircuits)
+            val upsResults = com.example.engine.UpsEngine.calculateAll(upsEntitiesList, normalizedCircuits)
+            val upsResult = upsResults["UPS-01"] ?: upsResults.values.firstOrNull()
             
             val pfCorrectionResults = com.example.engine.PfCorrectionEngine.calculate(pfGlob, pfTrans, transformers, transformerResults)
 
@@ -750,12 +770,15 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 procurement = procurement,
                 panels = panels,
                 generatorResult = generatorResult,
-                generators = generatorsList.value,
+                generatorResults = generatorResults,
+                generators = genList,
                 atsResult = atsResult,
+                atsResults = atsResults,
                 atsEntity = atsSetResolved,
-                atsList = atsList.value,
+                atsList = atsEntitiesList,
                 upsResult = upsResult,
-                upsList = upsList.value,
+                upsResults = upsResults,
+                upsList = upsEntitiesList,
                 pfCorrectionResults = pfCorrectionResults,
                 shortCircuitResults = shortCircuitResults,
                 adsResults = adsResults,
@@ -888,17 +911,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
     fun addGenerator(settings: GeneratorEntity = GeneratorEntity()) {
         val prj = _activeProjectId.value ?: return
         viewModelScope.launch {
-            val existing = generatorsList.value
-            val nextIdNum = (existing.maxOfOrNull { it.id } ?: 0) + 1
-            val genIdStr = String.format("GEN-%02d", nextIdNum)
-            val genNameStr = "Generator $nextIdNum"
-            val newEntity = settings.copy(
-                projectId = prj,
-                id = nextIdNum,
-                generatorId = genIdStr,
-                generatorName = genNameStr
-            )
-            repository.saveGeneratorSettings(newEntity)
+            repository.createGeneratorAtomic(prj, settings)
         }
     }
 
@@ -912,17 +925,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
     fun addAts(settings: AtsEntity = AtsEntity()) {
         val prj = _activeProjectId.value ?: return
         viewModelScope.launch {
-            val existing = atsList.value
-            val nextIdNum = (existing.maxOfOrNull { it.id } ?: 0) + 1
-            val atsIdStr = String.format("ATS-%02d", nextIdNum)
-            val atsNameStr = "ATS $nextIdNum"
-            val newEntity = settings.copy(
-                projectId = prj,
-                id = nextIdNum,
-                atsId = atsIdStr,
-                atsName = atsNameStr
-            )
-            repository.saveAtsSettings(newEntity)
+            repository.createAtsAtomic(prj, settings)
         }
     }
 
@@ -936,17 +939,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
     fun addUps(settings: UpsEntity = UpsEntity()) {
         val prj = _activeProjectId.value ?: return
         viewModelScope.launch {
-            val existing = upsList.value
-            val nextIdNum = (existing.maxOfOrNull { it.id } ?: 0) + 1
-            val upsIdStr = String.format("UPS-%02d", nextIdNum)
-            val upsNameStr = "UPS $nextIdNum"
-            val newEntity = settings.copy(
-                projectId = prj,
-                id = nextIdNum,
-                upsId = upsIdStr,
-                upsName = upsNameStr
-            )
-            repository.saveUpsSettings(newEntity)
+            repository.createUpsAtomic(prj, settings)
         }
     }
 

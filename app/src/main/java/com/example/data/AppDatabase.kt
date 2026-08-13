@@ -502,6 +502,8 @@ interface PowerSystemsDao {
     fun getGeneratorSettings(projectId: String): Flow<GeneratorEntity?>
     @Query("SELECT * FROM generator_settings WHERE projectId = :projectId ORDER BY id ASC")
     fun getAllGeneratorSettings(projectId: String): Flow<List<GeneratorEntity>>
+    @Query("SELECT COALESCE(MAX(id), 0) FROM generator_settings WHERE projectId = :projectId")
+    suspend fun getMaxGeneratorId(projectId: String): Int
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveGeneratorSettings(settings: GeneratorEntity)
     @Query("DELETE FROM generator_settings WHERE projectId = :projectId AND generatorId = :generatorId")
@@ -512,6 +514,8 @@ interface PowerSystemsDao {
     fun getAtsSettings(projectId: String): Flow<AtsEntity?>
     @Query("SELECT * FROM ats_settings WHERE projectId = :projectId ORDER BY id ASC")
     fun getAllAtsSettings(projectId: String): Flow<List<AtsEntity>>
+    @Query("SELECT COALESCE(MAX(id), 0) FROM ats_settings WHERE projectId = :projectId")
+    suspend fun getMaxAtsId(projectId: String): Int
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveAtsSettings(settings: AtsEntity)
     @Query("DELETE FROM ats_settings WHERE projectId = :projectId AND atsId = :atsId")
@@ -522,6 +526,8 @@ interface PowerSystemsDao {
     fun getUpsSettings(projectId: String): Flow<UpsEntity?>
     @Query("SELECT * FROM ups_settings WHERE projectId = :projectId ORDER BY id ASC")
     fun getAllUpsSettings(projectId: String): Flow<List<UpsEntity>>
+    @Query("SELECT COALESCE(MAX(id), 0) FROM ups_settings WHERE projectId = :projectId")
+    suspend fun getMaxUpsId(projectId: String): Int
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveUpsSettings(settings: UpsEntity)
     @Query("DELETE FROM ups_settings WHERE projectId = :projectId AND upsId = :upsId")
@@ -785,6 +791,16 @@ val MIGRATION_19_20 = object : Migration(19, 20) {
     }
 }
 
+val MIGRATION_20_21 = object : Migration(20, 21) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        try {
+            db.execSQL("ALTER TABLE `circuits` ADD COLUMN `assignedUpsId` TEXT DEFAULT NULL")
+        } catch (e: Exception) {
+            Log.e("AppDatabase", "Migration 20->21 statement error: ${e.message}", e)
+        }
+    }
+}
+
 @Dao
 interface SldNodePositionDao {
     @Query("SELECT * FROM sld_node_positions WHERE projectId = :projectId")
@@ -818,7 +834,7 @@ interface SldNodePositionDao {
         EarthingEntity::class,
         SldNodePositionEntity::class
     ],
-    version = 20,
+    version = 21,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -847,7 +863,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                     MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
-                    MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20
+                    MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21
                 )
 
 

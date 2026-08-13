@@ -117,8 +117,8 @@ fun GeneratorSettingsPanel(
     onDeleteGenerator: (String) -> Unit = {}
 ) {
     val successState = state as? UiState.Success
-    val generators = successState?.generators?.takeIf { it.isNotEmpty() } ?: listOf(singleSettings)
-    val generatorResult = successState?.generatorResult
+    val generators = successState?.generators ?: listOf(singleSettings)
+    val generatorResults = successState?.generatorResults ?: emptyMap()
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Section Header Row
@@ -173,9 +173,10 @@ fun GeneratorSettingsPanel(
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 itemsIndexed(generators, key = { _, item -> item.generatorId }) { index, item ->
                     val defaultExpanded = generators.size == 1 || index == 0
+                    val instanceResult = generatorResults[item.generatorId] ?: successState?.generatorResult
                     GeneratorInstanceCard(
                         item = item,
-                        result = generatorResult,
+                        result = instanceResult,
                         state = state,
                         defaultExpanded = defaultExpanded,
                         onSave = onSave,
@@ -282,14 +283,29 @@ fun GeneratorInstanceCard(
                     val atsList = success?.atsList ?: emptyList()
                     val atsFeedingThisGen = atsList.filter { it.emergencySourceId == item.generatorId || (it.emergencySourceId.isNullOrBlank() && item.generatorId == "GEN-01") }.map { it.atsId }.toSet()
                     val connectedLoads = success?.circuits?.filter { circ ->
-                        if (circ.assignedAtsId != null) {
-                            atsFeedingThisGen.contains(circ.assignedAtsId) || (circ.assignedAtsId == "ATS-01" && item.generatorId == "GEN-01")
-                        } else if (circ.assignedGeneratorId != null) {
+                        if (circ.assignedGeneratorId != null) {
                             circ.assignedGeneratorId == item.generatorId
+                        } else if (circ.assignedAtsId != null) {
+                            atsFeedingThisGen.contains(circ.assignedAtsId) || (circ.assignedAtsId == "ATS-01" && item.generatorId == "GEN-01")
                         } else {
                             circ.generatorIncluded && item.generatorId == "GEN-01"
                         }
                     } ?: emptyList()
+
+                    val mismatchedAtsCircuits = connectedLoads.filter { circ ->
+                        if (circ.assignedAtsId != null) {
+                            val ats = atsList.find { it.atsId == circ.assignedAtsId }
+                            ats != null && ats.emergencySourceId != null && ats.emergencySourceId != item.generatorId
+                        } else false
+                    }
+                    if (mismatchedAtsCircuits.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "ℹ️ Note: Direct assignment to ${item.generatorId} takes priority for generator sizing. ${mismatchedAtsCircuits.size} circuit(s) specify ATS sources routing to a different generator.",
+                            color = SleekWarning,
+                            fontSize = 12.sp
+                        )
+                    }
 
                     val aggregatedKW = connectedLoads.sumOf { it.loadKVA * it.pf }
                     if (aggregatedKW > 0.0 && item.additionalEssentialLoadKW > 0.0) {
@@ -330,8 +346,8 @@ fun AtsSettingsPanel(
     onDeleteAts: (String) -> Unit = {}
 ) {
     val successState = state as? UiState.Success
-    val atsList = successState?.atsList?.takeIf { it.isNotEmpty() } ?: listOf(singleSettings)
-    val atsResult = successState?.atsResult
+    val atsList = successState?.atsList ?: listOf(singleSettings)
+    val atsResults = successState?.atsResults ?: emptyMap()
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Section Header Row
@@ -341,7 +357,7 @@ fun AtsSettingsPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "ATS SIZING ENGINE (${atsList.size})",
+                text = "AUTOMATIC TRANSFER SWITCH (ATS) (${atsList.size})",
                 fontSize = 16.sp,
                 color = ThemeTextColor,
                 fontWeight = FontWeight.Bold,
@@ -386,9 +402,10 @@ fun AtsSettingsPanel(
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 itemsIndexed(atsList, key = { _, item -> item.atsId }) { index, item ->
                     val defaultExpanded = atsList.size == 1 || index == 0
+                    val instanceResult = atsResults[item.atsId] ?: successState?.atsResult
                     AtsInstanceCard(
                         item = item,
-                        result = atsResult,
+                        result = instanceResult,
                         state = state,
                         defaultExpanded = defaultExpanded,
                         onSave = onSave,
@@ -585,8 +602,8 @@ fun UpsSettingsPanel(
     onDeleteUps: (String) -> Unit = {}
 ) {
     val successState = state as? UiState.Success
-    val upsList = successState?.upsList?.takeIf { it.isNotEmpty() } ?: listOf(singleSettings)
-    val upsResult = successState?.upsResult
+    val upsList = successState?.upsList ?: listOf(singleSettings)
+    val upsResults = successState?.upsResults ?: emptyMap()
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Section Header Row
@@ -641,9 +658,10 @@ fun UpsSettingsPanel(
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 itemsIndexed(upsList, key = { _, item -> item.upsId }) { index, item ->
                     val defaultExpanded = upsList.size == 1 || index == 0
+                    val instanceResult = upsResults[item.upsId] ?: successState?.upsResult
                     UpsInstanceCard(
                         item = item,
-                        result = upsResult,
+                        result = instanceResult,
                         state = state,
                         defaultExpanded = defaultExpanded,
                         onSave = onSave,
@@ -745,7 +763,13 @@ fun UpsInstanceCard(
                         )
                     }
 
-                    val connectedLoads = (state as? UiState.Success)?.circuits?.filter { it.upsBacked } ?: emptyList()
+                    val connectedLoads = (state as? UiState.Success)?.circuits?.filter { circ ->
+                        if (circ.assignedUpsId != null) {
+                            circ.assignedUpsId == item.upsId
+                        } else {
+                            circ.upsBacked && item.upsId == "UPS-01"
+                        }
+                    } ?: emptyList()
                     Spacer(modifier = Modifier.height(16.dp))
                     Text("CONNECTED LOADS", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
                     HorizontalDivider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))

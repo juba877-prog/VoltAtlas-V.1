@@ -31,11 +31,12 @@ object GeneratorEngine {
         val atsFeedingThisGen = atsList.filter { it.emergencySourceId == genId || (it.emergencySourceId.isNullOrBlank() && genId == "GEN-01") }.map { it.atsId }.toSet()
 
         val generatorCircuits = circuits.filter { circ ->
-            if (circ.assignedAtsId != null) {
-                // Decision 1 defensive fallback: assignedAtsId takes priority
-                atsFeedingThisGen.contains(circ.assignedAtsId) || (circ.assignedAtsId == "ATS-01" && genId == "GEN-01")
-            } else if (circ.assignedGeneratorId != null) {
+            if (circ.assignedGeneratorId != null) {
+                // Option (b) Direct Assignment Priority: direct generator assignment takes precedence for generator demand sizing
                 circ.assignedGeneratorId == genId
+            } else if (circ.assignedAtsId != null) {
+                // If no direct generator assigned, route via ATS emergency source
+                atsFeedingThisGen.contains(circ.assignedAtsId) || (circ.assignedAtsId == "ATS-01" && genId == "GEN-01")
             } else {
                 // Legacy fallback for single-instance projects
                 circ.generatorIncluded && genId == "GEN-01"
@@ -176,5 +177,17 @@ object GeneratorEngine {
             loadingPct = loadingPct,
             messages = messages
         )
+    }
+
+    fun calculateAll(
+        generators: List<GeneratorEntity>,
+        atsList: List<com.example.data.AtsEntity>,
+        circuits: List<CircuitEntity>,
+        totalConnectedLoad: Double
+    ): Map<String, GeneratorResult> {
+        if (generators.isEmpty()) return emptyMap()
+        return generators.associate { gen ->
+            gen.generatorId to calculate(gen, circuits, totalConnectedLoad, atsList)
+        }
     }
 }
