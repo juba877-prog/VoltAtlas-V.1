@@ -22,6 +22,7 @@ import com.example.boot.BootViewModel
 import com.example.ui.EngineeringViewModel
 import com.example.ui.MainLayout
 import com.example.ui.theme.VoltAtlasTheme
+import com.example.ui.theme.VoltAtlasMotion
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,8 +55,8 @@ class MainActivity : ComponentActivity() {
       } catch (_: Exception) { false }
       
       VoltAtlasTheme(darkTheme = darkTheme) {
-        // Show boot animation on launch (remember ensures clean playback per session)
-        val isBootFinished = androidx.compose.runtime.remember { mutableStateOf(false) }
+        // Show boot animation on launch (rememberSaveable preserves boot state across Activity recreation e.g. system theme toggle)
+        val isBootFinished = rememberSaveable { mutableStateOf(false) }
 
         // Keep boot ViewModel synced with real startupState
         androidx.compose.runtime.LaunchedEffect(startupState) {
@@ -70,7 +71,11 @@ class MainActivity : ComponentActivity() {
         AnimatedContent(
             targetState = isBootFinished.value,
             transitionSpec = {
-                fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
+                if (reduceMotion) {
+                    fadeIn(animationSpec = tween(VoltAtlasMotion.DurationMicro)) togetherWith fadeOut(animationSpec = tween(VoltAtlasMotion.DurationMicro))
+                } else {
+                    fadeIn(animationSpec = tween(VoltAtlasMotion.DurationEmphasized)) togetherWith fadeOut(animationSpec = tween(VoltAtlasMotion.DurationEmphasized))
+                }
             },
             label = "BootToMainTransition"
         ) { finished ->
