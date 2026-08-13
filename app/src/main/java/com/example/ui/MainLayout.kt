@@ -2093,7 +2093,7 @@ fun CircuitsGridScreen(
                                     val hasChildren = childCircuits.isNotEmpty()
                                     val childrenTotalLoad = childCircuits.sumOf { it.loadKVA }
                                     val childrenDiffers = Math.abs(circ.loadKVA - childrenTotalLoad) > 0.001
-                                    val isUnconfirmedConflict = hasChildren && circ.directLoadConfirmed == null && (circ.loadKVA > 0.0 || childrenDiffers)
+                                    val isUnconfirmedConflict = hasChildren && circ.directLoadConfirmed == null && childrenDiffers
                                     
                                     if (isUnconfirmedConflict) {
                                         Surface(
@@ -2578,10 +2578,13 @@ fun CircuitEditDialog(
     ) }
     var assignedGeneratorId by rememberSaveable { mutableStateOf(circuit?.assignedGeneratorId ?: "None") }
     var assignedAtsId by rememberSaveable { mutableStateOf(circuit?.assignedAtsId ?: "None") }
+    var assignedUpsId by rememberSaveable { mutableStateOf(circuit?.assignedUpsId ?: "None") }
     val projectGenerators = viewModel?.generatorsList?.collectAsState()?.value ?: emptyList()
     val generatorOptions = remember(projectGenerators) { listOf("None") + projectGenerators.map { it.generatorId } }
     val projectAtsList = viewModel?.atsList?.collectAsState()?.value ?: emptyList()
     val atsOptions = remember(projectAtsList) { listOf("None") + projectAtsList.map { it.atsId } }
+    val projectUpsList = viewModel?.upsList?.collectAsState()?.value ?: emptyList()
+    val upsOptions = remember(projectUpsList) { listOf("None") + projectUpsList.map { it.upsId } }
     var phases by rememberSaveable { mutableStateOf(circuit?.phases ?: "3P+N") }
     var voltageV by rememberSaveable { mutableStateOf(circuit?.voltageV?.toString() ?: defaultV3P.toString()) }
     var pf by rememberSaveable { mutableStateOf(circuit?.pf?.toString() ?: "0.85") }
@@ -2986,12 +2989,7 @@ fun CircuitEditDialog(
                                 com.example.ui.components.VoltAtlasDropdown(
                                     value = assignedAtsId,
                                     options = atsOptions,
-                                    onSelect = { selected ->
-                                        assignedAtsId = selected
-                                        if (selected.isNotBlank() && selected != "None") {
-                                            assignedGeneratorId = "None"
-                                        }
-                                    },
+                                    onSelect = { assignedAtsId = it },
                                     label = "Assigned ATS Source"
                                 )
                             }
@@ -2999,16 +2997,21 @@ fun CircuitEditDialog(
                                 com.example.ui.components.VoltAtlasDropdown(
                                     value = assignedGeneratorId,
                                     options = generatorOptions,
-                                    onSelect = { selected ->
-                                        assignedGeneratorId = selected
-                                        if (selected.isNotBlank() && selected != "None") {
-                                            assignedAtsId = "None"
-                                        }
-                                    },
+                                    onSelect = { assignedGeneratorId = it },
                                     label = "Assigned Generator Source"
                                 )
                             }
                         }
+                    }
+
+                    if (loadType.contains("UPS")) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        com.example.ui.components.VoltAtlasDropdown(
+                            value = assignedUpsId,
+                            options = upsOptions,
+                            onSelect = { assignedUpsId = it },
+                            label = "Assigned UPS Source"
+                        )
                     }
 
                     Row(
@@ -3611,6 +3614,7 @@ fun CircuitEditDialog(
                         atsIncluded = isGen,
                         assignedGeneratorId = assignedGeneratorId.takeIf { it.isNotBlank() && it != "None" },
                         assignedAtsId = assignedAtsId.takeIf { it.isNotBlank() && it != "None" },
+                        assignedUpsId = assignedUpsId.takeIf { it.isNotBlank() && it != "None" },
                         upsBacked = isUps,
                         isHarmonic = isHarmonic,
                         loadNature = loadNature,
@@ -3661,6 +3665,7 @@ fun CircuitEditDialog(
                         atsIncluded = isGen,
                         assignedGeneratorId = assignedGeneratorId.takeIf { it.isNotBlank() && it != "None" },
                         assignedAtsId = assignedAtsId.takeIf { it.isNotBlank() && it != "None" },
+                        assignedUpsId = assignedUpsId.takeIf { it.isNotBlank() && it != "None" },
                         upsBacked = isUps,
                         isHarmonic = isHarmonic,
                         loadNature = loadNature,

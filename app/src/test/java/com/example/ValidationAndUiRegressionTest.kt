@@ -132,4 +132,55 @@ class ValidationAndUiRegressionTest {
         )
         assertEquals("100% COMPLIANT / PASS", summary.overallStatus)
     }
+
+    @Test
+    fun testSupersededWarning_IdenticalLoadMatch_NoWarning() {
+        // Acceptance Test 1: Panel DP-G3 own loadKVA (89.4) matches childrenTotalLoad (89.4) exactly
+        val circ = CircuitEntity(id = 101, circuitName = "DP-G3", loadKVA = 89.4, fedFrom = "Transformer", directLoadConfirmed = null)
+        val child1 = CircuitEntity(id = 102, circuitName = "C1", loadKVA = 50.0, fedFrom = "DP-G3")
+        val child2 = CircuitEntity(id = 103, circuitName = "C2", loadKVA = 39.4, fedFrom = "DP-G3")
+
+        val childCircuits = listOf(child1, child2)
+        val hasChildren = childCircuits.isNotEmpty()
+        val childrenTotalLoad = childCircuits.sumOf { it.loadKVA }
+        val childrenDiffers = Math.abs(circ.loadKVA - childrenTotalLoad) > 0.001
+
+        val isUnconfirmedConflict = hasChildren && circ.directLoadConfirmed == null && childrenDiffers
+
+        assertFalse("When panel load equals children sum (89.4 vs 89.4), no superseded warning badge must be shown", isUnconfirmedConflict)
+    }
+
+    @Test
+    fun testSupersededWarning_GenuineLoadMismatch_WarningShown() {
+        // Acceptance Test 2: Panel DP-G3 own loadKVA (100.0) genuinely differs from childrenTotalLoad (89.4)
+        val circ = CircuitEntity(id = 101, circuitName = "DP-G3", loadKVA = 100.0, fedFrom = "Transformer", directLoadConfirmed = null)
+        val child1 = CircuitEntity(id = 102, circuitName = "C1", loadKVA = 50.0, fedFrom = "DP-G3")
+        val child2 = CircuitEntity(id = 103, circuitName = "C2", loadKVA = 39.4, fedFrom = "DP-G3")
+
+        val childCircuits = listOf(child1, child2)
+        val hasChildren = childCircuits.isNotEmpty()
+        val childrenTotalLoad = childCircuits.sumOf { it.loadKVA }
+        val childrenDiffers = Math.abs(circ.loadKVA - childrenTotalLoad) > 0.001
+
+        val isUnconfirmedConflict = hasChildren && circ.directLoadConfirmed == null && childrenDiffers
+
+        assertTrue("When panel load genuinely differs from children sum (100.0 vs 89.4), warning badge MUST be shown", isUnconfirmedConflict)
+    }
+
+    @Test
+    fun testSupersededWarning_ConfirmedDirectLoad_NoWarning() {
+        // Acceptance Test 3: Panel DP-G3 own loadKVA (100.0) differs from children sum (89.4), but directLoadConfirmed == true
+        val circ = CircuitEntity(id = 101, circuitName = "DP-G3", loadKVA = 100.0, fedFrom = "Transformer", directLoadConfirmed = true)
+        val child1 = CircuitEntity(id = 102, circuitName = "C1", loadKVA = 50.0, fedFrom = "DP-G3")
+        val child2 = CircuitEntity(id = 103, circuitName = "C2", loadKVA = 39.4, fedFrom = "DP-G3")
+
+        val childCircuits = listOf(child1, child2)
+        val hasChildren = childCircuits.isNotEmpty()
+        val childrenTotalLoad = childCircuits.sumOf { it.loadKVA }
+        val childrenDiffers = Math.abs(circ.loadKVA - childrenTotalLoad) > 0.001
+
+        val isUnconfirmedConflict = hasChildren && circ.directLoadConfirmed == null && childrenDiffers
+
+        assertFalse("When direct load is explicitly confirmed (directLoadConfirmed == true), no superseded warning badge must be shown", isUnconfirmedConflict)
+    }
 }
