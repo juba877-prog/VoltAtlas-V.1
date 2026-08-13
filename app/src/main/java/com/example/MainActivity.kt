@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity() {
     installSplashScreen()
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
+    requestHighRefreshRate()
     
     setContent {
       val viewModel: EngineeringViewModel = viewModel()
@@ -96,4 +97,22 @@ class MainActivity : ComponentActivity() {
     }
   }
 }
+
+  private fun requestHighRefreshRate() {
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+      try {
+        @Suppress("DEPRECATION")
+        val display = windowManager.defaultDisplay
+        val modes = display?.supportedModes ?: return
+        val maxMode = modes.maxByOrNull { it.refreshRate } ?: return
+        val lp = window.attributes
+        if (lp.preferredDisplayModeId != maxMode.modeId) {
+          lp.preferredDisplayModeId = maxMode.modeId
+          window.attributes = lp
+        }
+      } catch (_: Exception) {
+        // Fallback gracefully if display mode API is unavailable
+      }
+    }
+  }
 }

@@ -107,6 +107,7 @@ fun PanelScheduleScreen(
         panelOptions.map { it.panelName }.distinct()
     }
 
+    val selectedCircuitId by viewModel.selectedCircuitId.collectAsState()
     var selectedOptionKey by remember { mutableStateOf<String?>(null) }
 
     val selectedOption = remember(panelOptions, selectedOptionKey) {
@@ -118,9 +119,17 @@ fun PanelScheduleScreen(
 
     val selectedPanelName = selectedOption?.panelName ?: ""
 
-    // Keep selected option synced if list updates
-    LaunchedEffect(panelOptions) {
-        if (panelOptions.isNotEmpty()) {
+    // Keep selected option synced when selectedCircuitId or panelOptions update
+    LaunchedEffect(selectedCircuitId, panelOptions) {
+        if (selectedCircuitId != null) {
+            val targetKey = "id_$selectedCircuitId"
+            if (panelOptions.any { (if (it.id != null) "id_${it.id}" else "name_${it.panelName}") == targetKey }) {
+                selectedOptionKey = targetKey
+            } else if (panelOptions.isNotEmpty() && selectedOption == null) {
+                val first = panelOptions.first()
+                selectedOptionKey = if (first.id != null) "id_${first.id}" else "name_${first.panelName}"
+            }
+        } else if (panelOptions.isNotEmpty()) {
             if (selectedOption == null) {
                 val first = panelOptions.first()
                 selectedOptionKey = if (first.id != null) "id_${first.id}" else "name_${first.panelName}"

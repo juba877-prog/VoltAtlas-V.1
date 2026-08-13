@@ -1,8 +1,11 @@
 package com.example.ui
 
+import androidx.activity.BackEventCompat
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.graphics.graphicsLayer
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.*
@@ -234,24 +237,36 @@ fun MainLayout(viewModel: EngineeringViewModel) {
     var showExitDialog by rememberSaveable { mutableStateOf(false) }
     val tabs = listOf("Dashboard", "Circuits", "Transformers", "Power Systems", "Protection", "SLD", "Conduits", "BOQ / Procurement", "Settings")
 
-    // ── Hierarchical Back-Button Handler ──
+    // ── Hierarchical Predictive Back-Button Handler ──
     // Priority: (1) close overlay → (2) Panel Schedule return / More child→More grid → (3) any non-Home→Home → (4) Home→exit dialog
-    BackHandler(enabled = true) {
-        when {
-            // 1. Close any open overlay / dialog / fullscreen first
-            showPdfExportDialog -> showPdfExportDialog = false
-            showDiagnosticsDialog -> showDiagnosticsDialog = false
-            showNewProjectConfirmation -> showNewProjectConfirmation = false
-            showExitDialog -> showExitDialog = false
-            isSldFullscreen -> isSldFullscreen = false
-            // 2. Panel Schedule (12) returns to entry point (Circuits or More grid)
-            currentTab == 12 -> currentTab = panelScheduleReturnTab
-            // 3. More-children (4,5,6,7,8,10,11) → More grid (9)
-            currentTab in listOf(4, 5, 6, 7, 8, 10, 11) -> currentTab = 9
-            // 4. More grid (9) or direct nav items (1,2,3) → Home (0)
-            currentTab != 0 -> currentTab = 0
-            // 5. Already on Home → show exit confirmation
-            else -> showExitDialog = true
+    var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
+
+    PredictiveBackHandler(enabled = true) { progress: kotlinx.coroutines.flow.Flow<BackEventCompat> ->
+        try {
+            progress.collect { backEvent ->
+                predictiveBackProgress = backEvent.progress
+            }
+            // Gesture Completed -> Execute exact 5-tier navigation logic
+            when {
+                // 1. Close any open overlay / dialog / fullscreen first
+                showPdfExportDialog -> showPdfExportDialog = false
+                showDiagnosticsDialog -> showDiagnosticsDialog = false
+                showNewProjectConfirmation -> showNewProjectConfirmation = false
+                showExitDialog -> showExitDialog = false
+                isSldFullscreen -> isSldFullscreen = false
+                // 2. Panel Schedule (12) returns to entry point (Circuits or More grid)
+                currentTab == 12 -> currentTab = panelScheduleReturnTab
+                // 3. More-children (4,5,6,7,8,10,11) → More grid (9)
+                currentTab in listOf(4, 5, 6, 7, 8, 10, 11) -> currentTab = 9
+                // 4. More grid (9) or direct nav items (1,2,3) → Home (0)
+                currentTab != 0 -> currentTab = 0
+                // 5. Already on Home → show exit confirmation
+                else -> showExitDialog = true
+            }
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            predictiveBackProgress = 0f
+        } finally {
+            predictiveBackProgress = 0f
         }
     }
 
@@ -733,81 +748,92 @@ fun MainLayout(viewModel: EngineeringViewModel) {
                         }
                     }
                     is UiState.Success -> {
-                        AnimatedContent(
-                            targetState = currentTab,
-                            transitionSpec = {
-                                if (reduceMotion) {
-                                    VoltAtlasMotion.tabReducedMotionTransition
-                                } else {
-                                    if (targetState > initialState) {
-                                        VoltAtlasMotion.tabForwardTransition
-                                    } else {
-                                        VoltAtlasMotion.tabBackwardTransition
-                                    }
-                                }
-                            },
-                            label = "MainTabSwitchAnimation"
-                        ) { targetTab ->
-                            when (targetTab) {
-                                0 -> DashboardScreen(uiStateVal, onNavigate = { currentTab = it })
-                                1 -> CircuitsGridScreen(uiStateVal, viewModel, onNavigateToPanelSchedule = { circId -> viewModel.selectedCircuitId.value = circId; panelScheduleReturnTab = 1; currentTab = 12 })
-                                2 -> TransformersScreen(uiStateVal, viewModel)
-                                3 -> {
-                                    val genSet = viewModel.generatorSettings.collectAsState().value ?: com.example.data.GeneratorEntity()
-                                    val atsSet = viewModel.atsSettings.collectAsState().value ?: com.example.data.AtsEntity()
-                                    val upsSet = viewModel.upsSettings.collectAsState().value ?: com.example.data.UpsEntity()
-                                    val pfGlob = viewModel.pfGlobalSettings.collectAsState().value ?: com.example.data.PfGlobalEntity()
-                                    val pfTrans = viewModel.pfTransformerSettings.collectAsState().value
-                                    PowerSystemsScreen(
-                                        state = uiStateVal,
-                                        generatorSettings = genSet,
-                                        atsSettings = atsSet,
-                                        upsSettings = upsSet,
-                                        pfGlobalSettings = pfGlob,
-                                        pfTransformerSettings = pfTrans,
-                                        onSaveGenerator = { viewModel.saveGeneratorSettings(it) },
-                                        onSaveAts = { viewModel.saveAtsSettings(it) },
-                                        onSaveUps = { viewModel.saveUpsSettings(it) },
-                                        onSavePfGlobal = { viewModel.savePfGlobalSettings(it) },
-                                        onSavePfTransformer = { viewModel.savePfTransformerSettings(it) },
-                                        onAddGenerator = { viewModel.addGenerator() },
-                                        onDeleteGenerator = { viewModel.deleteGenerator(it) },
-                                        onAddAts = { viewModel.addAts() },
-                                        onDeleteAts = { viewModel.deleteAts(it) },
-                                        onAddUps = { viewModel.addUps() },
-                                        onDeleteUps = { viewModel.deleteUps(it) }
-                                    )
-                                }
-                                4 -> ProtectionScreen(uiStateVal, onSaveEarthing = { viewModel.onSaveEarthing(it) })
-                                5 -> SldScreen(
-                                    circuits = uiStateVal.circuits,
-                                    activeProjectId = viewModel.activeProjectId.value ?: "",
-                                    sizingResults = uiStateVal.sizingResults,
-                                    shortCircuitResults = uiStateVal.shortCircuitResults,
-                                    atsEntity = uiStateVal.atsEntity,
-                                    transformers = uiStateVal.transformers,
-                                    transformerResults = uiStateVal.transformerResults,
-                                    generatorResult = uiStateVal.generatorResult,
-                                    atsResult = uiStateVal.atsResult
-                                )
-                                6 -> ConduitFillScreen(viewModel)
-                                7 -> BoqProcurementScreen(uiStateVal)
-                                8 -> {
-                                    GlobalSettingsScreen(
+                        val peekBackTarget = remember(currentTab, showPdfExportDialog, showDiagnosticsDialog, showNewProjectConfirmation, showExitDialog, isSldFullscreen, panelScheduleReturnTab) {
+                            when {
+                                showPdfExportDialog || showDiagnosticsDialog || showNewProjectConfirmation || showExitDialog || isSldFullscreen -> null
+                                currentTab == 12 -> panelScheduleReturnTab
+                                currentTab in listOf(4, 5, 6, 7, 8, 10, 11) -> 9
+                                currentTab != 0 -> 0
+                                else -> null
+                            }
+                        }
+
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            // LAYER 1: Destination Screen Preview (Rendered UNDERNEATH during edge swipe)
+                            if (predictiveBackProgress > 0f && peekBackTarget != null && !reduceMotion) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer {
+                                            val bgScale = 0.95f + (0.05f * predictiveBackProgress)
+                                            scaleX = bgScale
+                                            scaleY = bgScale
+                                            alpha = 0.5f + (0.5f * predictiveBackProgress)
+                                        }
+                                ) {
+                                    RenderTabContent(
+                                        targetTab = peekBackTarget,
+                                        uiStateVal = uiStateVal,
                                         viewModel = viewModel,
-                                        preferences = viewModel.preferences,
-                                        onBack = { currentTab = 0 }
+                                        panelScheduleReturnTab = panelScheduleReturnTab,
+                                        showNewProjectConfirmation = { showNewProjectConfirmation = it },
+                                        showDiagnosticsDialog = { showDiagnosticsDialog = it },
+                                        onSetPanelScheduleReturnTab = { panelScheduleReturnTab = it },
+                                        onNavigateTab = { currentTab = it }
                                     )
                                 }
-                                9 -> MoreModulesGrid(onNavigate = { targetTab -> if (targetTab == 12) panelScheduleReturnTab = 9; currentTab = targetTab })
-                                10 -> ConversionsContainerScreen(onBack = { currentTab = 9 })
-                                11 -> FormulasMethodologyScreen()
-                                12 -> com.example.ui.screens.PanelScheduleScreen(
-                                    viewModel = viewModel,
-                                    uiState = uiStateVal,
-                                    onBack = { currentTab = panelScheduleReturnTab }
-                                )
-                                else -> DashboardScreen(uiStateVal, onNavigate = { currentTab = it })
+                            }
+
+                            // LAYER 2: Active Screen Content (Scales down on TOP with draw-phase deferred transforms)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        val progress = predictiveBackProgress
+                                        val isReduced = reduceMotion
+
+                                        val scaleFactor = if (isReduced) 1f else (1f - (progress * 0.08f))
+                                        val alphaFactor = if (isReduced) 1f else (1f - (progress * 0.15f))
+                                        val cornerRadiusPx = if (isReduced) 0f else (progress * 16.dp.toPx())
+
+                                        scaleX = scaleFactor
+                                        scaleY = scaleFactor
+                                        alpha = alphaFactor
+
+                                        if (cornerRadiusPx > 0f) {
+                                            shape = RoundedCornerShape(cornerRadiusPx)
+                                            clip = true
+                                        } else {
+                                            clip = false
+                                        }
+                                    }
+                            ) {
+                                AnimatedContent(
+                                    targetState = currentTab,
+                                    transitionSpec = {
+                                        if (reduceMotion) {
+                                            VoltAtlasMotion.tabReducedMotionTransition
+                                        } else {
+                                            if (targetState > initialState) {
+                                                VoltAtlasMotion.tabForwardTransition
+                                            } else {
+                                                VoltAtlasMotion.tabBackwardTransition
+                                            }
+                                        }
+                                    },
+                                    label = "MainTabSwitchAnimation"
+                                ) { targetTab ->
+                                    RenderTabContent(
+                                        targetTab = targetTab,
+                                        uiStateVal = uiStateVal,
+                                        viewModel = viewModel,
+                                        panelScheduleReturnTab = panelScheduleReturnTab,
+                                        showNewProjectConfirmation = { showNewProjectConfirmation = it },
+                                        showDiagnosticsDialog = { showDiagnosticsDialog = it },
+                                        onSetPanelScheduleReturnTab = { panelScheduleReturnTab = it },
+                                        onNavigateTab = { currentTab = it }
+                                    )
+                                }
                             }
                         }
                     }
@@ -1094,15 +1120,89 @@ fun MainLayout(viewModel: EngineeringViewModel) {
     }
 }
 
+@Composable
+private fun RenderTabContent(
+    targetTab: Int,
+    uiStateVal: UiState.Success,
+    viewModel: EngineeringViewModel,
+    panelScheduleReturnTab: Int,
+    showNewProjectConfirmation: (Boolean) -> Unit,
+    showDiagnosticsDialog: (Boolean) -> Unit,
+    onSetPanelScheduleReturnTab: (Int) -> Unit,
+    onNavigateTab: (Int) -> Unit
+) {
+    when (targetTab) {
+        0 -> DashboardScreen(uiStateVal, onNavigate = onNavigateTab)
+        1 -> CircuitsGridScreen(uiStateVal, viewModel, onNavigateToPanelSchedule = { circId -> viewModel.selectedCircuitId.value = circId; onSetPanelScheduleReturnTab(1); onNavigateTab(12) })
+        2 -> TransformersScreen(uiStateVal, viewModel)
+        3 -> {
+            val genSet = viewModel.generatorSettings.collectAsState().value ?: com.example.data.GeneratorEntity()
+            val atsSet = viewModel.atsSettings.collectAsState().value ?: com.example.data.AtsEntity()
+            val upsSet = viewModel.upsSettings.collectAsState().value ?: com.example.data.UpsEntity()
+            val pfGlob = viewModel.pfGlobalSettings.collectAsState().value ?: com.example.data.PfGlobalEntity()
+            val pfTrans = viewModel.pfTransformerSettings.collectAsState().value
+            PowerSystemsScreen(
+                state = uiStateVal,
+                generatorSettings = genSet,
+                atsSettings = atsSet,
+                upsSettings = upsSet,
+                pfGlobalSettings = pfGlob,
+                pfTransformerSettings = pfTrans,
+                onSaveGenerator = { viewModel.saveGeneratorSettings(it) },
+                onSaveAts = { viewModel.saveAtsSettings(it) },
+                onSaveUps = { viewModel.saveUpsSettings(it) },
+                onSavePfGlobal = { viewModel.savePfGlobalSettings(it) },
+                onSavePfTransformer = { viewModel.savePfTransformerSettings(it) },
+                onAddGenerator = { viewModel.addGenerator() },
+                onDeleteGenerator = { viewModel.deleteGenerator(it) },
+                onAddAts = { viewModel.addAts() },
+                onDeleteAts = { viewModel.deleteAts(it) },
+                onAddUps = { viewModel.addUps() },
+                onDeleteUps = { viewModel.deleteUps(it) }
+            )
+        }
+        4 -> ProtectionScreen(uiStateVal, onSaveEarthing = { viewModel.onSaveEarthing(it) })
+        5 -> SldScreen(
+            circuits = uiStateVal.circuits,
+            activeProjectId = viewModel.activeProjectId.value ?: "",
+            sizingResults = uiStateVal.sizingResults,
+            shortCircuitResults = uiStateVal.shortCircuitResults,
+            atsEntity = uiStateVal.atsEntity,
+            transformers = uiStateVal.transformers,
+            transformerResults = uiStateVal.transformerResults,
+            generatorResult = uiStateVal.generatorResult,
+            atsResult = uiStateVal.atsResult
+        )
+        6 -> ConduitFillScreen(viewModel)
+        7 -> BoqProcurementScreen(uiStateVal)
+        8 -> {
+            GlobalSettingsScreen(
+                viewModel = viewModel,
+                preferences = viewModel.preferences,
+                onBack = { onNavigateTab(0) }
+            )
+        }
+        9 -> MoreModulesGrid(onNavigate = { targetTab -> if (targetTab == 12) onSetPanelScheduleReturnTab(9); onNavigateTab(targetTab) })
+        10 -> ConversionsContainerScreen(onBack = { onNavigateTab(9) })
+        11 -> FormulasMethodologyScreen()
+        12 -> com.example.ui.screens.PanelScheduleScreen(
+            viewModel = viewModel,
+            uiState = uiStateVal,
+            onBack = { onNavigateTab(panelScheduleReturnTab) }
+        )
+        else -> DashboardScreen(uiStateVal, onNavigate = onNavigateTab)
+    }
+}
+
 // 1. DASHBOARD SCREEN
 @Composable
 fun DashboardScreen(state: UiState.Success, onNavigate: (Int) -> Unit) {
     val summary = state.validationSummary
     val totalCircuits = state.circuits.size
 
-    val maxVdPct = state.sizingResults.values.maxOfOrNull { it.cumulativeVDpct } ?: 0.0
-    val maxTxLoadPct = state.transformerResults.values.maxOfOrNull { it.loadingPct } ?: 0.0
-    val maxIscKa = state.shortCircuitResults.values.maxOfOrNull { it.iscKA } ?: 0.0
+    val maxVdPct = remember(state.sizingResults) { state.sizingResults.values.maxOfOrNull { it.cumulativeVDpct } ?: 0.0 }
+    val maxTxLoadPct = remember(state.transformerResults) { state.transformerResults.values.maxOfOrNull { it.loadingPct } ?: 0.0 }
+    val maxIscKa = remember(state.shortCircuitResults) { state.shortCircuitResults.values.maxOfOrNull { it.iscKA } ?: 0.0 }
 
     val overallColor = when {
         summary.totalFailures > 0 -> com.example.ui.theme.StatusFail
@@ -2060,11 +2160,44 @@ fun CircuitsGridScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(circ.circuitName, color = ThemeTextColor, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Fed from: ${circ.fedFrom}", color = SlateTextSecondary, fontSize = 11.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                        Text(
+                                            circ.circuitName,
+                                            color = ThemeTextColor,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+
+                                        val pType = circ.panelType?.trim()?.uppercase() ?: ""
+                                        val isPanelRow = pType in setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER") || state.circuits.any { it.fedFrom.trim().equals(circ.circuitName.trim(), ignoreCase = true) }
+
+                                        if (isPanelRow) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                onClick = {
+                                                    viewModel.selectedCircuitId.value = circ.id
+                                                    onNavigateToPanelSchedule?.invoke(circ.id)
+                                                },
+                                                color = SleekPrimary.copy(alpha = 0.12f),
+                                                shape = RoundedCornerShape(6.dp),
+                                                border = BorderStroke(1.dp, SleekPrimary.copy(alpha = 0.4f)),
+                                                modifier = Modifier.testTag("open_panel_schedule_chip_${circ.circuitName}")
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Open Panel Schedule", tint = SleekPrimary, modifier = Modifier.size(12.dp))
+                                                    Spacer(modifier = Modifier.width(3.dp))
+                                                    Text("Schedule ➔", color = SleekPrimary, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
                                     }
-                                    Text("Load: ${circ.loadKVA} kVA | ${circ.phases}", color = SlateTextSecondary, fontSize = 12.sp, maxLines = 1)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text("Fed from: ${circ.fedFrom}  •  ${circ.loadKVA} kVA | ${circ.phases}", color = SlateTextSecondary, fontSize = 11.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                     
                                     val childCircuits = state.circuits.filter { it.fedFrom.trim().equals(circ.circuitName.trim(), ignoreCase = true) }
                                     val hasChildren = childCircuits.isNotEmpty()
@@ -2159,8 +2292,23 @@ fun CircuitsGridScreen(
                                         horizontalArrangement = Arrangement.End,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        val pTypeExp = circ.panelType?.trim()?.uppercase() ?: ""
+                                        val isPanelRowExp = pTypeExp in setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER") || state.circuits.any { it.fedFrom.trim().equals(circ.circuitName.trim(), ignoreCase = true) }
+
                                         Text("Circuit Operations:", color = SlateTextSecondary, fontSize = 11.sp)
                                         Spacer(modifier = Modifier.width(12.dp))
+                                        if (isPanelRowExp) {
+                                            IconButton(
+                                                onClick = {
+                                                    viewModel.selectedCircuitId.value = circ.id
+                                                    onNavigateToPanelSchedule?.invoke(circ.id)
+                                                },
+                                                modifier = Modifier.testTag("open_panel_schedule_btn_${circ.circuitName}")
+                                            ) {
+                                                Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Open Panel Schedule", tint = SleekPrimary)
+                                            }
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                        }
                                         IconButton(
                                             onClick = {
                                                 editingCircuit = circ
