@@ -176,23 +176,23 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
     fun retryStartup() {
         viewModelScope.launch {
             try {
-                startupState.value = StartupState.OpeningDatabase
-                
-                // Simulate some minimum time if needed, but the UI handles the minimum time constraint.
-                // We just run the tasks sequentially.
-                withContext(Dispatchers.IO) {
-                    // Touch DB to force open
-                    repository.getAllProjectsList() 
-                }
-                
-                startupState.value = StartupState.ValidatingCableCatalog
                 val warnings = mutableListOf<String>()
-                try {
-                    withContext(Dispatchers.IO) {
+
+                // 1. Launch Catalog loading concurrently on Dispatchers.IO
+                val catalogJob = launch(Dispatchers.IO) {
+                    try {
                         Catalog.loadAll(getApplication())
+                    } catch (e: Exception) {
+                        synchronized(warnings) {
+                            warnings.add("Failed to load catalogs: ${e.message}")
+                        }
                     }
-                } catch (e: Exception) {
-                    warnings.add("Failed to load catalogs")
+                }
+
+                // 2. Perform Database opening & state restoration in parallel
+                startupState.value = StartupState.OpeningDatabase
+                withContext(Dispatchers.IO) {
+                    repository.getAllProjectsList()
                 }
 
                 startupState.value = StartupState.LoadingProjects
@@ -200,6 +200,9 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
 
                 startupState.value = StartupState.RestoringApplicationState
                 initializeNewInstallationIfRequired()
+
+                // 3. Await catalogJob before emitting StartupState.Ready
+                catalogJob.join()
 
                 if (projects.isEmpty()) {
                     startupState.value = StartupState.NoProjects
