@@ -112,7 +112,7 @@ private fun catalogCableSizeOptions(manufacturer: String, cableType: String): Li
 
 
 fun isMoreTabSelected(currentTab: Int): Boolean {
-    return currentTab in listOf(4, 5, 6, 7, 8, 9)
+    return currentTab in listOf(4, 5, 6, 7, 8, 9, 10, 11, 12)
 }
 
 @Composable
@@ -658,7 +658,7 @@ fun MainLayout(viewModel: EngineeringViewModel) {
             bottomBar = {
                 if (!useNavRail) {
                     NavigationBar(
-                        containerColor = DarkCardBg,
+                        containerColor = ThemeSurface,
                         tonalElevation = 0.dp
                     ) {
                         navItems.forEach { (title, icon, targetTab) ->
