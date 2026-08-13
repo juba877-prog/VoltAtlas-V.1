@@ -26,21 +26,28 @@ object VoltAtlasMotion {
     val fadeExitSpec: FiniteAnimationSpec<Float> = tween(durationMillis = DurationFast, easing = FastOutLinearInEasing)
     val instantFadeSpec: FiniteAnimationSpec<Float> = tween(durationMillis = DurationMicro, easing = LinearEasing)
 
-    // Common Slide Spring Specs
+    // Common Slide Specs
     val slideSpringSpec: FiniteAnimationSpec<IntOffset> = spring(
         stiffness = SpringStiffnessLow,
         dampingRatio = SpringDampingNoBouncy
     )
 
+    // Deterministic 200ms FastOutSlowIn Slide Spec for Tab Switching (prevents prolonged dual-screen mounting)
+    val tabSlideSpec: FiniteAnimationSpec<IntOffset> = tween(
+        durationMillis = DurationStandard,
+        easing = FastOutSlowInEasing
+    )
+
     // Tab Transition Specs for MainLayout
     val tabForwardTransition: ContentTransform =
-        (fadeIn(animationSpec = fadeEnterSpec) + slideInHorizontally(animationSpec = slideSpringSpec, initialOffsetX = { it / 4 })) togetherWith
-        (fadeOut(animationSpec = fadeExitSpec) + slideOutHorizontally(animationSpec = slideSpringSpec, targetOffsetX = { -it / 4 }))
+        (fadeIn(animationSpec = fadeEnterSpec) + slideInHorizontally(animationSpec = tabSlideSpec, initialOffsetX = { it / 4 })) togetherWith
+        (fadeOut(animationSpec = fadeExitSpec) + slideOutHorizontally(animationSpec = tabSlideSpec, targetOffsetX = { -it / 4 }))
 
     val tabBackwardTransition: ContentTransform =
-        (fadeIn(animationSpec = fadeEnterSpec) + slideInHorizontally(animationSpec = slideSpringSpec, initialOffsetX = { -it / 4 })) togetherWith
-        (fadeOut(animationSpec = fadeExitSpec) + slideOutHorizontally(animationSpec = slideSpringSpec, targetOffsetX = { it / 4 }))
+        (fadeIn(animationSpec = fadeEnterSpec) + slideInHorizontally(animationSpec = tabSlideSpec, initialOffsetX = { -it / 4 })) togetherWith
+        (fadeOut(animationSpec = fadeExitSpec) + slideOutHorizontally(animationSpec = tabSlideSpec, targetOffsetX = { it / 4 }))
 
+    // Reduced motion transition: instant crossfade without slide offsets
     val tabReducedMotionTransition: ContentTransform =
         fadeIn(animationSpec = instantFadeSpec) togetherWith fadeOut(animationSpec = instantFadeSpec)
 }

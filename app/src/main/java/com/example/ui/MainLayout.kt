@@ -1903,29 +1903,31 @@ fun CircuitsGridScreen(
     var showDialog by rememberSaveable { mutableStateOf(false) }
     var editingCircuit by rememberSaveable { mutableStateOf<CircuitEntity?>(null) }
 
-    // Perform queries and filters
-    val filteredCircuits = state.circuits.filter { circ ->
-        val matchesQuery = query.isBlank() ||
-            circ.circuitName.contains(query, ignoreCase = true) ||
-            circ.fedFrom.contains(query, ignoreCase = true) ||
-            circ.cableType.contains(query, ignoreCase = true) ||
-            circ.loadType.contains(query, ignoreCase = true) ||
-            (circ.overrideCableSize ?: "").contains(query, ignoreCase = true)
+    // Perform queries and filters (memoized to prevent un-remembered re-filtering on every animation frame)
+    val filteredCircuits = remember(state.circuits, state.sizingResults, query, statusFilter, parentFilter) {
+        state.circuits.filter { circ ->
+            val matchesQuery = query.isBlank() ||
+                circ.circuitName.contains(query, ignoreCase = true) ||
+                circ.fedFrom.contains(query, ignoreCase = true) ||
+                circ.cableType.contains(query, ignoreCase = true) ||
+                circ.loadType.contains(query, ignoreCase = true) ||
+                (circ.overrideCableSize ?: "").contains(query, ignoreCase = true)
 
-        val matchesStatus = when (statusFilter) {
-            "PASS" -> state.sizingResults[circ.id]?.status?.contains("PASS") == true
-            "FAIL" -> state.sizingResults[circ.id]?.status?.contains("FAIL") == true
-            "WARNING" -> state.sizingResults[circ.id]?.status?.contains("WARN") == true
-            else -> true
+            val matchesStatus = when (statusFilter) {
+                "PASS" -> state.sizingResults[circ.id]?.status?.contains("PASS") == true
+                "FAIL" -> state.sizingResults[circ.id]?.status?.contains("FAIL") == true
+                "WARNING" -> state.sizingResults[circ.id]?.status?.contains("WARN") == true
+                else -> true
+            }
+
+            val matchesParent = when (parentFilter) {
+                "Transformer" -> circ.fedFrom.equals("Transformer", ignoreCase = true)
+                "Sub-feeders" -> !circ.fedFrom.equals("Transformer", ignoreCase = true)
+                else -> true
+            }
+
+            matchesQuery && matchesStatus && matchesParent
         }
-
-        val matchesParent = when (parentFilter) {
-            "Transformer" -> circ.fedFrom.equals("Transformer", ignoreCase = true)
-            "Sub-feeders" -> !circ.fedFrom.equals("Transformer", ignoreCase = true)
-            else -> true
-        }
-
-        matchesQuery && matchesStatus && matchesParent
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
