@@ -330,7 +330,7 @@ fun MainLayout(viewModel: EngineeringViewModel) {
     Row(modifier = Modifier.fillMaxSize()) {
         if (useNavRail) {
             NavigationRail(
-                containerColor = DarkCardBg,
+                containerColor = ThemeSurface,
                 header = {
                     IconButton(
                         onClick = { viewModel.closeProject() },
@@ -341,8 +341,8 @@ fun MainLayout(viewModel: EngineeringViewModel) {
                         Box(
                             modifier = Modifier
                                 .size(38.dp)
-                                .background(DarkBackground, shape = RoundedCornerShape(10.dp))
-                                .border(1.dp, BorderColor, RoundedCornerShape(10.dp)),
+                                .background(ThemeBackground, shape = RoundedCornerShape(VoltAtlasShapes.chip))
+                                .border(1.dp, ThemeBorderSubtle, RoundedCornerShape(VoltAtlasShapes.chip)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -402,8 +402,8 @@ fun MainLayout(viewModel: EngineeringViewModel) {
                 BoxWithConstraints(
                     modifier = Modifier
                         .statusBarsPadding()
-                        .background(DarkCardBg)
-                        .border(BorderStroke(1.dp, BorderColor))
+                        .background(ThemeSurface)
+                        .border(BorderStroke(1.dp, ThemeBorderSubtle))
                         .fillMaxWidth()
                         .heightIn(min = 56.dp)
                         .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -425,8 +425,8 @@ fun MainLayout(viewModel: EngineeringViewModel) {
                                 Box(
                                     modifier = Modifier
                                         .size(36.dp)
-                                        .background(DarkBackground, shape = RoundedCornerShape(8.dp))
-                                        .border(1.dp, BorderColor, RoundedCornerShape(8.dp)),
+                                        .background(ThemeBackground, shape = RoundedCornerShape(VoltAtlasShapes.tag))
+                                        .border(1.dp, ThemeBorderSubtle, RoundedCornerShape(VoltAtlasShapes.tag)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
@@ -882,9 +882,9 @@ fun MainLayout(viewModel: EngineeringViewModel) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = DarkCardBg),
-                border = BorderStroke(1.dp, BorderColor)
+                shape = RoundedCornerShape(VoltAtlasShapes.card),
+                colors = CardDefaults.cardColors(containerColor = ThemeSurface),
+                border = BorderStroke(1.dp, ThemeBorderSubtle)
             ) {
                 Column(
                     modifier = Modifier.padding(24.dp),

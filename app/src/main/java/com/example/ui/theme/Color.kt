@@ -103,3 +103,22 @@ val ThemeTextTertiary: Color
 
 val ThemeTextDisabled: Color
     @Composable get() = if (LocalThemeIsDark.current) Color(0xFF4A5463) else LightTextDisabled
+
+// VoltAtlas Engineering & Brand Semantic Tokens
+val BrandPrimary: Color
+    @Composable get() = ThemePrimary
+
+val BrandAccent: Color
+    @Composable get() = if (LocalThemeIsDark.current) PrimaryCyan else LightPrimaryCyan
+
+val EngineeringValueColor: Color
+    @Composable get() = ThemeTextPrimary
+
+val EngineeringSuccess: Color
+    @Composable get() = StatusPass
+
+val EngineeringWarning: Color
+    @Composable get() = StatusWarning
+
+val EngineeringFailure: Color
+    @Composable get() = StatusFail
