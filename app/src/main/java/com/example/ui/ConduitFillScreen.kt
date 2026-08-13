@@ -2,6 +2,7 @@ package com.example.ui
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import com.example.ui.theme.LocalReduceMotion
 import com.example.ui.theme.VoltAtlasMotion
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -294,10 +295,11 @@ fun ConduitFillScreen(viewModel: EngineeringViewModel) {
                         }
 
                         // Detailed Calculation Breakdown (Expandable)
+                        val reduceMotion = LocalReduceMotion.current
                         AnimatedVisibility(
                             visible = isExpanded && res != null,
-                            enter = fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
-                            exit = fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
+                            enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
+                            exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
                         ) {
                             Column(
                                 modifier = Modifier

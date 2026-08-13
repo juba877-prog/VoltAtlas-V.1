@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
+import com.example.ui.theme.LocalReduceMotion
 import com.example.ui.theme.VoltAtlasMotion
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -476,10 +477,11 @@ fun FormulasMethodologyScreen() {
                     }
 
                     // Expanded Content Body
+                    val reduceMotion = LocalReduceMotion.current
                     AnimatedVisibility(
                         visible = isExpanded,
-                        enter = fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
-                        exit = fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
+                        enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
+                        exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
                     ) {
                         Column(
                             modifier = Modifier

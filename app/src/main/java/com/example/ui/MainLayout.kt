@@ -255,15 +255,7 @@ fun MainLayout(viewModel: EngineeringViewModel) {
         }
     }
 
-    val reduceMotion = remember(context) {
-        try {
-            android.provider.Settings.Global.getFloat(
-                context.contentResolver,
-                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
-                1f
-            ) == 0f
-        } catch (_: Exception) { false }
-    }
+    val reduceMotion = com.example.ui.theme.LocalReduceMotion.current
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val useNavRail = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE ||

@@ -21,6 +21,8 @@ import com.example.boot.BootAnimationScreen
 import com.example.boot.BootViewModel
 import com.example.ui.EngineeringViewModel
 import com.example.ui.MainLayout
+import androidx.compose.runtime.CompositionLocalProvider
+import com.example.ui.theme.LocalReduceMotion
 import com.example.ui.theme.VoltAtlasTheme
 import com.example.ui.theme.VoltAtlasMotion
 
@@ -54,7 +56,8 @@ class MainActivity : ComponentActivity() {
         ) == 0f
       } catch (_: Exception) { false }
       
-      VoltAtlasTheme(darkTheme = darkTheme) {
+      CompositionLocalProvider(LocalReduceMotion provides reduceMotion) {
+        VoltAtlasTheme(darkTheme = darkTheme) {
         // Show boot animation on launch (rememberSaveable preserves boot state across Activity recreation e.g. system theme toggle)
         val isBootFinished = rememberSaveable { mutableStateOf(false) }
 
@@ -92,4 +95,5 @@ class MainActivity : ComponentActivity() {
       }
     }
   }
+}
 }
