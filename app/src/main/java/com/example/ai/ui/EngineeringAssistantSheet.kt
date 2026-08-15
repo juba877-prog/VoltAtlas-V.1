@@ -48,8 +48,11 @@ fun EngineeringAssistantSheet(
         }
     }
 
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+
     ModalBottomSheet(
         onDismissRequest = { viewModel.close() },
+        sheetState = sheetState,
         containerColor = ThemeSurface,
         scrimColor = Color.Black.copy(alpha = 0.5f),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),

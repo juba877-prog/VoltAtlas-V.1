@@ -869,7 +869,10 @@ fun MainLayout(viewModel: EngineeringViewModel) {
                                         showNewProjectConfirmation = { showNewProjectConfirmation = it },
                                         showDiagnosticsDialog = { showDiagnosticsDialog = it },
                                         onSetPanelScheduleReturnTab = { panelScheduleReturnTab = it },
-                                        onNavigateTab = { currentTab = it }
+                                        onNavigateTab = { currentTab = it },
+                                        onOpenAssistant = { entryPoint, eType, eId, eName ->
+                                            openAssistantWithContext(entryPoint, eType, eId, eName)
+                                        }
                                     )
                                 }
                             }
@@ -923,7 +926,10 @@ fun MainLayout(viewModel: EngineeringViewModel) {
                                         showNewProjectConfirmation = { showNewProjectConfirmation = it },
                                         showDiagnosticsDialog = { showDiagnosticsDialog = it },
                                         onSetPanelScheduleReturnTab = { panelScheduleReturnTab = it },
-                                        onNavigateTab = { currentTab = it }
+                                        onNavigateTab = { currentTab = it },
+                                        onOpenAssistant = { entryPoint, eType, eId, eName ->
+                                            openAssistantWithContext(entryPoint, eType, eId, eName)
+                                        }
                                     )
                                 }
                             }
@@ -1210,6 +1216,8 @@ fun MainLayout(viewModel: EngineeringViewModel) {
             }
         )
     }
+
+    com.example.ai.ui.EngineeringAssistantSheet(viewModel = assistantViewModel)
 }
 
 @Composable
