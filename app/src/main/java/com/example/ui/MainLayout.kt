@@ -240,6 +240,7 @@ fun MainLayout(viewModel: EngineeringViewModel) {
     // ── Hierarchical Predictive Back-Button Handler ──
     // Priority: (1) close overlay → (2) Panel Schedule return / More child→More grid → (3) any non-Home→Home → (4) Home→exit dialog
     var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
+    var isPredictiveBackNav by remember { mutableStateOf(false) }
 
     PredictiveBackHandler(enabled = true) { progress: kotlinx.coroutines.flow.Flow<BackEventCompat> ->
         try {
@@ -255,11 +256,20 @@ fun MainLayout(viewModel: EngineeringViewModel) {
                 showExitDialog -> showExitDialog = false
                 isSldFullscreen -> isSldFullscreen = false
                 // 2. Panel Schedule (12) returns to entry point (Circuits or More grid)
-                currentTab == 12 -> currentTab = panelScheduleReturnTab
+                currentTab == 12 -> {
+                    isPredictiveBackNav = true
+                    currentTab = panelScheduleReturnTab
+                }
                 // 3. More-children (4,5,6,7,8,10,11) → More grid (9)
-                currentTab in listOf(4, 5, 6, 7, 8, 10, 11) -> currentTab = 9
+                currentTab in listOf(4, 5, 6, 7, 8, 10, 11) -> {
+                    isPredictiveBackNav = true
+                    currentTab = 9
+                }
                 // 4. More grid (9) or direct nav items (1,2,3) → Home (0)
-                currentTab != 0 -> currentTab = 0
+                currentTab != 0 -> {
+                    isPredictiveBackNav = true
+                    currentTab = 0
+                }
                 // 5. Already on Home → show exit confirmation
                 else -> showExitDialog = true
             }
@@ -267,6 +277,13 @@ fun MainLayout(viewModel: EngineeringViewModel) {
             predictiveBackProgress = 0f
         } finally {
             predictiveBackProgress = 0f
+        }
+    }
+
+    // Deterministically reset isPredictiveBackNav after AnimatedContent evaluates the gesture transition
+    LaunchedEffect(currentTab) {
+        if (isPredictiveBackNav) {
+            isPredictiveBackNav = false
         }
     }
 
@@ -811,7 +828,9 @@ fun MainLayout(viewModel: EngineeringViewModel) {
                                 AnimatedContent(
                                     targetState = currentTab,
                                     transitionSpec = {
-                                        if (reduceMotion) {
+                                        if (isPredictiveBackNav) {
+                                            EnterTransition.None togetherWith ExitTransition.None
+                                        } else if (reduceMotion) {
                                             VoltAtlasMotion.tabReducedMotionTransition
                                         } else {
                                             if (targetState > initialState) {
