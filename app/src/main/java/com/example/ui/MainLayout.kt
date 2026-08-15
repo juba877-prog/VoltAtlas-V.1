@@ -128,6 +128,9 @@ fun MainLayout(viewModel: EngineeringViewModel) {
     val showGlobalSettings by viewModel.showGlobalSettings.collectAsState()
     val confirmDestructiveActions by viewModel.preferences.confirmDestructiveActions.collectAsState()
 
+    val assistantViewModel: com.example.ai.ui.EngineeringAssistantViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val assistantUiState by assistantViewModel.uiState.collectAsState()
+
     var currentTab by rememberSaveable { mutableStateOf(0) }
 
     val hasCompletedFirstLaunch by viewModel.preferences.hasCompletedFirstLaunch.collectAsState()
@@ -238,17 +241,66 @@ fun MainLayout(viewModel: EngineeringViewModel) {
     val tabs = listOf("Dashboard", "Circuits", "Transformers", "Power Systems", "Protection", "SLD", "Conduits", "BOQ / Procurement", "Settings")
 
     // ── Hierarchical Predictive Back-Button Handler ──
-    // Priority: (1) close overlay → (2) Panel Schedule return / More child→More grid → (3) any non-Home→Home → (4) Home→exit dialog
+    // Priority: (0) Assistant sheet → (1) close overlay → (2) Panel Schedule return / More child→More grid → (3) any non-Home→Home → (4) Home→exit dialog
     var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
     var isPredictiveBackNav by remember { mutableStateOf(false) }
+
+    fun openAssistantWithContext(
+        entryPoint: com.example.ai.ui.AssistantEntryPoint,
+        entityType: String? = null,
+        entityId: String? = null,
+        entityName: String? = null
+    ) {
+        val summary = when (val s = state) {
+            is UiState.Success -> com.example.ai.context.ProjectSummarySnapshot(
+                totalCircuits = s.circuits.size,
+                totalTransformers = s.transformers.size,
+                totalConnectedKVA = s.transformers.sumOf { it.kVA },
+                maxTxLoadingPct = s.transformerResults.values.maxOfOrNull { it.loadingPct } ?: 0.0,
+                maxCumulativeVdPct = s.sizingResults.values.maxOfOrNull { it.cumulativeVDpct } ?: 0.0,
+                complianceStatus = "NORMAL"
+            )
+            else -> com.example.ai.context.ProjectSummarySnapshot()
+        }
+        val currentScreenName = when (currentTab) {
+            0 -> "Dashboard"
+            1 -> "Circuits"
+            2 -> "Transformers"
+            3 -> "Power Systems"
+            4 -> "Protection"
+            5 -> "SLD"
+            6 -> "Conduits"
+            7 -> "BOQ / Procurement"
+            8 -> "Settings"
+            9 -> "More Modules"
+            10 -> "Conversions"
+            11 -> "Formulas & Methodology"
+            12 -> "Panel Schedule"
+            else -> "Dashboard"
+        }
+        val ctx = com.example.ai.context.EngineeringContext(
+            projectId = activeId,
+            projectName = projectName,
+            currentScreen = currentScreenName,
+            activeEntityType = entityType,
+            activeEntityId = entityId,
+            activeEntityName = entityName,
+            projectSummary = summary
+        )
+        assistantViewModel.open(entryPoint, ctx)
+    }
 
     PredictiveBackHandler(enabled = true) { progress: kotlinx.coroutines.flow.Flow<BackEventCompat> ->
         try {
             progress.collect { backEvent ->
                 predictiveBackProgress = backEvent.progress
             }
-            // Gesture Completed -> Execute exact 5-tier navigation logic
+            // Gesture Completed -> Execute exact 6-tier navigation logic
             when {
+                // 0. Assistant sheet open -> consume back gesture and close/collapse assistant first
+                assistantUiState.isOpen -> {
+                    assistantViewModel.onBackHandled()
+                }
                 // 1. Close any open overlay / dialog / fullscreen first
                 showPdfExportDialog -> showPdfExportDialog = false
                 showDiagnosticsDialog -> showDiagnosticsDialog = false
@@ -555,6 +607,18 @@ fun MainLayout(viewModel: EngineeringViewModel) {
                                 )
                             }
 
+                            IconButton(
+                                onClick = { openAssistantWithContext(com.example.ai.ui.AssistantEntryPoint.TOP_BAR_ICON) },
+                                modifier = Modifier.size(48.dp).testTag("top_bar_assistant_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "Open AI Assistant",
+                                    tint = SleekPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
                             if (showAllDirectActions) {
                                 IconButton(
                                     onClick = { viewModel.recalculate() },
@@ -639,6 +703,15 @@ fun MainLayout(viewModel: EngineeringViewModel) {
                                         )
                                     }
 
+                                    DropdownMenuItem(
+                                        text = { Text("VoltAtlas Assistant", color = ThemeTextColor) },
+                                        leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = "AI Assistant", tint = SleekPrimary) },
+                                        onClick = {
+                                            showOverflowMenu = false
+                                            openAssistantWithContext(com.example.ai.ui.AssistantEntryPoint.OVERFLOW_MENU)
+                                        },
+                                        modifier = Modifier.testTag("menu_assistant_btn")
+                                    )
                                     DropdownMenuItem(
                                         text = { Text("Export Project (JSON)", color = ThemeTextColor) },
                                         leadingIcon = { Icon(Icons.Default.Share, contentDescription = "Export Project", tint = SleekPrimary) },
@@ -1148,11 +1221,21 @@ private fun RenderTabContent(
     showNewProjectConfirmation: (Boolean) -> Unit,
     showDiagnosticsDialog: (Boolean) -> Unit,
     onSetPanelScheduleReturnTab: (Int) -> Unit,
-    onNavigateTab: (Int) -> Unit
+    onNavigateTab: (Int) -> Unit,
+    onOpenAssistant: ((com.example.ai.ui.AssistantEntryPoint, String?, String?, String?) -> Unit)? = null
 ) {
     when (targetTab) {
-        0 -> DashboardScreen(uiStateVal, onNavigate = onNavigateTab)
-        1 -> CircuitsGridScreen(uiStateVal, viewModel, onNavigateToPanelSchedule = { circId -> viewModel.selectedCircuitId.value = circId; onSetPanelScheduleReturnTab(1); onNavigateTab(12) })
+        0 -> DashboardScreen(
+            uiStateVal, 
+            onNavigate = onNavigateTab,
+            onOpenAssistant = { ep -> onOpenAssistant?.invoke(ep, null, null, null) }
+        )
+        1 -> CircuitsGridScreen(
+            uiStateVal, 
+            viewModel, 
+            onNavigateToPanelSchedule = { circId -> viewModel.selectedCircuitId.value = circId; onSetPanelScheduleReturnTab(1); onNavigateTab(12) },
+            onOpenAssistant = { ep, circ -> onOpenAssistant?.invoke(ep, "CIRCUIT", circ.id.toString(), circ.circuitName) }
+        )
         2 -> TransformersScreen(uiStateVal, viewModel)
         3 -> {
             val genSet = viewModel.generatorSettings.collectAsState().value ?: com.example.data.GeneratorEntity()
@@ -1219,7 +1302,11 @@ private fun RenderTabContent(
 
 // 1. DASHBOARD SCREEN
 @Composable
-fun DashboardScreen(state: UiState.Success, onNavigate: (Int) -> Unit) {
+fun DashboardScreen(
+    state: UiState.Success, 
+    onNavigate: (Int) -> Unit,
+    onOpenAssistant: ((com.example.ai.ui.AssistantEntryPoint) -> Unit)? = null
+) {
     val summary = state.validationSummary
     val totalCircuits = state.circuits.size
 
@@ -1537,13 +1624,91 @@ fun DashboardScreen(state: UiState.Success, onNavigate: (Int) -> Unit) {
                                 color = SlateTextSecondary,
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            // Row 3: severity badge on its own line
-                            Spacer(modifier = Modifier.height(4.dp))
-                            com.example.ui.components.VoltAtlasStatusBadge(
-                                text = issue.severity.name.replace("_", " "),
-                                color = itemColor
+                            // Row 3: severity badge and diagnose button
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                com.example.ui.components.VoltAtlasStatusBadge(
+                                    text = issue.severity.name.replace("_", " "),
+                                    color = itemColor
+                                )
+                                if (onOpenAssistant != null) {
+                                    OutlinedButton(
+                                        onClick = { onOpenAssistant(com.example.ai.ui.AssistantEntryPoint.DIAGNOSE_FAILURE) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        shape = RoundedCornerShape(VoltAtlasShapes.chip),
+                                        border = BorderStroke(1.dp, SleekPrimary.copy(alpha = 0.5f)),
+                                        modifier = Modifier.testTag("diagnose_issue_btn_${issue.componentName}")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.AutoAwesome,
+                                            contentDescription = "Diagnose",
+                                            tint = SleekPrimary,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Diagnose", fontSize = 11.sp, color = SleekPrimary, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3.5 AI Assistant Quick Action Card
+        if (onOpenAssistant != null) {
+            item {
+                Card(
+                    onClick = { onOpenAssistant(com.example.ai.ui.AssistantEntryPoint.DASHBOARD_ACTION) },
+                    colors = CardDefaults.cardColors(containerColor = ThemeSurface),
+                    border = BorderStroke(1.dp, SleekPrimary.copy(alpha = 0.35f)),
+                    shape = RoundedCornerShape(VoltAtlasShapes.card),
+                    modifier = Modifier.fillMaxWidth().testTag("dashboard_ask_assistant_card")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .background(SleekPrimary.copy(alpha = 0.12f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "Ask VoltAtlas",
+                                tint = SleekPrimary,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Ask VoltAtlas Assistant",
+                                style = CardTitle.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+                                color = ThemeTextColor
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Analyze sizing, voltage drop, and transformer load",
+                                style = Caption.copy(fontSize = 12.sp),
+                                color = SlateTextSecondary
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Open Assistant",
+                            tint = SleekPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
             }
@@ -2008,7 +2173,8 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
 fun CircuitsGridScreen(
     state: UiState.Success,
     viewModel: EngineeringViewModel,
-    onNavigateToPanelSchedule: ((Int) -> Unit)? = null
+    onNavigateToPanelSchedule: ((Int) -> Unit)? = null,
+    onOpenAssistant: ((com.example.ai.ui.AssistantEntryPoint, CircuitEntity) -> Unit)? = null
 ) {
     val query by viewModel.circuitSearchQuery.collectAsState()
     val statusFilter by viewModel.circuitStatusFilter.collectAsState()
@@ -2440,6 +2606,31 @@ fun CircuitsGridScreen(
                                                 modifier = Modifier.testTag("reset_to_auto_btn_${circ.circuitName}")
                                             ) {
                                                 Text("Reset to Auto", color = ThemeTextColor, fontSize = 11.sp)
+                                            }
+                                        }
+
+                                        if (onOpenAssistant != null) {
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            OutlinedButton(
+                                                onClick = { onOpenAssistant(com.example.ai.ui.AssistantEntryPoint.CONTEXTUAL_CIRCUIT, circ) },
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                border = BorderStroke(1.dp, SleekPrimary.copy(alpha = 0.4f)),
+                                                shape = RoundedCornerShape(VoltAtlasShapes.chip),
+                                                modifier = Modifier.fillMaxWidth().testTag("ask_assistant_circuit_btn_${circ.circuitName}")
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.AutoAwesome,
+                                                        contentDescription = "Ask Assistant",
+                                                        tint = SleekPrimary,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("Ask Assistant about this circuit", color = SleekPrimary, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                                }
                                             }
                                         }
 
