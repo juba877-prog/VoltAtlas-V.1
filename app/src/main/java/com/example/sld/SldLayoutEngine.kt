@@ -53,6 +53,10 @@ object SldLayoutEngine {
         generatorResult: GeneratorResult? = null,
         atsResult: com.example.engine.AtsResult? = null,
         atsEntity: AtsEntity? = null,
+        generators: List<com.example.data.GeneratorEntity> = emptyList(),
+        generatorResults: Map<String, GeneratorResult> = emptyMap(),
+        atsList: List<AtsEntity> = emptyList(),
+        atsResults: Map<String, com.example.engine.AtsResult> = emptyMap(),
         textMeasurer: androidx.compose.ui.text.TextMeasurer? = null,
         manualPositions: Map<String, androidx.compose.ui.geometry.Offset> = emptyMap()
     ): SldEngineResult {
@@ -65,7 +69,11 @@ object SldLayoutEngine {
             shortCircuitResults = shortCircuitResults,
             generatorResult = generatorResult,
             atsResult = atsResult,
-            atsEntity = atsEntity
+            atsEntity = atsEntity,
+            generators = generators,
+            generatorResults = generatorResults,
+            atsList = atsList,
+            atsResults = atsResults
         )
 
         return RiserLayoutEngine.calculateLayout(graph, circuits, textMeasurer, manualPositions)

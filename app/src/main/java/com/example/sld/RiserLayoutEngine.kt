@@ -61,8 +61,8 @@ object RiserLayoutEngine {
                 if (parentNode != null && childNode != null) {
                     val isSourceToSource = parentNode.type == SldNodeType.UTILITY_SOURCE && childNode.type == SldNodeType.TRANSFORMER
 
-                    // Do not push Transformer out of Tier 0, and do not relax tier via secondary ATS emergency edge
-                    if (!isSourceToSource && edge.type != SldEdgeType.ATS_EMERGENCY_PATH) {
+                    // Do not push Transformer out of Tier 0, and do not relax tier via secondary ATS incomer edges
+                    if (!isSourceToSource && edge.type != SldEdgeType.ATS_EMERGENCY_PATH && edge.type != SldEdgeType.ATS_NORMAL_PATH) {
                         val parentTier = effectiveTier[edge.fromNodeId] ?: 0
                         val currentChildTier = effectiveTier[edge.toNodeId] ?: 0
                         val minChildTier = parentTier + 1
@@ -93,7 +93,7 @@ object RiserLayoutEngine {
         val parentMap = mutableMapOf<String, String>()
 
         graph.edges.forEach { edge ->
-            if (edge.type != SldEdgeType.ATS_EMERGENCY_PATH) {
+            if (edge.type != SldEdgeType.ATS_EMERGENCY_PATH && edge.type != SldEdgeType.ATS_NORMAL_PATH) {
                 childrenMap.getOrPut(edge.fromNodeId) { mutableListOf() }.add(edge.toNodeId)
                 parentMap[edge.toNodeId] = edge.fromNodeId
             }
@@ -243,8 +243,10 @@ object RiserLayoutEngine {
                     if (txPos != null) txPos.x + txPos.width / 2f - w / 2f else defaultSourceX
                 }
                 SldNodeType.GENERATOR -> {
-                    // Lock Generator directly above ATS emergency port as a single vertically aligned column
-                    val atsPos = positionedNodesMap.values.firstOrNull { it.panelType.uppercase().contains("ATS") }
+                    // Lock Generator directly above its connected ATS emergency port as a vertically aligned column
+                    val matchedAtsEdge = graph.edges.firstOrNull { it.fromNodeId == node.id && it.type == SldEdgeType.ATS_EMERGENCY_PATH }
+                    val atsPos = matchedAtsEdge?.let { positionedNodesMap[it.toNodeId] }
+                        ?: positionedNodesMap.values.firstOrNull { it.panelType.uppercase().contains("ATS") }
                     val txPos = positionedNodesMap.values.firstOrNull { it.panelType.uppercase().contains("TRANSFORMER") }
 
                     if (atsPos != null) {
@@ -253,14 +255,21 @@ object RiserLayoutEngine {
 
                         if (idealGenX < minClearanceX) {
                             val shiftDelta = minClearanceX - idealGenX
-                            // Shift ATS and its entire downstream subtree (e.g. Elpp) together so they stay vertically aligned
+                            // Shift ATS and its entire downstream subtree together so they stay vertically aligned
                             shiftSubtree(atsPos.id, shiftDelta, positionedNodesMap, childrenMap)
                             idealGenX + shiftDelta
                         } else {
                             idealGenX
                         }
                     } else {
-                        maxOf(defaultSourceX, currentRootX)
+                        // Direct generator loads (no ATS) or unassigned: align above primary downstream panel or default clearance
+                        val directLoadEdge = graph.edges.firstOrNull { it.fromNodeId == node.id }
+                        val directLoadPos = directLoadEdge?.let { positionedNodesMap[it.toNodeId] }
+                        if (directLoadPos != null) {
+                            directLoadPos.x + directLoadPos.width / 2f - w / 2f
+                        } else {
+                            maxOf(defaultSourceX, currentRootX)
+                        }
                     }
                 }
                 else -> defaultSourceX
@@ -494,12 +503,14 @@ object RiserLayoutEngine {
         rootId: String,
         deltaX: Float,
         positionedNodesMap: MutableMap<String, PositionedSldNode>,
-        childrenMap: Map<String, List<String>>
+        childrenMap: Map<String, List<String>>,
+        visited: MutableSet<String> = mutableSetOf()
     ) {
+        if (!visited.add(rootId)) return
         val node = positionedNodesMap[rootId] ?: return
         positionedNodesMap[rootId] = node.copy(x = node.x + deltaX)
         childrenMap[rootId]?.forEach { childId ->
-            shiftSubtree(childId, deltaX, positionedNodesMap, childrenMap)
+            shiftSubtree(childId, deltaX, positionedNodesMap, childrenMap, visited)
         }
     }
 }

@@ -1190,7 +1190,11 @@ private fun RenderTabContent(
             transformers = uiStateVal.transformers,
             transformerResults = uiStateVal.transformerResults,
             generatorResult = uiStateVal.generatorResult,
-            atsResult = uiStateVal.atsResult
+            generators = uiStateVal.generators,
+            generatorResults = uiStateVal.generatorResults,
+            atsResult = uiStateVal.atsResult,
+            atsList = uiStateVal.atsList,
+            atsResults = uiStateVal.atsResults
         )
         6 -> ConduitFillScreen(viewModel)
         7 -> BoqProcurementScreen(uiStateVal)

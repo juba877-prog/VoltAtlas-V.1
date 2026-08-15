@@ -55,6 +55,10 @@ fun SldScreen(
     transformers: List<com.example.data.TransformerEntity> = emptyList(),
     transformerResults: Map<String, com.example.engine.TransformerResult> = emptyMap(),
     generatorResult: com.example.engine.GeneratorResult? = null,
+    generators: List<com.example.data.GeneratorEntity> = emptyList(),
+    generatorResults: Map<String, com.example.engine.GeneratorResult> = emptyMap(),
+    atsList: List<com.example.data.AtsEntity> = emptyList(),
+    atsResults: Map<String, com.example.engine.AtsResult> = emptyMap(),
     manualPositions: MutableMap<String, Offset> = remember { mutableStateMapOf() },
     onNavigateToTab: (Int) -> Unit = {},
     modifier: Modifier = Modifier
@@ -81,7 +85,7 @@ fun SldScreen(
         sizingResults.mapValues { (_, res) -> res.utilizationPct }
     }
     
-    val engineResult = remember(circuits, effectiveProjId, transformers, sizingResults, transformerResults, generatorResult, atsResult, atsEntity, manualPositions.toMap()) {
+    val engineResult = remember(circuits, effectiveProjId, transformers, sizingResults, transformerResults, generatorResult, generators, generatorResults, atsResult, atsEntity, atsList, atsResults, manualPositions.toMap()) {
         try {
             SldLayoutEngine.calculateLayout(
                 activeProjectId = effectiveProjId,
@@ -93,6 +97,10 @@ fun SldScreen(
                 generatorResult = generatorResult,
                 atsResult = atsResult,
                 atsEntity = atsEntity,
+                generators = generators,
+                generatorResults = generatorResults,
+                atsList = atsList,
+                atsResults = atsResults,
                 manualPositions = manualPositions
             )
         } catch (e: Throwable) {

@@ -471,7 +471,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
         val pfTrans = settings.pfT
 
         val genSet = settings.gen ?: com.example.data.GeneratorEntity()
-        val atsSetResolved = settings.ats ?: com.example.data.AtsEntity()
+        val atsSetResolved = settings.ats
 
         try {
             val normalizedCircuits = circuits.map { normalizeAutoOverride(it) }
@@ -739,7 +739,11 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 atsResult = atsResult,
                 atsEntity = atsSetResolved,
                 upsResult = upsResult,
-                pfCorrectionResults = pfCorrectionResults
+                pfCorrectionResults = pfCorrectionResults,
+                generators = genList,
+                generatorResults = generatorResults,
+                atsList = atsEntitiesList,
+                atsResults = atsResults
             )
 
             val totalFailures = graph.validationIssues.count { it.severity == com.example.sld.SldValidationStatus.INVALID } +

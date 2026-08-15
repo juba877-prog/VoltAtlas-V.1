@@ -30,7 +30,11 @@ object ElectricalNetworkGraphBuilder {
         atsResult: AtsResult? = null,
         atsEntity: AtsEntity? = null,
         upsResult: UpsResult? = null,
-        pfCorrectionResults: List<PfCorrectionResult> = emptyList()
+        pfCorrectionResults: List<PfCorrectionResult> = emptyList(),
+        generators: List<GeneratorEntity>? = null,
+        generatorResults: Map<String, GeneratorResult> = emptyMap(),
+        atsList: List<AtsEntity>? = null,
+        atsResults: Map<String, AtsResult> = emptyMap()
     ): ElectricalNetworkGraph {
         val nodes = mutableListOf<SldNode>()
         val edges = mutableListOf<SldEdge>()
@@ -108,7 +112,6 @@ object ElectricalNetworkGraphBuilder {
                 val txRes = transformerResults[tx.transformerId]
                 val ratedKvaVal = txRes?.selectedSize?.takeIf { it > 0.0 } ?: tx.kVA
                 val ratedKvaStr = if (ratedKvaVal > 0) "${ratedKvaVal.toInt()} kVA" else "DATA REQUIRED"
-                // FLC is calculated on the LV (secondary) side = 400 V, NOT the primary voltage.
                 val secondaryVoltage = 400.0
                 val fallbackFlc = (ratedKvaVal * 1000) / (Math.sqrt(3.0) * secondaryVoltage)
                 val ibAmpStr = txRes?.flc?.let { "%.0f A".format(it) } ?: "%.0f A".format(fallbackFlc)
@@ -150,30 +153,51 @@ object ElectricalNetworkGraphBuilder {
             }
         }
 
-        // 2. Generator & ATS processing
-        val genRatedKva = generatorResult?.finalSize ?: 0.0
-        val hasGen = generatorResult != null && genRatedKva > 0.0
-        val genNodeId = "gen_1"
-        if (hasGen) {
-            val genRatedKvaStr = "${genRatedKva.toInt()} kVA"
-            val sysVoltage = atsEntity?.systemVoltage ?: 400
-            val sysV = if (sysVoltage > 0) sysVoltage.toDouble() else 400.0
+        // 2. Multi-Instance Generator Processing
+        val projGenerators = when {
+            generators != null -> {
+                generators.filter { it.projectId == effectiveProjectId || (it.projectId == "DEFAULT_PROJECT" && effectiveProjectId != "DEFAULT_PROJECT") }
+            }
+            generatorResult != null && ((generatorResult.finalSize ?: 0.0) > 0.0 || generatorResult.status.isNotBlank()) -> {
+                listOf(GeneratorEntity(projectId = effectiveProjectId, generatorId = "1", generatorName = "Generator", manualSizeKVA = generatorResult.finalSize))
+            }
+            else -> emptyList()
+        }
+
+        val effectiveGenResults: Map<String, GeneratorResult> = if (generatorResults.isNotEmpty()) {
+            generatorResults
+        } else if (generatorResult != null) {
+            mapOf("1" to generatorResult)
+        } else {
+            emptyMap()
+        }
+
+        projGenerators.forEach { gen ->
+            val genId = gen.generatorId.ifBlank { "1" }
+            val genNodeId = "gen_$genId"
+            val genRes = effectiveGenResults[genId] ?: (if (genId == "1") generatorResult else null)
+            val genRatedKva = genRes?.finalSize?.takeIf { it > 0.0 } ?: gen.manualSizeKVA ?: 0.0
+            val genRatedKvaStr = if (genRatedKva > 0.0) "${genRatedKva.toInt()} kVA" else "DATA REQUIRED"
+            val sysVoltage = 400
+            val sysV = 400.0
             val genIbAmp = "%.0f A".format((genRatedKva * 1000) / (Math.sqrt(3.0) * sysV))
-            val genLoadingPct = "%.1f%%".format(generatorResult.loadingPct)
+            val genLoadingPct = genRes?.loadingPct?.let { "%.1f%%".format(it) } ?: ""
+            val genName = gen.generatorName.ifBlank { "Generator $genId" }
+            val genStatusText = if (genRes?.status?.isNotBlank() == true) genRes.status else "EMERGENCY GENERATOR"
 
             nodes.add(
                 SldNode(
                     id = genNodeId,
                     projectId = effectiveProjectId,
                     type = SldNodeType.GENERATOR,
-                    displayName = "Generator ($genRatedKvaStr)",
+                    displayName = "$genName ($genRatedKvaStr)",
                     voltage = "$sysVoltage V",
                     dataBlock = SldDataBlock(
                         ratedKva = genRatedKvaStr,
                         voltage = "$sysVoltage V",
                         ibAmp = genIbAmp,
                         loadingPct = genLoadingPct,
-                        statusText = if (generatorResult.status.isNotBlank()) generatorResult.status else "EMERGENCY GENERATOR"
+                        statusText = genStatusText
                     ),
                     status = SldValidationStatus.VALID,
                     provenance = SldProvenance.PROJECT_INPUT,
@@ -182,38 +206,294 @@ object ElectricalNetworkGraphBuilder {
             )
         }
 
-        val nonNullAtsRes = atsResult
-        // NOTE: EMDB / E-DB classification does NOT exist in the Board Type dropdown,
-        // so that dead check was removed. ATS output is driven by atsEntity.outputBoardId
-        // (the board the user selects on the ATS screen) instead.
-        val atsOutputBoardId = atsEntity?.outputBoardId
-        val hasEmergencyLoad = projCircuits.any {
-            it.atsIncluded ||
-            it.generatorIncluded ||
-            it.fedFrom.trim().lowercase().contains("ats")
-        } || (atsOutputBoardId != null && atsOutputBoardId > 0)
-        val hasExplicitAtsResult = nonNullAtsRes != null && nonNullAtsRes.status.isNotBlank() && nonNullAtsRes.status != "SELECT_LOADS"
-        val hasAts = (hasGen && hasEmergencyLoad) || hasExplicitAtsResult
-        val atsNodeId = "ats_1"
-        if (hasAts) {
-            val mdbCircuit = projCircuits.firstOrNull { circ ->
-                (circ.panelType != null && circ.panelType.lowercase().contains("mdb")) ||
-                circ.circuitName.lowercase().contains("mdb") ||
-                circ.fedFrom.trim().lowercase().startsWith("trans") ||
-                circ.fedFrom.trim().lowercase().startsWith("tx")
+        // Multi-Instance ATS Processing
+        val projAtsList = when {
+            atsList != null -> {
+                atsList.filter {
+                    it.projectId == effectiveProjectId ||
+                        (
+                            it.projectId == "DEFAULT_PROJECT" &&
+                                effectiveProjectId != "DEFAULT_PROJECT"
+                        )
+                }
             }
-            val normalSourceNodeId = if (mdbCircuit != null) "circ_${mdbCircuit.id}" else nodes.find { it.type == SldNodeType.TRANSFORMER }?.id
-            val hasNormalSource = normalSourceNodeId != null && projTransformers.isNotEmpty()
 
-            val ratingVal = nonNullAtsRes?.finalRating?.toInt()
+            atsEntity != null -> {
+                listOf(atsEntity)
+            }
+
+            atsResult != null &&
+                atsResult.status.isNotBlank() &&
+                atsResult.status !in setOf("SELECT_LOADS", "NO_LOADS") -> {
+                listOf(
+                    AtsEntity(
+                        projectId = effectiveProjectId,
+                        atsId = "1",
+                        atsName = "ATS-01"
+                    )
+                )
+            }
+
+            else -> emptyList()
+        }
+
+        val effectiveAtsResults: Map<String, AtsResult> = if (atsResults.isNotEmpty()) {
+            atsResults
+        } else if (atsResult != null) {
+            mapOf((atsEntity?.atsId ?: "1") to atsResult)
+        } else {
+            emptyMap()
+        }
+
+        projAtsList.forEach { ats ->
+            val atsId = ats.atsId.ifBlank { "1" }
+            val atsNodeId = "ats_$atsId"
+            val atsRes = effectiveAtsResults[atsId] ?: (if (atsId == "1" || atsId == atsEntity?.atsId) atsResult else null)
+            val atsOutputBoardId = ats.outputBoardId
+            val atsName = ats.atsName.ifBlank { "ATS-$atsId" }
+
+            // Deterministic Normal Source Resolution
+            val rawNormalSrc = ats.normalSourceId?.trim().orEmpty()
+            var normalSourceNodeId: String? = null
+            var normalSourceErrorIssue: SldValidationIssue? = null
+
+            if (rawNormalSrc.isNotBlank()) {
+                // Step 1: Exact numeric circuit ID match
+                val numericCircuitId = rawNormalSrc.toIntOrNull()
+                val matchedCircuitById = numericCircuitId?.let { id ->
+                    projCircuits.firstOrNull { it.id == id }
+                }
+
+                if (matchedCircuitById != null) {
+                    normalSourceNodeId = "circ_${matchedCircuitById.id}"
+                } else {
+                    // Step 2: Exact normalized circuit name match
+                    val circuitNameMatches = projCircuits.filter {
+                        it.circuitName.trim().equals(rawNormalSrc, ignoreCase = true)
+                    }
+
+                    if (circuitNameMatches.size == 1) {
+                        normalSourceNodeId = "circ_${circuitNameMatches.single().id}"
+                    } else if (circuitNameMatches.size > 1) {
+                        val conflictingIds = circuitNameMatches.map { it.id }.joinToString()
+                        normalSourceErrorIssue = SldValidationIssue(
+                            affectedNodeId = atsNodeId,
+                            componentName = atsName,
+                            failedCondition = "Ambiguous ATS Normal Source: Multiple circuits named '$rawNormalSrc' exist (IDs: $conflictingIds)",
+                            issueCode = "ATS_AMBIGUOUS_NORMAL_SOURCE",
+                            severity = SldValidationStatus.INVALID,
+                            recommendedCorrection = "Ensure circuit names are unique or re-select the ATS Normal Source"
+                        )
+                    } else {
+                        // Step 3: Exact Transformer ID match
+                        val txIdMatches = projTransformers.filter {
+                            it.transformerId.trim().equals(rawNormalSrc, ignoreCase = true)
+                        }
+
+                        if (txIdMatches.size == 1) {
+                            normalSourceNodeId = "tx_${txIdMatches.single().transformerId}"
+                        } else if (txIdMatches.size > 1) {
+                            val conflictingIds = txIdMatches.map { it.transformerId }.joinToString()
+                            normalSourceErrorIssue = SldValidationIssue(
+                                affectedNodeId = atsNodeId,
+                                componentName = atsName,
+                                failedCondition = "Ambiguous ATS Normal Source: Multiple transformers with ID '$rawNormalSrc' exist (IDs: $conflictingIds)",
+                                issueCode = "ATS_AMBIGUOUS_NORMAL_SOURCE",
+                                severity = SldValidationStatus.INVALID,
+                                recommendedCorrection = "Ensure transformer IDs are unique or re-select the ATS Normal Source"
+                            )
+                        } else {
+                            // Step 4: Exact Transformer Name match
+                            val txNameMatches = projTransformers.filter {
+                                it.transformerName.trim().equals(rawNormalSrc, ignoreCase = true)
+                            }
+
+                            if (txNameMatches.size == 1) {
+                                normalSourceNodeId = "tx_${txNameMatches.single().transformerId}"
+                            } else if (txNameMatches.size > 1) {
+                                val conflictingIds = txNameMatches.map { it.transformerId }.joinToString()
+                                normalSourceErrorIssue = SldValidationIssue(
+                                    affectedNodeId = atsNodeId,
+                                    componentName = atsName,
+                                    failedCondition = "Ambiguous ATS Normal Source: Multiple transformers named '$rawNormalSrc' exist (IDs: $conflictingIds)",
+                                    issueCode = "ATS_AMBIGUOUS_NORMAL_SOURCE",
+                                    severity = SldValidationStatus.INVALID,
+                                    recommendedCorrection = "Ensure transformer names are unique or re-select the ATS Normal Source"
+                                )
+                            } else if (rawNormalSrc.lowercase() in setOf("transformer", "tx", "grid", "utility", "source", "main")) {
+                                // Step 5: Generic Source Keywords
+                                if (projTransformers.size == 1) {
+                                    normalSourceNodeId = "tx_${projTransformers.single().transformerId}"
+                                } else if (projTransformers.size > 1) {
+                                    normalSourceErrorIssue = SldValidationIssue(
+                                        affectedNodeId = atsNodeId,
+                                        componentName = atsName,
+                                        failedCondition = "Ambiguous ATS Normal Source: Generic keyword '$rawNormalSrc' used but multiple transformers exist in project",
+                                        issueCode = "ATS_AMBIGUOUS_NORMAL_SOURCE",
+                                        severity = SldValidationStatus.INVALID,
+                                        recommendedCorrection = "Explicitly select specific transformer ID for ATS normal source"
+                                    )
+                                } else {
+                                    val utilSource = nodes.find { it.type == SldNodeType.UTILITY_SOURCE }
+                                    if (utilSource != null) {
+                                        normalSourceNodeId = utilSource.id
+                                    } else {
+                                        normalSourceErrorIssue = SldValidationIssue(
+                                            affectedNodeId = atsNodeId,
+                                            componentName = atsName,
+                                            failedCondition = "ATS Normal Power Source '$rawNormalSrc' not found in project network",
+                                            issueCode = "ATS_NORMAL_SOURCE_NOT_FOUND",
+                                            severity = SldValidationStatus.INVALID,
+                                            recommendedCorrection = "Configure transformer or utility source in project"
+                                        )
+                                    }
+                                }
+                            } else {
+                                // Step 6: Non-matching named source
+                                normalSourceErrorIssue = SldValidationIssue(
+                                    affectedNodeId = atsNodeId,
+                                    componentName = atsName,
+                                    failedCondition = "ATS Normal Power Source '$rawNormalSrc' not found in project network",
+                                    issueCode = "ATS_NORMAL_SOURCE_NOT_FOUND",
+                                    severity = SldValidationStatus.INVALID,
+                                    recommendedCorrection = "Verify the ATS Normal Source selection in Power Systems"
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Unassigned normal source fallback: check for single upstream MDB or single transformer
+                val mdbCircuit = projCircuits.firstOrNull { circ ->
+                    (atsOutputBoardId == null || circ.id != atsOutputBoardId) &&
+                    circ.assignedAtsId != atsId &&
+                    ((circ.panelType != null && circ.panelType.lowercase().contains("mdb")) ||
+                    circ.circuitName.lowercase().contains("mdb") ||
+                    circ.fedFrom.trim().lowercase().startsWith("trans") ||
+                    circ.fedFrom.trim().lowercase().startsWith("tx"))
+                }
+                normalSourceNodeId = if (mdbCircuit != null) {
+                    "circ_${mdbCircuit.id}"
+                } else if (projTransformers.size == 1) {
+                    "tx_${projTransformers.single().transformerId}"
+                } else {
+                    null
+                }
+            }
+
+            if (normalSourceErrorIssue != null) {
+                validationIssues.add(normalSourceErrorIssue)
+            }
+
+            val hasNormalSource = normalSourceNodeId != null && normalSourceErrorIssue == null && (
+                projTransformers.any { "tx_${it.transformerId}" == normalSourceNodeId } ||
+                projCircuits.any { "circ_${it.id}" == normalSourceNodeId } ||
+                nodes.any { it.id == normalSourceNodeId }
+            )
+
+            val ratingVal = atsRes?.finalRating?.toInt() ?: ats.manualSizeAmp?.toInt()?.takeIf { it > 0 }
             val atsRating = if (ratingVal != null) "${ratingVal}A ATS" else "ATS"
-            val atsIbAmp = nonNullAtsRes?.governingCurrent?.let { "%.0f A".format(it) } ?: ""
+            val atsIbAmp = atsRes?.governingCurrent?.let { "%.0f A".format(it) } ?: ""
 
-            // ATS output destination is satisfied either by a board explicitly fedFrom "ATS",
-            // OR by the board the user selected as the ATS output board (atsEntity.outputBoardId).
-            val hasAtsDest = projCircuits.any { it.fedFrom.trim().lowercase().contains("ats") } ||
-                    (atsOutputBoardId != null && projCircuits.any { it.id == atsOutputBoardId })
-            val atsStatus = if (!hasNormalSource || !hasGen || !hasAtsDest) {
+            // Identify Emergency Generator Source for this ATS
+            val rawEmergSrc = ats.emergencySourceId?.trim().orEmpty()
+            var emergGenNodeId: String? = null
+            var emergSourceErrorIssue: SldValidationIssue? = null
+
+            if (rawEmergSrc.isNotBlank()) {
+                // Step 1: Exact Generator ID match
+                val genIdMatches = projGenerators.filter {
+                    it.generatorId.trim().equals(rawEmergSrc, ignoreCase = true)
+                }
+
+                if (genIdMatches.size == 1) {
+                    emergGenNodeId = "gen_${genIdMatches.single().generatorId}"
+                } else if (genIdMatches.size > 1) {
+                    val conflictingIds = genIdMatches.map { it.generatorId }.joinToString()
+                    emergSourceErrorIssue = SldValidationIssue(
+                        affectedNodeId = atsNodeId,
+                        componentName = atsName,
+                        failedCondition = "Ambiguous ATS Emergency Source: Multiple generators with ID '$rawEmergSrc' exist (IDs: $conflictingIds)",
+                        issueCode = "ATS_AMBIGUOUS_EMERGENCY_SOURCE",
+                        severity = SldValidationStatus.INVALID,
+                        recommendedCorrection = "Ensure generator IDs are unique or re-select the ATS Emergency Source"
+                    )
+                } else {
+                    // Step 2: Exact Generator Name match
+                    val genNameMatches = projGenerators.filter {
+                        it.generatorName.trim().equals(rawEmergSrc, ignoreCase = true)
+                    }
+
+                    if (genNameMatches.size == 1) {
+                        emergGenNodeId = "gen_${genNameMatches.single().generatorId}"
+                    } else if (genNameMatches.size > 1) {
+                        val conflictingIds = genNameMatches.map { it.generatorId }.joinToString()
+                        emergSourceErrorIssue = SldValidationIssue(
+                            affectedNodeId = atsNodeId,
+                            componentName = atsName,
+                            failedCondition = "Ambiguous ATS Emergency Source: Multiple generators named '$rawEmergSrc' exist (IDs: $conflictingIds)",
+                            issueCode = "ATS_AMBIGUOUS_EMERGENCY_SOURCE",
+                            severity = SldValidationStatus.INVALID,
+                            recommendedCorrection = "Ensure generator names are unique or re-select the ATS Emergency Source"
+                        )
+                    } else if (rawEmergSrc.lowercase() in setOf("generator", "gen", "emergency", "genset")) {
+                        // Step 3: Generic Generator Keywords
+                        if (projGenerators.size == 1) {
+                            emergGenNodeId = "gen_${projGenerators.single().generatorId}"
+                        } else if (projGenerators.size > 1) {
+                            val allGenIds = projGenerators.map { it.generatorId }.joinToString()
+                            emergSourceErrorIssue = SldValidationIssue(
+                                affectedNodeId = atsNodeId,
+                                componentName = atsName,
+                                failedCondition = "Ambiguous ATS Emergency Source: Generic keyword '$rawEmergSrc' used but multiple generators exist in project (IDs: $allGenIds)",
+                                issueCode = "ATS_AMBIGUOUS_EMERGENCY_SOURCE",
+                                severity = SldValidationStatus.INVALID,
+                                recommendedCorrection = "Explicitly select specific generator for ATS emergency source"
+                            )
+                        } else {
+                            emergSourceErrorIssue = SldValidationIssue(
+                                affectedNodeId = atsNodeId,
+                                componentName = atsName,
+                                failedCondition = "ATS Emergency Power Source '$rawEmergSrc' not found in project network",
+                                issueCode = "ATS_EMERGENCY_SOURCE_NOT_FOUND",
+                                severity = SldValidationStatus.INVALID,
+                                recommendedCorrection = "Configure a generator in Power Systems"
+                            )
+                        }
+                    } else {
+                        // Step 5: Unknown Named Value
+                        emergSourceErrorIssue = SldValidationIssue(
+                            affectedNodeId = atsNodeId,
+                            componentName = atsName,
+                            failedCondition = "ATS Emergency Power Source '$rawEmergSrc' not found in project network",
+                            issueCode = "ATS_EMERGENCY_SOURCE_NOT_FOUND",
+                            severity = SldValidationStatus.INVALID,
+                            recommendedCorrection = "Verify the ATS Emergency Source selection in Power Systems"
+                        )
+                    }
+                }
+            } else {
+                // Step 4: Blank/Unassigned Emergency Source
+                if (projGenerators.size == 1) {
+                    emergGenNodeId = "gen_${projGenerators.single().generatorId}"
+                }
+            }
+
+            if (emergSourceErrorIssue != null) {
+                validationIssues.add(emergSourceErrorIssue)
+            }
+
+            val hasEmergSource = emergGenNodeId != null && emergSourceErrorIssue == null && nodes.any { it.id == emergGenNodeId }
+
+            // Output destination check
+            val hasAtsDest = projCircuits.any {
+                it.assignedAtsId == atsId ||
+                (atsOutputBoardId != null && it.id == atsOutputBoardId) ||
+                it.fedFrom.trim().equals(atsName, ignoreCase = true) ||
+                it.fedFrom.trim().lowercase().contains("ats")
+            }
+
+            val atsStatus = if (!hasNormalSource || !hasEmergSource || !hasAtsDest || normalSourceErrorIssue != null || emergSourceErrorIssue != null) {
                 SldValidationStatus.DATA_REQUIRED
             } else SldValidationStatus.VALID
 
@@ -221,11 +501,11 @@ object ElectricalNetworkGraphBuilder {
                 id = atsNodeId,
                 projectId = effectiveProjectId,
                 type = SldNodeType.ATS,
-                displayName = "ATS-01",
+                displayName = atsName,
                 dataBlock = SldDataBlock(
                     deviceTypeAndRating = atsRating,
                     ibAmp = atsIbAmp,
-                    statusText = nonNullAtsRes?.status?.ifBlank { "TRANSFER SWITCH" } ?: "TRANSFER SWITCH"
+                    statusText = atsRes?.status?.ifBlank { "TRANSFER SWITCH" } ?: "TRANSFER SWITCH"
                 ),
                 status = atsStatus,
                 provenance = SldProvenance.PROJECT_INPUT,
@@ -233,21 +513,21 @@ object ElectricalNetworkGraphBuilder {
             )
             nodes.add(atsNode)
 
-            if (hasNormalSource) {
+            if (hasNormalSource && normalSourceNodeId != null) {
                 edges.add(
                     SldEdge(
-                        id = "edge_${normalSourceNodeId}_ats_1",
+                        id = "edge_${normalSourceNodeId}_$atsNodeId",
                         fromNodeId = normalSourceNodeId,
                         toNodeId = atsNodeId,
                         type = SldEdgeType.ATS_NORMAL_PATH,
                         label = "NORMAL"
                     )
                 )
-            } else {
+            } else if (normalSourceErrorIssue == null) {
                 validationIssues.add(
                     SldValidationIssue(
                         affectedNodeId = atsNodeId,
-                        componentName = "ATS-01",
+                        componentName = atsName,
                         failedCondition = "ATS Normal Power Source Missing",
                         issueCode = "ATS_NORMAL_SOURCE_REQUIRED",
                         severity = SldValidationStatus.DATA_REQUIRED,
@@ -256,11 +536,11 @@ object ElectricalNetworkGraphBuilder {
                 )
             }
 
-            if (hasGen) {
+            if (hasEmergSource && emergGenNodeId != null) {
                 edges.add(
                     SldEdge(
-                        id = "edge_gen_1_ats_1",
-                        fromNodeId = genNodeId,
+                        id = "edge_${emergGenNodeId}_$atsNodeId",
+                        fromNodeId = emergGenNodeId,
                         toNodeId = atsNodeId,
                         type = SldEdgeType.ATS_EMERGENCY_PATH,
                         label = "EMERGENCY"
@@ -270,7 +550,7 @@ object ElectricalNetworkGraphBuilder {
                 validationIssues.add(
                     SldValidationIssue(
                         affectedNodeId = atsNodeId,
-                        componentName = "ATS-01",
+                        componentName = atsName,
                         failedCondition = "ATS Emergency Power Source Missing",
                         issueCode = "ATS_EMERGENCY_SOURCE_REQUIRED",
                         severity = SldValidationStatus.DATA_REQUIRED,
@@ -283,11 +563,11 @@ object ElectricalNetworkGraphBuilder {
                 validationIssues.add(
                     SldValidationIssue(
                         affectedNodeId = atsNodeId,
-                        componentName = "ATS-01",
+                        componentName = atsName,
                         failedCondition = "ATS Output Destination Missing",
                         issueCode = "ATS_OUTPUT_DESTINATION_REQUIRED",
                         severity = SldValidationStatus.DATA_REQUIRED,
-                        recommendedCorrection = "Select a downstream output board on the ATS screen, or set a board's Source to ATS"
+                        recommendedCorrection = "Select a downstream output board on the ATS screen, or assign circuits to this ATS"
                     )
                 )
             }
@@ -402,8 +682,27 @@ object ElectricalNetworkGraphBuilder {
 
                 // Determine resolvedParentNodeId (using outer scope variables)
 
-                if (hasAts && circ.id == atsOutputBoardId) {
-                    resolvedParentNodeId = atsNodeId
+                // Determine resolvedParentNodeId (using multi-instance ATS / Generator mappings)
+                val matchedAts = if (!circ.assignedAtsId.isNullOrBlank()) {
+                    projAtsList.firstOrNull { it.atsId.equals(circ.assignedAtsId, ignoreCase = true) }
+                } else {
+                    projAtsList.firstOrNull { it.outputBoardId == circ.id || it.atsName.equals(circ.fedFrom.trim(), ignoreCase = true) }
+                }
+
+                val matchedGen = if (!circ.assignedGeneratorId.isNullOrBlank()) {
+                    projGenerators.firstOrNull { it.generatorId.equals(circ.assignedGeneratorId, ignoreCase = true) }
+                } else {
+                    projGenerators.firstOrNull { it.generatorName.equals(circ.fedFrom.trim(), ignoreCase = true) }
+                }
+
+                if (matchedAts != null) {
+                    // Option (b): When assignedAtsId (or outputBoardId) is set, ATS path takes precedence on SLD diagram
+                    // even if assignedGeneratorId is also set (which feeds the ATS emergency input upstream).
+                    resolvedParentNodeId = "ats_${matchedAts.atsId.ifBlank { "1" }}"
+                    provenance = SldProvenance.APPROVED_STANDARD
+                } else if (matchedGen != null && !circ.assignedGeneratorId.isNullOrBlank()) {
+                    // Direct Generator Feed (No ATS assigned)
+                    resolvedParentNodeId = "gen_${matchedGen.generatorId.ifBlank { "1" }}"
                     provenance = SldProvenance.APPROVED_STANDARD
                 } else if (parentCirc != null) {
                     resolvedParentNodeId = "circ_${parentCirc.id}"
@@ -423,15 +722,17 @@ object ElectricalNetworkGraphBuilder {
                 } else {
                     // fedFrom is a source keyword (Transformer / Utility / Grid / ATS / Generator)
                     if (fedLower.contains("ats")) {
-                        if (hasAts) {
-                            resolvedParentNodeId = atsNodeId
+                        val fallbackAts = projAtsList.firstOrNull { fedLower.contains(it.atsName.lowercase()) } ?: projAtsList.firstOrNull()
+                        if (fallbackAts != null) {
+                            resolvedParentNodeId = "ats_${fallbackAts.atsId.ifBlank { "1" }}"
                             provenance = SldProvenance.APPROVED_STANDARD
                         } else {
                             resolvedParentNodeId = nodes.find { it.type == SldNodeType.TRANSFORMER }?.id ?: nodes.find { it.type == SldNodeType.UTILITY_SOURCE }?.id
                         }
                     } else if (fedLower.contains("generator") || fedLower.contains("gen")) {
-                        if (hasGen) {
-                            resolvedParentNodeId = genNodeId
+                        val fallbackGen = projGenerators.firstOrNull { fedLower.contains(it.generatorName.lowercase()) } ?: projGenerators.firstOrNull()
+                        if (fallbackGen != null) {
+                            resolvedParentNodeId = "gen_${fallbackGen.generatorId.ifBlank { "1" }}"
                             provenance = SldProvenance.APPROVED_STANDARD
                         } else {
                             resolvedParentNodeId = nodes.find { it.type == SldNodeType.TRANSFORMER }?.id ?: nodes.find { it.type == SldNodeType.UTILITY_SOURCE }?.id
@@ -521,7 +822,7 @@ object ElectricalNetworkGraphBuilder {
                 unconnected.add(node)
             } else {
                 nodes.add(node)
-                val edgeType = if (resolvedParentNodeId == atsNodeId) SldEdgeType.ATS_OUTPUT else SldEdgeType.CABLE
+                val edgeType = if (resolvedParentNodeId.startsWith("ats_")) SldEdgeType.ATS_OUTPUT else SldEdgeType.CABLE
                 edges.add(
                     SldEdge(
                         id = "edge_${resolvedParentNodeId}_${circNodeId}",

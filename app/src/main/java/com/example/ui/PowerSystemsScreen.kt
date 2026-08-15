@@ -519,7 +519,39 @@ fun AtsInstanceCard(
 
     val successState = state as? UiState.Success
     val circuits = successState?.circuits ?: emptyList()
-    val sourceOptions = listOf("Transformer", "Generator", "Grid") + circuits.map { it.circuitName }.distinct()
+    val generators = successState?.generators ?: emptyList()
+
+    val normalSourceOptions = listOf("Transformer", "Generator", "Grid") + circuits.map { it.circuitName }.distinct()
+
+    val generatorLabelMap = generators.associate { gen ->
+        val label = if (generators.count { it.generatorName.trim().equals(gen.generatorName.trim(), ignoreCase = true) } > 1) {
+            "${gen.generatorName} (${gen.generatorId})"
+        } else {
+            gen.generatorName
+        }
+        label to gen.generatorId
+    }
+
+    val generatorOptionLabels = generatorLabelMap.keys.toList()
+    val emergencySourceOptions = if (generatorOptionLabels.isNotEmpty()) {
+        generatorOptionLabels + listOf("Transformer", "Grid") + circuits.map { it.circuitName }.distinct()
+    } else {
+        listOf("Generator", "Transformer", "Grid") + circuits.map { it.circuitName }.distinct()
+    }
+
+    fun resolveEmergencySourceDisplay(storedValue: String): String {
+        if (storedValue.isBlank()) return ""
+        val matchedById = generators.firstOrNull { it.generatorId.equals(storedValue, ignoreCase = true) }
+        if (matchedById != null) {
+            return generatorLabelMap.entries.firstOrNull { it.value == matchedById.generatorId }?.key ?: matchedById.generatorName
+        }
+        val matchedByName = generators.filter { it.generatorName.trim().equals(storedValue.trim(), ignoreCase = true) }
+        if (matchedByName.size == 1) {
+            return generatorLabelMap.entries.firstOrNull { it.value == matchedByName.single().generatorId }?.key ?: matchedByName.single().generatorName
+        }
+        return storedValue
+    }
+
     val outputBoardCandidates = circuits.filter {
         (it.panelType == "MDB" || it.panelType == "SMDB" || it.panelType == "DB" || it.circuitName.contains("Board", true) || it.circuitName.contains("MDB", true) || it.circuitName.contains("DB", true))
         && it.circuitName != normalSource
@@ -546,7 +578,7 @@ fun AtsInstanceCard(
                         modifier = Modifier.weight(1f, fill = false)
                     )
                     Text(
-                        text = "Rating: ${result?.finalRating ?: "Auto"} A • Normal: ${item.normalSourceId ?: "Grid"} → Emerg: ${item.emergencySourceId ?: "Gen"}",
+                        text = "Rating: ${result?.finalRating ?: "Auto"} A • Normal: ${item.normalSourceId ?: "Grid"} → Emerg: ${resolveEmergencySourceDisplay(item.emergencySourceId ?: "").ifBlank { "Gen" }}",
                         fontSize = 12.sp,
                         color = SlateTextSecondary,
                         maxLines = 1,
@@ -580,7 +612,7 @@ fun AtsInstanceCard(
                     Spacer(modifier = Modifier.height(6.dp))
                     com.example.ui.components.VoltAtlasDropdown(
                         value = normalSource,
-                        options = sourceOptions,
+                        options = normalSourceOptions,
                         onSelect = {
                             normalSource = it
                             onSave(item.copy(normalSourceId = it.takeIf { s -> s.isNotBlank() }))
@@ -588,11 +620,12 @@ fun AtsInstanceCard(
                         label = "Normal Source"
                     )
                     com.example.ui.components.VoltAtlasDropdown(
-                        value = emergencySource,
-                        options = sourceOptions,
-                        onSelect = {
-                            emergencySource = it
-                            onSave(item.copy(emergencySourceId = it.takeIf { s -> s.isNotBlank() }))
+                        value = resolveEmergencySourceDisplay(emergencySource),
+                        options = emergencySourceOptions,
+                        onSelect = { selectedLabel ->
+                            val persistedId = generatorLabelMap[selectedLabel] ?: selectedLabel
+                            emergencySource = persistedId
+                            onSave(item.copy(emergencySourceId = persistedId.takeIf { s -> s.isNotBlank() }))
                         },
                         label = "Emergency Source"
                     )
