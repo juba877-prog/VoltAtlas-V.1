@@ -340,8 +340,8 @@ fun SldScreen(
             },
             onOpenSymbolGallery = { showSymbolGallery = true },
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(12.dp)
+                .align(Alignment.BottomStart)
+                .padding(start = 24.dp, bottom = 24.dp)
         )
 
         // Edit Mode Top Banner Indicator

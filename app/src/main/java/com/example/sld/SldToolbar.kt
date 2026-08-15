@@ -1,25 +1,34 @@
 package com.example.sld
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.cos
+import kotlin.math.roundToInt
+import kotlin.math.sin
 import com.example.ui.*
 
 @Composable
@@ -47,343 +56,363 @@ fun SldToolbar(
     isDarkTheme: Boolean = com.example.ui.theme.LocalThemeIsDark.current,
     modifier: Modifier = Modifier
 ) {
+    // State logic for the Draggable Radial FAB
+    var isExpanded by remember { mutableStateOf(false) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+
+    // Dropdown states
     var showModeDropdown by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
+
+    // Theme & Colors
     val palette = SldTheme.palette(isDarkTheme)
     val cardBg = palette.surface
     val chipBg = if (isDarkTheme) Color(0xFF0D1117) else Color(0xFFF1F5F9)
     val borderColor = if (isDarkTheme) Color(0xFF30363D) else Color(0xFFCBD5E1)
     val textColor = palette.textPrimary
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = cardBg),
-        border = BorderStroke(1.dp, borderColor)
+    // Animation progress for radial items popping out
+    val animationProgress by animateFloatAsState(
+        targetValue = if (isExpanded) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = 400f),
+        label = "radial_expansion"
+    )
+
+    // Radial configuration
+    val radiusDp = 90.dp
+    val radiusPx = with(LocalDensity.current) { radiusDp.toPx() }
+
+    // Helper function to calculate exact radial positions
+    fun Modifier.radialOffset(angle: Double): Modifier {
+        val offsetX = (cos(angle) * radiusPx).toFloat()
+        val offsetY = (sin(angle) * radiusPx).toFloat()
+        return this
+            .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+            .alpha(animationProgress)
+    }
+
+    Box(
+        modifier = modifier
+            // Apply drag offset constraint
+            .offset { IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt()) },
+        contentAlignment = Alignment.Center
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Display Mode Selector Dropdown
-            Box {
-                Surface(
-                    onClick = { showModeDropdown = true },
-                    shape = RoundedCornerShape(8.dp),
-                    color = chipBg,
-                    border = BorderStroke(1.dp, borderColor),
-                    modifier = Modifier.height(36.dp).testTag("sld_mode_dropdown_trigger")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        val currentModeLabel = when (displayMode) {
-                            DisplayMode.OVERVIEW -> "Overview"
-                            DisplayMode.CABLES -> "Cables"
-                            DisplayMode.VOLTAGE_DROP -> "Voltage Drop"
-                            DisplayMode.SHORT_CIRCUIT -> "Short Circuit"
-                            DisplayMode.VALIDATION -> "Validation"
-                        }
-                        Text(
-                            text = currentModeLabel,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = SleekPrimary
-                        )
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = "Select Mode",
-                            tint = SleekPrimary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                DropdownMenu(
-                    expanded = showModeDropdown,
-                    onDismissRequest = { showModeDropdown = false },
-                    modifier = Modifier.background(cardBg).testTag("sld_mode_dropdown_menu")
-                ) {
-                    DisplayMode.values().forEach { mode ->
-                        val label = when (mode) {
-                            DisplayMode.OVERVIEW -> "Overview"
-                            DisplayMode.CABLES -> "Cables"
-                            DisplayMode.VOLTAGE_DROP -> "Voltage Drop"
-                            DisplayMode.SHORT_CIRCUIT -> "Short Circuit"
-                            DisplayMode.VALIDATION -> "Validation"
-                        }
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = label,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (displayMode == mode) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (displayMode == mode) SleekPrimary else textColor
-                                )
-                            },
-                            onClick = {
-                                onDisplayModeChange(mode)
-                                showModeDropdown = false
-                            }
-                        )
-                    }
-                }
-            }
-
-            // Quick Actions: Search, Issues, Fit, Fullscreen, Layout Mode, Overflow
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+        // --- RADIAL NODES (Fanning Up and Right) ---
+        // Node 0: Mode Selector (Top - 270 degrees)
+        Box(modifier = Modifier.radialOffset(Math.PI * 1.5)) {
+            Surface(
+                onClick = {
+                    isExpanded = true
+                    showModeDropdown = true
+                },
+                shape = CircleShape,
+                color = chipBg,
+                border = BorderStroke(1.dp, borderColor),
+                modifier = Modifier
+                    .size(44.dp)
+                    .testTag("sld_mode_dropdown_trigger")
             ) {
-                // Search Toggle Button
-                IconButton(
-                    onClick = onToggleSearch,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(
-                            if (isSearchOpen) SleekPrimary.copy(alpha = 0.2f) else chipBg,
-                            RoundedCornerShape(8.dp)
-                        )
-                        .testTag("sld_search_toggle_btn")
-                ) {
+                Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search Network",
-                        tint = if (isSearchOpen) SleekPrimary else textColor,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                // Validation Issues Badge Toggle
-                Box(
-                    modifier = Modifier
-                        .height(36.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isValidationOpen) SleekWarning.copy(alpha = 0.2f) else chipBg)
-                        .clickable { onToggleValidation() }
-                        .padding(horizontal = 8.dp)
-                        .testTag("sld_validation_toggle_btn"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = "Validation Issues",
-                            tint = if (issueCount > 0) SleekWarning else SleekPass,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = if (issueCount > 0) "Req. ($issueCount)" else "OK",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = textColor
-                        )
-                    }
-                }
-
-                // IEC Symbols Library Button (Prominent)
-                IconButton(
-                    onClick = onOpenSymbolGallery,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(SleekPrimary.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
-                        .testTag("open_symbol_gallery_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.MenuBook,
-                        contentDescription = "IEC Symbol Library",
-                        tint = SleekPrimary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                // Fit Project Button
-                IconButton(
-                    onClick = onFitScreen,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(chipBg, RoundedCornerShape(8.dp))
-                        .testTag("sld_fit_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AspectRatio,
-                        contentDescription = "Fit Project",
-                        tint = SleekPrimary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                // Layout Mode Toggle Button
-                IconButton(
-                    onClick = onToggleLayoutMode,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(
-                            if (layoutModeEnabled) SleekPrimary.copy(alpha = 0.25f) else chipBg,
-                            RoundedCornerShape(8.dp)
-                        )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Toggle Layout Mode",
-                        tint = if (layoutModeEnabled) SleekPrimary else textColor,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                // Fullscreen Toggle Button
-                IconButton(
-                    onClick = onToggleFullscreen,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(
-                            if (isFullscreen) SleekPrimary.copy(alpha = 0.2f) else chipBg,
-                            RoundedCornerShape(8.dp)
-                        )
-                ) {
-                    Icon(
-                        imageVector = if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                        contentDescription = if (isFullscreen) "Exit Fullscreen" else "Fullscreen",
+                        imageVector = Icons.Default.Layers,
+                        contentDescription = "Modes",
                         tint = SleekPrimary,
                         modifier = Modifier.size(20.dp)
                     )
                 }
-                
-                // Export Image Button
-                IconButton(
-                    onClick = onExportImage,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(chipBg, RoundedCornerShape(8.dp))
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CameraAlt,
-                        contentDescription = "Export Image",
-                        tint = SleekPrimary,
-                        modifier = Modifier.size(18.dp)
+            }
+
+            DropdownMenu(
+                expanded = showModeDropdown,
+                onDismissRequest = { showModeDropdown = false },
+                modifier = Modifier
+                    .background(cardBg)
+                    .testTag("sld_mode_dropdown_menu")
+            ) {
+                DisplayMode.values().forEach { mode ->
+                    val label = when (mode) {
+                        DisplayMode.OVERVIEW -> "Overview"
+                        DisplayMode.CABLES -> "Cables"
+                        DisplayMode.VOLTAGE_DROP -> "Voltage Drop"
+                        DisplayMode.SHORT_CIRCUIT -> "Short Circuit"
+                        DisplayMode.VALIDATION -> "Validation"
+                    }
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = label,
+                                fontSize = 12.sp,
+                                fontWeight = if (displayMode == mode) FontWeight.Bold else FontWeight.Normal,
+                                color = if (displayMode == mode) SleekPrimary else textColor
+                            )
+                        },
+                        onClick = {
+                            onDisplayModeChange(mode)
+                            showModeDropdown = false
+                            isExpanded = false
+                        }
                     )
                 }
+            }
+        }
 
-                // Export DXF (AutoCAD) Button - Prominent & Directly Visible
-                Surface(
-                    onClick = onExportDxf,
-                    shape = RoundedCornerShape(8.dp),
-                    color = SleekPrimary.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, SleekPrimary.copy(alpha = 0.5f)),
-                    modifier = Modifier
-                        .height(36.dp)
-                        .testTag("export_dxf_toolbar_btn")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FileDownload,
-                            contentDescription = "Export DXF",
-                            tint = SleekPrimary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "DXF",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = SleekPrimary
-                        )
-                    }
+        // Node 1: Search Toggle (Top-Right 292.5 degrees)
+        Box(modifier = Modifier.radialOffset(Math.PI * 1.625)) {
+            Surface(
+                onClick = {
+                    onToggleSearch()
+                    isExpanded = false
+                },
+                shape = CircleShape,
+                color = if (isSearchOpen) SleekPrimary.copy(alpha = 0.2f) else chipBg,
+                border = BorderStroke(1.dp, borderColor),
+                modifier = Modifier
+                    .size(44.dp)
+                    .testTag("sld_search_toggle_btn")
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = if (isSearchOpen) SleekPrimary else textColor,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
+            }
+        }
 
-                // Overflow Menu Button
-                Box {
-                    IconButton(
-                        onClick = { showOverflowMenu = true },
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(DarkBackground, RoundedCornerShape(8.dp))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "More Options",
-                            tint = ThemeTextColor,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = showOverflowMenu,
-                        onDismissRequest = { showOverflowMenu = false },
-                        modifier = Modifier.background(DarkCardBg)
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Export DXF (AutoCAD)", fontSize = 12.sp, color = SleekPrimary, fontWeight = FontWeight.Bold) },
-                            leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null, tint = SleekPrimary) },
-                            onClick = {
-                                onExportDxf()
-                                showOverflowMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("IEC Symbol Library", fontSize = 12.sp, color = ThemeTextColor) },
-                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, tint = SleekPrimary) },
-                            onClick = {
-                                onOpenSymbolGallery()
-                                showOverflowMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Fit Selection", fontSize = 12.sp, color = ThemeTextColor) },
-                            leadingIcon = { Icon(Icons.Default.CenterFocusStrong, contentDescription = null, tint = SleekPrimary) },
-                            onClick = {
-                                onFitSelection()
-                                showOverflowMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Reset View", fontSize = 12.sp, color = ThemeTextColor) },
-                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = SleekPrimary) },
-                            onClick = {
-                                onResetView()
-                                showOverflowMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Expand All", fontSize = 12.sp, color = ThemeTextColor) },
-                            leadingIcon = { Icon(Icons.Default.UnfoldMore, contentDescription = null, tint = SleekPrimary) },
-                            onClick = {
-                                onExpandAll()
-                                showOverflowMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Collapse All", fontSize = 12.sp, color = ThemeTextColor) },
-                            leadingIcon = { Icon(Icons.Default.UnfoldLess, contentDescription = null, tint = SleekPrimary) },
-                            onClick = {
-                                onCollapseAll()
-                                showOverflowMenu = false
-                            }
-                        )
-                        if (layoutModeEnabled) {
-                            DropdownMenuItem(
-                                text = { Text("Reset Layout to Auto", fontSize = 12.sp, color = ThemeTextColor) },
-                                leadingIcon = { Icon(Icons.Default.SettingsBackupRestore, contentDescription = null, tint = SleekFail) },
-                                onClick = {
-                                    onResetLayout()
-                                    showOverflowMenu = false
+        // Node 2: Validation Issues (Up-Right 315 degrees)
+        Box(modifier = Modifier.radialOffset(Math.PI * 1.75)) {
+            Surface(
+                onClick = {
+                    onToggleValidation()
+                    isExpanded = false
+                },
+                shape = CircleShape,
+                color = if (isValidationOpen) SleekWarning.copy(alpha = 0.2f) else chipBg,
+                border = BorderStroke(1.dp, borderColor),
+                modifier = Modifier
+                    .size(44.dp)
+                    .testTag("sld_validation_toggle_btn")
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    BadgedBox(
+                        badge = {
+                            if (issueCount > 0) {
+                                Badge(containerColor = SleekWarning) {
+                                    Text("$issueCount", color = Color.White)
                                 }
-                            )
+                            }
                         }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Validation",
+                            tint = if (issueCount > 0) SleekWarning else SleekPass,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
+            }
+        }
+
+        // Node 3: Fit Project (Right-Up 337.5 degrees)
+        Box(modifier = Modifier.radialOffset(Math.PI * 1.875)) {
+            Surface(
+                onClick = {
+                    onFitScreen()
+                    isExpanded = false
+                },
+                shape = CircleShape,
+                color = chipBg,
+                border = BorderStroke(1.dp, borderColor),
+                modifier = Modifier
+                    .size(44.dp)
+                    .testTag("sld_fit_btn")
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.AspectRatio,
+                        contentDescription = "Fit Project",
+                        tint = SleekPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        // Node 4: Overflow Actions (Right - 0 degrees)
+        Box(modifier = Modifier.radialOffset(0.0)) {
+            Surface(
+                onClick = {
+                    isExpanded = true
+                    showOverflowMenu = true
+                },
+                shape = CircleShape,
+                color = DarkBackground,
+                border = BorderStroke(1.dp, borderColor),
+                modifier = Modifier.size(44.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "More Options",
+                        tint = ThemeTextColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            DropdownMenu(
+                expanded = showOverflowMenu,
+                onDismissRequest = { showOverflowMenu = false },
+                modifier = Modifier.background(DarkCardBg)
+            ) {
+                // Group 1: Export Actions
+                DropdownMenuItem(
+                    text = { Text("Export DXF (AutoCAD)", fontSize = 12.sp, color = SleekPrimary, fontWeight = FontWeight.Bold) },
+                    leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null, tint = SleekPrimary) },
+                    onClick = {
+                        onExportDxf()
+                        showOverflowMenu = false
+                        isExpanded = false
+                    },
+                    modifier = Modifier.testTag("export_dxf_toolbar_btn")
+                )
+                DropdownMenuItem(
+                    text = { Text("Export Image", fontSize = 12.sp, color = ThemeTextColor) },
+                    leadingIcon = { Icon(Icons.Default.CameraAlt, contentDescription = null, tint = SleekPrimary) },
+                    onClick = {
+                        onExportImage()
+                        showOverflowMenu = false
+                        isExpanded = false
+                    }
+                )
+
+                HorizontalDivider(color = borderColor)
+
+                // Group 2: Tools & Placeholder Actions
+                DropdownMenuItem(
+                    text = { Text("IEC Symbol Library", fontSize = 12.sp, color = ThemeTextColor) },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, tint = SleekPrimary) },
+                    onClick = {
+                        onOpenSymbolGallery()
+                        showOverflowMenu = false
+                        isExpanded = false
+                    },
+                    modifier = Modifier.testTag("open_symbol_gallery_btn")
+                )
+                DropdownMenuItem(
+                    text = { Text("Toggle Layout Mode", fontSize = 12.sp, color = if (layoutModeEnabled) SleekPrimary else ThemeTextColor) },
+                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = if (layoutModeEnabled) SleekPrimary else ThemeTextColor) },
+                    onClick = {
+                        onToggleLayoutMode()
+                        showOverflowMenu = false
+                        isExpanded = false
+                    }
+                )
+
+                HorizontalDivider(color = borderColor)
+
+                // Group 3: View Controls
+                DropdownMenuItem(
+                    text = { Text(if (isFullscreen) "Exit Fullscreen" else "Fullscreen", fontSize = 12.sp, color = ThemeTextColor) },
+                    leadingIcon = { Icon(if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen, contentDescription = null, tint = SleekPrimary) },
+                    onClick = {
+                        onToggleFullscreen()
+                        showOverflowMenu = false
+                        isExpanded = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Fit Selection", fontSize = 12.sp, color = ThemeTextColor) },
+                    leadingIcon = { Icon(Icons.Default.CenterFocusStrong, contentDescription = null, tint = SleekPrimary) },
+                    onClick = {
+                        onFitSelection()
+                        showOverflowMenu = false
+                        isExpanded = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Reset View", fontSize = 12.sp, color = ThemeTextColor) },
+                    leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = SleekPrimary) },
+                    onClick = {
+                        onResetView()
+                        showOverflowMenu = false
+                        isExpanded = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Expand All", fontSize = 12.sp, color = ThemeTextColor) },
+                    leadingIcon = { Icon(Icons.Default.UnfoldMore, contentDescription = null, tint = SleekPrimary) },
+                    onClick = {
+                        onExpandAll()
+                        showOverflowMenu = false
+                        isExpanded = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Collapse All", fontSize = 12.sp, color = ThemeTextColor) },
+                    leadingIcon = { Icon(Icons.Default.UnfoldLess, contentDescription = null, tint = SleekPrimary) },
+                    onClick = {
+                        onCollapseAll()
+                        showOverflowMenu = false
+                        isExpanded = false
+                    }
+                )
+                if (layoutModeEnabled) {
+                    DropdownMenuItem(
+                        text = { Text("Reset Layout to Auto", fontSize = 12.sp, color = SleekFail) },
+                        leadingIcon = { Icon(Icons.Default.SettingsBackupRestore, contentDescription = null, tint = SleekFail) },
+                        onClick = {
+                            onResetLayout()
+                            showOverflowMenu = false
+                            isExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+
+        // --- CENTRAL DRAGGABLE FAB ---
+        var isDragging by remember { mutableStateOf(false) }
+        Surface(
+            shape = CircleShape,
+            color = SleekPrimary,
+            shadowElevation = 6.dp,
+            modifier = Modifier
+                .size(56.dp)
+                .pointerInput(isExpanded) {
+                    detectDragGestures(
+                        onDragStart = { isDragging = true },
+                        onDragEnd = { isDragging = false },
+                        onDragCancel = { isDragging = false },
+                        onDrag = { change, dragAmount ->
+                            if (!isExpanded) {
+                                change.consume()
+                                dragOffset += dragAmount
+                            }
+                        }
+                    )
+                }
+                .clickable {
+                    if (!isDragging) {
+                        isExpanded = !isExpanded
+                    }
+                }
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                // Rotating + icon morphing visually into an X when opened
+                val rotation by animateFloatAsState(
+                    targetValue = if (isExpanded) 45f else 0f,
+                    label = "fab_rotation"
+                )
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = if (isExpanded) "Close Toolbar" else "Open Toolbar",
+                    tint = Color.White,
+                    modifier = Modifier.rotate(rotation)
+                )
             }
         }
     }

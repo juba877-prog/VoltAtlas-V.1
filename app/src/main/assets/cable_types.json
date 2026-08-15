@@ -334,5 +334,77 @@
     "voltage": "0.6/1",
     "standard": "IEC 60331",
     "rColumn": "R_Cu90"
+  },
+  {
+    "code": 8,
+    "typeCode": 8,
+    "cableType": "Cu/XLPE/SWA/PVC - 3C",
+    "conductor": "Copper",
+    "insulation": "XLPE",
+    "armour": "SWA",
+    "cores": "3C",
+    "voltage": "0.6/1",
+    "standard": "IEC 60502",
+    "rColumn": "R_Cu90"
+  },
+  {
+    "code": 17,
+    "typeCode": 17,
+    "cableType": "Al/XLPE/PVC - 4C",
+    "conductor": "Alum.",
+    "insulation": "XLPE",
+    "armour": "None",
+    "cores": "4C",
+    "voltage": "0.6/1",
+    "standard": "IEC 60502",
+    "rColumn": "R_Al90"
+  },
+  {
+    "code": 82,
+    "typeCode": 82,
+    "cableType": "Cu/XLPE/AWA/PVC - 1C",
+    "conductor": "Copper",
+    "insulation": "XLPE",
+    "armour": "AWA",
+    "cores": "1C",
+    "voltage": "0.6/1",
+    "standard": "IEC 60502",
+    "rColumn": "R_Cu90"
+  },
+  {
+    "code": 83,
+    "typeCode": 83,
+    "cableType": "Cu/PVC/AWA/PVC - 1C",
+    "conductor": "Copper",
+    "insulation": "PVC",
+    "armour": "AWA",
+    "cores": "1C",
+    "voltage": "0.6/1",
+    "standard": "IEC 60502",
+    "rColumn": "R_Cu70"
+  },
+  {
+    "code": 84,
+    "typeCode": 84,
+    "cableType": "Al/XLPE/AWA/PVC - 1C",
+    "conductor": "Alum.",
+    "insulation": "XLPE",
+    "armour": "AWA",
+    "cores": "1C",
+    "voltage": "0.6/1",
+    "standard": "IEC 60502",
+    "rColumn": "R_Al90"
+  },
+  {
+    "code": 85,
+    "typeCode": 85,
+    "cableType": "Al/PVC/AWA/PVC - 1C",
+    "conductor": "Alum.",
+    "insulation": "PVC",
+    "armour": "AWA",
+    "cores": "1C",
+    "voltage": "0.6/1",
+    "standard": "IEC 60502",
+    "rColumn": "R_Al70"
   }
 ]
