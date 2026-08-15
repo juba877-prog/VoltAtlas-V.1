@@ -36,6 +36,10 @@ val SleekWarning: Color
     @Composable
     get() = com.example.ui.theme.StatusWarning
 
+val StatusNeutral: Color
+    @Composable
+    get() = com.example.ui.theme.StatusNeutral
+
 val SlateTextSecondary: Color
     @Composable
     get() = com.example.ui.components.ThemeTextSecondary

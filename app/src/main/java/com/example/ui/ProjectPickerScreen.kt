@@ -52,7 +52,7 @@ import kotlinx.coroutines.launch
 val BrandCyan: Color
     @Composable get() = SleekPrimary
 val BrandGreen: Color
-    @Composable get() = SleekPass
+    @Composable get() = StatusNeutral
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -733,10 +733,10 @@ private fun ProjectCard(
                     Box(
                         modifier = Modifier
                             .size(6.dp)
-                            .background(BrandGreen, CircleShape)
+                            .background(StatusNeutral, CircleShape)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Active", color = brandGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text("Active", color = StatusNeutral, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(subtitle, color = SlateTextSecondary, fontSize = 11.sp, maxLines = 1, softWrap = false)
                 }

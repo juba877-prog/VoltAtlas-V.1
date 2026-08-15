@@ -30,6 +30,7 @@ import com.example.BuildConfig
 import com.example.boot.VoltAtlasLogo
 import com.example.data.Catalog
 import com.example.data.GlobalPreferences
+import com.example.ui.theme.StatusNeutral
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -767,7 +768,7 @@ fun GlobalSettingsScreen(
                             val cableCount = Catalog.cableCatalog.size
                             Text(
                                 text = if (cableCount > 0) "Loaded ($cableCount records)" else "Not Loaded",
-                                color = if (cableCount > 0) SleekPass else SleekFail,
+                                color = if (cableCount > 0) StatusNeutral else SleekFail,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
@@ -778,7 +779,7 @@ fun GlobalSettingsScreen(
                             val breakerCount = Catalog.breakers.size
                             Text(
                                 text = if (breakerCount > 0) "Loaded ($breakerCount records)" else "Not Loaded",
-                                color = if (breakerCount > 0) SleekPass else SleekFail,
+                                color = if (breakerCount > 0) StatusNeutral else SleekFail,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
@@ -1096,7 +1097,7 @@ private fun DiagnosticRow(label: String, loaded: Boolean, count: Int? = null) {
             Icon(
                 imageVector = if (loaded) Icons.Default.CheckCircle else Icons.Default.Cancel,
                 contentDescription = if (loaded) "Loaded" else "Failed",
-                tint = if (loaded) SleekPass else SleekFail,
+                tint = if (loaded) StatusNeutral else SleekFail,
                 modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -1107,7 +1108,7 @@ private fun DiagnosticRow(label: String, loaded: Boolean, count: Int? = null) {
         } else {
             Text(
                 text = if (loaded) "Loaded" else "Failed",
-                color = if (loaded) SleekPass else SleekFail,
+                color = if (loaded) StatusNeutral else SleekFail,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
             )

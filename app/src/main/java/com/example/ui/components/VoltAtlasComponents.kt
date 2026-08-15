@@ -216,7 +216,8 @@ fun statusColor(status: String): Color {
     return when {
         upper.contains("WARN") || upper.contains("REVIEW") -> SleekWarning
         upper.contains("FAIL") || upper.contains("INVALID") || upper.contains("ERROR") -> SleekFail
-        upper.contains("PASS") || upper.contains("COMPLIANT") || upper.contains("OK") -> SleekPass
+        upper.contains("PASS") || upper.contains("COMPLIANT") -> SleekPass
+        upper.contains("OK") || upper.contains("NORMAL") || upper.contains("CALCULATED") -> StatusNeutral
         else -> SlateTextSecondary
     }
 }

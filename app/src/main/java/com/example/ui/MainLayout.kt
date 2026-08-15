@@ -1354,21 +1354,21 @@ fun DashboardScreen(state: UiState.Success, onNavigate: (Int) -> Unit) {
                             value = if (totalCircuits > 0) totalCircuits.toString() else "0",
                             unit = "",
                             statusText = if (totalCircuits > 0) "OK" else null,
-                            statusColor = if (totalCircuits > 0) SleekPass else null
+                            statusColor = if (totalCircuits > 0) StatusNeutral else null
                         ),
                         MetricDisplayItem(
                             label = "Max Tx Load",
                             value = if (state.transformers.isNotEmpty()) String.format(Locale.US, "%.1f", maxTxLoadPct) else "N/A",
                             unit = if (state.transformers.isNotEmpty()) "%" else "",
                             statusText = if (state.transformers.isEmpty()) null else if (maxTxLoadPct > 100.0) "OVERLOAD" else if (maxTxLoadPct > 0.0) "OK" else null,
-                            statusColor = if (state.transformers.isEmpty()) null else if (maxTxLoadPct > 100.0) SleekFail else if (maxTxLoadPct > 0.0) SleekPass else null
+                            statusColor = if (state.transformers.isEmpty()) null else if (maxTxLoadPct > 100.0) SleekFail else if (maxTxLoadPct > 0.0) StatusNeutral else null
                         ),
                         MetricDisplayItem(
                             label = "Max Cum. VD",
                             value = if (state.sizingResults.isNotEmpty()) String.format(Locale.US, "%.2f", maxVdPct) else "N/A",
                             unit = if (state.sizingResults.isNotEmpty()) "%" else "",
                             statusText = if (state.sizingResults.isEmpty()) null else if (maxVdPct > 5.0) "EXCEEDED" else if (maxVdPct > 0.0) "OK" else null,
-                            statusColor = if (state.sizingResults.isEmpty()) null else if (maxVdPct > 5.0) SleekFail else if (maxVdPct > 0.0) SleekPass else null
+                            statusColor = if (state.sizingResults.isEmpty()) null else if (maxVdPct > 5.0) SleekFail else if (maxVdPct > 0.0) StatusNeutral else null
                         ),
                         MetricDisplayItem(
                             label = "Max Isc (3φ)",
@@ -2478,7 +2478,7 @@ fun CircuitsGridScreen(
                                                 modifier = Modifier.background(DarkCardBg).heightIn(max = 280.dp)
                                             ) {
                                                 DropdownMenuItem(
-                                                    text = { Text("Auto (Recommended ${result.deviceType})", color = SleekPass, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                                                    text = { Text("Auto (Recommended ${result.deviceType})", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                                                     onClick = {
                                                         viewModel.updateCircuit(circ.copy(overrideDeviceType = null))
                                                         deviceTypeDropdownExpanded = false
@@ -2532,7 +2532,7 @@ fun CircuitsGridScreen(
                                                 modifier = Modifier.background(DarkCardBg).heightIn(max = 280.dp)
                                             ) {
                                                 DropdownMenuItem(
-                                                    text = { Text("Auto (Recommended ${result.deviceSize_A.toInt()} A)", color = SleekPass, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                                                    text = { Text("Auto (Recommended ${result.deviceSize_A.toInt()} A)", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                                                     onClick = {
                                                         viewModel.updateCircuit(circ.copy(overrideDeviceSize = null))
                                                         deviceDropdownExpanded = false
@@ -2587,7 +2587,7 @@ fun CircuitsGridScreen(
                                                 modifier = Modifier.background(DarkCardBg).heightIn(max = 280.dp)
                                             ) {
                                                 DropdownMenuItem(
-                                                    text = { Text("Auto (Recommended ${result.cableSize_mm2})", color = SleekPass, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                                                    text = { Text("Auto (Recommended ${result.cableSize_mm2})", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                                                     onClick = {
                                                         viewModel.updateCircuit(circ.copy(overrideCableSize = null))
                                                         cableDropdownExpanded = false

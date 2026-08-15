@@ -16,6 +16,7 @@ val SleekPass = Color(0xFF3DD68C)
 val SleekWarning = Color(0xFFF5A623)
 val SleekFail = Color(0xFFF0554C)
 val SleekSecondary = Color(0xFF3B9EFF)
+val StatusNeutral = Color(0xFF94A3B8)
 
 val ThemeTextColor = Color(0xFFF0F2F5)
 val SlateTextSecondary = Color(0xFFAEB6C2)
@@ -73,6 +74,7 @@ val LightTextDisabled = Color(0xFF94A3B8)
 val LightBorderSubtle = Color(0xFF94A3B8)
 val LightBorderStrong = Color(0xFF64748B)
 val LightDivider = Color(0xFFCBD5E1)
+val StatusNeutralLight = Color(0xFF64748B)
 
 val ThemeBackground: Color
     @Composable get() = if (LocalThemeIsDark.current) DarkBackground else LightBackgroundDeep
@@ -104,6 +106,9 @@ val ThemeTextTertiary: Color
 val ThemeTextDisabled: Color
     @Composable get() = if (LocalThemeIsDark.current) Color(0xFF4A5463) else LightTextDisabled
 
+val ThemeStatusNeutral: Color
+    @Composable get() = if (LocalThemeIsDark.current) StatusNeutral else StatusNeutralLight
+
 // VoltAtlas Engineering & Brand Semantic Tokens
 val BrandPrimary: Color
     @Composable get() = ThemePrimary
@@ -116,6 +121,9 @@ val EngineeringValueColor: Color
 
 val EngineeringSuccess: Color
     @Composable get() = StatusPass
+
+val EngineeringNeutral: Color
+    @Composable get() = ThemeStatusNeutral
 
 val EngineeringWarning: Color
     @Composable get() = StatusWarning
