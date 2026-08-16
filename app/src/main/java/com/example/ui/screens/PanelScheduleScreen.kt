@@ -579,7 +579,7 @@ fun PanelScheduleScreen(
     // Render Full CircuitEditDialog
     if (showCircuitEditDialog && circuitToEditInDialog != null) {
         key(circuitToEditInDialog) {
-            com.example.ui.CircuitEditDialog(
+            com.example.ui.dialogs.CircuitEditDialog(
                 circuit = circuitToEditInDialog,
                 existingCircuits = circuits,
                 viewModel = viewModel,

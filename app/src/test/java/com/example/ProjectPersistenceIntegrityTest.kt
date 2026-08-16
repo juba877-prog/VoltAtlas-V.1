@@ -1109,4 +1109,89 @@ class ProjectPersistenceIntegrityTest {
         // No missing references or orphaned nodes
         assertEquals(0, graph.validationIssues.size)
     }
+
+    @Test
+    fun testParentCircuitDeletionCascadeCleanupPreventsOrphanedParentId() = runBlocking {
+        val projectId = repository.createProject("Cascade Test Project", "Client ABC")
+
+        // 1. Create parent distribution board (e.g. DP-G3)
+        val parent = CircuitEntity(
+            circuitName = "DP-G3",
+            projectId = projectId,
+            loadKVA = 87.9,
+            fedFrom = "Transformer",
+            panelType = "MDB",
+            sourceType = "TRANSFORMER",
+            parentId = null,
+            level = 0
+        )
+        val parentId = repository.insertCircuit(parent).toInt()
+        val parentWithId = parent.copy(id = parentId)
+
+        // 2. Create multiple child circuits that reference parentId = parentId
+        val child1 = CircuitEntity(
+            circuitName = "UPP-G3-1",
+            projectId = projectId,
+            loadKVA = 6.4,
+            fedFrom = "DP-G3",
+            panelType = "DB",
+            sourceType = "PANEL",
+            parentId = parentId,
+            level = 1
+        )
+        val child2 = CircuitEntity(
+            circuitName = "UPP-G3-2",
+            projectId = projectId,
+            loadKVA = 5.0,
+            fedFrom = "DP-G3",
+            panelType = "DB",
+            sourceType = "PANEL",
+            parentId = parentId,
+            level = 1
+        )
+        val child3 = CircuitEntity(
+            circuitName = "LPP-G3-1",
+            projectId = projectId,
+            loadKVA = 4.5,
+            fedFrom = "DP-G3",
+            panelType = "DB",
+            sourceType = "PANEL",
+            parentId = parentId,
+            level = 1
+        )
+
+        val child1Id = repository.insertCircuit(child1).toInt()
+        val child2Id = repository.insertCircuit(child2).toInt()
+        val child3Id = repository.insertCircuit(child3).toInt()
+
+        // Verify initial state: all 3 children reference parentId
+        val initialCircuits = database.circuitDao().getCircuitsListForProject(projectId)
+        assertEquals(4, initialCircuits.size)
+        val initialChildren = initialCircuits.filter { it.id != parentId }
+        assertEquals(3, initialChildren.size)
+        assertTrue(initialChildren.all { it.parentId == parentId })
+
+        // 3. Delete the parent circuit using repository.deleteCircuit
+        repository.deleteCircuit(parentWithId)
+
+        // 4. Verify post-deletion state:
+        // A. Parent row is completely removed
+        val remainingCircuits = database.circuitDao().getCircuitsListForProject(projectId)
+        assertEquals(3, remainingCircuits.size)
+        assertFalse(remainingCircuits.any { it.id == parentId })
+
+        // B. All child circuits have parentId nullified (no dangling pointer to parentId)
+        assertTrue("All children must have parentId == null after parent deletion", remainingCircuits.all { it.parentId == null })
+        assertTrue("All children must have fedFrom reset to Transformer", remainingCircuits.all { it.fedFrom == "Transformer" })
+        assertTrue("All children must have sourceType reset to TRANSFORMER", remainingCircuits.all { it.sourceType == "TRANSFORMER" })
+
+        // C. Export and re-import test to verify zero integrity violations
+        val exportedJsonStr = repository.exportProjectJson(projectId)
+        val reimportResult = repository.importProjectFromJsonDetailed(exportedJsonStr)
+        assertNotNull(reimportResult)
+        assertEquals(ImportStatus.SUCCESS, reimportResult.status)
+        assertEquals(3, reimportResult.importedCounts.circuits)
+        assertTrue(reimportResult.errors.isEmpty())
+    }
 }
+

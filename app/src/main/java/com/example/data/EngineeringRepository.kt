@@ -123,7 +123,7 @@ class EngineeringRepository(
     suspend fun insertCircuit(circuit: CircuitEntity) = circuitDao.insertCircuit(circuit)
     suspend fun insertCircuits(circuits: List<CircuitEntity>) = circuitDao.insertCircuits(circuits)
     suspend fun updateCircuit(circuit: CircuitEntity) = circuitDao.updateCircuit(circuit)
-    suspend fun deleteCircuit(circuit: CircuitEntity) = circuitDao.deleteCircuit(circuit)
+    suspend fun deleteCircuit(circuit: CircuitEntity) = circuitDao.deleteCircuitWithCascade(circuit)
     suspend fun deleteAllCircuits() = circuitDao.deleteAllCircuits()
     suspend fun deleteCircuitsForProject(projectId: String) = circuitDao.deleteCircuitsForProject(projectId)
 

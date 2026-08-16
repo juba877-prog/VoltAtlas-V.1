@@ -2,7 +2,7 @@ package com.example
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
-import com.example.ui.DashboardScreen
+import com.example.ui.screens.DashboardScreen
 import com.example.ui.UiState
 import com.example.data.CircuitEntity
 import com.example.engine.SizingResult

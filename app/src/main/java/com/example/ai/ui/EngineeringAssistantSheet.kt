@@ -28,7 +28,7 @@ import com.example.ai.service.AssistantMessage
 import com.example.ai.service.MessageRole
 import com.example.ui.theme.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EngineeringAssistantSheet(
     viewModel: EngineeringAssistantViewModel,
@@ -39,7 +39,8 @@ fun EngineeringAssistantSheet(
 
     if (!uiState.isOpen) return
 
-    val sheetHeight = if (uiState.isExpanded) 560.dp else 340.dp
+    val isImeVisible = WindowInsets.isImeVisible
+    val heightFraction = if (isImeVisible || uiState.isExpanded) 0.85f else 0.52f
     val listState = rememberLazyListState()
 
     LaunchedEffect(uiState.messages.size) {
@@ -59,7 +60,7 @@ fun EngineeringAssistantSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(sheetHeight)
+                .fillMaxHeight(heightFraction)
                 .animateContentSize(
                     animationSpec = if (reduceMotion) {
                         tween(VoltAtlasMotion.DurationMicro)
@@ -107,7 +108,7 @@ fun EngineeringAssistantSheet(
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 15.sp
                                 ),
-                                color = ThemeTextColor
+                                color = ThemeTextPrimary
                             )
                             val subtitle = when {
                                 uiState.context.activeEntityName != null -> "Context: ${uiState.context.activeEntityName}"
@@ -117,7 +118,7 @@ fun EngineeringAssistantSheet(
                             Text(
                                 text = subtitle,
                                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                                color = SlateTextSecondary
+                                color = ThemeTextSecondary
                             )
                         }
                     }
@@ -133,7 +134,7 @@ fun EngineeringAssistantSheet(
                             Icon(
                                 imageVector = if (uiState.isExpanded) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
                                 contentDescription = if (uiState.isExpanded) "Collapse" else "Expand",
-                                tint = SlateTextSecondary,
+                                tint = ThemeTextSecondary,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -144,7 +145,7 @@ fun EngineeringAssistantSheet(
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Close Assistant",
-                                tint = SlateTextSecondary,
+                                tint = ThemeTextSecondary,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -179,12 +180,12 @@ fun EngineeringAssistantSheet(
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(16.dp),
                                     strokeWidth = 2.dp,
-                                    color = SleekPrimary
+                                    color = ThemePrimary
                                 )
                                 Text(
                                     text = "Analyzing engineering inputs...",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = SlateTextSecondary
+                                    color = ThemeTextSecondary
                                 )
                             }
                         }
@@ -212,15 +213,15 @@ fun EngineeringAssistantSheet(
                             Text(
                                 text = "Ask about sizing, load, or voltage drop...",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
-                                color = SlateTextSecondary
+                                color = ThemeTextSecondary
                             )
                         },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = SleekPrimary,
+                            focusedBorderColor = ThemePrimary,
                             unfocusedBorderColor = ThemeBorderSubtle,
-                            focusedTextColor = ThemeTextColor,
-                            unfocusedTextColor = ThemeTextColor,
-                            cursorColor = SleekPrimary
+                            focusedTextColor = ThemeTextPrimary,
+                            unfocusedTextColor = ThemeTextPrimary,
+                            cursorColor = ThemePrimary
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
@@ -237,7 +238,7 @@ fun EngineeringAssistantSheet(
                         modifier = Modifier
                             .size(44.dp)
                             .background(
-                                color = if (uiState.inputText.isNotBlank()) SleekPrimary else ThemeBorderSubtle,
+                                color = if (uiState.inputText.isNotBlank()) ThemePrimary else ThemeBorderSubtle,
                                 shape = CircleShape
                             )
                             .testTag("assistant_send_button")
@@ -245,7 +246,7 @@ fun EngineeringAssistantSheet(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
                             contentDescription = "Send message",
-                            tint = if (uiState.inputText.isNotBlank()) Color.White else SlateTextSecondary,
+                            tint = if (uiState.inputText.isNotBlank()) Color.White else ThemeTextSecondary,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -259,8 +260,17 @@ fun EngineeringAssistantSheet(
 private fun AssistantMessageBubbleItem(message: AssistantMessage) {
     val isUser = message.role == MessageRole.USER
     val alignment = if (isUser) Alignment.End else Alignment.Start
-    val bubbleColor = if (isUser) SleekPrimary.copy(alpha = 0.12f) else ThemeSurface
-    val borderColor = if (isUser) SleekPrimary.copy(alpha = 0.3f) else ThemeBorderSubtle
+    val isDark = LocalThemeIsDark.current
+    val bubbleColor = if (isUser) {
+        ThemePrimary.copy(alpha = if (isDark) 0.15f else 0.10f)
+    } else {
+        ThemeSurface
+    }
+    val borderColor = if (isUser) {
+        ThemePrimary.copy(alpha = if (isDark) 0.35f else 0.25f)
+    } else {
+        ThemeBorderSubtle
+    }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -280,7 +290,7 @@ private fun AssistantMessageBubbleItem(message: AssistantMessage) {
                     fontSize = 13.sp,
                     lineHeight = 18.sp
                 ),
-                color = ThemeTextColor
+                color = ThemeTextPrimary
             )
         }
     }

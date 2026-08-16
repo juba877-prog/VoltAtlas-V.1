@@ -450,8 +450,17 @@ interface CircuitDao {
     @Update
     suspend fun updateCircuit(circuit: CircuitEntity)
 
+    @Query("UPDATE circuits SET parentId = NULL, sourceType = 'TRANSFORMER', fedFrom = 'Transformer' WHERE parentId = :deletedId AND projectId = :projectId")
+    suspend fun nullifyChildrenParentId(deletedId: Int, projectId: String)
+
     @Delete
     suspend fun deleteCircuit(circuit: CircuitEntity)
+
+    @androidx.room.Transaction
+    suspend fun deleteCircuitWithCascade(circuit: CircuitEntity) {
+        nullifyChildrenParentId(circuit.id, circuit.projectId)
+        deleteCircuit(circuit)
+    }
 
     @Query("DELETE FROM circuits")
     suspend fun deleteAllCircuits()
