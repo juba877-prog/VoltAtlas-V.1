@@ -520,76 +520,14 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
         val atsSetResolved = settings.ats
 
         try {
+            val cableSizingResult = com.example.engine.coordinator.EngineeringCalculationCoordinator.calculateProjectCableSizing(
+                circuits = circuits,
+                transformers = transformers
+            )
             val normalizedCircuits = circuits.map { normalizeAutoOverride(it) }
-
-            val sizingResults = mutableMapOf<Int, SizingResult>()
-            val circuitParents = mutableMapOf<Int, Int>()
-
-            // Resolve parents before children for cumulative voltage drop.
-            val resolvedList = mutableListOf<CircuitEntity>()
-            val pending = normalizedCircuits.toMutableList()
-            var iterations = 0
-
-            while (pending.isNotEmpty() && iterations < 100) {
-                val next = pending.filter { circuit ->
-                    val fedLower = circuit.fedFrom.lowercase()
-                    fedLower in listOf("transformer", "ats", "generator", "grid") ||
-                        resolvedList.any {
-                            it.circuitName.equals(
-                                circuit.fedFrom,
-                                ignoreCase = true
-                            )
-                        }
-                }
-
-                if (next.isEmpty()) {
-                    // Keep unresolved records visible; the engine/UI can flag them.
-                    resolvedList.addAll(pending)
-                    pending.clear()
-                } else {
-                    pending.removeAll(next)
-                    next.forEach { circuit ->
-                        val fedLower = circuit.fedFrom.lowercase()
-                        val parentCircuit = if (fedLower in listOf("transformer", "ats", "generator", "grid")) {
-                            null
-                        } else {
-                            resolvedList.find { it.circuitName.equals(circuit.fedFrom, ignoreCase = true) }
-                        }
-
-                        if (parentCircuit != null) {
-                            circuitParents[circuit.id] = parentCircuit.id
-                        }
-
-                        val parentVD = parentCircuit?.id?.let { sizingResults[it]?.cumulativeVDpct } ?: 0.0
-
-                        val sizingRes = if (circuit.feederType.equals("Busway", ignoreCase = true)) {
-                            val buswayRes = com.example.engine.BuswayEngine.sizeBusway(
-                                circuit = circuit,
-                                parentCumulativeVD = parentVD
-                            )
-                            com.example.engine.BuswayEngine.toSizingResult(buswayRes)
-                        } else {
-                            CableSizingEngine.sizeCircuit(
-                                circuit = circuit,
-                                parentCumulativeVD = parentVD,
-                                allCircuits = resolvedList
-                            )
-                        }
-
-                        val txExists = transformers.any { it.transformerId.equals(circuit.transformerId, ignoreCase = true) }
-                        if (fedLower == "transformer" && !txExists) {
-                            sizingResults[circuit.id] = sizingRes.copy(
-                                status = "✗ FAIL",
-                                failReason = "Missing source transformer '${circuit.transformerId}' in this project."
-                            )
-                        } else {
-                            sizingResults[circuit.id] = sizingRes
-                        }
-                        resolvedList.add(circuit)
-                    }
-                }
-                iterations++
-            }
+            val sizingResults = cableSizingResult.sizingResults.toMutableMap()
+            val circuitParents = cableSizingResult.circuitParents.toMutableMap()
+            val resolvedList = cableSizingResult.resolvedCircuits.toMutableList()
 
             val transformerResults = transformers.associate { transformer ->
                 transformer.transformerId to

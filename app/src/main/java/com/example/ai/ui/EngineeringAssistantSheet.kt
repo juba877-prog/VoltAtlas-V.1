@@ -39,8 +39,9 @@ fun EngineeringAssistantSheet(
 
     if (!uiState.isOpen) return
 
-    val isImeVisible = WindowInsets.isImeVisible
-    val heightFraction = if (isImeVisible || uiState.isExpanded) 0.85f else 0.52f
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true
+    )
     val listState = rememberLazyListState()
 
     LaunchedEffect(uiState.messages.size) {
@@ -51,6 +52,7 @@ fun EngineeringAssistantSheet(
 
     ModalBottomSheet(
         onDismissRequest = { viewModel.close() },
+        sheetState = sheetState,
         containerColor = ThemeSurface,
         scrimColor = Color.Black.copy(alpha = 0.5f),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
@@ -60,16 +62,7 @@ fun EngineeringAssistantSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(heightFraction)
-                .animateContentSize(
-                    animationSpec = if (reduceMotion) {
-                        tween(VoltAtlasMotion.DurationMicro)
-                    } else {
-                        tween(VoltAtlasMotion.DurationEmphasized)
-                    }
-                )
-                .navigationBarsPadding()
-                .imePadding()
+                .fillMaxHeight(if (uiState.isExpanded) 0.95f else 0.80f)
         ) {
             // --- TOP HEADER ROW ---
             Surface(
@@ -197,7 +190,9 @@ fun EngineeringAssistantSheet(
             Surface(
                 color = ThemeSurface,
                 border = BorderStroke(1.dp, ThemeBorderSubtle),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
             ) {
                 Row(
                     modifier = Modifier
