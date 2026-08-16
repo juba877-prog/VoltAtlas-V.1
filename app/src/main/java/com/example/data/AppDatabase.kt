@@ -372,6 +372,12 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
 
 
 
+data class ProjectRevisionSnapshotRecord(
+    val projectId: String,
+    val revision: Long,
+    val updatedAt: Long?
+)
+
 @Dao
 interface ProjectDao {
     @Query("SELECT * FROM projects ORDER BY updatedAt DESC")
@@ -397,6 +403,15 @@ interface ProjectDao {
 
     @Query("SELECT COUNT(*) FROM projects")
     suspend fun count(): Int
+
+    @Query("SELECT projectId, revision, updatedAt FROM projects WHERE projectId = :id")
+    suspend fun getRevisionSnapshot(id: String): ProjectRevisionSnapshotRecord?
+
+    @Query("SELECT revision FROM projects WHERE projectId = :id")
+    suspend fun getRevision(id: String): Long?
+
+    @Query("UPDATE projects SET revision = revision + 1, updatedAt = :updatedAt WHERE projectId = :id AND revision < 9223372036854775807")
+    suspend fun incrementRevision(id: String, updatedAt: Long = System.currentTimeMillis()): Int
 }
 
 
@@ -849,6 +864,12 @@ val MIGRATION_20_21 = object : Migration(20, 21) {
     }
 }
 
+val MIGRATION_21_22 = object : Migration(21, 22) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `projects` ADD COLUMN `revision` INTEGER NOT NULL DEFAULT 1")
+    }
+}
+
 @Dao
 interface SldNodePositionDao {
     @Query("SELECT * FROM sld_node_positions WHERE projectId = :projectId")
@@ -882,7 +903,7 @@ interface SldNodePositionDao {
         EarthingEntity::class,
         SldNodePositionEntity::class
     ],
-    version = 21,
+    version = 22,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -911,7 +932,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                     MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
-                    MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21
+                    MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
+                    MIGRATION_21_22
                 )
 
 

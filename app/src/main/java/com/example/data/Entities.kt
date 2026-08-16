@@ -263,7 +263,9 @@ data class ProjectEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     @ColumnInfo(defaultValue = "20.0")
-    val defaultPhaseImbalanceLimitPct: Double = 20.0
+    val defaultPhaseImbalanceLimitPct: Double = 20.0,
+    @ColumnInfo(defaultValue = "1")
+    val revision: Long = 1L
 ) : Serializable
 
 @Entity(tableName = "app_state")

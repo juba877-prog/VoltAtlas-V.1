@@ -66,10 +66,11 @@ fun SldScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val db = remember { com.example.data.AppDatabase.getDatabase(context) }
+    val repository = remember { com.example.data.EngineeringRepository(db) }
     val effectiveProjId = activeProjectId.ifBlank { circuits.firstOrNull()?.projectId ?: transformers.firstOrNull()?.projectId ?: "DEFAULT_PROJECT" }
 
     val dbPositionsFlow = remember(effectiveProjId) {
-        db.sldNodePositionDao().getPositionsForProject(effectiveProjId)
+        repository.sldNodePositionsFlow(effectiveProjId)
     }
     val dbPositions by dbPositionsFlow.collectAsState(initial = emptyList())
 
@@ -251,7 +252,7 @@ fun SldScreen(
                     val finalPos = manualPositions[nodeId]
                     if (finalPos != null) {
                         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                            db.sldNodePositionDao().insertOrUpdatePosition(
+                            repository.saveSldNodePosition(
                                 com.example.data.SldNodePositionEntity(
                                     projectId = effectiveProjId,
                                     nodeId = nodeId,
@@ -286,7 +287,7 @@ fun SldScreen(
             onResetLayout = {
                 manualPositions.clear()
                 scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                    db.sldNodePositionDao().clearPositionsForProject(effectiveProjId)
+                    repository.clearSldNodePositionsForProject(effectiveProjId)
                 }
                 android.widget.Toast.makeText(context, "Layout reset to auto-tree hierarchy", android.widget.Toast.LENGTH_SHORT).show()
             },

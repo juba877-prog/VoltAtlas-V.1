@@ -2,6 +2,8 @@ package com.example.data
 
 import android.content.Context
 import androidx.room.withTransaction
+import com.example.ai.context.revision.ProjectRevisionProvider
+import com.example.ai.context.revision.ProjectRevisionSnapshot
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import org.json.JSONArray
@@ -12,8 +14,34 @@ class EngineeringRepository(
     private val db: AppDatabase,
     val circuitDao: CircuitDao,
     val transformerDao: TransformerDao
-) {
+) : ProjectRevisionProvider {
     constructor(db: AppDatabase) : this(db, db.circuitDao(), db.transformerDao())
+
+    override suspend fun getCurrentRevision(projectId: String): ProjectRevisionSnapshot {
+        val record = projectDao.getRevisionSnapshot(projectId)
+            ?: throw NoSuchElementException("Project not found with id: $projectId")
+        return ProjectRevisionSnapshot(
+            projectId = record.projectId,
+            revision = record.revision,
+            updatedAt = record.updatedAt
+        )
+    }
+
+    private suspend fun <T> withProjectMutation(projectId: String, block: suspend () -> T): T {
+        return db.withTransaction {
+            val result = block()
+            val rowsUpdated = projectDao.incrementRevision(projectId, System.currentTimeMillis())
+            if (rowsUpdated == 0) {
+                val exists = projectDao.getProject(projectId) != null
+                if (!exists) {
+                    throw NoSuchElementException("Cannot advance revision: project '$projectId' does not exist.")
+                } else {
+                    throw IllegalStateException("Project revision overflow: maximum revision reached for project '$projectId'.")
+                }
+            }
+            result
+        }
+    }
 
     val circuitsFlow: Flow<List<CircuitEntity>> = circuitDao.getAllCircuits()
     val transformersFlow: Flow<List<TransformerEntity>> = transformerDao.getAllTransformers()
@@ -24,8 +52,10 @@ class EngineeringRepository(
     
     fun generatorSettingsFlow(projectId: String) = powerSystemsDao.getGeneratorSettings(projectId)
     fun generatorsFlow(projectId: String) = powerSystemsDao.getAllGeneratorSettings(projectId)
-    suspend fun saveGeneratorSettings(settings: GeneratorEntity) = powerSystemsDao.saveGeneratorSettings(settings)
-    suspend fun deleteGenerator(projectId: String, generatorId: String) {
+    suspend fun saveGeneratorSettings(settings: GeneratorEntity) = withProjectMutation(settings.projectId) {
+        powerSystemsDao.saveGeneratorSettings(settings)
+    }
+    suspend fun deleteGenerator(projectId: String, generatorId: String) = withProjectMutation(projectId) {
         val circuits = circuitDao.getCircuitsListForProject(projectId)
         circuits.filter { it.assignedGeneratorId == generatorId }.forEach { c ->
             circuitDao.insertCircuit(c.copy(assignedGeneratorId = null))
@@ -37,7 +67,7 @@ class EngineeringRepository(
         powerSystemsDao.deleteGeneratorSettings(projectId, generatorId)
     }
 
-    suspend fun createGeneratorAtomic(projectId: String, baseSettings: GeneratorEntity = GeneratorEntity()): GeneratorEntity {
+    suspend fun createGeneratorAtomic(projectId: String, baseSettings: GeneratorEntity = GeneratorEntity()): GeneratorEntity = withProjectMutation(projectId) {
         val maxId = powerSystemsDao.getMaxGeneratorId(projectId)
         val nextId = maxId + 1
         val genIdStr = "GEN-%02d".format(nextId)
@@ -49,13 +79,15 @@ class EngineeringRepository(
             generatorName = genNameStr
         )
         powerSystemsDao.saveGeneratorSettings(newEntity)
-        return newEntity
+        newEntity
     }
     
     fun atsSettingsFlow(projectId: String) = powerSystemsDao.getAtsSettings(projectId)
     fun atsListFlow(projectId: String) = powerSystemsDao.getAllAtsSettings(projectId)
-    suspend fun saveAtsSettings(settings: AtsEntity) = powerSystemsDao.saveAtsSettings(settings)
-    suspend fun deleteAts(projectId: String, atsId: String) {
+    suspend fun saveAtsSettings(settings: AtsEntity) = withProjectMutation(settings.projectId) {
+        powerSystemsDao.saveAtsSettings(settings)
+    }
+    suspend fun deleteAts(projectId: String, atsId: String) = withProjectMutation(projectId) {
         val circuits = circuitDao.getCircuitsListForProject(projectId)
         circuits.filter { it.assignedAtsId == atsId }.forEach { c ->
             circuitDao.insertCircuit(c.copy(assignedAtsId = null))
@@ -63,7 +95,7 @@ class EngineeringRepository(
         powerSystemsDao.deleteAtsSettings(projectId, atsId)
     }
 
-    suspend fun createAtsAtomic(projectId: String, baseSettings: AtsEntity = AtsEntity()): AtsEntity {
+    suspend fun createAtsAtomic(projectId: String, baseSettings: AtsEntity = AtsEntity()): AtsEntity = withProjectMutation(projectId) {
         val maxId = powerSystemsDao.getMaxAtsId(projectId)
         val nextId = maxId + 1
         val atsIdStr = "ATS-%02d".format(nextId)
@@ -75,13 +107,15 @@ class EngineeringRepository(
             atsName = atsNameStr
         )
         powerSystemsDao.saveAtsSettings(newEntity)
-        return newEntity
+        newEntity
     }
     
     fun upsSettingsFlow(projectId: String) = powerSystemsDao.getUpsSettings(projectId)
     fun upsListFlow(projectId: String) = powerSystemsDao.getAllUpsSettings(projectId)
-    suspend fun saveUpsSettings(settings: UpsEntity) = powerSystemsDao.saveUpsSettings(settings)
-    suspend fun deleteUps(projectId: String, upsId: String) {
+    suspend fun saveUpsSettings(settings: UpsEntity) = withProjectMutation(settings.projectId) {
+        powerSystemsDao.saveUpsSettings(settings)
+    }
+    suspend fun deleteUps(projectId: String, upsId: String) = withProjectMutation(projectId) {
         val circuits = circuitDao.getCircuitsListForProject(projectId)
         circuits.filter { it.assignedUpsId == upsId }.forEach { c ->
             circuitDao.insertCircuit(c.copy(assignedUpsId = null))
@@ -89,7 +123,7 @@ class EngineeringRepository(
         powerSystemsDao.deleteUpsSettings(projectId, upsId)
     }
 
-    suspend fun createUpsAtomic(projectId: String, baseSettings: UpsEntity = UpsEntity()): UpsEntity {
+    suspend fun createUpsAtomic(projectId: String, baseSettings: UpsEntity = UpsEntity()): UpsEntity = withProjectMutation(projectId) {
         val maxId = powerSystemsDao.getMaxUpsId(projectId)
         val nextId = maxId + 1
         val upsIdStr = "UPS-%02d".format(nextId)
@@ -101,17 +135,23 @@ class EngineeringRepository(
             upsName = upsNameStr
         )
         powerSystemsDao.saveUpsSettings(newEntity)
-        return newEntity
+        newEntity
     }
     
     fun pfGlobalSettingsFlow(projectId: String) = powerSystemsDao.getPfGlobalSettings(projectId)
-    suspend fun savePfGlobalSettings(settings: PfGlobalEntity) = powerSystemsDao.savePfGlobalSettings(settings)
+    suspend fun savePfGlobalSettings(settings: PfGlobalEntity) = withProjectMutation(settings.projectId) {
+        powerSystemsDao.savePfGlobalSettings(settings)
+    }
     
     fun pfTransformerSettingsFlow(projectId: String) = powerSystemsDao.getAllPfTransformerSettings(projectId)
-    suspend fun savePfTransformerSettings(settings: PfTransformerEntity) = powerSystemsDao.savePfTransformerSettings(settings)
+    suspend fun savePfTransformerSettings(settings: PfTransformerEntity) = withProjectMutation(settings.projectId) {
+        powerSystemsDao.savePfTransformerSettings(settings)
+    }
 
     fun earthingSettingsFlow(projectId: String) = powerSystemsDao.getEarthingSettings(projectId)
-    suspend fun saveEarthingSettings(settings: EarthingEntity) = powerSystemsDao.saveEarthingSettings(settings)
+    suspend fun saveEarthingSettings(settings: EarthingEntity) = withProjectMutation(settings.projectId) {
+        powerSystemsDao.saveEarthingSettings(settings)
+    }
 
     suspend fun getAllCircuits(): List<CircuitEntity> = circuitDao.getAllCircuitsList()
     suspend fun getAllTransformers(): List<TransformerEntity> = transformerDao.getAllTransformersList()
@@ -120,19 +160,65 @@ class EngineeringRepository(
     suspend fun getCircuitByName(name: String): CircuitEntity? = circuitDao.getCircuitByName(name)
     suspend fun getTransformerById(projectId: String, id: String): TransformerEntity? = transformerDao.getTransformerById(projectId, id)
 
-    suspend fun insertCircuit(circuit: CircuitEntity) = circuitDao.insertCircuit(circuit)
-    suspend fun insertCircuits(circuits: List<CircuitEntity>) = circuitDao.insertCircuits(circuits)
-    suspend fun updateCircuit(circuit: CircuitEntity) = circuitDao.updateCircuit(circuit)
-    suspend fun deleteCircuit(circuit: CircuitEntity) = circuitDao.deleteCircuitWithCascade(circuit)
+    suspend fun insertCircuit(circuit: CircuitEntity) = withProjectMutation(circuit.projectId) {
+        circuitDao.insertCircuit(circuit)
+    }
+    suspend fun insertCircuits(circuits: List<CircuitEntity>) {
+        if (circuits.isEmpty()) return
+        val projectIds = circuits.map { it.projectId }.distinct()
+        if (projectIds.size == 1) {
+            withProjectMutation(projectIds.first()) {
+                circuitDao.insertCircuits(circuits)
+            }
+        } else {
+            db.withTransaction {
+                circuitDao.insertCircuits(circuits)
+                projectIds.forEach { pid ->
+                    projectDao.incrementRevision(pid, System.currentTimeMillis())
+                }
+            }
+        }
+    }
+    suspend fun updateCircuit(circuit: CircuitEntity) = withProjectMutation(circuit.projectId) {
+        circuitDao.updateCircuit(circuit)
+    }
+    suspend fun deleteCircuit(circuit: CircuitEntity) = withProjectMutation(circuit.projectId) {
+        circuitDao.deleteCircuitWithCascade(circuit)
+    }
     suspend fun deleteAllCircuits() = circuitDao.deleteAllCircuits()
-    suspend fun deleteCircuitsForProject(projectId: String) = circuitDao.deleteCircuitsForProject(projectId)
+    suspend fun deleteCircuitsForProject(projectId: String) = withProjectMutation(projectId) {
+        circuitDao.deleteCircuitsForProject(projectId)
+    }
 
-    suspend fun insertTransformer(transformer: TransformerEntity) = transformerDao.insertTransformer(transformer)
-    suspend fun insertTransformers(transformers: List<TransformerEntity>) = transformerDao.insertTransformers(transformers)
-    suspend fun updateTransformer(transformer: TransformerEntity) = transformerDao.updateTransformer(transformer)
-    suspend fun deleteTransformer(transformer: TransformerEntity) = transformerDao.deleteTransformer(transformer)
+    suspend fun insertTransformer(transformer: TransformerEntity) = withProjectMutation(transformer.projectId) {
+        transformerDao.insertTransformer(transformer)
+    }
+    suspend fun insertTransformers(transformers: List<TransformerEntity>) {
+        if (transformers.isEmpty()) return
+        val projectIds = transformers.map { it.projectId }.distinct()
+        if (projectIds.size == 1) {
+            withProjectMutation(projectIds.first()) {
+                transformerDao.insertTransformers(transformers)
+            }
+        } else {
+            db.withTransaction {
+                transformerDao.insertTransformers(transformers)
+                projectIds.forEach { pid ->
+                    projectDao.incrementRevision(pid, System.currentTimeMillis())
+                }
+            }
+        }
+    }
+    suspend fun updateTransformer(transformer: TransformerEntity) = withProjectMutation(transformer.projectId) {
+        transformerDao.updateTransformer(transformer)
+    }
+    suspend fun deleteTransformer(transformer: TransformerEntity) = withProjectMutation(transformer.projectId) {
+        transformerDao.deleteTransformer(transformer)
+    }
     suspend fun deleteAllTransformers() = transformerDao.deleteAllTransformers()
-    suspend fun deleteTransformersForProject(projectId: String) = transformerDao.deleteTransformersForProject(projectId)
+    suspend fun deleteTransformersForProject(projectId: String) = withProjectMutation(projectId) {
+        transformerDao.deleteTransformersForProject(projectId)
+    }
 
 
     // Project management
@@ -142,8 +228,8 @@ class EngineeringRepository(
     fun getAllProjects() = projectDao.getAllProjects()
     fun observeProject(id: String) = projectDao.observeProject(id)
 
-    suspend fun updateProjectImbalanceLimit(projectId: String, limitPct: Double) {
-        val proj = projectDao.getProject(projectId) ?: return
+    suspend fun updateProjectImbalanceLimit(projectId: String, limitPct: Double) = withProjectMutation(projectId) {
+        val proj = projectDao.getProject(projectId) ?: return@withProjectMutation
         val updated = proj.copy(
             defaultPhaseImbalanceLimitPct = limitPct,
             updatedAt = System.currentTimeMillis()
@@ -153,22 +239,31 @@ class EngineeringRepository(
 
     suspend fun updateCircuitImbalanceOverride(circuitId: Int, limitOverridePct: Double?) {
         val circuit = circuitDao.getCircuitById(circuitId) ?: return
-        val updated = circuit.copy(phaseImbalanceLimitOverridePct = limitOverridePct)
-        circuitDao.insertCircuit(updated)
+        withProjectMutation(circuit.projectId) {
+            val updated = circuit.copy(phaseImbalanceLimitOverridePct = limitOverridePct)
+            circuitDao.insertCircuit(updated)
+        }
     }
 
     suspend fun createProject(name: String, client: String? = null): String {
         val id = "PRJ_" + System.currentTimeMillis()
         val now = System.currentTimeMillis()
         projectDao.upsertProject(
-            ProjectEntity(projectId = id, projectName = name, clientName = client,
-                          createdAt = now, updatedAt = now)
+            ProjectEntity(
+                projectId = id,
+                projectName = name,
+                clientName = client,
+                createdAt = now,
+                updatedAt = now,
+                revision = 1L
+            )
         )
         return id
     }
 
-    suspend fun renameProject(id: String, name: String) =
+    suspend fun renameProject(id: String, name: String) = withProjectMutation(id) {
         projectDao.rename(id, name, System.currentTimeMillis())
+    }
 
     suspend fun deleteProject(id: String) {
         db.withTransaction {
@@ -528,7 +623,8 @@ class EngineeringRepository(
                         clientName = rawClient,
                         defaultPhaseImbalanceLimitPct = imbalanceLimit,
                         createdAt = createdAt,
-                        updatedAt = updatedAt
+                        updatedAt = updatedAt,
+                        revision = 1L
                     )
                 )
 
@@ -1061,7 +1157,37 @@ class EngineeringRepository(
     }
 
     fun conduitSettingsFlow(projectId: String): Flow<List<ConduitSettingsEntity>> = db.conduitDao().getConduitSettingsForProject(projectId)
-    suspend fun saveConduitSetting(setting: ConduitSettingsEntity) = db.conduitDao().saveConduitSetting(setting)
+    suspend fun saveConduitSetting(setting: ConduitSettingsEntity) = withProjectMutation(setting.projectId) {
+        db.conduitDao().saveConduitSetting(setting)
+    }
+
+    fun sldNodePositionsFlow(projectId: String): Flow<List<SldNodePositionEntity>> =
+        sldNodePositionDao.getPositionsForProject(projectId)
+
+    suspend fun saveSldNodePosition(position: SldNodePositionEntity) = withProjectMutation(position.projectId) {
+        sldNodePositionDao.insertOrUpdatePosition(position)
+    }
+
+    suspend fun saveSldNodePositions(positions: List<SldNodePositionEntity>) {
+        if (positions.isEmpty()) return
+        val projectIds = positions.map { it.projectId }.distinct()
+        if (projectIds.size == 1) {
+            withProjectMutation(projectIds.first()) {
+                sldNodePositionDao.insertOrUpdatePositions(positions)
+            }
+        } else {
+            db.withTransaction {
+                sldNodePositionDao.insertOrUpdatePositions(positions)
+                projectIds.forEach { pid ->
+                    projectDao.incrementRevision(pid, System.currentTimeMillis())
+                }
+            }
+        }
+    }
+
+    suspend fun clearSldNodePositionsForProject(projectId: String) = withProjectMutation(projectId) {
+        sldNodePositionDao.clearPositionsForProject(projectId)
+    }
 }
 
 
