@@ -529,10 +529,10 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
             val circuitParents = cableSizingResult.circuitParents.toMutableMap()
             val resolvedList = cableSizingResult.resolvedCircuits.toMutableList()
 
-            val transformerResults = transformers.associate { transformer ->
-                transformer.transformerId to
-                    TransformerEngine.calculate(transformer, normalizedCircuits)
-            }
+            val transformerResults = com.example.engine.coordinator.EngineeringCalculationCoordinator.calculateProjectTransformers(
+                circuits = normalizedCircuits,
+                transformers = transformers
+            )
 
             val drumCap = preferences.drumDefaultCapacity.value
             val safetyMargin = preferences.cableSafetyMargin.value
@@ -606,7 +606,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
             val generatorResults = com.example.engine.GeneratorEngine.calculateAll(genList, atsEntitiesList, normalizedCircuits, totalConnectedLoad)
             val generatorResult = generatorResults["GEN-01"] ?: generatorResults.values.firstOrNull()
             
-            val shortCircuitResults = com.example.engine.ShortCircuitEngine.calculate(
+            val shortCircuitResults = com.example.engine.coordinator.EngineeringCalculationCoordinator.calculateProjectShortCircuit(
                 resolvedCircuits = resolvedList,
                 circuitParents = circuitParents,
                 sizingResults = sizingResults,
@@ -636,50 +636,27 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
             
             val pfCorrectionResults = com.example.engine.PfCorrectionEngine.calculate(pfGlob, pfTrans, transformers, transformerResults)
 
-            val adsResults = resolvedList.associate { circ ->
-                val sizingRes = sizingResults[circ.id]
-                if (sizingRes != null) {
-                    circ.id to com.example.engine.ProtectionEngine.calculateAds(circ, sizingRes)
-                } else {
-                    circ.id to null
-                }
-            }.filterValues { it != null }.mapValues { it.value!! }
+            val adsResults = com.example.engine.coordinator.EngineeringCalculationCoordinator.calculateProjectAds(
+                resolvedCircuits = resolvedList,
+                sizingResults = sizingResults
+            )
 
-            val protectionResults = resolvedList.associate { circ ->
-                val sizingRes = sizingResults[circ.id]
-                val scRes = shortCircuitResults[circ.id]
-                val parentId = circuitParents[circ.id]
-                val parentSizing = if (parentId != null) sizingResults[parentId] else null
-                val upstreamIn = parentSizing?.deviceSize_A ?: (transformerResults[circ.transformerId]?.flc ?: 0.0)
-                val parentName = if (parentId != null) (circuits.find { it.id == parentId }?.circuitName ?: "Parent Board") else "Incomer (${circ.transformerId})"
-                if (sizingRes != null) {
-                    circ.id to com.example.engine.ProtectionEngine.evaluateProtection(circ, sizingRes, scRes, upstreamIn, parentName)
-                } else {
-                    circ.id to null
-                }
-            }.filterValues { it != null }.mapValues { it.value!! }
+            val protectionResults = com.example.engine.coordinator.EngineeringCalculationCoordinator.calculateProjectProtection(
+                resolvedCircuits = resolvedList,
+                circuitParents = circuitParents,
+                sizingResults = sizingResults,
+                shortCircuitResults = shortCircuitResults,
+                transformerResults = transformerResults,
+                allCircuits = circuits
+            )
 
-            val coordinationResults = resolvedList.mapNotNull { circ ->
-                val sizingRes = sizingResults[circ.id]
-                val parentId = circuitParents[circ.id]
-                if (sizingRes != null && parentId != null) {
-                    val parentCirc = circuits.find { it.id == parentId }
-                    val parentSizing = sizingResults[parentId]
-                    if (parentCirc != null && parentSizing != null) {
-                        com.example.engine.CoordinationEngine.checkCoordination(
-                            circ, sizingRes, parentCirc.circuitName, parentSizing.deviceSize_A
-                        )
-                    } else null
-                } else if (sizingRes != null && circ.fedFrom.equals("Transformer", ignoreCase = true)) {
-                    // Check against transformer incomer
-                    val txRes = transformerResults[circ.transformerId]
-                    if (txRes != null) {
-                        com.example.engine.CoordinationEngine.checkCoordination(
-                            circ, sizingRes, "Incomer (${circ.transformerId})", txRes.flc
-                        )
-                    } else null
-                } else null
-            }
+            val coordinationResults = com.example.engine.coordinator.EngineeringCalculationCoordinator.calculateProjectCoordination(
+                resolvedCircuits = resolvedList,
+                circuitParents = circuitParents,
+                sizingResults = sizingResults,
+                transformerResults = transformerResults,
+                allCircuits = circuits
+            )
             val activeProjId = activeProjectId.value ?: "DEFAULT_PROJECT"
             val earthingEntityVal = settings.earthing ?: com.example.data.EarthingEntity(projectId = activeProjId)
             val maxIsc = shortCircuitResults.values.maxOfOrNull { it.iscKA } ?: (transformerResults.values.firstOrNull()?.isc3Phase ?: 0.0)

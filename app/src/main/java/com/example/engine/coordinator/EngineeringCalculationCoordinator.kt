@@ -2,7 +2,12 @@ package com.example.engine.coordinator
 
 import com.example.data.CircuitEntity
 import com.example.data.TransformerEntity
+import com.example.engine.AdsResult
+import com.example.engine.CoordinationResult
+import com.example.engine.ProtectionResult
+import com.example.engine.ShortCircuitResult
 import com.example.engine.SizingResult
+import com.example.engine.TransformerResult
 import java.util.Objects
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
@@ -21,27 +26,48 @@ data class CableSizingProjectResult(
  * Pure calculation coordinator for engineering sizing calculations.
  *
  * Responsibilities:
- * - Scope resolution and dependency resolution (parent cumulative voltage drop)
+ * - Scope resolution and dependency resolution (parent cumulative voltage drop, transformer loading, short-circuit impedances, protection coordination, selectivity)
  * - Result caching and freshness verification
- * - Invoking [CableCalculationService]
+ * - Invoking [CableCalculationService], [TransformerCalculationService], [ShortCircuitCalculationService], [ProtectionCalculationService], and [CoordinationCalculationService]
  * - Providing a unified calculation API for both ViewModel and future AI tool layers
  */
 object EngineeringCalculationCoordinator {
 
     private val sizingCache = ConcurrentHashMap<Int, Pair<Int, SizingResult>>()
+    private val transformerCache = ConcurrentHashMap<String, Pair<Int, TransformerResult>>()
+    private val shortCircuitCache = ConcurrentHashMap<Int, Pair<Int, ShortCircuitResult>>()
+    private val adsCache = ConcurrentHashMap<Int, Pair<Int, AdsResult>>()
+    private val protectionCache = ConcurrentHashMap<Int, Pair<Int, ProtectionResult>>()
+    private val coordinationCache = ConcurrentHashMap<Int, Pair<Int, CoordinationResult>>()
 
     /**
      * Clears all cached calculation results.
      */
     fun clearCache() {
         sizingCache.clear()
+        transformerCache.clear()
+        shortCircuitCache.clear()
+        adsCache.clear()
+        protectionCache.clear()
+        coordinationCache.clear()
     }
 
     /**
-     * Invalidates cache for a specific circuit ID.
+     * Invalidates cache for a specific circuit ID across sizing, short circuit, ads, protection, and coordination caches.
      */
     fun invalidateCircuit(circuitId: Int) {
         sizingCache.remove(circuitId)
+        shortCircuitCache.remove(circuitId)
+        adsCache.remove(circuitId)
+        protectionCache.remove(circuitId)
+        coordinationCache.remove(circuitId)
+    }
+
+    /**
+     * Invalidates cache for a specific transformer ID.
+     */
+    fun invalidateTransformer(transformerId: String) {
+        transformerCache.remove(transformerId)
     }
 
     /**
@@ -244,5 +270,739 @@ object EngineeringCalculationCoordinator {
         transformers: List<TransformerEntity> = emptyList()
     ): CableSizingProjectResult = withContext(Dispatchers.Default) {
         calculateProjectCableSizing(circuits, transformers)
+    }
+
+    /**
+     * Computes a cache signature for a transformer and its assigned circuits.
+     */
+    private fun computeTransformerSignature(transformer: TransformerEntity, circuits: List<CircuitEntity>): Int {
+        val txIdClean = transformer.transformerId.trim().lowercase()
+        val assignedCircuits = circuits.filter { c ->
+            val cTxId = c.transformerId.trim().lowercase()
+            if (cTxId.isNotEmpty()) {
+                cTxId == txIdClean
+            } else {
+                val fedClean = c.fedFrom.trim().lowercase()
+                fedClean == txIdClean || fedClean in listOf("transformer", "ats", "generator", "grid")
+            }
+        }
+        val circuitsHash = assignedCircuits.map { c ->
+            Objects.hash(
+                c.id,
+                c.circuitName,
+                c.loadKVA,
+                c.fedFrom,
+                c.parentId,
+                c.panelType,
+                c.phases,
+                c.assignedPhase,
+                c.directLoadConfirmed
+            )
+        }.sorted()
+
+        return Objects.hash(
+            transformer.transformerId,
+            transformer.transformerName,
+            transformer.kVA,
+            transformer.voltage,
+            transformer.percentZ,
+            transformer.xr,
+            transformer.txType,
+            transformer.sourceType,
+            transformer.status,
+            transformer.sizeMode,
+            transformer.manualKVA,
+            transformer.demandFactor,
+            transformer.diversity,
+            transformer.growth,
+            transformer.safety,
+            transformer.vectorGroup,
+            transformer.z0OverZ1,
+            transformer.pf,
+            circuitsHash
+        )
+    }
+
+    /**
+     * Targeted single-transformer calculation by ID.
+     */
+    fun calculateTransformer(
+        transformerId: String,
+        allCircuits: List<CircuitEntity>,
+        allTransformers: List<TransformerEntity>
+    ): TransformerResult {
+        val tx = allTransformers.firstOrNull { it.transformerId.equals(transformerId.trim(), ignoreCase = true) }
+            ?: TransformerEntity(transformerId = transformerId, status = "Inactive")
+        return calculateTransformer(tx, allCircuits)
+    }
+
+    /**
+     * Targeted single-transformer calculation for a given [TransformerEntity].
+     */
+    fun calculateTransformer(
+        transformer: TransformerEntity,
+        allCircuits: List<CircuitEntity>
+    ): TransformerResult {
+        val sig = computeTransformerSignature(transformer, allCircuits)
+        val cached = transformerCache[transformer.transformerId]
+        if (cached != null && cached.first == sig) {
+            return cached.second
+        }
+
+        val freshResult = TransformerCalculationService.calculateSingleTransformer(transformer, allCircuits)
+        transformerCache[transformer.transformerId] = sig to freshResult
+        return freshResult
+    }
+
+    /**
+     * Bulk transformer calculation for all project transformers.
+     */
+    fun calculateProjectTransformers(
+        circuits: List<CircuitEntity>,
+        transformers: List<TransformerEntity>
+    ): Map<String, TransformerResult> {
+        return transformers.associate { transformer ->
+            transformer.transformerId to calculateTransformer(transformer, circuits)
+        }
+    }
+
+    /**
+     * Suspend wrapper for bulk transformer calculation on background dispatcher.
+     */
+    suspend fun calculateProjectTransformersAsync(
+        circuits: List<CircuitEntity>,
+        transformers: List<TransformerEntity>
+    ): Map<String, TransformerResult> = withContext(Dispatchers.Default) {
+        calculateProjectTransformers(circuits, transformers)
+    }
+
+    /**
+     * Computes a cache signature for short circuit calculation on a circuit.
+     */
+    private fun computeShortCircuitSignature(
+        circuit: CircuitEntity,
+        sizingResult: SizingResult?,
+        transformerResult: TransformerResult?,
+        ancestorSizings: List<Pair<CircuitEntity, SizingResult?>>
+    ): Int {
+        val upstreamHash = ancestorSizings.map { (c, s) ->
+            Objects.hash(
+                c.id,
+                c.length_m,
+                c.parallelRuns,
+                s?.rUsed,
+                s?.xUsed
+            )
+        }
+
+        return Objects.hash(
+            circuit.id,
+            circuit.length_m,
+            circuit.parallelRuns,
+            circuit.fedFrom,
+            circuit.transformerId,
+            sizingResult?.cableSize_mm2,
+            sizingResult?.cableOD_mm,
+            sizingResult?.rUsed,
+            sizingResult?.xUsed,
+            sizingResult?.kFactor,
+            sizingResult?.clearingTime_s,
+            sizingResult?.deviceBreakingKA,
+            sizingResult?.deviceType,
+            transformerResult?.voltage,
+            transformerResult?.isc3Phase,
+            transformerResult?.rt,
+            transformerResult?.xt,
+            upstreamHash
+        )
+    }
+
+    /**
+     * Targeted single-circuit short circuit calculation.
+     * Resolves upstream ancestor branch and source transformer, then executes calculation.
+     */
+    fun calculateShortCircuit(
+        circuitId: Int,
+        allCircuits: List<CircuitEntity>,
+        allTransformers: List<TransformerEntity>
+    ): ShortCircuitResult {
+        val circuit = allCircuits.firstOrNull { it.id == circuitId }
+            ?: return ShortCircuitResult(
+                circuitId = circuitId,
+                sourceName = "N/A",
+                cableMm2 = "-",
+                iscKA = 0.0,
+                iwKA = 0.0,
+                deviceKA = 0.0,
+                deviceCheck = "-",
+                cableCheck = "-",
+                marginPct = 0.0,
+                status = "DATA MISSING",
+                note = "Circuit $circuitId not found in project"
+            )
+
+        val ancestors = resolveAncestorChain(circuit, allCircuits)
+        val branchCircuits = ancestors + circuit
+
+        // Sizing for branch
+        val branchSizings = mutableMapOf<Int, SizingResult>()
+        for (item in branchCircuits) {
+            branchSizings[item.id] = calculateCableSizing(item, allCircuits, allTransformers)
+        }
+
+        // Find feeding transformer with circular reference guard
+        var curr = circuit
+        var txResult: TransformerResult? = null
+        val visitedTxLookup = mutableSetOf<Int>()
+        while (true) {
+            visitedTxLookup.add(curr.id)
+            val fedLower = curr.fedFrom.trim().lowercase()
+            if (fedLower in listOf("transformer", "ats", "generator", "grid") || curr.transformerId.isNotBlank()) {
+                val txId = curr.transformerId
+                if (txId.isNotBlank()) {
+                    txResult = calculateTransformer(txId, allCircuits, allTransformers)
+                    break
+                }
+            }
+            val parent = (if (curr.parentId != null) allCircuits.find { it.id == curr.parentId } else null)
+                ?: allCircuits.find { it.circuitName.equals(curr.fedFrom.trim(), ignoreCase = true) }
+            if (parent == null || parent.id == curr.id || visitedTxLookup.contains(parent.id)) break
+            curr = parent
+        }
+
+        val txMap = if (txResult != null && curr.transformerId.isNotBlank()) {
+            mapOf(curr.transformerId to txResult)
+        } else {
+            emptyMap()
+        }
+
+        val ancestorPairs = ancestors.map { it to branchSizings[it.id] }
+        val sig = computeShortCircuitSignature(
+            circuit = circuit,
+            sizingResult = branchSizings[circuit.id],
+            transformerResult = txResult,
+            ancestorSizings = ancestorPairs
+        )
+
+        val cached = shortCircuitCache[circuit.id]
+        if (cached != null && cached.first == sig) {
+            return cached.second
+        }
+
+        val parentsMap = mutableMapOf<Int, Int>()
+        for (i in 1 until branchCircuits.size) {
+            parentsMap[branchCircuits[i].id] = branchCircuits[i - 1].id
+        }
+
+        val fresh = ShortCircuitCalculationService.calculateSingleCircuitShortCircuit(
+            circuit = circuit,
+            ancestors = ancestors,
+            circuitParents = parentsMap,
+            sizingResults = branchSizings,
+            transformerResults = txMap
+        )
+        shortCircuitCache[circuit.id] = sig to fresh
+        return fresh
+    }
+
+    /**
+     * Bulk short circuit calculation across all resolved circuits using pre-computed sizing and transformer results.
+     */
+    fun calculateProjectShortCircuit(
+        resolvedCircuits: List<CircuitEntity>,
+        circuitParents: Map<Int, Int>,
+        sizingResults: Map<Int, SizingResult>,
+        transformerResults: Map<String, TransformerResult>
+    ): Map<Int, ShortCircuitResult> {
+        val results = mutableMapOf<Int, ShortCircuitResult>()
+        val circuitsToCompute = mutableListOf<CircuitEntity>()
+
+        for (circuit in resolvedCircuits) {
+            val sizing = sizingResults[circuit.id]
+            val ancestors = mutableListOf<CircuitEntity>()
+            val visitedAncestors = mutableSetOf<Int>()
+            var step = circuitParents[circuit.id]?.let { pId -> resolvedCircuits.find { it.id == pId } }
+            while (step != null && !visitedAncestors.contains(step.id)) {
+                visitedAncestors.add(step.id)
+                ancestors.add(0, step)
+                step = circuitParents[step.id]?.let { pId -> resolvedCircuits.find { it.id == pId } }
+            }
+
+            var curr = circuit
+            var txResult: TransformerResult? = null
+            val visitedTx = mutableSetOf<Int>()
+            while (true) {
+                visitedTx.add(curr.id)
+                val fedLower = curr.fedFrom.trim().lowercase()
+                if (fedLower in listOf("transformer", "ats", "generator", "grid")) {
+                    txResult = transformerResults[curr.transformerId]
+                    break
+                }
+                val parentId = circuitParents[curr.id] ?: break
+                if (visitedTx.contains(parentId)) break
+                curr = resolvedCircuits.find { it.id == parentId } ?: break
+            }
+
+            val ancestorPairs = ancestors.map { it to sizingResults[it.id] }
+            val sig = computeShortCircuitSignature(circuit, sizing, txResult, ancestorPairs)
+            val cached = shortCircuitCache[circuit.id]
+
+            if (cached != null && cached.first == sig) {
+                results[circuit.id] = cached.second
+            } else {
+                circuitsToCompute.add(circuit)
+            }
+        }
+
+        if (circuitsToCompute.isNotEmpty()) {
+            val freshMap = ShortCircuitCalculationService.calculateProjectShortCircuit(
+                resolvedCircuits = resolvedCircuits,
+                circuitParents = circuitParents,
+                sizingResults = sizingResults,
+                transformerResults = transformerResults
+            )
+
+            for (circuit in circuitsToCompute) {
+                val fresh = freshMap[circuit.id] ?: continue
+                val sizing = sizingResults[circuit.id]
+                val ancestors = mutableListOf<CircuitEntity>()
+                val visitedAncestors = mutableSetOf<Int>()
+                var step = circuitParents[circuit.id]?.let { pId -> resolvedCircuits.find { it.id == pId } }
+                while (step != null && !visitedAncestors.contains(step.id)) {
+                    visitedAncestors.add(step.id)
+                    ancestors.add(0, step)
+                    step = circuitParents[step.id]?.let { pId -> resolvedCircuits.find { it.id == pId } }
+                }
+                var curr = circuit
+                var txResult: TransformerResult? = null
+                val visitedTx = mutableSetOf<Int>()
+                while (true) {
+                    visitedTx.add(curr.id)
+                    val fedLower = curr.fedFrom.trim().lowercase()
+                    if (fedLower in listOf("transformer", "ats", "generator", "grid")) {
+                        txResult = transformerResults[curr.transformerId]
+                        break
+                    }
+                    val parentId = circuitParents[curr.id] ?: break
+                    if (visitedTx.contains(parentId)) break
+                    curr = resolvedCircuits.find { it.id == parentId } ?: break
+                }
+                val ancestorPairs = ancestors.map { it to sizingResults[it.id] }
+                val sig = computeShortCircuitSignature(circuit, sizing, txResult, ancestorPairs)
+                shortCircuitCache[circuit.id] = sig to fresh
+                results[circuit.id] = fresh
+            }
+        }
+
+        return results
+    }
+
+    /**
+     * Suspend wrapper for bulk project short circuit calculation on background dispatcher.
+     */
+    suspend fun calculateProjectShortCircuitAsync(
+        resolvedCircuits: List<CircuitEntity>,
+        circuitParents: Map<Int, Int>,
+        sizingResults: Map<Int, SizingResult>,
+        transformerResults: Map<String, TransformerResult>
+    ): Map<Int, ShortCircuitResult> = withContext(Dispatchers.Default) {
+        calculateProjectShortCircuit(
+            resolvedCircuits = resolvedCircuits,
+            circuitParents = circuitParents,
+            sizingResults = sizingResults,
+            transformerResults = transformerResults
+        )
+    }
+
+    /**
+     * Computes a cache signature for ADS calculation.
+     */
+    private fun computeAdsSignature(
+        circuit: CircuitEntity,
+        sizingResult: SizingResult?,
+        ze_ohm: Double
+    ): Int {
+        return Objects.hash(
+            circuit.id,
+            circuit.length_m,
+            circuit.overrideDeviceType,
+            circuit.cableType,
+            sizingResult?.cableSize_mm2,
+            sizingResult?.earthCPC_mm2,
+            sizingResult?.cableMaterial,
+            sizingResult?.deviceSize_A,
+            ze_ohm
+        )
+    }
+
+    /**
+     * Computes a cache signature for full Protection evaluation.
+     */
+    private fun computeProtectionSignature(
+        circuit: CircuitEntity,
+        sizingResult: SizingResult?,
+        shortCircuitResult: ShortCircuitResult?,
+        upstreamIn_A: Double,
+        upstreamName: String
+    ): Int {
+        return Objects.hash(
+            circuit.id,
+            circuit.overrideDeviceType,
+            circuit.loadKVA,
+            sizingResult?.Ib_A,
+            sizingResult?.deviceSize_A,
+            sizingResult?.capacity_derated_Iz_A,
+            sizingResult?.deviceBreakingKA,
+            sizingResult?.cableSize_mm2,
+            sizingResult?.kFactor,
+            sizingResult?.clearingTime_s,
+            shortCircuitResult?.iscKA,
+            upstreamIn_A,
+            upstreamName
+        )
+    }
+
+    /**
+     * Targeted single-circuit ADS calculation.
+     */
+    fun calculateAds(
+        circuitId: Int,
+        allCircuits: List<CircuitEntity>,
+        allTransformers: List<TransformerEntity> = emptyList(),
+        ze_ohm: Double = 0.01
+    ): AdsResult {
+        val circuit = allCircuits.firstOrNull { it.id == circuitId }
+            ?: return ProtectionCalculationService.buildMissingAdsResult(
+                CircuitEntity(id = circuitId, circuitName = "Circuit $circuitId", projectId = "")
+            )
+
+        val sizingResult = calculateCableSizing(circuit, allCircuits, allTransformers)
+        val sig = computeAdsSignature(circuit, sizingResult, ze_ohm)
+
+        val cached = adsCache[circuit.id]
+        if (cached != null && cached.first == sig) {
+            return cached.second
+        }
+
+        val fresh = ProtectionCalculationService.calculateAds(circuit, sizingResult, ze_ohm)
+        adsCache[circuit.id] = sig to fresh
+        return fresh
+    }
+
+    /**
+     * Targeted single-circuit Protection evaluation.
+     */
+    fun calculateProtection(
+        circuitId: Int,
+        allCircuits: List<CircuitEntity>,
+        allTransformers: List<TransformerEntity>
+    ): ProtectionResult {
+        val circuit = allCircuits.firstOrNull { it.id == circuitId }
+            ?: return ProtectionCalculationService.buildMissingProtectionResult(
+                CircuitEntity(id = circuitId, circuitName = "Circuit $circuitId", projectId = "")
+            )
+
+        val sizingResult = calculateCableSizing(circuit, allCircuits, allTransformers)
+        val scResult = calculateShortCircuit(circuitId, allCircuits, allTransformers)
+
+        // Find parent device size or transformer FLC with cycle guard
+        val parent = (if (circuit.parentId != null) allCircuits.find { it.id == circuit.parentId } else null)
+            ?: allCircuits.find { it.circuitName.equals(circuit.fedFrom.trim(), ignoreCase = true) }
+
+        val upstreamIn: Double
+        val upstreamName: String
+        if (parent != null && parent.id != circuit.id) {
+            val parentSizing = calculateCableSizing(parent, allCircuits, allTransformers)
+            upstreamIn = parentSizing.deviceSize_A
+            upstreamName = parent.circuitName
+        } else {
+            val txResult = if (circuit.transformerId.isNotBlank()) {
+                calculateTransformer(circuit.transformerId, allCircuits, allTransformers)
+            } else null
+            upstreamIn = txResult?.flc ?: 0.0
+            upstreamName = if (circuit.transformerId.isNotBlank()) "Incomer (${circuit.transformerId})" else "Incomer"
+        }
+
+        val sig = computeProtectionSignature(circuit, sizingResult, scResult, upstreamIn, upstreamName)
+        val cached = protectionCache[circuit.id]
+        if (cached != null && cached.first == sig) {
+            return cached.second
+        }
+
+        val fresh = ProtectionCalculationService.evaluateProtection(
+            circuit = circuit,
+            sizingResult = sizingResult,
+            shortCircuitResult = scResult,
+            upstreamIn_A = upstreamIn,
+            upstreamName = upstreamName
+        )
+        protectionCache[circuit.id] = sig to fresh
+        return fresh
+    }
+
+    /**
+     * Bulk project ADS calculation.
+     */
+    fun calculateProjectAds(
+        resolvedCircuits: List<CircuitEntity>,
+        sizingResults: Map<Int, SizingResult>,
+        ze_ohm: Double = 0.01
+    ): Map<Int, AdsResult> {
+        val results = mutableMapOf<Int, AdsResult>()
+        for (circuit in resolvedCircuits) {
+            val sizing = sizingResults[circuit.id] ?: continue
+            val sig = computeAdsSignature(circuit, sizing, ze_ohm)
+            val cached = adsCache[circuit.id]
+            if (cached != null && cached.first == sig) {
+                results[circuit.id] = cached.second
+            } else {
+                val fresh = ProtectionCalculationService.calculateAds(circuit, sizing, ze_ohm)
+                adsCache[circuit.id] = sig to fresh
+                results[circuit.id] = fresh
+            }
+        }
+        return results
+    }
+
+    /**
+     * Bulk project Protection evaluation.
+     */
+    fun calculateProjectProtection(
+        resolvedCircuits: List<CircuitEntity>,
+        circuitParents: Map<Int, Int>,
+        sizingResults: Map<Int, SizingResult>,
+        shortCircuitResults: Map<Int, ShortCircuitResult>,
+        transformerResults: Map<String, TransformerResult>,
+        allCircuits: List<CircuitEntity> = resolvedCircuits
+    ): Map<Int, ProtectionResult> {
+        val results = mutableMapOf<Int, ProtectionResult>()
+        for (circuit in resolvedCircuits) {
+            val sizing = sizingResults[circuit.id] ?: continue
+            val sc = shortCircuitResults[circuit.id]
+            val parentId = circuitParents[circuit.id]
+            val parentSizing = if (parentId != null) sizingResults[parentId] else null
+            val upstreamIn = parentSizing?.deviceSize_A ?: (transformerResults[circuit.transformerId]?.flc ?: 0.0)
+            val parentName = if (parentId != null) {
+                (allCircuits.find { it.id == parentId }?.circuitName ?: "Parent Board")
+            } else {
+                "Incomer (${circuit.transformerId})"
+            }
+
+            val sig = computeProtectionSignature(circuit, sizing, sc, upstreamIn, parentName)
+            val cached = protectionCache[circuit.id]
+            if (cached != null && cached.first == sig) {
+                results[circuit.id] = cached.second
+            } else {
+                val fresh = ProtectionCalculationService.evaluateProtection(
+                    circuit = circuit,
+                    sizingResult = sizing,
+                    shortCircuitResult = sc,
+                    upstreamIn_A = upstreamIn,
+                    upstreamName = parentName
+                )
+                protectionCache[circuit.id] = sig to fresh
+                results[circuit.id] = fresh
+            }
+        }
+        return results
+    }
+
+    /**
+     * Suspend wrapper for bulk ADS calculation on background dispatcher.
+     */
+    suspend fun calculateProjectAdsAsync(
+        resolvedCircuits: List<CircuitEntity>,
+        sizingResults: Map<Int, SizingResult>,
+        ze_ohm: Double = 0.01
+    ): Map<Int, AdsResult> = withContext(Dispatchers.Default) {
+        calculateProjectAds(resolvedCircuits, sizingResults, ze_ohm)
+    }
+
+    /**
+     * Suspend wrapper for bulk Protection calculation on background dispatcher.
+     */
+    suspend fun calculateProjectProtectionAsync(
+        resolvedCircuits: List<CircuitEntity>,
+        circuitParents: Map<Int, Int>,
+        sizingResults: Map<Int, SizingResult>,
+        shortCircuitResults: Map<Int, ShortCircuitResult>,
+        transformerResults: Map<String, TransformerResult>,
+        allCircuits: List<CircuitEntity> = resolvedCircuits
+    ): Map<Int, ProtectionResult> = withContext(Dispatchers.Default) {
+        calculateProjectProtection(
+            resolvedCircuits = resolvedCircuits,
+            circuitParents = circuitParents,
+            sizingResults = sizingResults,
+            shortCircuitResults = shortCircuitResults,
+            transformerResults = transformerResults,
+            allCircuits = allCircuits
+        )
+    }
+
+    /**
+     * Computes a cache signature for breaker coordination evaluation.
+     */
+    private fun computeCoordinationSignature(
+        circuit: CircuitEntity,
+        sizingResult: SizingResult?,
+        upstreamName: String,
+        upstreamRating: Double
+    ): Int {
+        return Objects.hash(
+            circuit.id,
+            circuit.circuitName,
+            sizingResult?.deviceSize_A,
+            upstreamName,
+            upstreamRating
+        )
+    }
+
+    /**
+     * Targeted single-circuit Coordination evaluation.
+     * Resolves immediate upstream parent breaker rating or transformer incomer FLC.
+     */
+    fun calculateCoordination(
+        circuitId: Int,
+        allCircuits: List<CircuitEntity>,
+        allTransformers: List<TransformerEntity> = emptyList()
+    ): CoordinationResult {
+        val circuit = allCircuits.firstOrNull { it.id == circuitId }
+            ?: return CoordinationCalculationService.buildMissingCoordinationResult(
+                CircuitEntity(id = circuitId, circuitName = "Circuit $circuitId", projectId = ""),
+                "Circuit $circuitId not found in project"
+            )
+
+        val sizingResult = calculateCableSizing(circuit, allCircuits, allTransformers)
+
+        // Resolve upstream parent device or transformer incomer with cycle protection
+        val visited = mutableSetOf<Int>()
+        visited.add(circuit.id)
+
+        val parent = (if (circuit.parentId != null) allCircuits.find { it.id == circuit.parentId } else null)
+            ?: allCircuits.find { it.circuitName.equals(circuit.fedFrom.trim(), ignoreCase = true) }
+
+        val upstreamName: String
+        val upstreamRating: Double
+
+        if (parent != null && parent.id != circuit.id && !visited.contains(parent.id)) {
+            val parentSizing = calculateCableSizing(parent, allCircuits, allTransformers)
+            upstreamRating = parentSizing.deviceSize_A
+            upstreamName = parent.circuitName
+        } else if (circuit.fedFrom.equals("Transformer", ignoreCase = true) || circuit.transformerId.isNotBlank()) {
+            val tx = allTransformers.firstOrNull { it.transformerId.equals(circuit.transformerId.trim(), ignoreCase = true) }
+            if (tx != null) {
+                val txResult = calculateTransformer(tx, allCircuits)
+                upstreamRating = txResult.flc
+                upstreamName = "Incomer (${tx.transformerId})"
+            } else {
+                return CoordinationCalculationService.buildMissingCoordinationResult(
+                    circuit,
+                    "Source transformer '${circuit.transformerId}' not found in project"
+                )
+            }
+        } else {
+            return CoordinationCalculationService.buildMissingCoordinationResult(
+                circuit,
+                "Upstream parent device or source transformer not found"
+            )
+        }
+
+        val sig = computeCoordinationSignature(circuit, sizingResult, upstreamName, upstreamRating)
+        val cached = coordinationCache[circuit.id]
+        if (cached != null && cached.first == sig) {
+            return cached.second
+        }
+
+        val fresh = CoordinationCalculationService.calculateCoordination(
+            downstreamCircuit = circuit,
+            downstreamResult = sizingResult,
+            upstreamName = upstreamName,
+            upstreamRating = upstreamRating
+        )
+        coordinationCache[circuit.id] = sig to fresh
+        return fresh
+    }
+
+    /**
+     * Bulk project Coordination evaluation across all resolved circuits.
+     */
+    fun calculateProjectCoordination(
+        resolvedCircuits: List<CircuitEntity>,
+        circuitParents: Map<Int, Int>,
+        sizingResults: Map<Int, SizingResult>,
+        transformerResults: Map<String, TransformerResult>,
+        allCircuits: List<CircuitEntity> = resolvedCircuits
+    ): List<CoordinationResult> {
+        return resolvedCircuits.mapNotNull { circ ->
+            val sizingRes = sizingResults[circ.id] ?: return@mapNotNull null
+            val parentId = circuitParents[circ.id]
+            val upstreamName: String
+            val upstreamRating: Double
+            if (parentId != null) {
+                val parentCirc = allCircuits.find { it.id == parentId }
+                val parentSizing = sizingResults[parentId]
+                if (parentCirc != null && parentSizing != null) {
+                    upstreamName = parentCirc.circuitName
+                    upstreamRating = parentSizing.deviceSize_A
+                } else {
+                    return@mapNotNull null
+                }
+            } else if (circ.fedFrom.equals("Transformer", ignoreCase = true)) {
+                val txRes = transformerResults[circ.transformerId]
+                if (txRes != null) {
+                    upstreamName = "Incomer (${circ.transformerId})"
+                    upstreamRating = txRes.flc
+                } else {
+                    return@mapNotNull null
+                }
+            } else {
+                return@mapNotNull null
+            }
+
+            val sig = computeCoordinationSignature(circ, sizingRes, upstreamName, upstreamRating)
+            val cached = coordinationCache[circ.id]
+            if (cached != null && cached.first == sig) {
+                cached.second
+            } else {
+                val fresh = CoordinationCalculationService.calculateCoordination(
+                    downstreamCircuit = circ,
+                    downstreamResult = sizingRes,
+                    upstreamName = upstreamName,
+                    upstreamRating = upstreamRating
+                )
+                coordinationCache[circ.id] = sig to fresh
+                fresh
+            }
+        }
+    }
+
+    /**
+     * Suspend wrapper for targeted Coordination calculation on background dispatcher.
+     */
+    suspend fun calculateCoordinationAsync(
+        circuitId: Int,
+        allCircuits: List<CircuitEntity>,
+        allTransformers: List<TransformerEntity> = emptyList()
+    ): CoordinationResult = withContext(Dispatchers.Default) {
+        calculateCoordination(circuitId, allCircuits, allTransformers)
+    }
+
+    /**
+     * Suspend wrapper for bulk project Coordination calculation on background dispatcher.
+     */
+    suspend fun calculateProjectCoordinationAsync(
+        resolvedCircuits: List<CircuitEntity>,
+        circuitParents: Map<Int, Int>,
+        sizingResults: Map<Int, SizingResult>,
+        transformerResults: Map<String, TransformerResult>,
+        allCircuits: List<CircuitEntity> = resolvedCircuits
+    ): List<CoordinationResult> = withContext(Dispatchers.Default) {
+        calculateProjectCoordination(
+            resolvedCircuits = resolvedCircuits,
+            circuitParents = circuitParents,
+            sizingResults = sizingResults,
+            transformerResults = transformerResults,
+            allCircuits = allCircuits
+        )
     }
 }
