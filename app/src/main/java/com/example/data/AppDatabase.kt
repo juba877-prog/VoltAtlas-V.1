@@ -502,56 +502,86 @@ interface PowerSystemsDao {
     fun getGeneratorSettings(projectId: String): Flow<GeneratorEntity?>
     @Query("SELECT * FROM generator_settings WHERE projectId = :projectId ORDER BY id ASC")
     fun getAllGeneratorSettings(projectId: String): Flow<List<GeneratorEntity>>
+    @Query("SELECT * FROM generator_settings WHERE projectId = :projectId ORDER BY id ASC")
+    suspend fun getAllGeneratorsList(projectId: String): List<GeneratorEntity>
     @Query("SELECT COALESCE(MAX(id), 0) FROM generator_settings WHERE projectId = :projectId")
     suspend fun getMaxGeneratorId(projectId: String): Int
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveGeneratorSettings(settings: GeneratorEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveAllGeneratorSettings(settings: List<GeneratorEntity>)
     @Query("DELETE FROM generator_settings WHERE projectId = :projectId AND generatorId = :generatorId")
     suspend fun deleteGeneratorSettings(projectId: String, generatorId: String)
+    @Query("DELETE FROM generator_settings WHERE projectId = :projectId")
+    suspend fun deleteGeneratorsForProject(projectId: String)
     
     // ATS
     @Query("SELECT * FROM ats_settings WHERE projectId = :projectId AND id = 1")
     fun getAtsSettings(projectId: String): Flow<AtsEntity?>
     @Query("SELECT * FROM ats_settings WHERE projectId = :projectId ORDER BY id ASC")
     fun getAllAtsSettings(projectId: String): Flow<List<AtsEntity>>
+    @Query("SELECT * FROM ats_settings WHERE projectId = :projectId ORDER BY id ASC")
+    suspend fun getAllAtsList(projectId: String): List<AtsEntity>
     @Query("SELECT COALESCE(MAX(id), 0) FROM ats_settings WHERE projectId = :projectId")
     suspend fun getMaxAtsId(projectId: String): Int
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveAtsSettings(settings: AtsEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveAllAtsSettings(settings: List<AtsEntity>)
     @Query("DELETE FROM ats_settings WHERE projectId = :projectId AND atsId = :atsId")
     suspend fun deleteAtsSettings(projectId: String, atsId: String)
+    @Query("DELETE FROM ats_settings WHERE projectId = :projectId")
+    suspend fun deleteAtsForProject(projectId: String)
     
     // UPS
     @Query("SELECT * FROM ups_settings WHERE projectId = :projectId AND id = 1")
     fun getUpsSettings(projectId: String): Flow<UpsEntity?>
     @Query("SELECT * FROM ups_settings WHERE projectId = :projectId ORDER BY id ASC")
     fun getAllUpsSettings(projectId: String): Flow<List<UpsEntity>>
+    @Query("SELECT * FROM ups_settings WHERE projectId = :projectId ORDER BY id ASC")
+    suspend fun getAllUpsList(projectId: String): List<UpsEntity>
     @Query("SELECT COALESCE(MAX(id), 0) FROM ups_settings WHERE projectId = :projectId")
     suspend fun getMaxUpsId(projectId: String): Int
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveUpsSettings(settings: UpsEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveAllUpsSettings(settings: List<UpsEntity>)
     @Query("DELETE FROM ups_settings WHERE projectId = :projectId AND upsId = :upsId")
     suspend fun deleteUpsSettings(projectId: String, upsId: String)
+    @Query("DELETE FROM ups_settings WHERE projectId = :projectId")
+    suspend fun deleteUpsForProject(projectId: String)
     
     // PF Global
     @Query("SELECT * FROM pf_global_settings WHERE projectId = :projectId AND id = 1")
     fun getPfGlobalSettings(projectId: String): Flow<PfGlobalEntity?>
+    @Query("SELECT * FROM pf_global_settings WHERE projectId = :projectId AND id = 1")
+    suspend fun getPfGlobalSettingsDirect(projectId: String): PfGlobalEntity?
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun savePfGlobalSettings(settings: PfGlobalEntity)
+    @Query("DELETE FROM pf_global_settings WHERE projectId = :projectId")
+    suspend fun deletePfGlobalForProject(projectId: String)
     
     // PF Transformer
     @Query("SELECT * FROM pf_transformer_settings WHERE projectId = :projectId")
     fun getAllPfTransformerSettings(projectId: String): Flow<List<PfTransformerEntity>>
+    @Query("SELECT * FROM pf_transformer_settings WHERE projectId = :projectId")
+    suspend fun getAllPfTransformerSettingsList(projectId: String): List<PfTransformerEntity>
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun savePfTransformerSettings(settings: PfTransformerEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveAllPfTransformerSettings(settings: List<PfTransformerEntity>)
+    @Query("DELETE FROM pf_transformer_settings WHERE projectId = :projectId")
+    suspend fun deletePfTransformerForProject(projectId: String)
 
     // Earthing
     @Query("SELECT * FROM earthing_settings WHERE projectId = :projectId AND id = 1")
     fun getEarthingSettings(projectId: String): Flow<EarthingEntity?>
+    @Query("SELECT * FROM earthing_settings WHERE projectId = :projectId AND id = 1")
+    suspend fun getEarthingSettingsDirect(projectId: String): EarthingEntity?
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveEarthingSettings(settings: EarthingEntity)
+    @Query("DELETE FROM earthing_settings WHERE projectId = :projectId")
+    suspend fun deleteEarthingForProject(projectId: String)
 }
 
 @Dao
@@ -559,11 +589,20 @@ interface ConduitDao {
     @Query("SELECT * FROM conduit_settings WHERE projectId = :projectId")
     fun getConduitSettingsForProject(projectId: String): Flow<List<ConduitSettingsEntity>>
 
+    @Query("SELECT * FROM conduit_settings WHERE projectId = :projectId")
+    suspend fun getConduitSettingsListForProject(projectId: String): List<ConduitSettingsEntity>
+
     @Query("SELECT * FROM conduit_settings WHERE projectId = :projectId AND circuitId = :circuitId")
     suspend fun getConduitSetting(projectId: String, circuitId: Int): ConduitSettingsEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveConduitSetting(setting: ConduitSettingsEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveConduitSettings(settings: List<ConduitSettingsEntity>)
+
+    @Query("DELETE FROM conduit_settings WHERE projectId = :projectId")
+    suspend fun deleteConduitSettingsForProject(projectId: String)
 }
 
 val MIGRATION_5_6 = object : Migration(5, 6) {

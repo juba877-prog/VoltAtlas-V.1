@@ -142,19 +142,36 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
         val id = repository.createProject(name)
         repository.setActiveProject(id)
         preferences.setLastOpenedProjectId(id)
-        _activeProjectId.value = id
+        selectedCircuitId.value = null
         selectedTransformerId.value = ""
+        circuitSearchQuery.value = ""
+        circuitStatusFilter.value = "All"
+        circuitParentFilter.value = "All"
+        _activeProjectId.value = id
+        recalculate()
     }
 
     fun openProject(id: String) = viewModelScope.launch {
         repository.setActiveProject(id)
         preferences.setLastOpenedProjectId(id)
+        selectedCircuitId.value = null
+        selectedTransformerId.value = ""
+        circuitSearchQuery.value = ""
+        circuitStatusFilter.value = "All"
+        circuitParentFilter.value = "All"
         _activeProjectId.value = id
+        recalculate()
     }
 
     fun closeProject() = viewModelScope.launch {
         repository.setActiveProject(null)
+        preferences.setLastOpenedProjectId(null)
         _activeProjectId.value = null
+        selectedCircuitId.value = null
+        selectedTransformerId.value = ""
+        circuitSearchQuery.value = ""
+        circuitStatusFilter.value = "All"
+        circuitParentFilter.value = "All"
     }
 
     fun renameProject(id: String, newName: String) = viewModelScope.launch {
@@ -162,7 +179,18 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun deleteProject(id: String) = viewModelScope.launch {
-        repository.deleteProject(id)
+        withContext(Dispatchers.IO) {
+            repository.deleteProject(id)
+        }
+        if (_activeProjectId.value == id) {
+            _activeProjectId.value = null
+            selectedCircuitId.value = null
+            selectedTransformerId.value = ""
+            circuitSearchQuery.value = ""
+            circuitStatusFilter.value = "All"
+            circuitParentFilter.value = "All"
+            preferences.setLastOpenedProjectId(null)
+        }
     }
 
     val projectError = MutableStateFlow<String?>(null)
@@ -252,11 +280,29 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
 
     fun importProjectJson(jsonString: String, onComplete: (Boolean, String) -> Unit) = viewModelScope.launch {
         try {
-            val newProjectId = repository.importProjectFromJson(jsonString)
-            repository.setActiveProject(newProjectId)
-            preferences.setLastOpenedProjectId(newProjectId)
-            _activeProjectId.value = newProjectId
-            onComplete(true, newProjectId)
+            val result = withContext(Dispatchers.IO) {
+                repository.importProjectFromJsonDetailed(jsonString)
+            }
+            if (result.status != com.example.data.ImportStatus.FAILED && result.projectId != null) {
+                val newProjectId = result.projectId
+                repository.setActiveProject(newProjectId)
+                preferences.setLastOpenedProjectId(newProjectId)
+                selectedCircuitId.value = null
+                selectedTransformerId.value = ""
+                circuitSearchQuery.value = ""
+                circuitStatusFilter.value = "All"
+                circuitParentFilter.value = "All"
+                _activeProjectId.value = newProjectId
+                recalculate()
+                val message = if (result.warnings.isNotEmpty()) {
+                    "Imported with ${result.warnings.size} warning(s)"
+                } else {
+                    "Project imported successfully"
+                }
+                onComplete(true, message)
+            } else {
+                onComplete(false, result.errors.firstOrNull() ?: "Failed to parse and import project JSON.")
+            }
         } catch (e: Exception) {
             onComplete(false, e.message ?: "Failed to parse and import project JSON.")
         }
