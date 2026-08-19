@@ -68,6 +68,36 @@ object CableCalculationService {
     }
 
     /**
+     * Authoritative, side-effect-free evaluation of a specific candidate conductor size or configuration.
+     * Delegates directly to [CableSizingEngine] via [calculateSingleCircuit] with candidate parameters.
+     */
+    fun evaluateCandidate(
+        circuit: CircuitEntity,
+        candidateSizeFormatted: String,
+        parallelRuns: Int = circuit.parallelRuns,
+        cableType: String = circuit.cableType,
+        deviceSizeA: Double? = circuit.overrideDeviceSize,
+        deviceType: String? = circuit.overrideDeviceType,
+        parentCumulativeVD: Double = 0.0,
+        upstreamCircuits: List<CircuitEntity> = emptyList(),
+        transformers: List<TransformerEntity> = emptyList()
+    ): SizingResult {
+        val candidateCircuit = circuit.copy(
+            overrideCableSize = candidateSizeFormatted,
+            parallelRuns = parallelRuns,
+            cableType = cableType,
+            overrideDeviceSize = deviceSizeA,
+            overrideDeviceType = deviceType
+        )
+        return calculateSingleCircuit(
+            circuit = candidateCircuit,
+            parentCumulativeVD = parentCumulativeVD,
+            upstreamCircuits = upstreamCircuits,
+            transformers = transformers
+        )
+    }
+
+    /**
      * Suspend wrapper for background execution off the UI thread.
      */
     suspend fun calculateSingleCircuitAsync(

@@ -37,6 +37,8 @@ class DeterministicReadToolRegistry {
         return tools.values.toList()
     }
 
+    fun getAllToolNames(): Set<String> = tools.keys.toSet()
+
     fun containsTool(toolName: String): Boolean = tools.containsKey(toolName)
 
     fun clear() {
