@@ -107,6 +107,8 @@ fun MainLayout(viewModel: EngineeringViewModel) {
     val pdfScope = rememberCoroutineScope()
     var currentReportOptions by remember { mutableStateOf(com.example.pdf.ReportOptions()) }
 
+    var showQuickCalc by rememberSaveable { mutableStateOf(false) }
+
     val createPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) {
             pdfScope.launch {
@@ -124,6 +126,13 @@ fun MainLayout(viewModel: EngineeringViewModel) {
         return
     }
 
+    if (showQuickCalc) {
+        QuickCableCalcScreen(
+            onBack = { showQuickCalc = false }
+        )
+        return
+    }
+
     if (activeId == null) {
         ProjectPickerScreen(
             projects = projects,
@@ -134,6 +143,7 @@ fun MainLayout(viewModel: EngineeringViewModel) {
             onExportProjectJson = { id -> viewModel.exportProjectJson(id) },
             onImportProjectJson = { jsonStr, callback -> viewModel.importProjectJson(jsonStr, callback) },
             onOpenSettings = { viewModel.openGlobalSettings() },
+            onOpenQuickCalc = { showQuickCalc = true },
             confirmDestructiveActions = confirmDestructiveActions
         )
 

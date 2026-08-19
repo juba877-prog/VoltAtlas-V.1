@@ -65,6 +65,7 @@ fun ProjectPickerScreen(
     onExportProjectJson: (suspend (String) -> String)? = null,
     onImportProjectJson: (String, (Boolean, String) -> Unit) -> Unit = { _, _ -> },
     onOpenSettings: () -> Unit = {},
+    onOpenQuickCalc: () -> Unit = {},
     confirmDestructiveActions: Boolean = true
 ) {
     val brandCyan = BrandCyan
@@ -345,6 +346,40 @@ fun ProjectPickerScreen(
                             contentPadding = PaddingValues(horizontal = 8.dp)
                         ) {
                             Text("📥 Import Project", color = brandCyan, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, softWrap = false)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Quick Cable Sizing Scratchpad Action Button
+                    OutlinedButton(
+                        onClick = onOpenQuickCalc,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("quick_calc_btn"),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, BrandGreen),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandGreen),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = ElectricalIcons.Circuits,
+                                contentDescription = "Quick Cable Sizing",
+                                tint = BrandGreen,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Quick Cable Sizing",
+                                color = BrandGreen,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
                         }
                     }
                     
