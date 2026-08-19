@@ -175,10 +175,10 @@ object ParentResolutionResolver {
     ): ParentResolution {
         val projectCircuits = allCircuits.filter { it.projectId == circuit.projectId }
 
-        // 1. Explicit parentId precedence (including self-parent cycle check)
-        if (circuit.parentId != null) {
+        // 1. Resolve immediate parent candidate
+        val directCandidate: CircuitEntity? = if (circuit.parentId != null) {
             if (circuit.parentId == circuit.id) {
-                return ParentResolution.InvalidCycle(listOf(circuit.id))
+                return ParentResolution.InvalidCycle(listOf(circuit.id, circuit.id))
             }
             val parent = projectCircuits.find { it.id == circuit.parentId }
             if (parent == null) {
@@ -189,25 +189,81 @@ object ParentResolutionResolver {
                     ParentResolution.MissingReference("Parent ID ${circuit.parentId} not found in project ${circuit.projectId}")
                 }
             }
-            return ParentResolution.Resolved(parent)
+            parent
+        } else {
+            val fedLower = circuit.fedFrom.trim().lowercase()
+            if (fedLower in listOf("transformer", "ats", "generator", "grid", "source", "main", "")) {
+                return ParentResolution.Root
+            }
+            val candidates = projectCircuits.filter {
+                it.id != circuit.id && it.circuitName.trim().equals(circuit.fedFrom.trim(), ignoreCase = true)
+            }
+            when {
+                candidates.isEmpty() -> return ParentResolution.MissingReference(circuit.fedFrom)
+                candidates.size > 1 -> return ParentResolution.Ambiguous(candidates.map { it.id })
+                else -> candidates.first()
+            }
         }
 
-        // 2. Root source keywords
-        val fedLower = circuit.fedFrom.trim().lowercase()
-        if (fedLower in listOf("transformer", "ats", "generator", "grid", "source", "main", "")) {
+        if (directCandidate == null) {
             return ParentResolution.Root
         }
 
-        // 3. Name-based match within project
-        val candidates = projectCircuits.filter {
-            it.id != circuit.id && it.circuitName.trim().equals(circuit.fedFrom.trim(), ignoreCase = true)
+        // 2. Multi-node cycle detection: follow upstream chain from directCandidate
+        val visitedPath = mutableListOf(circuit.id)
+        var current: CircuitEntity? = directCandidate
+
+        while (current != null) {
+            if (visitedPath.contains(current.id)) {
+                visitedPath.add(current.id)
+                return ParentResolution.InvalidCycle(visitedPath)
+            }
+            visitedPath.add(current.id)
+
+            // Step upstream
+            current = if (current.parentId != null) {
+                projectCircuits.find { it.id == current.parentId }
+            } else {
+                val fedLower = current.fedFrom.trim().lowercase()
+                if (fedLower in listOf("transformer", "ats", "generator", "grid", "source", "main", "")) {
+                    null
+                } else {
+                    val upstreamCandidates = projectCircuits.filter {
+                        it.id != current.id && it.circuitName.trim().equals(current.fedFrom.trim(), ignoreCase = true)
+                    }
+                    if (upstreamCandidates.size == 1) upstreamCandidates.first() else null
+                }
+            }
         }
 
-        return when {
-            candidates.isEmpty() -> ParentResolution.MissingReference(circuit.fedFrom)
-            candidates.size == 1 -> ParentResolution.Resolved(candidates.first())
-            else -> ParentResolution.Ambiguous(candidates.map { it.id })
+        return ParentResolution.Resolved(directCandidate)
+    }
+
+    /**
+     * Resolves the full acyclic upstream ancestor chain in order from root to immediate parent.
+     */
+    fun resolveAncestorChain(
+        circuit: CircuitEntity,
+        allCircuits: List<CircuitEntity>
+    ): List<CircuitEntity> {
+        val ancestors = mutableListOf<CircuitEntity>()
+        var current = circuit
+        val visited = mutableSetOf<Int>()
+
+        while (true) {
+            visited.add(current.id)
+            val parentRes = resolveParent(current, allCircuits)
+            if (parentRes is ParentResolution.Resolved) {
+                if (visited.contains(parentRes.parent.id)) {
+                    break
+                }
+                ancestors.add(0, parentRes.parent)
+                current = parentRes.parent
+            } else {
+                break
+            }
         }
+        return ancestors
     }
 }
 

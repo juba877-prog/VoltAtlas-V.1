@@ -240,15 +240,51 @@ class ProjectContextProviderImpl(
         var calculatedCircuitCount = 0
         var staleCircuitCount = 0
         var missingCircuitCount = 0
+        var anyDomainCalculatedCount = 0
 
         for (circuit in circuits) {
-            val scope = CalculationScope(projectId, CalculationEntityType.CIRCUIT, circuit.id.toString(), CalculationDomain.CABLE_SIZING)
-            val st = effectiveFreshness.getCalculationState(scope)
-            when (st.state) {
-                CalculationState.CURRENT -> calculatedCircuitCount++
-                CalculationState.STALE -> staleCircuitCount++
-                CalculationState.MISSING -> missingCircuitCount++
-                else -> {}
+            var hasMissing = false
+            var hasStale = false
+            var allCurrent = true
+
+            // Applicable domains: root circuits without upstream protection do not require COORDINATION
+            val applicableDomains = mutableListOf(
+                CalculationDomain.CABLE_SIZING,
+                CalculationDomain.SHORT_CIRCUIT,
+                CalculationDomain.PROTECTION_ADS
+            )
+            val hasUpstream = circuit.parentId != null ||
+                    (circuit.fedFrom.isNotBlank() && circuit.fedFrom.trim().lowercase() !in listOf("grid", "source", "main", "generator")) ||
+                    circuit.transformerId.isNotBlank()
+            if (hasUpstream) {
+                applicableDomains.add(CalculationDomain.COORDINATION)
+            }
+
+            for (domain in applicableDomains) {
+                val scope = CalculationScope(projectId, CalculationEntityType.CIRCUIT, circuit.id.toString(), domain)
+                val st = effectiveFreshness.getCalculationState(scope)
+                when (st.state) {
+                    CalculationState.CURRENT -> {
+                        anyDomainCalculatedCount++
+                    }
+                    CalculationState.STALE -> {
+                        hasStale = true
+                        allCurrent = false
+                    }
+                    CalculationState.MISSING -> {
+                        hasMissing = true
+                        allCurrent = false
+                    }
+                    else -> {
+                        allCurrent = false
+                    }
+                }
+            }
+
+            when {
+                hasMissing -> missingCircuitCount++
+                hasStale -> staleCircuitCount++
+                allCurrent -> calculatedCircuitCount++
             }
         }
 
@@ -260,7 +296,10 @@ class ProjectContextProviderImpl(
             val scope = CalculationScope(projectId, CalculationEntityType.TRANSFORMER, tx.transformerId, CalculationDomain.TRANSFORMER)
             val st = effectiveFreshness.getCalculationState(scope)
             when (st.state) {
-                CalculationState.CURRENT -> calculatedTxCount++
+                CalculationState.CURRENT -> {
+                    calculatedTxCount++
+                    anyDomainCalculatedCount++
+                }
                 CalculationState.STALE -> staleTxCount++
                 CalculationState.MISSING -> missingTxCount++
                 else -> {}
@@ -280,30 +319,48 @@ class ProjectContextProviderImpl(
             it.severity == SldValidationStatus.INVALID || it.severity == SldValidationStatus.DISCONNECTED
         }
         val sizingFailures = sizingResults.values.count { it.status.contains("FAIL") || it.status.contains("✗") }
-        val criticalFailureCount = graphFailures + sizingFailures
+
+        // Also check cached short circuit and protection results for failures
+        val scFailures = circuits.count { c ->
+            coordinator.getCachedShortCircuitResult(projectId, c.id)?.let { it.status.contains("FAIL") || it.status.contains("MISSING") } == true
+        }
+        val protFailures = circuits.count { c ->
+            coordinator.getCachedProtectionResult(projectId, c.id)?.let { it.finalStatus.contains("FAIL") } == true
+        }
+
+        val criticalFailureCount = graphFailures + sizingFailures + scFailures + protFailures
 
         val reviewRequiredCount = graph.validationIssues.count { it.severity == SldValidationStatus.DATA_REQUIRED }
 
         val graphWarnings = graph.validationIssues.count { it.severity == SldValidationStatus.WARNING }
         val sizingWarnings = sizingResults.values.count { it.status.contains("WARNING") || it.status.contains("⚠") }
-        val warningCount = graphWarnings + sizingWarnings
+        val coordWarnings = circuits.count { c ->
+            coordinator.getCachedCoordinationResult(projectId, c.id)?.let { it.status.contains("WARN") } == true
+        }
+        val warningCount = graphWarnings + sizingWarnings + coordWarnings
 
         // 3. Determine truthful engineering status
         val engineeringStatus = when {
             criticalFailureCount > 0 -> {
-                if (graphFailures > 0 && sizingFailures == 0) ProjectEngineeringStatus.TOPOLOGY_FAILURE
-                else ProjectEngineeringStatus.ENGINEERING_FAILURE
+                if (graphFailures > 0 && sizingFailures == 0 && scFailures == 0 && protFailures == 0) {
+                    ProjectEngineeringStatus.TOPOLOGY_FAILURE
+                } else {
+                    ProjectEngineeringStatus.ENGINEERING_FAILURE
+                }
             }
             circuits.isEmpty() && transformers.isEmpty() -> ProjectEngineeringStatus.UNCALCULATED
             missingCircuitCount > 0 || missingTxCount > 0 -> {
-                if (calculatedCircuitCount == 0 && calculatedTxCount == 0) ProjectEngineeringStatus.UNCALCULATED
+                if (anyDomainCalculatedCount == 0) ProjectEngineeringStatus.UNCALCULATED
                 else ProjectEngineeringStatus.CALCULATIONS_MISSING
             }
             staleCircuitCount > 0 || staleTxCount > 0 -> ProjectEngineeringStatus.CALCULATIONS_STALE
             reviewRequiredCount > 0 -> ProjectEngineeringStatus.REVIEW_REQUIRED
             warningCount > 0 -> {
-                if (graphWarnings > 0 && sizingWarnings == 0) ProjectEngineeringStatus.TOPOLOGY_WARNING
-                else ProjectEngineeringStatus.ENGINEERING_WARNING
+                if (graphWarnings > 0 && sizingWarnings == 0 && coordWarnings == 0) {
+                    ProjectEngineeringStatus.TOPOLOGY_WARNING
+                } else {
+                    ProjectEngineeringStatus.ENGINEERING_WARNING
+                }
             }
             else -> ProjectEngineeringStatus.FULLY_COMPLIANT
         }
@@ -311,7 +368,7 @@ class ProjectContextProviderImpl(
         val overallStatusSummary = when (engineeringStatus) {
             ProjectEngineeringStatus.FULLY_COMPLIANT -> "100% COMPLIANT / PASS"
             ProjectEngineeringStatus.UNCALCULATED -> "Project contains uncalculated circuits and transformers"
-            ProjectEngineeringStatus.CALCULATIONS_MISSING -> "$missingCircuitCount circuits / $missingTxCount transformers have missing calculation results"
+            ProjectEngineeringStatus.CALCULATIONS_MISSING -> "$missingCircuitCount circuits / $missingTxCount transformers have missing calculation results across engineering domains"
             ProjectEngineeringStatus.CALCULATIONS_STALE -> "$staleCircuitCount circuits / $staleTxCount transformers have stale calculations requiring re-run"
             ProjectEngineeringStatus.ENGINEERING_FAILURE -> "$criticalFailureCount engineering issues require attention"
             ProjectEngineeringStatus.TOPOLOGY_FAILURE -> "$graphFailures topology issues require attention"
@@ -355,7 +412,7 @@ class ProjectContextProviderImpl(
                     entityId = null,
                     domain = "CALCULATION_STATUS",
                     severity = "WARNING",
-                    description = "$missingCircuitCount circuits have never been calculated"
+                    description = "$missingCircuitCount circuits have incomplete/missing domain calculations"
                 )
             )
         }
@@ -492,7 +549,13 @@ class ProjectContextProviderImpl(
                 if (res == null) ResultUsability.MISSING else ResultUsability.CURRENT
             }
             CalculationState.STALE -> {
-                if (res == null) ResultUsability.MISSING else ResultUsability.STALE
+                if (res == null) {
+                    ResultUsability.MISSING
+                } else if (freshness.reasonCode == FreshnessReasonCode.PROVENANCE_INCOMPLETE) {
+                    ResultUsability.PARTIAL
+                } else {
+                    ResultUsability.STALE
+                }
             }
             CalculationState.MISSING -> ResultUsability.MISSING
             CalculationState.INVALID -> ResultUsability.INVALID
