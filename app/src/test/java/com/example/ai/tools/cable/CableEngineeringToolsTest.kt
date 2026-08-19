@@ -27,11 +27,15 @@ import com.example.data.ProjectEntity
 import com.example.data.TransformerEntity
 import com.example.data.catalog.CatalogRepository
 import com.example.engine.CableSizingEngine
+import com.example.engine.SizingResult
 import com.example.engine.coordinator.CableCalculationService
+import com.example.engine.coordinator.CableCheckCode
+import com.example.engine.coordinator.CableCheckStatus
+import com.example.engine.coordinator.CableEngineeringEvaluation
+import com.example.engine.coordinator.CableStructuredCheck
 import com.example.engine.coordinator.EngineeringCalculationCoordinator
 import java.io.File
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -353,7 +357,6 @@ class CableEngineeringToolsTest {
 
     @Test
     fun calculateCableSizing_blockingInputMissing_doesNotGuess() = runBlocking {
-        // Insert invalid circuit with length = 0
         database.circuitDao().insertCircuit(
             CircuitEntity(
                 id = 99,
@@ -455,7 +458,6 @@ class CableEngineeringToolsTest {
 
     @Test
     fun currentResult_isReusedWithoutEngineInvocation() = runBlocking {
-        // Initial execution
         invoker.executeDirect<CalculateCableSizingRequest, CableSizingExecutionResult>(
             ToolRequestEnvelope(requestId = "R-INIT", projectId = projectId, toolName = CableToolNames.CALCULATE_CABLE_SIZING, parameters = CalculateCableSizingRequest(projectId, "1"))
         )
@@ -477,7 +479,6 @@ class CableEngineeringToolsTest {
             ToolRequestEnvelope(requestId = "R-INIT2", projectId = projectId, toolName = CableToolNames.CALCULATE_CABLE_SIZING, parameters = CalculateCableSizingRequest(projectId, "1"))
         )
 
-        // Mutate circuit in DB to trigger STALE
         val circuit = database.circuitDao().getCircuitById(1)!!
         database.circuitDao().updateCircuit(circuit.copy(loadKVA = 300.0))
 
@@ -496,7 +497,6 @@ class CableEngineeringToolsTest {
 
     @Test
     fun staleResult_withForce_recalculatesTargetOnly() = runBlocking {
-        // Mutate circuit in DB
         val circuit = database.circuitDao().getCircuitById(1)!!
         database.circuitDao().updateCircuit(circuit.copy(loadKVA = 320.0))
 
@@ -536,7 +536,6 @@ class CableEngineeringToolsTest {
         )
         invoker.executeDirect<CalculateCableSizingRequest, CableSizingExecutionResult>(req)
 
-        // Circuit 2 was NOT calculated as part of circuit 1 request
         val cached2 = EngineeringCalculationCoordinator.getCachedSizingResult(projectId, 2)
         assertNull("Local circuit 1 calculation must not calculate sibling circuit 2", cached2)
     }
@@ -605,7 +604,6 @@ class CableEngineeringToolsTest {
 
     @Test
     fun evaluateCandidate_smallerFailingSize_returnsActualGoverningCheck() = runBlocking {
-        // Evaluating 10 mm² on a 250 kVA (360A) load must fail ampacity
         val req = ToolRequestEnvelope(
             requestId = "REQ-FAIL-SIZE",
             projectId = projectId,
@@ -616,7 +614,7 @@ class CableEngineeringToolsTest {
         val res = invoker.executeDirect<EvaluateCableCandidateRequest, CableCandidateEvaluationResult>(req)
         assertEquals(ToolStatus.PASS, res.status)
         assertEquals(CheckStatus.FAIL, res.result!!.overallStatus)
-        assertTrue("Must fail ampacity or multiple constraints", 
+        assertTrue(
             res.result!!.governingCriterion == GoverningCriterion.AMPACITY || 
             res.result!!.governingCriterion == GoverningCriterion.MULTIPLE_CONSTRAINTS ||
             res.result!!.governingCriterion == GoverningCriterion.MANUAL_OVERRIDE
@@ -1142,7 +1140,6 @@ class CableEngineeringToolsTest {
             ToolRequestEnvelope(requestId = "R-BASE-STALE", projectId = projectId, toolName = CableToolNames.CALCULATE_CABLE_SIZING, parameters = CalculateCableSizingRequest(projectId, "1"))
         )
 
-        // Mutate circuit
         val circuit = database.circuitDao().getCircuitById(1)!!
         database.circuitDao().updateCircuit(circuit.copy(loadKVA = 280.0))
 
@@ -1217,118 +1214,360 @@ class CableEngineeringToolsTest {
     }
 
     // =========================================================================
-    // 5. GOVERNING CRITERION TESTS
+    // 5. GOVERNING CRITERION AUTHORITY & BOUNDARY TESTS
     // =========================================================================
 
     @Test
-    fun governingCriterion_ampacity_fromActualChecks() = runBlocking {
-        // Short cable (30m) with high current -> Ampacity governed
-        val req = ToolRequestEnvelope(
-            requestId = "R-GOV-AMP",
-            projectId = projectId,
-            toolName = CableToolNames.CALCULATE_CABLE_SIZING,
-            parameters = CalculateCableSizingRequest(projectId = projectId, circuitId = "1")
+    fun governingCriterion_mapsAuthoritativeAmpacityCheckWithoutRecalculation() {
+        val dummyResult = SizingResult(
+            Ib_A = 400.0,
+            deviceSize_A = 400.0,
+            deviceType = "MCCB",
+            cTotalDerating = 1.0,
+            iRequired_perCable_A = 400.0,
+            productCode = "CODE-1",
+            cableSize_mm2 = "185 mm²",
+            ratedI_table_A = 350.0,
+            capacity_derated_Iz_A = 350.0,
+            utilizationPct = 114.0,
+            neutral_mm2 = "95 mm²",
+            earthCPC_mm2 = "95 mm²",
+            voltDrop_V = 2.0,
+            vdPct = 0.5,
+            cumulativeVDpct = 0.5,
+            status = "✗ FAIL",
+            failReason = "Ampacity insufficient"
         )
-        val res = invoker.executeDirect<CalculateCableSizingRequest, CableSizingExecutionResult>(req)
-        assertEquals(ToolStatus.PASS, res.status)
-        assertEquals(GoverningCriterion.AMPACITY, res.result!!.governingCriterion)
+        val circuit = CircuitEntity(id = 1, maxVDpct = 0.05)
+
+        val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+
+        assertEquals(CheckStatus.FAIL, interp.overallStatus)
+        assertEquals(GoverningCriterion.AMPACITY, interp.governingCriterion)
     }
 
     @Test
-    fun governingCriterion_voltageDrop_fromActualChecks() = runBlocking {
-        // Long cable (250m) with smaller current -> Voltage Drop governed
-        val req = ToolRequestEnvelope(
-            requestId = "R-GOV-VD",
-            projectId = projectId,
-            toolName = CableToolNames.CALCULATE_CABLE_SIZING,
-            parameters = CalculateCableSizingRequest(projectId = projectId, circuitId = "3")
+    fun governingCriterion_mapsAuthoritativeVoltageDropCheckWithoutRecalculation() {
+        val dummyResult = SizingResult(
+            Ib_A = 50.0,
+            deviceSize_A = 63.0,
+            deviceType = "MCB",
+            cTotalDerating = 1.0,
+            iRequired_perCable_A = 63.0,
+            productCode = "CODE-VD",
+            cableSize_mm2 = "16 mm²",
+            ratedI_table_A = 100.0,
+            capacity_derated_Iz_A = 100.0,
+            utilizationPct = 63.0,
+            neutral_mm2 = "16 mm²",
+            earthCPC_mm2 = "16 mm²",
+            voltDrop_V = 20.0,
+            vdPct = 5.0,
+            cumulativeVDpct = 5.0,
+            status = "✗ FAIL",
+            failReason = "Voltage drop exceeded"
         )
-        val res = invoker.executeDirect<CalculateCableSizingRequest, CableSizingExecutionResult>(req)
-        assertEquals(ToolStatus.PASS, res.status)
-        assertTrue(
-            res.result!!.governingCriterion == GoverningCriterion.VOLTAGE_DROP ||
-            res.result!!.governingCriterion == GoverningCriterion.CUMULATIVE_VOLTAGE_DROP
-        )
+        val circuit = CircuitEntity(id = 1, maxVDpct = 0.03) // 3% limit
+
+        val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+
+        assertEquals(CheckStatus.FAIL, interp.overallStatus)
+        assertEquals(GoverningCriterion.VOLTAGE_DROP, interp.governingCriterion)
     }
 
     @Test
-    fun governingCriterion_cumulativeVoltageDrop_fromActualChecks() = runBlocking {
-        val req = ToolRequestEnvelope(
-            requestId = "R-GOV-CUMVD",
-            projectId = projectId,
-            toolName = CableToolNames.CALCULATE_CABLE_SIZING,
-            parameters = CalculateCableSizingRequest(projectId = projectId, circuitId = "3")
+    fun governingCriterion_mapsAuthoritativeCumulativeVdCheckWithoutRecalculation() {
+        val dummyResult = SizingResult(
+            Ib_A = 50.0,
+            deviceSize_A = 63.0,
+            deviceType = "MCB",
+            cTotalDerating = 1.0,
+            iRequired_perCable_A = 63.0,
+            productCode = "CODE-CUMVD",
+            cableSize_mm2 = "16 mm²",
+            ratedI_table_A = 100.0,
+            capacity_derated_Iz_A = 100.0,
+            utilizationPct = 63.0,
+            neutral_mm2 = "16 mm²",
+            earthCPC_mm2 = "16 mm²",
+            voltDrop_V = 8.0,
+            vdPct = 2.0, // branch is 2% <= 3%
+            cumulativeVDpct = 4.5, // cumulative is 4.5% > 3%
+            status = "✗ FAIL",
+            failReason = "Cumulative voltage drop exceeded"
         )
-        val res = invoker.executeDirect<CalculateCableSizingRequest, CableSizingExecutionResult>(req)
-        assertEquals(ToolStatus.PASS, res.status)
-        assertTrue(res.result!!.checks.any { it.checkName == "Cumulative Voltage Drop" })
+        val circuit = CircuitEntity(id = 1, maxVDpct = 0.03)
+
+        val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+
+        assertEquals(CheckStatus.FAIL, interp.overallStatus)
+        assertEquals(GoverningCriterion.CUMULATIVE_VOLTAGE_DROP, interp.governingCriterion)
     }
 
     @Test
-    fun governingCriterion_shortCircuit_fromActualChecks() = runBlocking {
-        val req = ToolRequestEnvelope(
-            requestId = "R-GOV-SC",
-            projectId = projectId,
-            toolName = CableToolNames.CALCULATE_CABLE_SIZING,
-            parameters = CalculateCableSizingRequest(projectId = projectId, circuitId = "1")
+    fun governingCriterion_mapsAuthoritativeShortCircuitCheckOnlyWhenProvided() {
+        val check = CableStructuredCheck(
+            checkCode = CableCheckCode.SHORT_CIRCUIT_WITHSTAND,
+            checkName = "Short-Circuit Thermal Withstand",
+            status = CableCheckStatus.FAIL,
+            actualValue = "kS/sqrt(t)=12kA",
+            limitValue = "Isc=25kA",
+            unit = "kA",
+            message = "Thermal withstand exceeded",
+            isGoverning = true
         )
-        val res = invoker.executeDirect<CalculateCableSizingRequest, CableSizingExecutionResult>(req)
-        assertEquals(ToolStatus.PASS, res.status)
-        assertTrue(res.result!!.details.kFactor > 0.0)
-        assertTrue(res.result!!.details.deviceBreakingKA > 0.0)
+        val eval = CableEngineeringEvaluation(
+            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "10 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✗ FAIL"),
+            overallStatus = CableCheckStatus.FAIL,
+            checks = listOf(check),
+            governingCheckCode = CableCheckCode.SHORT_CIRCUIT_WITHSTAND,
+            governingReason = "Thermal withstand exceeded"
+        )
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+        assertEquals(GoverningCriterion.SHORT_CIRCUIT_WITHSTAND, interp.governingCriterion)
     }
 
     @Test
-    fun governingCriterion_multipleFailures_isNotOversimplified() = runBlocking {
-        val req = ToolRequestEnvelope(
-            requestId = "R-MULTI-FAIL",
-            projectId = projectId,
-            toolName = CableToolNames.EVALUATE_CABLE_CANDIDATE,
-            parameters = EvaluateCableCandidateRequest(projectId = projectId, circuitId = "1", candidateSizeMm2 = 1.5)
+    fun governingCriterion_mapsAuthoritativeDeviceCompatibilityOnlyWhenProvided() {
+        val check = CableStructuredCheck(
+            checkCode = CableCheckCode.DEVICE_COMPATIBILITY,
+            checkName = "Protective Device Compatibility",
+            status = CableCheckStatus.FAIL,
+            actualValue = "Frame=63A",
+            limitValue = "Rating=100A",
+            unit = "A",
+            message = "Device rating exceeds frame capacity",
+            isGoverning = true
         )
-        val res = invoker.executeDirect<EvaluateCableCandidateRequest, CableCandidateEvaluationResult>(req)
-        assertEquals(ToolStatus.PASS, res.status)
-        assertEquals(CheckStatus.FAIL, res.result!!.overallStatus)
-        assertTrue(
-            res.result!!.governingCriterion == GoverningCriterion.MULTIPLE_CONSTRAINTS ||
-            res.result!!.governingCriterion == GoverningCriterion.MANUAL_OVERRIDE
+        val eval = CableEngineeringEvaluation(
+            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "25 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✗ FAIL"),
+            overallStatus = CableCheckStatus.FAIL,
+            checks = listOf(check),
+            governingCheckCode = CableCheckCode.DEVICE_COMPATIBILITY,
+            governingReason = "Device rating exceeds frame capacity"
         )
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+        assertEquals(GoverningCriterion.DEVICE_COMPATIBILITY, interp.governingCriterion)
     }
 
     @Test
-    fun governingCriterion_staleResult_isNotCurrentRecommendation() = runBlocking {
-        invoker.executeDirect<CalculateCableSizingRequest, CableSizingExecutionResult>(
-            ToolRequestEnvelope(requestId = "R-STALE-GOV", projectId = projectId, toolName = CableToolNames.CALCULATE_CABLE_SIZING, parameters = CalculateCableSizingRequest(projectId, "1"))
+    fun governingCriterion_installationDeratingRequiresAuthoritativeReasonCode() {
+        val dummyResult = SizingResult(
+            Ib_A = 100.0,
+            deviceSize_A = 125.0,
+            deviceType = "MCCB",
+            cTotalDerating = 0.55,
+            iRequired_perCable_A = 125.0,
+            productCode = "CODE-DER",
+            cableSize_mm2 = "50 mm²",
+            ratedI_table_A = 160.0,
+            capacity_derated_Iz_A = 88.0,
+            utilizationPct = 142.0,
+            neutral_mm2 = "25 mm²",
+            earthCPC_mm2 = "25 mm²",
+            voltDrop_V = 2.0,
+            vdPct = 0.5,
+            cumulativeVDpct = 0.5,
+            status = "✗ FAIL",
+            failReason = "Severe derating factor applied"
         )
+        val circuit = CircuitEntity(id = 1, maxVDpct = 0.05)
 
-        // Mutate circuit
-        val circuit = database.circuitDao().getCircuitById(1)!!
-        database.circuitDao().updateCircuit(circuit.copy(loadKVA = 330.0))
-
-        val req = ToolRequestEnvelope(
-            requestId = "R-STALE-CHECK2",
-            projectId = projectId,
-            toolName = CableToolNames.CALCULATE_CABLE_SIZING,
-            parameters = CalculateCableSizingRequest(projectId, "1", forceRecalculate = false)
-        )
-        val res = invoker.executeDirect<CalculateCableSizingRequest, CableSizingExecutionResult>(req)
-        assertEquals(ToolStatus.STALE, res.status)
+        val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+        assertEquals(GoverningCriterion.INSTALLATION_DERATING, interp.governingCriterion)
     }
 
     @Test
-    fun governingCriterion_manualOverride_distinguishesAutomaticResult() = runBlocking {
-        val circuit = database.circuitDao().getCircuitById(1)!!
-        database.circuitDao().updateCircuit(circuit.copy(overrideCableSize = "300 mm\u00B2"))
-
-        val req = ToolRequestEnvelope(
-            requestId = "R-MAN-GOV",
-            projectId = projectId,
-            toolName = CableToolNames.CALCULATE_CABLE_SIZING,
-            parameters = CalculateCableSizingRequest(projectId = projectId, circuitId = "1", forceRecalculate = true)
+    fun governingCriterion_multipleAuthoritativeFailures_returnsMultipleConstraints() {
+        val dummyResult = SizingResult(
+            Ib_A = 300.0,
+            deviceSize_A = 400.0,
+            deviceType = "MCCB",
+            cTotalDerating = 1.0,
+            iRequired_perCable_A = 400.0,
+            productCode = "CODE-MULTI",
+            cableSize_mm2 = "10 mm²",
+            ratedI_table_A = 70.0,
+            capacity_derated_Iz_A = 70.0,
+            utilizationPct = 571.0,
+            neutral_mm2 = "10 mm²",
+            earthCPC_mm2 = "10 mm²",
+            voltDrop_V = 40.0,
+            vdPct = 10.0,
+            cumulativeVDpct = 10.0,
+            status = "✗ FAIL",
+            failReason = "Multiple engineering constraints violated"
         )
-        val res = invoker.executeDirect<CalculateCableSizingRequest, CableSizingExecutionResult>(req)
-        assertEquals(ToolStatus.PASS, res.status)
-        assertEquals(GoverningCriterion.MANUAL_OVERRIDE, res.result!!.governingCriterion)
+        val circuit = CircuitEntity(id = 1, maxVDpct = 0.03)
+
+        val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+        assertEquals(CheckStatus.FAIL, interp.overallStatus)
+        assertEquals(GoverningCriterion.MULTIPLE_CONSTRAINTS, interp.governingCriterion)
+    }
+
+    @Test
+    fun governingCriterion_noFailedChecks_doesNotInventTightestCriterion() {
+        val dummyResult = SizingResult(
+            Ib_A = 100.0,
+            deviceSize_A = 125.0,
+            deviceType = "MCCB",
+            cTotalDerating = 1.0,
+            iRequired_perCable_A = 125.0,
+            productCode = "CODE-PASS",
+            cableSize_mm2 = "70 mm²",
+            ratedI_table_A = 200.0,
+            capacity_derated_Iz_A = 200.0,
+            utilizationPct = 62.5,
+            neutral_mm2 = "35 mm²",
+            earthCPC_mm2 = "35 mm²",
+            voltDrop_V = 3.0,
+            vdPct = 0.75,
+            cumulativeVDpct = 0.75,
+            status = "✓ PASS"
+        )
+        val circuit = CircuitEntity(id = 1, maxVDpct = 0.03)
+
+        val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+        assertEquals(CheckStatus.PASS, interp.overallStatus)
+        assertEquals("When all checks pass, tool layer does not invent tightest criterion", GoverningCriterion.NONE, interp.governingCriterion)
+    }
+
+    @Test
+    fun governingCriterion_warningRemainsWarning() {
+        val check = CableStructuredCheck(
+            checkCode = CableCheckCode.AMPACITY,
+            checkName = "Ampacity High Utilization Warning",
+            status = CableCheckStatus.WARNING,
+            actualValue = "98%",
+            limitValue = "100%",
+            unit = "%",
+            message = "High utilization warning"
+        )
+        val eval = CableEngineeringEvaluation(
+            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "70 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✓ PASS"),
+            overallStatus = CableCheckStatus.WARNING,
+            checks = listOf(check),
+            governingCheckCode = null,
+            governingReason = "Warning state"
+        )
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+        assertEquals(CheckStatus.WARNING, interp.overallStatus)
+    }
+
+    @Test
+    fun governingCriterion_manualOverride_isSelectionState_notAutomaticFailure() {
+        val dummyResult = SizingResult(
+            Ib_A = 100.0,
+            deviceSize_A = 125.0,
+            deviceType = "MCCB",
+            cTotalDerating = 1.0,
+            iRequired_perCable_A = 125.0,
+            productCode = "CODE-MAN",
+            cableSize_mm2 = "120 mm²",
+            ratedI_table_A = 250.0,
+            capacity_derated_Iz_A = 250.0,
+            utilizationPct = 50.0,
+            neutral_mm2 = "70 mm²",
+            earthCPC_mm2 = "70 mm²",
+            voltDrop_V = 2.0,
+            vdPct = 0.5,
+            cumulativeVDpct = 0.5,
+            status = "✓ PASS"
+        )
+        val circuit = CircuitEntity(id = 1, maxVDpct = 0.03, overrideCableSize = "120 mm²")
+
+        val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+        assertEquals(CheckStatus.PASS, interp.overallStatus)
+        assertEquals(GoverningCriterion.MANUAL_OVERRIDE, interp.governingCriterion)
+    }
+
+    @Test
+    fun governingCriterion_unsupportedEvidence_isNotFabricated() {
+        val eval = CableEngineeringEvaluation(
+            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "240 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✓ PASS"),
+            overallStatus = CableCheckStatus.PASS,
+            checks = emptyList(),
+            governingCheckCode = null,
+            governingReason = "Pass"
+        )
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+        assertFalse(interp.governingCriterion == GoverningCriterion.SHORT_CIRCUIT_WITHSTAND)
+        assertFalse(interp.governingCriterion == GoverningCriterion.DEVICE_COMPATIBILITY)
+    }
+
+    @Test
+    fun governingCriterion_adversarialPass_persistsEvenWithUnusualValues() {
+        // Even if numbers are unusual, authoritative engine status PASS is trusted without recalculation
+        val eval = CableEngineeringEvaluation(
+            sizingResult = SizingResult(1000.0, 100.0, "MCCB", 1.0, 100.0, "X", "1.5 mm²", 10.0, 10.0, 1000.0, "", "", 100.0, 50.0, 50.0, "✓ PASS"),
+            overallStatus = CableCheckStatus.PASS,
+            checks = listOf(
+                CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.PASS, "1000A", "10A", "A", "Pass")
+            ),
+            governingCheckCode = null,
+            governingReason = "Engine declared pass"
+        )
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+        assertEquals(CheckStatus.PASS, interp.overallStatus)
+    }
+
+    @Test
+    fun governingCriterion_adversarialFail_persistsEvenWhenRecomputationWouldPass() {
+        // Even if numbers look passing, authoritative engine status FAIL is trusted
+        val eval = CableEngineeringEvaluation(
+            sizingResult = SizingResult(10.0, 20.0, "MCB", 1.0, 20.0, "X", "240 mm²", 500.0, 500.0, 4.0, "", "", 0.1, 0.02, 0.02, "✗ FAIL", failReason = "Coordination constraint"),
+            overallStatus = CableCheckStatus.FAIL,
+            checks = listOf(
+                CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.FAIL, "10A", "500A", "A", "Failed by upstream policy")
+            ),
+            governingCheckCode = CableCheckCode.AMPACITY,
+            governingReason = "Failed by upstream policy"
+        )
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+        assertEquals(CheckStatus.FAIL, interp.overallStatus)
+        assertEquals(GoverningCriterion.AMPACITY, interp.governingCriterion)
+    }
+
+    @Test
+    fun toolLayer_containsNoEngineeringFormulaOrThresholdLogic() {
+        val cableToolsDir = listOf(
+            File("app/src/main/java/com/example/ai/tools/cable"),
+            File("src/main/java/com/example/ai/tools/cable"),
+            File("../app/src/main/java/com/example/ai/tools/cable")
+        ).firstOrNull { it.exists() } ?: throw IllegalStateException("cable tools dir not found")
+
+        val prohibitedTokens = listOf(
+            "sqrt(",
+            "0.70",
+            "Math.sqrt",
+            "kotlin.math.sqrt",
+            "maxVDpct *",
+            "maxVDpct*",
+            "cTotalDerating <",
+            "cTotalDerating<",
+            "Ib_A <=",
+            "capacity_derated_Iz_A <"
+        )
+
+        val files = cableToolsDir.listFiles { f -> f.extension == "kt" } ?: emptyArray()
+        assertTrue("Must scan multiple tool files", files.isNotEmpty())
+
+        for (file in files) {
+            val content = file.readText()
+            for (token in prohibitedTokens) {
+                assertFalse(
+                    "Prohibited engineering formula/threshold token '$token' found in tool layer file ${file.name}",
+                    content.contains(token)
+                )
+            }
+        }
     }
 
     // =========================================================================

@@ -17,6 +17,7 @@ object CableToolNames {
  * or why a candidate failed.
  */
 enum class GoverningCriterion {
+    NONE,
     AMPACITY,
     VOLTAGE_DROP,
     CUMULATIVE_VOLTAGE_DROP,
