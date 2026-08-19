@@ -24,6 +24,19 @@ import com.example.ai.context.revision.ProjectRevisionSnapshot
 import kotlinx.coroutines.runBlocking
 
 /**
+ * Strongly typed project-scoped cache keys ensuring complete calculation cache isolation across projects.
+ */
+data class ProjectCircuitKey(
+    val projectId: String,
+    val circuitId: Int
+)
+
+data class ProjectTransformerKey(
+    val projectId: String,
+    val transformerId: String
+)
+
+/**
  * Result data container for bulk project cable sizing.
  */
 data class CableSizingProjectResult(
@@ -37,7 +50,7 @@ data class CableSizingProjectResult(
  *
  * Responsibilities:
  * - Scope resolution and dependency resolution (parent cumulative voltage drop, transformer loading, short-circuit impedances, protection coordination, selectivity)
- * - Result caching and freshness verification
+ * - Result caching and freshness verification (strictly project-scoped)
  * - Invoking [CableCalculationService], [TransformerCalculationService], [ShortCircuitCalculationService], [ProtectionCalculationService], and [CoordinationCalculationService]
  * - Providing a unified calculation API for both ViewModel and future AI tool layers
  * - Operational freshness metadata lifecycle recording (side-effect only, non-breaking)
@@ -83,15 +96,15 @@ object EngineeringCalculationCoordinator {
         )
     }
 
-    private val sizingCache = ConcurrentHashMap<Int, Pair<Int, SizingResult>>()
-    private val transformerCache = ConcurrentHashMap<String, Pair<Int, TransformerResult>>()
-    private val shortCircuitCache = ConcurrentHashMap<Int, Pair<Int, ShortCircuitResult>>()
-    private val adsCache = ConcurrentHashMap<Int, Pair<Int, AdsResult>>()
-    private val protectionCache = ConcurrentHashMap<Int, Pair<Int, ProtectionResult>>()
-    private val coordinationCache = ConcurrentHashMap<Int, Pair<Int, CoordinationResult>>()
+    private val sizingCache = ConcurrentHashMap<ProjectCircuitKey, Pair<Int, SizingResult>>()
+    private val transformerCache = ConcurrentHashMap<ProjectTransformerKey, Pair<Int, TransformerResult>>()
+    private val shortCircuitCache = ConcurrentHashMap<ProjectCircuitKey, Pair<Int, ShortCircuitResult>>()
+    private val adsCache = ConcurrentHashMap<ProjectCircuitKey, Pair<Int, AdsResult>>()
+    private val protectionCache = ConcurrentHashMap<ProjectCircuitKey, Pair<Int, ProtectionResult>>()
+    private val coordinationCache = ConcurrentHashMap<ProjectCircuitKey, Pair<Int, CoordinationResult>>()
 
     /**
-     * Clears all cached calculation results.
+     * Clears all cached calculation results across all projects.
      */
     fun clearCache() {
         sizingCache.clear()
@@ -102,44 +115,76 @@ object EngineeringCalculationCoordinator {
         coordinationCache.clear()
     }
 
+    /**
+     * Clears cached calculation results and freshness metadata for a specific project only.
+     */
+    fun clearProjectCache(projectId: String) {
+        sizingCache.keys.filter { it.projectId == projectId }.forEach { sizingCache.remove(it) }
+        transformerCache.keys.filter { it.projectId == projectId }.forEach { transformerCache.remove(it) }
+        shortCircuitCache.keys.filter { it.projectId == projectId }.forEach { shortCircuitCache.remove(it) }
+        adsCache.keys.filter { it.projectId == projectId }.forEach { adsCache.remove(it) }
+        protectionCache.keys.filter { it.projectId == projectId }.forEach { protectionCache.remove(it) }
+        coordinationCache.keys.filter { it.projectId == projectId }.forEach { coordinationCache.remove(it) }
+        freshnessRegistry.clearProject(projectId)
+    }
+
     // -------------------------------------------------------------------------
-    // Pure Read-Only Cache Accessors for ProjectContextProvider (Sub-Phase 3F)
+    // Pure Read-Only Project-Scoped Cache Accessors (Sub-Phase 3F)
     // -------------------------------------------------------------------------
 
-    fun getCachedSizingResult(circuitId: Int): SizingResult? =
-        sizingCache[circuitId]?.second
+    fun getCachedSizingResult(projectId: String, circuitId: Int): SizingResult? =
+        sizingCache[ProjectCircuitKey(projectId, circuitId)]?.second
 
-    fun getCachedTransformerResult(transformerId: String): TransformerResult? =
-        transformerCache[transformerId]?.second
+    fun getCachedTransformerResult(projectId: String, transformerId: String): TransformerResult? =
+        transformerCache[ProjectTransformerKey(projectId, transformerId)]?.second
 
-    fun getCachedShortCircuitResult(circuitId: Int): ShortCircuitResult? =
-        shortCircuitCache[circuitId]?.second
+    fun getCachedShortCircuitResult(projectId: String, circuitId: Int): ShortCircuitResult? =
+        shortCircuitCache[ProjectCircuitKey(projectId, circuitId)]?.second
 
-    fun getCachedAdsResult(circuitId: Int): AdsResult? =
-        adsCache[circuitId]?.second
+    fun getCachedAdsResult(projectId: String, circuitId: Int): AdsResult? =
+        adsCache[ProjectCircuitKey(projectId, circuitId)]?.second
 
-    fun getCachedProtectionResult(circuitId: Int): ProtectionResult? =
-        protectionCache[circuitId]?.second
+    fun getCachedProtectionResult(projectId: String, circuitId: Int): ProtectionResult? =
+        protectionCache[ProjectCircuitKey(projectId, circuitId)]?.second
 
-    fun getCachedCoordinationResult(circuitId: Int): CoordinationResult? =
-        coordinationCache[circuitId]?.second
+    fun getCachedCoordinationResult(projectId: String, circuitId: Int): CoordinationResult? =
+        coordinationCache[ProjectCircuitKey(projectId, circuitId)]?.second
 
     /**
-     * Invalidates cache for a specific circuit ID across sizing, short circuit, ads, protection, and coordination caches.
+     * Invalidates cache for a specific project and circuit ID across all circuit domain caches.
      */
-    fun invalidateCircuit(circuitId: Int) {
-        sizingCache.remove(circuitId)
-        shortCircuitCache.remove(circuitId)
-        adsCache.remove(circuitId)
-        protectionCache.remove(circuitId)
-        coordinationCache.remove(circuitId)
+    fun invalidateCircuit(projectId: String, circuitId: Int) {
+        val key = ProjectCircuitKey(projectId, circuitId)
+        sizingCache.remove(key)
+        shortCircuitCache.remove(key)
+        adsCache.remove(key)
+        protectionCache.remove(key)
+        coordinationCache.remove(key)
     }
 
     /**
-     * Invalidates cache for a specific transformer ID.
+     * Convenience overload invalidating a circuit ID across all projects containing that ID.
+     */
+    fun invalidateCircuit(circuitId: Int) {
+        sizingCache.keys.filter { it.circuitId == circuitId }.forEach { sizingCache.remove(it) }
+        shortCircuitCache.keys.filter { it.circuitId == circuitId }.forEach { shortCircuitCache.remove(it) }
+        adsCache.keys.filter { it.circuitId == circuitId }.forEach { adsCache.remove(it) }
+        protectionCache.keys.filter { it.circuitId == circuitId }.forEach { protectionCache.remove(it) }
+        coordinationCache.keys.filter { it.circuitId == circuitId }.forEach { coordinationCache.remove(it) }
+    }
+
+    /**
+     * Invalidates cache for a specific transformer in a project.
+     */
+    fun invalidateTransformer(projectId: String, transformerId: String) {
+        transformerCache.remove(ProjectTransformerKey(projectId, transformerId))
+    }
+
+    /**
+     * Convenience overload invalidating a transformer ID across all projects.
      */
     fun invalidateTransformer(transformerId: String) {
-        transformerCache.remove(transformerId)
+        transformerCache.keys.filter { it.transformerId == transformerId }.forEach { transformerCache.remove(it) }
     }
 
     /**
@@ -229,8 +274,10 @@ object EngineeringCalculationCoordinator {
         var cumulativeVD = 0.0
 
         for (ancestor in ancestors) {
+            val ancestorPid = ancestor.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val ancestorKey = ProjectCircuitKey(ancestorPid, ancestor.id)
             val ancestorSig = computeSignature(ancestor, cumulativeVD, transformers)
-            val cached = sizingCache[ancestor.id]
+            val cached = sizingCache[ancestorKey]
             val ancestorResult = if (cached != null && cached.first == ancestorSig) {
                 cached.second
             } else {
@@ -240,16 +287,18 @@ object EngineeringCalculationCoordinator {
                     upstreamCircuits = ancestors,
                     transformers = transformers
                 )
-                sizingCache[ancestor.id] = ancestorSig to fresh
+                sizingCache[ancestorKey] = ancestorSig to fresh
                 fresh
             }
             cumulativeVD = ancestorResult.cumulativeVDpct
         }
 
+        val targetPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val targetKey = ProjectCircuitKey(targetPid, circuit.id)
         val targetSig = computeSignature(circuit, cumulativeVD, transformers)
-        val cachedTarget = sizingCache[circuit.id]
+        val cachedTarget = sizingCache[targetKey]
         if (cachedTarget != null && cachedTarget.first == targetSig) {
-            val projectId = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val projectId = targetPid
             val rev = getProjectRevision(projectId)
             val status = if (cachedTarget.second.status.contains("FAIL")) "FAIL" else if (cachedTarget.second.status.contains("WARN")) "WARNING" else "PASS"
             try {
@@ -260,7 +309,7 @@ object EngineeringCalculationCoordinator {
             return cachedTarget.second
         }
 
-        val projectId = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val projectId = targetPid
         val scope = CalculationScope(projectId, CalculationEntityType.CIRCUIT, circuit.id.toString(), CalculationDomain.CABLE_SIZING)
         val hasPrior = freshnessRegistry.getRecord(scope) != null
         freshnessRegistry.startExecution(scope, hasPrior)
@@ -272,7 +321,7 @@ object EngineeringCalculationCoordinator {
                 upstreamCircuits = ancestors,
                 transformers = transformers
             )
-            sizingCache[circuit.id] = targetSig to freshResult
+            sizingCache[targetKey] = targetSig to freshResult
             val rev = getProjectRevision(projectId)
             val status = if (freshResult.status.contains("FAIL")) "FAIL" else if (freshResult.status.contains("WARN")) "WARNING" else "PASS"
             try {
@@ -335,8 +384,10 @@ object EngineeringCalculationCoordinator {
 
                     val parentVD = parentCircuit?.id?.let { sizingResults[it]?.cumulativeVDpct } ?: 0.0
 
+                    val cPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+                    val cKey = ProjectCircuitKey(cPid, circuit.id)
                     val sig = computeSignature(circuit, parentVD, transformers)
-                    val cached = sizingCache[circuit.id]
+                    val cached = sizingCache[cKey]
                     val sizingRes = if (cached != null && cached.first == sig) {
                         cached.second
                     } else {
@@ -346,7 +397,7 @@ object EngineeringCalculationCoordinator {
                             upstreamCircuits = resolvedList,
                             transformers = transformers
                         )
-                        sizingCache[circuit.id] = sig to fresh
+                        sizingCache[cKey] = sig to fresh
                         fresh
                     }
 
@@ -460,10 +511,11 @@ object EngineeringCalculationCoordinator {
         transformer: TransformerEntity,
         allCircuits: List<CircuitEntity>
     ): TransformerResult {
+        val pid = transformer.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val txKey = ProjectTransformerKey(pid, transformer.transformerId)
         val sig = computeTransformerSignature(transformer, allCircuits)
-        val cached = transformerCache[transformer.transformerId]
+        val cached = transformerCache[txKey]
         if (cached != null && cached.first == sig) {
-            val pid = transformer.projectId.ifEmpty { "DEFAULT_PROJECT" }
             val rev = getProjectRevision(pid)
             try {
                 runBlocking {
@@ -473,14 +525,13 @@ object EngineeringCalculationCoordinator {
             return cached.second
         }
 
-        val pid = transformer.projectId.ifEmpty { "DEFAULT_PROJECT" }
         val scope = CalculationScope(pid, CalculationEntityType.TRANSFORMER, transformer.transformerId, CalculationDomain.TRANSFORMER)
         val hasPrior = freshnessRegistry.getRecord(scope) != null
         freshnessRegistry.startExecution(scope, hasPrior)
 
         try {
             val freshResult = TransformerCalculationService.calculateSingleTransformer(transformer, allCircuits)
-            transformerCache[transformer.transformerId] = sig to freshResult
+            transformerCache[txKey] = sig to freshResult
             val rev = getProjectRevision(pid)
             try {
                 runBlocking {
@@ -640,9 +691,10 @@ object EngineeringCalculationCoordinator {
             ancestorSizings = ancestorPairs
         )
 
-        val cached = shortCircuitCache[circuit.id]
+        val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val scKey = ProjectCircuitKey(pid, circuit.id)
+        val cached = shortCircuitCache[scKey]
         if (cached != null && cached.first == sig) {
-            val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
             val rev = getProjectRevision(pid)
             val status = if (cached.second.status.contains("FAIL") || cached.second.status.contains("MISSING")) "FAIL" else "PASS"
             try {
@@ -653,7 +705,6 @@ object EngineeringCalculationCoordinator {
             return cached.second
         }
 
-        val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
         val scope = CalculationScope(pid, CalculationEntityType.CIRCUIT, circuitId.toString(), CalculationDomain.SHORT_CIRCUIT)
         val hasPrior = freshnessRegistry.getRecord(scope) != null
         freshnessRegistry.startExecution(scope, hasPrior)
@@ -671,7 +722,7 @@ object EngineeringCalculationCoordinator {
                 sizingResults = branchSizings,
                 transformerResults = txMap
             )
-            shortCircuitCache[circuit.id] = sig to fresh
+            shortCircuitCache[scKey] = sig to fresh
             val rev = getProjectRevision(pid)
             val status = if (fresh.status.contains("FAIL") || fresh.status.contains("MISSING")) "FAIL" else "PASS"
             try {
@@ -731,7 +782,9 @@ object EngineeringCalculationCoordinator {
 
             val ancestorPairs = ancestors.map { it to sizingResults[it.id] }
             val sig = computeShortCircuitSignature(circuit, sizing, txResult, ancestorPairs)
-            val cached = shortCircuitCache[circuit.id]
+            val scPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val scKey = ProjectCircuitKey(scPid, circuit.id)
+            val cached = shortCircuitCache[scKey]
 
             if (cached != null && cached.first == sig) {
                 results[circuit.id] = cached.second
@@ -775,7 +828,9 @@ object EngineeringCalculationCoordinator {
                 }
                 val ancestorPairs = ancestors.map { it to sizingResults[it.id] }
                 val sig = computeShortCircuitSignature(circuit, sizing, txResult, ancestorPairs)
-                shortCircuitCache[circuit.id] = sig to fresh
+                val scPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+                val scKey = ProjectCircuitKey(scPid, circuit.id)
+                shortCircuitCache[scKey] = sig to fresh
                 results[circuit.id] = fresh
             }
         }
@@ -880,14 +935,16 @@ object EngineeringCalculationCoordinator {
 
         val sizingResult = calculateCableSizing(circuit, allCircuits, allTransformers)
         val sig = computeAdsSignature(circuit, sizingResult, ze_ohm)
+        val adsPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val adsKey = ProjectCircuitKey(adsPid, circuit.id)
 
-        val cached = adsCache[circuit.id]
+        val cached = adsCache[adsKey]
         if (cached != null && cached.first == sig) {
             return cached.second
         }
 
         val fresh = ProtectionCalculationService.calculateAds(circuit, sizingResult, ze_ohm)
-        adsCache[circuit.id] = sig to fresh
+        adsCache[adsKey] = sig to fresh
         return fresh
     }
 
@@ -926,9 +983,11 @@ object EngineeringCalculationCoordinator {
         }
 
         val sig = computeProtectionSignature(circuit, sizingResult, scResult, upstreamIn, upstreamName)
-        val cached = protectionCache[circuit.id]
+        val protPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val protKey = ProjectCircuitKey(protPid, circuit.id)
+        val cached = protectionCache[protKey]
         if (cached != null && cached.first == sig) {
-            val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val pid = protPid
             val rev = getProjectRevision(pid)
             try {
                 runBlocking {
@@ -938,7 +997,7 @@ object EngineeringCalculationCoordinator {
             return cached.second
         }
 
-        val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val pid = protPid
         val scope = CalculationScope(pid, CalculationEntityType.CIRCUIT, circuitId.toString(), CalculationDomain.PROTECTION_ADS)
         val hasPrior = freshnessRegistry.getRecord(scope) != null
         freshnessRegistry.startExecution(scope, hasPrior)
@@ -951,7 +1010,7 @@ object EngineeringCalculationCoordinator {
                 upstreamIn_A = upstreamIn,
                 upstreamName = upstreamName
             )
-            protectionCache[circuit.id] = sig to fresh
+            protectionCache[protKey] = sig to fresh
             val rev = getProjectRevision(pid)
             try {
                 runBlocking {
@@ -982,12 +1041,14 @@ object EngineeringCalculationCoordinator {
         for (circuit in resolvedCircuits) {
             val sizing = sizingResults[circuit.id] ?: continue
             val sig = computeAdsSignature(circuit, sizing, ze_ohm)
-            val cached = adsCache[circuit.id]
+            val adsPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val adsKey = ProjectCircuitKey(adsPid, circuit.id)
+            val cached = adsCache[adsKey]
             if (cached != null && cached.first == sig) {
                 results[circuit.id] = cached.second
             } else {
                 val fresh = ProtectionCalculationService.calculateAds(circuit, sizing, ze_ohm)
-                adsCache[circuit.id] = sig to fresh
+                adsCache[adsKey] = sig to fresh
                 results[circuit.id] = fresh
             }
         }
@@ -1019,7 +1080,9 @@ object EngineeringCalculationCoordinator {
             }
 
             val sig = computeProtectionSignature(circuit, sizing, sc, upstreamIn, parentName)
-            val cached = protectionCache[circuit.id]
+            val protPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val protKey = ProjectCircuitKey(protPid, circuit.id)
+            val cached = protectionCache[protKey]
             if (cached != null && cached.first == sig) {
                 results[circuit.id] = cached.second
             } else {
@@ -1030,7 +1093,7 @@ object EngineeringCalculationCoordinator {
                     upstreamIn_A = upstreamIn,
                     upstreamName = parentName
                 )
-                protectionCache[circuit.id] = sig to fresh
+                protectionCache[protKey] = sig to fresh
                 results[circuit.id] = fresh
             }
         }
@@ -1154,9 +1217,11 @@ object EngineeringCalculationCoordinator {
         }
 
         val sig = computeCoordinationSignature(circuit, sizingResult, upstreamName, upstreamRating)
-        val cached = coordinationCache[circuit.id]
+        val coordPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val coordKey = ProjectCircuitKey(coordPid, circuit.id)
+        val cached = coordinationCache[coordKey]
         if (cached != null && cached.first == sig) {
-            val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val pid = coordPid
             val rev = getProjectRevision(pid)
             try {
                 runBlocking {
@@ -1166,7 +1231,7 @@ object EngineeringCalculationCoordinator {
             return cached.second
         }
 
-        val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val pid = coordPid
         val scope = CalculationScope(pid, CalculationEntityType.CIRCUIT, circuitId.toString(), CalculationDomain.COORDINATION)
         val hasPrior = freshnessRegistry.getRecord(scope) != null
         freshnessRegistry.startExecution(scope, hasPrior)
@@ -1178,7 +1243,7 @@ object EngineeringCalculationCoordinator {
                 upstreamName = upstreamName,
                 upstreamRating = upstreamRating
             )
-            coordinationCache[circuit.id] = sig to fresh
+            coordinationCache[coordKey] = sig to fresh
             val rev = getProjectRevision(pid)
             try {
                 runBlocking {
@@ -1234,7 +1299,9 @@ object EngineeringCalculationCoordinator {
             }
 
             val sig = computeCoordinationSignature(circ, sizingRes, upstreamName, upstreamRating)
-            val cached = coordinationCache[circ.id]
+            val circPid = circ.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val circKey = ProjectCircuitKey(circPid, circ.id)
+            val cached = coordinationCache[circKey]
             if (cached != null && cached.first == sig) {
                 cached.second
             } else {
@@ -1244,7 +1311,7 @@ object EngineeringCalculationCoordinator {
                     upstreamName = upstreamName,
                     upstreamRating = upstreamRating
                 )
-                coordinationCache[circ.id] = sig to fresh
+                coordinationCache[circKey] = sig to fresh
                 fresh
             }
         }
