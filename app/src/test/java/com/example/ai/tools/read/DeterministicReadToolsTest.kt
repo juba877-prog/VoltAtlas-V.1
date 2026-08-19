@@ -340,6 +340,7 @@ class DeterministicReadToolsTest {
 
     @Test
     fun managedInvoker_sameRequest_computesSameCanonicalSignature() {
+        val encoder = DefaultReadRequestSignatureEncoder()
         val req1 = ToolRequestEnvelope(
             requestId = "REQ-SIG-1",
             projectId = projectId,
@@ -353,13 +354,14 @@ class DeterministicReadToolsTest {
             parameters = GetProjectContextRequest(projectId = projectId)
         )
 
-        val sig1 = invoker.computeCanonicalSignature(req1)
-        val sig2 = invoker.computeCanonicalSignature(req2)
+        val sig1 = encoder.signature(req1)
+        val sig2 = encoder.signature(req2)
         assertEquals(sig1, sig2)
     }
 
     @Test
     fun managedInvoker_differentRequest_doesNotDeduplicate() {
+        val encoder = DefaultReadRequestSignatureEncoder()
         val req1 = ToolRequestEnvelope(
             requestId = "REQ-DIF-1",
             projectId = projectId,
@@ -373,8 +375,8 @@ class DeterministicReadToolsTest {
             parameters = GetProjectContextRequest(projectId = projectId, includeValidation = false)
         )
 
-        val sig1 = invoker.computeCanonicalSignature(req1)
-        val sig2 = invoker.computeCanonicalSignature(req2)
+        val sig1 = encoder.signature(req1)
+        val sig2 = encoder.signature(req2)
         assertNotEquals(sig1, sig2)
     }
 
@@ -1595,6 +1597,7 @@ class DeterministicReadToolsTest {
 
     @Test
     fun managedInvoker_hashCollisionRequests_doNotShareTask() = runBlocking {
+        val encoder = DefaultReadRequestSignatureEncoder()
         // "FB" and "Ea" collide under old 32-bit hashCode()
         val req1 = ToolRequestEnvelope(
             requestId = "R-TASK-COL-1",
@@ -1609,8 +1612,8 @@ class DeterministicReadToolsTest {
             parameters = GetCatalogItemRequest(category = "CABLE", query = "Ea")
         )
 
-        val sig1 = invoker.computeCanonicalSignature(req1)
-        val sig2 = invoker.computeCanonicalSignature(req2)
+        val sig1 = encoder.signature(req1)
+        val sig2 = encoder.signature(req2)
         assertNotEquals(sig1, sig2)
 
         val res1 = invoker.executeManaged<GetCatalogItemRequest, CatalogSearchResult>(req1, taskManager)
@@ -1621,8 +1624,7 @@ class DeterministicReadToolsTest {
     }
 
     @Test
-    fun signatureEncodingFailure_returnsTypedError_notRawException() = runBlocking {
-        // An invoker equipped with a throwing signature encoder safely returns typed error instead of escaping
+    fun signatureEncodingFailure_returnsTypedError_notPass() = runBlocking {
         val throwingEncoder = object : ReadRequestSignatureEncoder {
             override fun canonicalBytes(request: ToolRequestEnvelope<*>): ByteArray = throw IllegalStateException("Encoder internal fault")
             override fun signature(request: ToolRequestEnvelope<*>): String = throw IllegalStateException("Encoder internal fault")
@@ -1630,16 +1632,209 @@ class DeterministicReadToolsTest {
         val safeInvoker = DeterministicReadToolInvoker(registry, throwingEncoder)
 
         val req = ToolRequestEnvelope(
-            requestId = "R-THROW",
+            requestId = "R-FAIL-1",
             projectId = projectId,
             toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
             parameters = GetProjectContextRequest(projectId = projectId)
         )
 
-        val computedSig = safeInvoker.computeCanonicalSignature(req)
-        assertTrue(computedSig.startsWith("READ-V1:ERROR:"))
+        val resultEnvelope = safeInvoker.executeManaged<GetProjectContextRequest, ProjectContextResult>(req, taskManager)
+        assertEquals(ToolStatus.ERROR, resultEnvelope.status)
+        assertNull(resultEnvelope.result)
+        assertEquals(1, resultEnvelope.errors.size)
+        assertEquals("REQUEST_SIGNATURE_ENCODING_FAILED", resultEnvelope.errors.single().errorCode)
+    }
+
+    @Test
+    fun signatureEncodingFailure_doesNotSubmitTask() = runBlocking {
+        val throwingEncoder = object : ReadRequestSignatureEncoder {
+            override fun canonicalBytes(request: ToolRequestEnvelope<*>): ByteArray = throw IllegalStateException("Fault")
+            override fun signature(request: ToolRequestEnvelope<*>): String = throw IllegalStateException("Fault")
+        }
+        val safeInvoker = DeterministicReadToolInvoker(registry, throwingEncoder)
+
+        val projectTasksBefore = taskManager.observeProjectTasks(projectId).value.size
+
+        val req = ToolRequestEnvelope(
+            requestId = "R-FAIL-SUBMIT",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId)
+        )
 
         val resultEnvelope = safeInvoker.executeManaged<GetProjectContextRequest, ProjectContextResult>(req, taskManager)
+        assertEquals(ToolStatus.ERROR, resultEnvelope.status)
+
+        val projectTasksAfter = taskManager.observeProjectTasks(projectId).value.size
+        assertEquals("Project tasks count must remain unchanged", projectTasksBefore, projectTasksAfter)
+    }
+
+    @Test
+    fun signatureEncodingFailure_doesNotExecuteTool() = runBlocking {
+        val toolExecutionCount = AtomicInteger(0)
+        val countingTool = object : DeterministicReadTool<GetProjectContextRequest, ProjectContextResult> {
+            override val toolName = "counting_tool"
+            override val description = "Tool to verify zero execution on signature failure"
+            override suspend fun execute(request: ToolRequestEnvelope<GetProjectContextRequest>): ToolResultEnvelope<ProjectContextResult> {
+                toolExecutionCount.incrementAndGet()
+                return ToolResultEnvelope.pass(
+                    requestId = request.requestId,
+                    toolName = toolName,
+                    projectId = request.projectId,
+                    result = ProjectContextResult(
+                        projectId = request.projectId,
+                        projectRevision = 1L,
+                        engineeringStatus = "OK",
+                        overallStatusSummary = "OK",
+                        totalCircuits = 1,
+                        totalTransformers = 1,
+                        calculatedCircuitCount = 1,
+                        staleCircuitCount = 0,
+                        missingCircuitCount = 0,
+                        criticalFailureCount = 0,
+                        warningCount = 0,
+                        reviewRequiredCount = 0
+                    )
+                )
+            }
+        }
+        registry.register(countingTool, allowOverride = true)
+
+        val throwingEncoder = object : ReadRequestSignatureEncoder {
+            override fun canonicalBytes(request: ToolRequestEnvelope<*>): ByteArray = throw IllegalStateException("Fault")
+            override fun signature(request: ToolRequestEnvelope<*>): String = throw IllegalStateException("Fault")
+        }
+        val safeInvoker = DeterministicReadToolInvoker(registry, throwingEncoder)
+
+        val req = ToolRequestEnvelope(
+            requestId = "R-FAIL-EXEC",
+            projectId = projectId,
+            toolName = "counting_tool",
+            parameters = GetProjectContextRequest(projectId = projectId)
+        )
+
+        val resultEnvelope = safeInvoker.executeManaged<GetProjectContextRequest, ProjectContextResult>(req, taskManager)
+        assertEquals(ToolStatus.ERROR, resultEnvelope.status)
+        assertEquals("Tool execute() block must strictly NEVER be invoked when signature encoding fails", 0, toolExecutionCount.get())
+    }
+
+    @Test
+    fun signatureEncodingFailure_doesNotCreateActiveTask() = runBlocking {
+        val throwingEncoder = object : ReadRequestSignatureEncoder {
+            override fun canonicalBytes(request: ToolRequestEnvelope<*>): ByteArray = throw IllegalStateException("Fault")
+            override fun signature(request: ToolRequestEnvelope<*>): String = throw IllegalStateException("Fault")
+        }
+        val safeInvoker = DeterministicReadToolInvoker(registry, throwingEncoder)
+
+        val req = ToolRequestEnvelope(
+            requestId = "R-FAIL-ACTIVE",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId)
+        )
+
+        safeInvoker.executeManaged<GetProjectContextRequest, ProjectContextResult>(req, taskManager)
+
+        val taskKey = EngineeringTaskKey(
+            projectId = projectId,
+            taskType = EngineeringTaskType.CUSTOM,
+            requestVariant = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT
+        )
+        assertNull("Active task snapshot must be null", taskManager.observeActiveTask(taskKey).value)
+    }
+
+    @Test
+    fun signatureEncodingFailure_doesNotCreateTaskHistory() = runBlocking {
+        val throwingEncoder = object : ReadRequestSignatureEncoder {
+            override fun canonicalBytes(request: ToolRequestEnvelope<*>): ByteArray = throw IllegalStateException("Fault")
+            override fun signature(request: ToolRequestEnvelope<*>): String = throw IllegalStateException("Fault")
+        }
+        val safeInvoker = DeterministicReadToolInvoker(registry, throwingEncoder)
+
+        val req = ToolRequestEnvelope(
+            requestId = "R-FAIL-HIST",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId)
+        )
+
+        safeInvoker.executeManaged<GetProjectContextRequest, ProjectContextResult>(req, taskManager)
+        assertTrue("Task list for project must be empty", taskManager.observeProjectTasks(projectId).value.isEmpty())
+    }
+
+    @Test
+    fun signatureEncodingFailure_sanitizesExceptionDetails() = runBlocking {
+        val throwingEncoder = object : ReadRequestSignatureEncoder {
+            override fun canonicalBytes(request: ToolRequestEnvelope<*>): ByteArray =
+                throw IllegalStateException("Secret key in /var/secrets/key.pem; SQL: SELECT * FROM credentials")
+            override fun signature(request: ToolRequestEnvelope<*>): String =
+                throw IllegalStateException("Secret key in /var/secrets/key.pem; SQL: SELECT * FROM credentials")
+        }
+        val safeInvoker = DeterministicReadToolInvoker(registry, throwingEncoder)
+
+        val req = ToolRequestEnvelope(
+            requestId = "R-FAIL-SAN",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId)
+        )
+
+        val resultEnvelope = safeInvoker.executeManaged<GetProjectContextRequest, ProjectContextResult>(req, taskManager)
+        assertEquals(ToolStatus.ERROR, resultEnvelope.status)
+        val msg = resultEnvelope.errors.single().message
+        assertFalse("Must not leak internal paths or secrets", msg.contains("/var/secrets"))
+        assertFalse("Must not leak raw SQL", msg.contains("SELECT"))
+        assertFalse("Must not leak raw class name", msg.contains("IllegalStateException"))
+    }
+
+    @Test
+    fun multipleEncodingFailures_doNotDeduplicateOrShareResult() = runBlocking {
+        val throwingEncoder = object : ReadRequestSignatureEncoder {
+            override fun canonicalBytes(request: ToolRequestEnvelope<*>): ByteArray = throw IllegalStateException("Fault")
+            override fun signature(request: ToolRequestEnvelope<*>): String = throw IllegalStateException("Fault")
+        }
+        val safeInvoker = DeterministicReadToolInvoker(registry, throwingEncoder)
+
+        val req1 = ToolRequestEnvelope(
+            requestId = "R-FAIL-MULTI-1",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CATALOG_ITEM,
+            parameters = GetCatalogItemRequest(category = "CABLE", query = "A")
+        )
+        val req2 = ToolRequestEnvelope(
+            requestId = "R-FAIL-MULTI-2",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CATALOG_ITEM,
+            parameters = GetCatalogItemRequest(category = "CABLE", query = "B")
+        )
+
+        val res1 = safeInvoker.executeManaged<GetCatalogItemRequest, CatalogSearchResult>(req1, taskManager)
+        val res2 = safeInvoker.executeManaged<GetCatalogItemRequest, CatalogSearchResult>(req2, taskManager)
+
+        assertEquals(ToolStatus.ERROR, res1.status)
+        assertEquals(ToolStatus.ERROR, res2.status)
+        assertEquals("R-FAIL-MULTI-1", res1.requestId)
+        assertEquals("R-FAIL-MULTI-2", res2.requestId)
+        assertTrue("No tasks should have been submitted for project", taskManager.observeProjectTasks(projectId).value.isEmpty())
+    }
+
+    @Test
+    fun executeDirect_doesNotRequireSignatureAndRemainsExplicitlySeparate() = runBlocking {
+        val throwingEncoder = object : ReadRequestSignatureEncoder {
+            override fun canonicalBytes(request: ToolRequestEnvelope<*>): ByteArray = throw IllegalStateException("Fault")
+            override fun signature(request: ToolRequestEnvelope<*>): String = throw IllegalStateException("Fault")
+        }
+        val safeInvoker = DeterministicReadToolInvoker(registry, throwingEncoder)
+
+        val req = ToolRequestEnvelope(
+            requestId = "R-DIRECT-SEP",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId)
+        )
+
+        // executeDirect runs pure in-memory without computing signatures or touching TaskManager
+        val resultEnvelope = safeInvoker.executeDirect<GetProjectContextRequest, ProjectContextResult>(req)
         assertEquals(ToolStatus.PASS, resultEnvelope.status)
         assertNotNull(resultEnvelope.result)
     }

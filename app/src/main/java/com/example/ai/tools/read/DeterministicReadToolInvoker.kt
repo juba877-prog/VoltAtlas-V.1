@@ -17,7 +17,9 @@ import com.example.ai.task.TaskOwner
  *    never throwing ClassCastException or serialization errors through the public boundary.
  * 2. Canonical Request Signatures: Automatically computes cryptographic canonical deterministic request signatures
  *    using [ReadRequestSignatureEncoder] to eliminate false deduplication from 32-bit hash collisions.
- * 3. Managed Asynchronous Execution: Dispatches safely via [EngineeringTaskManager] with
+ * 3. Fail-Closed Managed Execution: If signature encoding fails, managed execution immediately returns
+ *    a typed ERROR envelope without submitting any task to [EngineeringTaskManager] or running tool execution.
+ * 4. Managed Asynchronous Execution: Dispatches safely via [EngineeringTaskManager] with
  *    latest-task-wins supersession and multi-subscriber safety.
  */
 class DeterministicReadToolInvoker(
@@ -26,20 +28,8 @@ class DeterministicReadToolInvoker(
 ) {
 
     /**
-     * Computes the deterministic, canonical request signature from a strongly typed request envelope.
-     * Format: `READ-V1:<lowercase SHA-256 hex>`
-     */
-    fun computeCanonicalSignature(request: ToolRequestEnvelope<*>): String {
-        return try {
-            signatureEncoder.signature(request)
-        } catch (t: Throwable) {
-            // Safe fallback to prevent raw uncaught exception from escaping
-            "READ-V1:ERROR:${t.javaClass.simpleName}"
-        }
-    }
-
-    /**
      * Executes a tool request synchronously/directly without TaskManager overhead.
+     * Direct execution does not compute request signatures or perform deduplication.
      */
     suspend fun <TReq, TRes> executeDirect(
         request: ToolRequestEnvelope<TReq>
@@ -102,7 +92,8 @@ class DeterministicReadToolInvoker(
      * project-scoped deduplication and latest-task-wins supersession.
      *
      * Note: Caller-provided [requestSignature] parameter is ignored; canonical SHA-256
-     * signatures are computed internally from typed request envelopes.
+     * signatures are computed internally from typed request envelopes. If signature
+     * computation fails, managed execution fails closed without submitting any task.
      */
     suspend fun <TReq, TRes> executeManaged(
         request: ToolRequestEnvelope<TReq>,
@@ -118,6 +109,21 @@ class DeterministicReadToolInvoker(
                 reason = "Tool '${request.toolName}' is not registered in the deterministic read tool registry."
             )
 
+        // Fail-closed signature computation: must succeed before any task is submitted
+        val signatureResult = signatureEncoder.computeSignature(request)
+        val canonicalSignature = when (signatureResult) {
+            is RequestSignatureResult.Success -> signatureResult.signature
+            is RequestSignatureResult.Failure -> {
+                return ToolResultEnvelope.executionFailure(
+                    requestId = request.requestId,
+                    toolName = request.toolName,
+                    projectId = request.projectId,
+                    status = ToolStatus.ERROR,
+                    errors = listOf(signatureResult.error)
+                )
+            }
+        }
+
         val taskKey = EngineeringTaskKey(
             projectId = request.projectId,
             taskType = EngineeringTaskType.CUSTOM,
@@ -125,9 +131,6 @@ class DeterministicReadToolInvoker(
             entityId = request.entityId,
             requestVariant = request.toolName
         )
-
-        // Always compute and enforce canonical SHA-256 signature internally to prevent forged signature deduplication
-        val canonicalSignature = computeCanonicalSignature(request)
 
         val handle = taskManager.submit<TRes>(
             key = taskKey,

@@ -1,9 +1,18 @@
 package com.example.ai.tools.read
 
+import com.example.ai.contracts.StructuredError
 import com.example.ai.contracts.ToolRequestEnvelope
 import com.example.ai.context.freshness.internal.CanonicalFingerprintEncoder
 import java.security.MessageDigest
 import java.util.Locale
+
+/**
+ * Typed outcome of canonical request signature computation.
+ */
+sealed interface RequestSignatureResult {
+    data class Success(val signature: String) : RequestSignatureResult
+    data class Failure(val error: StructuredError) : RequestSignatureResult
+}
 
 /**
  * Deterministic canonical encoder and SHA-256 cryptographic digest generator for tool request envelopes.
@@ -15,10 +24,25 @@ import java.util.Locale
  * 4. Explicit Null & Type Framing: Distinguishes null from empty strings, zero, and missing fields.
  * 5. Locale Independence: Numbers and strings are canonicalized uniformly (NFC text, ROOT locale decimals).
  * 6. Cryptographic Collision Resistance: SHA-256 digest replaces 32-bit `hashCode()`, preventing false deduplication.
+ * 7. Fail-Closed Semantics: When encoding fails, returns typed [RequestSignatureResult.Failure] without fallback keys.
  */
 interface ReadRequestSignatureEncoder {
     fun canonicalBytes(request: ToolRequestEnvelope<*>): ByteArray
     fun signature(request: ToolRequestEnvelope<*>): String
+
+    fun computeSignature(request: ToolRequestEnvelope<*>): RequestSignatureResult {
+        return try {
+            RequestSignatureResult.Success(signature(request))
+        } catch (t: Throwable) {
+            RequestSignatureResult.Failure(
+                StructuredError(
+                    errorCode = "REQUEST_SIGNATURE_ENCODING_FAILED",
+                    message = "Failed to compute canonical request signature for '${request.toolName}'.",
+                    isRecoverable = false
+                )
+            )
+        }
+    }
 }
 
 class DefaultReadRequestSignatureEncoder : ReadRequestSignatureEncoder {
