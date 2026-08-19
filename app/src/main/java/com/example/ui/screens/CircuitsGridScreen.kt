@@ -33,7 +33,7 @@ import com.example.ui.UiState
 import com.example.ui.components.statusColor
 import com.example.ui.components.statusSymbol
 import com.example.ui.dialogs.CircuitEditDialog
-import com.example.ui.dialogs.catalogCableSizeOptions
+import com.example.ui.catalogCableSizeOptions
 import com.example.ui.theme.*
 
 @OptIn(ExperimentalAnimationApi::class, ExperimentalMaterial3Api::class)

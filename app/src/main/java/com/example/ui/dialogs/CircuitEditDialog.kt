@@ -24,51 +24,16 @@ import com.example.data.CircuitEntity
 import com.example.data.LoadCategories
 import com.example.data.SourceType
 import com.example.data.resolveCableType
+import com.example.ui.CableFamilyInfo
 import com.example.ui.EngineeringViewModel
 import com.example.ui.UiState
+import com.example.ui.catalogCableSizeOptions
 import com.example.ui.components.*
+import com.example.ui.formatCatalogCableSizeSafe
+import com.example.ui.getDistinctCatalogManufacturers
+import com.example.ui.parseCableSizeSafe
+import com.example.ui.parseFamilyInfo
 import com.example.ui.theme.*
-
-internal data class CableFamilyInfo(
-    val originalType: String,
-    val material: String,
-    val armourGroup: String,
-    val exactArmour: String,
-    val coresConfig: String,
-    val insulation: String,
-    val displayLabel: String
-)
-
-internal fun formatCatalogCableSizeSafe(size: Double): String {
-    val value = if (size % 1.0 == 0.0) size.toInt().toString() else size.toString()
-    return "$value mm\u00B2"
-}
-
-internal fun parseCableSizeSafe(value: String?): Double? {
-    val match = Regex("""^\s*([0-9]+(?:\.[0-9]+)?)""")
-        .find(value.orEmpty())
-
-    return match
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.toDoubleOrNull()
-}
-
-internal fun catalogCableSizeOptions(manufacturer: String, cableType: String): List<String> {
-    val typeCode = Catalog.cableTypes
-        .firstOrNull { it.cableType.equals(cableType, ignoreCase = true) }
-        ?.code ?: return emptyList()
-
-    return Catalog.cableCatalog
-        .asSequence()
-        .filter { it.mfg.equals(manufacturer.trim(), ignoreCase = true) }
-        .filter { it.typeCode == typeCode }
-        .map { it.size }
-        .distinct()
-        .sorted()
-        .map(::formatCatalogCableSizeSafe)
-        .toList()
-}
 
 @Composable
 fun CircuitEditDialog(

@@ -4,12 +4,14 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -30,9 +32,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.Catalog
 import com.example.data.CircuitEntity
+import com.example.data.resolveCableType
 import com.example.engine.SizingResult
 import com.example.engine.coordinator.CableCalculationService
+import com.example.ui.catalogCableSizeOptions
+import com.example.ui.getDistinctCatalogManufacturers
+import com.example.ui.normalizeCableOverride
+import com.example.ui.normalizeDeviceSizeOverride
+import com.example.ui.normalizeDeviceTypeOverride
+import com.example.ui.parseFamilyInfo
+import com.example.ui.standardConductorSizeOptions
+import com.example.ui.standardDeviceRatingOptions
 import com.example.ui.theme.*
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 /**
@@ -51,6 +63,11 @@ fun QuickCableCalcScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+
+    // Intercept system/hardware/gesture back to return to ProjectPickerScreen
+    BackHandler(onBack = onBack)
 
     // Direct Inputs
     var loadKvaText by rememberSaveable { mutableStateOf("50.0") }
@@ -62,8 +79,23 @@ fun QuickCableCalcScreen(
     var maxVdPctText by rememberSaveable { mutableStateOf("3.0") }
     var parallelRunsText by rememberSaveable { mutableStateOf("1") }
     var feederType by rememberSaveable { mutableStateOf("Cable") }
-    var cableType by rememberSaveable { mutableStateOf("Cu/XLPE/PVC - 4C") }
-    var manufacturer by rememberSaveable { mutableStateOf("Elsewedy") }
+
+    // Catalog-Driven Manufacturer Selection
+    val availableManufacturers = remember(Catalog.cableCatalog) {
+        getDistinctCatalogManufacturers()
+    }
+    var manufacturer by rememberSaveable { mutableStateOf(availableManufacturers.firstOrNull() ?: "Elsewedy") }
+
+    // Initial Cable Type from Catalog
+    val initialCableType = remember(manufacturer, Catalog.cableCatalog, Catalog.cableTypes) {
+        val validForMfg = Catalog.cableTypes.filter { type ->
+            Catalog.cableCatalog.any { cat ->
+                cat.typeCode == type.code && cat.mfg.trim().equals(manufacturer.trim(), ignoreCase = true)
+            }
+        }.map { it.cableType }.distinct().sorted()
+        validForMfg.firstOrNull() ?: resolveCableType("Cu/XLPE/PVC - 4C", "4C", "Cu", "XLPE")
+    }
+    var cableType by rememberSaveable { mutableStateOf(initialCableType) }
     var installation by rememberSaveable { mutableStateOf("Laid in Free Air") }
 
     // Environmental / Derating Inputs
@@ -75,33 +107,54 @@ fun QuickCableCalcScreen(
     var formation by rememberSaveable { mutableStateOf("Flat") }
     var spacing by rememberSaveable { mutableStateOf("Touching") }
 
-    // Overrides (Optional)
+    // Overrides (Selectors / Dropdowns from Catalog & Standards)
     var showOverrides by rememberSaveable { mutableStateOf(false) }
     var overrideDeviceType by rememberSaveable { mutableStateOf("Auto") }
-    var overrideDeviceSizeText by rememberSaveable { mutableStateOf("") }
-    var overrideCableSize by rememberSaveable { mutableStateOf("") }
-    var overrideNeutralSize by rememberSaveable { mutableStateOf("") }
-    var overrideEarthSize by rememberSaveable { mutableStateOf("") }
+    var overrideDeviceRating by rememberSaveable { mutableStateOf("Auto") }
+    var overrideCableSize by rememberSaveable { mutableStateOf("Auto") }
+    var overrideNeutralSize by rememberSaveable { mutableStateOf("Auto") }
+    var overrideEarthSize by rememberSaveable { mutableStateOf("Auto") }
 
     // Calculation State
     var calculationResult by remember { mutableStateOf<SizingResult?>(null) }
     var calculatedCircuit by remember { mutableStateOf<CircuitEntity?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    val availableCableTypes = remember(Catalog.cableTypes) {
-        if (Catalog.cableTypes.isNotEmpty()) {
-            Catalog.cableTypes.map { it.cableType }.distinct()
-        } else {
-            listOf("Cu/XLPE/PVC - 4C", "Cu/XLPE/SWA/PVC", "Cu/PVC", "Al/XLPE/STA/PVC - 4C", "Cu/XLPE")
-        }
+    // Dynamic Catalog Family Resolver & Cascading Filters
+    val allCatalogFamilies = remember(manufacturer, Catalog.cableCatalog, Catalog.cableTypes) {
+        val matching = Catalog.cableTypes.filter { type ->
+            Catalog.cableCatalog.any { cat -> cat.typeCode == type.code && cat.mfg.trim().equals(manufacturer.trim(), ignoreCase = true) }
+        }.map { it.cableType }.distinct().sorted()
+        if (matching.isNotEmpty()) matching else listOf(cableType)
     }
 
-    val availableManufacturers = listOf("Elsewedy", "Nexans", "Riyadh Cables", "Ducab", "Oman Cables")
-    val availableInstallations = listOf("Laid in Free Air", "Laid in Ducts", "Laid Direct in Ground", "Cable Tray", "In Conduit")
+    val allParsedFamilies = remember(allCatalogFamilies) {
+        allCatalogFamilies.map { parseFamilyInfo(it) }
+    }
+
+    val initialFamilyInfo = remember(cableType) { parseFamilyInfo(cableType) }
+    var filterMat by remember { mutableStateOf(initialFamilyInfo.material) }
+    var filterArmour by remember { mutableStateOf(initialFamilyInfo.armourGroup) }
+    var filterCores by remember { mutableStateOf(initialFamilyInfo.coresConfig) }
+    var filterQuery by remember { mutableStateOf("") }
+
+    val availableInstallations = listOf("Laid in Free Air", "Laid in Ducts", "Laid Direct in Ground", "In Conduit", "Cable Tray")
     val availablePhases = listOf("3P+N", "1P+N", "3P")
     val availableFormations = listOf("Flat", "Trefoil")
     val availableSpacings = listOf("Touching", "0.15m", "0.30m")
-    val availableBreakerTypes = listOf("Auto", "MCB", "MCCB", "ACB")
+    val availableBreakerTypes = listOf("Auto", "MCB", "MCCB", "ACB", "Switch-Disconnector")
+
+    val availableRatings = remember {
+        listOf("Auto") + standardDeviceRatingOptions()
+    }
+
+    val availableCableSizes = remember(manufacturer, cableType, Catalog.cableCatalog, Catalog.cableTypes) {
+        listOf("Auto") + catalogCableSizeOptions(manufacturer, cableType)
+    }
+
+    val availableConductorSizes = remember {
+        listOf("Auto") + standardConductorSizeOptions()
+    }
 
     fun performCalculation() {
         val loadKva = loadKvaText.toDoubleOrNull()
@@ -146,6 +199,12 @@ fun QuickCableCalcScreen(
             return
         }
 
+        val parsedOverrideCable = normalizeCableOverride(overrideCableSize)
+        val parsedOverrideRating = normalizeDeviceSizeOverride(overrideDeviceRating)
+        val parsedOverrideDevType = normalizeDeviceTypeOverride(overrideDeviceType)
+        val parsedOverrideNeutral = normalizeCableOverride(overrideNeutralSize)
+        val parsedOverrideEarth = normalizeCableOverride(overrideEarthSize)
+
         val circuit = CircuitEntity(
             id = 1,
             projectId = "QUICK_CALC",
@@ -171,11 +230,11 @@ fun QuickCableCalcScreen(
             spacing = spacing,
             fedFrom = "Grid",
             transformerId = "",
-            overrideDeviceType = overrideDeviceType.takeIf { it != "Auto" && it.isNotBlank() },
-            overrideDeviceSize = overrideDeviceSizeText.toDoubleOrNull(),
-            overrideCableSize = overrideCableSize.takeIf { it.isNotBlank() },
-            overrideNeutralSize = overrideNeutralSize.takeIf { it.isNotBlank() },
-            overrideEarthSize = overrideEarthSize.takeIf { it.isNotBlank() }
+            overrideDeviceType = parsedOverrideDevType,
+            overrideDeviceSize = parsedOverrideRating,
+            overrideCableSize = parsedOverrideCable,
+            overrideNeutralSize = parsedOverrideNeutral,
+            overrideEarthSize = parsedOverrideEarth
         )
 
         try {
@@ -188,6 +247,11 @@ fun QuickCableCalcScreen(
             calculationResult = result
             calculatedCircuit = circuit
             errorMessage = null
+
+            // Auto-scroll to result card placed below Calculate button
+            coroutineScope.launch {
+                listState.animateScrollToItem(index = 5)
+            }
         } catch (e: Exception) {
             errorMessage = "Calculation error: ${e.message}"
         }
@@ -216,7 +280,7 @@ fun QuickCableCalcScreen(
             appendLine("Tabulated Rating (Itab): ${String.format(Locale.US, "%.2f", res.ratedI_table_A)} A")
             appendLine("Derated Ampacity (Iz): ${String.format(Locale.US, "%.2f", res.capacity_derated_Iz_A)} A (Derating: ${String.format(Locale.US, "%.3f", res.cTotalDerating)})")
             appendLine("Thermal Utilization: ${String.format(Locale.US, "%.1f", res.utilizationPct)}%")
-            appendLine("Voltage Drop: ${String.format(Locale.US, "%.2f", res.voltDrop_V)} V (${String.format(Locale.US, "%.2f", res.vdPct * 100.0)}%)")
+            appendLine("Voltage Drop: ${String.format(Locale.US, "%.2f", res.voltDrop_V)} V (${String.format(Locale.US, "%.2f", res.vdPct)}%)")
             appendLine("Conductors: Neutral ${res.neutral_mm2} mm² | Earth/CPC ${res.earthCPC_mm2} mm²")
             if (res.cableOD_mm > 0.0) {
                 appendLine("Outer Diameter: Phase ${String.format(Locale.US, "%.1f", res.cableOD_mm)} mm | Earth ${String.format(Locale.US, "%.1f", res.earthOD_mm)} mm")
@@ -274,6 +338,7 @@ fun QuickCableCalcScreen(
         containerColor = DarkBackground
     ) { innerPadding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -281,7 +346,6 @@ fun QuickCableCalcScreen(
             contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Error Message Banner
             if (errorMessage != null) {
                 item {
                     Card(
@@ -299,17 +363,6 @@ fun QuickCableCalcScreen(
                             Text(text = errorMessage!!, color = SleekFail, fontSize = 13.sp)
                         }
                     }
-                }
-            }
-
-            // Results Section (if available)
-            if (calculationResult != null) {
-                item {
-                    QuickCalcResultCard(
-                        result = calculationResult!!,
-                        circuit = calculatedCircuit!!,
-                        onCopy = { copySummaryToClipboard() }
-                    )
                 }
             }
 
@@ -399,7 +452,7 @@ fun QuickCableCalcScreen(
                 }
             }
 
-            // 2. Cable Specification & Installation
+            // 2. Cable Specification & Installation (Catalog-Driven)
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = DarkCardBg),
@@ -415,29 +468,135 @@ fun QuickCableCalcScreen(
                         }
 
                         DropdownSelector(
-                            label = "Cable Type / Family",
-                            selected = cableType,
-                            options = availableCableTypes,
-                            onSelect = { cableType = it },
-                            modifier = Modifier.fillMaxWidth()
+                            label = "Manufacturer / Cable Source",
+                            selected = manufacturer,
+                            options = availableManufacturers,
+                            onSelect = { selected ->
+                                manufacturer = selected
+                                val validTypes = Catalog.cableTypes.filter { type ->
+                                    Catalog.cableCatalog.any { cat ->
+                                        cat.typeCode == type.code && cat.mfg.trim().equals(selected.trim(), ignoreCase = true)
+                                    }
+                                }.map { it.cableType }.distinct().sorted()
+                                if (validTypes.isNotEmpty() && !validTypes.contains(cableType)) {
+                                    cableType = validTypes.firstOrNull() ?: ""
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("input_manufacturer")
                         )
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            DropdownSelector(
-                                label = "Manufacturer",
-                                selected = manufacturer,
-                                options = availableManufacturers,
-                                onSelect = { manufacturer = it },
-                                modifier = Modifier.weight(1f)
-                            )
-                            DropdownSelector(
-                                label = "Installation",
-                                selected = installation,
-                                options = availableInstallations,
-                                onSelect = { installation = it },
-                                modifier = Modifier.weight(1f)
-                            )
+                        // Conductor Material Filter
+                        Text("Conductor Material Filter", color = SlateTextSecondary, fontSize = 11.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("Copper", "Aluminium").forEach { mat ->
+                                val isAvail = allParsedFamilies.any { it.material == mat }
+                                FilterChip(
+                                    selected = filterMat == mat,
+                                    onClick = {
+                                        if (isAvail) {
+                                            filterMat = mat
+                                            val candidate = allParsedFamilies.firstOrNull { it.material == mat && it.armourGroup == filterArmour && it.coresConfig == filterCores }
+                                            if (candidate != null) {
+                                                cableType = candidate.originalType
+                                            } else {
+                                                val alt = allParsedFamilies.firstOrNull { it.material == mat }
+                                                if (alt != null) {
+                                                    filterArmour = alt.armourGroup
+                                                    filterCores = alt.coresConfig
+                                                    cableType = alt.originalType
+                                                }
+                                            }
+                                        }
+                                    },
+                                    label = { Text(if (isAvail) mat else "$mat (N/A)", fontSize = 11.sp) },
+                                    enabled = isAvail,
+                                    modifier = Modifier.weight(1f).testTag("filter_mat_$mat")
+                                )
+                            }
                         }
+
+                        // Armour Construction Filter
+                        Text("Armour Construction Filter", color = SlateTextSecondary, fontSize = 11.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("Unarmoured", "Armoured").forEach { arm ->
+                                val isAvail = allParsedFamilies.any { it.material == filterMat && it.armourGroup == arm }
+                                FilterChip(
+                                    selected = filterArmour == arm,
+                                    onClick = {
+                                        if (isAvail) {
+                                            filterArmour = arm
+                                            val candidate = allParsedFamilies.firstOrNull { it.material == filterMat && it.armourGroup == arm && it.coresConfig == filterCores }
+                                            if (candidate != null) {
+                                                cableType = candidate.originalType
+                                            } else {
+                                                val alt = allParsedFamilies.firstOrNull { it.material == filterMat && it.armourGroup == arm }
+                                                if (alt != null) {
+                                                    filterCores = alt.coresConfig
+                                                    cableType = alt.originalType
+                                                }
+                                            }
+                                        }
+                                    },
+                                    label = { Text(if (isAvail) arm else "$arm (N/A)", fontSize = 11.sp) },
+                                    enabled = isAvail,
+                                    modifier = Modifier.weight(1f).testTag("filter_armour_$arm")
+                                )
+                            }
+                        }
+
+                        val availableCores = remember(filterMat, filterArmour, allParsedFamilies) {
+                            allParsedFamilies.filter { it.material == filterMat && it.armourGroup == filterArmour }
+                                .map { it.coresConfig }.distinct()
+                        }
+
+                        DropdownSelector(
+                            label = "Core Configuration",
+                            selected = when (filterCores) {
+                                "1C" -> "1C — Single Core"
+                                "2C" -> "2C — Single Phase"
+                                "3C" -> "3C — Three Phase, No Neutral"
+                                "3.5C" -> "3.5C — Three Phase + Reduced Neutral"
+                                "4C" -> "4C — Three Phase + Full Neutral"
+                                else -> filterCores
+                            },
+                            options = availableCores,
+                            onSelect = { core ->
+                                filterCores = core
+                                val cand = allParsedFamilies.firstOrNull { it.material == filterMat && it.armourGroup == filterArmour && it.coresConfig == core }
+                                if (cand != null) {
+                                    cableType = cand.originalType
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("input_core_config")
+                        )
+
+                        val matchingFamilies = remember(filterMat, filterArmour, filterCores, filterQuery, allParsedFamilies) {
+                            allParsedFamilies.filter {
+                                it.material == filterMat &&
+                                it.armourGroup == filterArmour &&
+                                it.coresConfig == filterCores &&
+                                (filterQuery.isBlank() || it.originalType.contains(filterQuery, ignoreCase = true) || it.displayLabel.contains(filterQuery, ignoreCase = true))
+                            }
+                        }
+
+                        val currentParsed = remember(cableType) { parseFamilyInfo(cableType) }
+                        DropdownSelector(
+                            label = "Selected Cable Family",
+                            selected = currentParsed.displayLabel,
+                            options = matchingFamilies.map { it.originalType },
+                            onSelect = { selectedType ->
+                                cableType = selectedType
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("input_cable_type")
+                        )
+
+                        DropdownSelector(
+                            label = "Installation Method",
+                            selected = installation,
+                            options = availableInstallations,
+                            onSelect = { installation = it },
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }
@@ -511,7 +670,7 @@ fun QuickCableCalcScreen(
                 }
             }
 
-            // 4. Manual Overrides (Expandable)
+            // 4. Manual Overrides (Catalog-Driven Selectors, Expandable)
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = DarkCardBg),
@@ -530,7 +689,7 @@ fun QuickCableCalcScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.Tune, contentDescription = null, tint = SleekPrimary, modifier = Modifier.size(20.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("4. Manual Overrides (Optional)", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
+                                Text("4. Manual Overrides (Optional Selectors)", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
                             }
                             Icon(
                                 imageVector = if (showOverrides) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
@@ -547,40 +706,39 @@ fun QuickCableCalcScreen(
                                         selected = overrideDeviceType,
                                         options = availableBreakerTypes,
                                         onSelect = { overrideDeviceType = it },
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(1f).testTag("override_breaker_type_dropdown")
                                     )
-                                    OutlinedTextField(
-                                        value = overrideDeviceSizeText,
-                                        onValueChange = { overrideDeviceSizeText = it },
-                                        label = { Text("Breaker Rating (A)") },
-                                        placeholder = { Text("Auto") },
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                        modifier = Modifier.weight(1f)
+                                    DropdownSelector(
+                                        label = "Override Rating (A)",
+                                        selected = overrideDeviceRating,
+                                        options = availableRatings,
+                                        onSelect = { overrideDeviceRating = it },
+                                        modifier = Modifier.weight(1f).testTag("override_breaker_rating_dropdown")
                                     )
                                 }
 
-                                OutlinedTextField(
-                                    value = overrideCableSize,
-                                    onValueChange = { overrideCableSize = it },
-                                    label = { Text("Override Cable Size (e.g. 3x70+35)") },
-                                    placeholder = { Text("Auto") },
-                                    modifier = Modifier.fillMaxWidth().testTag("input_override_cable")
+                                DropdownSelector(
+                                    label = "Override Cable Size (Cross-Section)",
+                                    selected = overrideCableSize,
+                                    options = availableCableSizes,
+                                    onSelect = { overrideCableSize = it },
+                                    modifier = Modifier.fillMaxWidth().testTag("override_cable_size_dropdown")
                                 )
 
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    OutlinedTextField(
-                                        value = overrideNeutralSize,
-                                        onValueChange = { overrideNeutralSize = it },
-                                        label = { Text("Neutral (mm²)") },
-                                        placeholder = { Text("Auto") },
-                                        modifier = Modifier.weight(1f)
+                                    DropdownSelector(
+                                        label = "Override Neutral",
+                                        selected = overrideNeutralSize,
+                                        options = availableConductorSizes,
+                                        onSelect = { overrideNeutralSize = it },
+                                        modifier = Modifier.weight(1f).testTag("override_neutral_dropdown")
                                     )
-                                    OutlinedTextField(
-                                        value = overrideEarthSize,
-                                        onValueChange = { overrideEarthSize = it },
-                                        label = { Text("Earth/CPC (mm²)") },
-                                        placeholder = { Text("Auto") },
-                                        modifier = Modifier.weight(1f)
+                                    DropdownSelector(
+                                        label = "Override Earth/CPC",
+                                        selected = overrideEarthSize,
+                                        options = availableConductorSizes,
+                                        onSelect = { overrideEarthSize = it },
+                                        modifier = Modifier.weight(1f).testTag("override_earth_dropdown")
                                     )
                                 }
                             }
@@ -589,7 +747,7 @@ fun QuickCableCalcScreen(
                 }
             }
 
-            // Calculate Button Action
+            // 5. Calculate Button Action
             item {
                 Button(
                     onClick = { performCalculation() },
@@ -613,6 +771,17 @@ fun QuickCableCalcScreen(
                             Text("Calculate Cable Sizing", color = ThemeTextColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         }
                     }
+                }
+            }
+
+            // 6. Result Card Placed Below Calculate Button (Auto-scrolled on calculate)
+            if (calculationResult != null) {
+                item {
+                    QuickCalcResultCard(
+                        result = calculationResult!!,
+                        circuit = calculatedCircuit!!,
+                        onCopy = { copySummaryToClipboard() }
+                    )
                 }
             }
         }
@@ -764,9 +933,9 @@ private fun QuickCalcResultCard(
                     Column {
                         Text("Voltage Drop (ΔV)", color = SlateTextSecondary, fontSize = 12.sp)
                         Text(
-                            text = "${String.format(Locale.US, "%.2f", result.voltDrop_V)} V  (${String.format(Locale.US, "%.2f", result.vdPct * 100.0)}%)",
+                            text = "${String.format(Locale.US, "%.2f", result.voltDrop_V)} V  (${String.format(Locale.US, "%.2f", result.vdPct)}%)",
                             fontWeight = FontWeight.Bold,
-                            color = if (result.vdPct <= circuit.maxVDpct) SleekPass else SleekFail,
+                            color = if (result.vdPct <= circuit.maxVDpct * 100.0) SleekPass else SleekFail,
                             fontSize = 15.sp
                         )
                     }

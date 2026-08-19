@@ -8,121 +8,169 @@ import com.example.data.CableType
 import com.example.data.Catalog
 import com.example.data.CircuitEntity
 import com.example.data.DataSheetEntry
+import com.example.data.catalog.CatalogRepository
 import com.example.engine.CableSizingEngine
 import com.example.engine.coordinator.CableCalculationService
 import com.example.engine.coordinator.EngineeringCalculationCoordinator
+import com.example.ui.catalogCableSizeOptions
+import com.example.ui.getDistinctCatalogManufacturers
+import com.example.ui.standardConductorSizeOptions
+import com.example.ui.standardDeviceRatingOptions
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.*
-import org.junit.Before
+import org.junit.BeforeClass
 import org.junit.Test
+import java.io.File
 
 /**
- * Unit tests for Quick Cable Sizing (Stateless Scratchpad).
- * Verifies that the stateless scratchpad calculation:
- * 1. Executes successfully for isolated circuits.
- * 2. Matches the core CableSizingEngine deterministically field-by-field.
- * 3. Bypasses and leaves untouched the repository, DB, project revision, and coordinator freshness registry.
- * 4. Correctly sets fedFrom = "Grid" to bypass transformer checks.
- * 5. Respects manual overrides.
- * 6. Safely handles edge/invalid inputs without throwing unhandled exceptions.
+ * Unit tests for Quick Cable Sizing (Stateless Scratchpad) using the REAL catalog.
+ * Validates:
+ * 1. Manufacturer list comes from Catalog (no phantom companies).
+ * 2. Resolved cable combo is a valid Catalog entry.
+ * 3. Override cable size only offers catalog sizes (not free text).
+ * 4. Override rating only offers standard ratings.
+ * 5. Quick Calc == direct engine result field-by-field.
+ * 6. Realistic voltage drop (not 198% fallback garbage).
+ * 7. Real derating applied when environmental factors are set (cTotalDerating < 1.0).
+ * 8. Zero pollution to repository, project revision, or freshness registry.
+ * 9. Invalid inputs handled safely.
  */
 class QuickCableCalcTest {
 
-    @Before
-    fun setUp() {
-        Catalog.cableTypes = listOf(
-            CableType(1, "Cu/XLPE", "Cu", "XLPE", "None", "3C", "0.6/1kV", "IEC", "R_Cu90"),
-            CableType(2, "Cu/PVC", "Cu", "PVC", "None", "3C", "0.6/1kV", "IEC", "R_Cu70"),
-            CableType(3, "Cu/XLPE/PVC - 4C", "Cu", "XLPE", "None", "4C", "0.6/1kV", "IEC", "R_Cu90"),
-            CableType(4, "Cu/XLPE/SWA/PVC", "Cu", "XLPE", "SWA", "4C", "0.6/1kV", "IEC", "R_Cu90")
-        )
-        Catalog.dataSheet = listOf(
-            DataSheetEntry(1.5, 12.1, 0.118, 19.5, 14.52, 23.4),
-            DataSheetEntry(2.5, 7.41, 0.109, 12.1, 8.89, 14.52),
-            DataSheetEntry(4.0, 4.61, 0.101, 7.41, 5.53, 8.89),
-            DataSheetEntry(6.0, 3.08, 0.093, 4.61, 3.7, 5.53),
-            DataSheetEntry(10.0, 1.83, 0.086, 3.08, 2.2, 3.7),
-            DataSheetEntry(16.0, 1.15, 0.082, 1.91, 1.38, 2.29),
-            DataSheetEntry(25.0, 0.727, 0.080, 1.20, 0.872, 1.44),
-            DataSheetEntry(35.0, 0.524, 0.078, 0.868, 0.629, 1.04),
-            DataSheetEntry(50.0, 0.387, 0.078, 0.641, 0.464, 0.77),
-            DataSheetEntry(70.0, 0.268, 0.077, 0.443, 0.322, 0.532),
-            DataSheetEntry(95.0, 0.193, 0.076, 0.320, 0.232, 0.384),
-            DataSheetEntry(120.0, 0.153, 0.075, 0.253, 0.184, 0.304),
-            DataSheetEntry(150.0, 0.124, 0.075, 0.206, 0.149, 0.247),
-            DataSheetEntry(185.0, 0.0991, 0.074, 0.164, 0.119, 0.197),
-            DataSheetEntry(240.0, 0.0754, 0.074, 0.125, 0.0905, 0.15),
-            DataSheetEntry(300.0, 0.0601, 0.073, 0.100, 0.0721, 0.12),
-            DataSheetEntry(400.0, 0.0470, 0.073, 0.0778, 0.0564, 0.0934),
-            DataSheetEntry(500.0, 0.0366, 0.072, 0.0605, 0.0439, 0.0726),
-            DataSheetEntry(630.0, 0.0283, 0.072, 0.0469, 0.0340, 0.0563)
-        )
-        val sizes = listOf(
-            1.5 to 10.0, 2.5 to 11.0, 4.0 to 12.0, 6.0 to 13.0, 10.0 to 15.0,
-            16.0 to 16.0, 25.0 to 19.0, 35.0 to 21.0, 50.0 to 24.0, 70.0 to 27.0,
-            95.0 to 30.0, 120.0 to 33.0, 150.0 to 37.0, 185.0 to 41.0, 240.0 to 46.0,
-            300.0 to 51.0, 400.0 to 58.0, 500.0 to 64.0, 630.0 to 72.0
-        )
-        val entries = mutableListOf<CableCatalogEntry>()
-        for (tc in listOf(1, 2, 3, 4)) {
-            for ((sz, od) in sizes) {
-                val baseCurrent = sz * 4.5
-                entries.add(
-                    CableCatalogEntry(
-                        mfg = "Elsewedy",
-                        typeCode = tc,
-                        size = sz,
-                        model = "Standard",
-                        gnd = baseCurrent * 1.1,
-                        duct = baseCurrent * 0.9,
-                        air = baseCurrent * 1.0,
-                        od = od,
-                        wt = sz * 1.5
+    companion object {
+        private fun findAssetFile(filename: String): File {
+            val candidates = listOf(
+                File("app/src/main/assets/$filename"),
+                File("src/main/assets/$filename"),
+                File("../app/src/main/assets/$filename")
+            )
+            return candidates.firstOrNull { it.exists() }
+                ?: throw java.io.FileNotFoundException("Asset file not found: $filename")
+        }
+
+        @BeforeClass
+        @JvmStatic
+        fun loadRealCatalogData() {
+            val repo = CatalogRepository()
+            val cableCatalogJson = findAssetFile("cable_catalog.json").readText()
+            val cableTypesDataJson = findAssetFile("cable_types_data.json").readText()
+            val breakerCatalogJson = findAssetFile("breaker_catalog.json").readText()
+            val accessoryCatalogJson = findAssetFile("accessory_catalog.json").readText()
+            val deratingDataJson = findAssetFile("derating_data.json").readText()
+            val transformersSeedJson = findAssetFile("transformers_seed.json").readText()
+
+            repo.loadAllFromStrings(
+                cableCatalogJson = cableCatalogJson,
+                cableTypesDataJson = cableTypesDataJson,
+                breakerCatalogJson = breakerCatalogJson,
+                accessoryCatalogJson = accessoryCatalogJson,
+                deratingDataJson = deratingDataJson,
+                transformersSeedJson = transformersSeedJson
+            )
+
+            val cableTypesJson = findAssetFile("cable_types.json").readText()
+            val ctArray = JSONArray(cableTypesJson)
+            val ctList = mutableListOf<CableType>()
+            for (i in 0 until ctArray.length()) {
+                val obj = ctArray.getJSONObject(i)
+                ctList.add(
+                    CableType(
+                        code = obj.getInt("code"),
+                        cableType = obj.getString("cableType"),
+                        conductor = obj.getString("conductor"),
+                        insulation = obj.getString("insulation"),
+                        armour = obj.getString("armour"),
+                        cores = obj.getString("cores"),
+                        voltage = obj.getString("voltage"),
+                        standard = obj.getString("standard"),
+                        rColumn = obj.getString("rColumn")
                     )
                 )
             }
+            Catalog.cableTypes = ctList
+
+            val dataSheetJson = findAssetFile("data_sheet.json").readText()
+            val dsArray = JSONArray(dataSheetJson)
+            val dsList = mutableListOf<DataSheetEntry>()
+            for (i in 0 until dsArray.length()) {
+                val obj = dsArray.getJSONObject(i)
+                dsList.add(
+                    DataSheetEntry(
+                        size = obj.getDouble("size"),
+                        R_Cu70 = obj.getDouble("R_Cu70"),
+                        X = obj.getDouble("X"),
+                        R_Al70 = obj.getDouble("R_Al70"),
+                        R_Cu90 = obj.getDouble("R_Cu90"),
+                        R_Al90 = obj.getDouble("R_Al90")
+                    )
+                )
+            }
+            Catalog.dataSheet = dsList
+            Catalog.deratingData = JSONObject(deratingDataJson)
         }
-        Catalog.cableCatalog = entries
     }
 
     @Test
-    fun quickCalc_singleIsolatedCircuit_returnsSizingResult_notFail() {
-        val circuit = CircuitEntity(
-            id = 1,
-            projectId = "QUICK_CALC",
-            circuitName = "Quick-Feeder-1",
-            loadKVA = 50.0,
-            voltageV = 400,
-            phases = "3P+N",
-            pf = 0.85,
-            safetyFactor = 1.0,
-            length_m = 50.0,
-            maxVDpct = 0.03,
-            parallelRuns = 1,
-            cableType = "Cu/XLPE/PVC - 4C",
-            manufacturer = "Elsewedy",
-            installation = "Laid in Free Air",
-            fedFrom = "Grid",
-            transformerId = ""
-        )
+    fun quickCalc_manufacturerList_comesFromCatalog_noPhantomCompanies() {
+        val manufacturers = getDistinctCatalogManufacturers()
+        assertTrue("Manufacturers list must not be empty", manufacturers.isNotEmpty())
+        assertTrue("Elsewedy must be in catalog manufacturers", manufacturers.contains("Elsewedy"))
+        assertTrue("Riyadh Cables must be in catalog manufacturers", manufacturers.contains("Riyadh Cables"))
+        assertTrue("Ducab must be in catalog manufacturers", manufacturers.contains("Ducab"))
 
-        val result = CableCalculationService.calculateSingleCircuit(
-            circuit = circuit,
-            parentCumulativeVD = 0.0,
-            upstreamCircuits = emptyList(),
-            transformers = emptyList()
-        )
-
-        assertNotNull("SizingResult must not be null", result)
-        assertTrue("Status must be PASS, got: ${result.status}", result.status.contains("PASS"))
-        assertTrue("Design current Ib must be positive", result.Ib_A > 0.0)
-        assertTrue("Selected cable size must not be empty", result.cableSize_mm2.isNotEmpty())
-        assertTrue("Breaker rating must be positive", result.deviceSize_A > 0.0)
-        assertTrue("Voltage drop must be positive", result.voltDrop_V > 0.0)
-        assertTrue("Voltage drop % must be within 3.0%", result.vdPct <= 3.0)
+        // Confirm phantom manufacturers are absent
+        assertFalse("Nexans must NOT be in catalog", manufacturers.contains("Nexans"))
+        assertFalse("Oman Cables must NOT be in catalog", manufacturers.contains("Oman Cables"))
     }
 
     @Test
-    fun quickCalc_resultMatchesDirectEngineCall_fieldByField() {
+    fun quickCalc_resolvedCableCombo_isValidCatalogEntry() {
+        val mfg = "Elsewedy"
+        val cableType = "Cu/XLPE/PVC - 4C"
+
+        val typeCode = Catalog.cableTypes.firstOrNull { it.cableType.equals(cableType, ignoreCase = true) }?.code
+        assertNotNull("Cable type must exist in catalog", typeCode)
+
+        val catalogEntries = Catalog.cableCatalog.filter {
+            it.mfg.equals(mfg, ignoreCase = true) && it.typeCode == typeCode
+        }
+        assertTrue("Catalog must have entries for $mfg $cableType", catalogEntries.isNotEmpty())
+
+        val availableSizes = catalogCableSizeOptions(mfg, cableType)
+        assertTrue("Available sizes must not be empty", availableSizes.isNotEmpty())
+        assertTrue("Available sizes must contain 25 mm²", availableSizes.contains("25 mm²") || availableSizes.contains("25.0 mm²"))
+    }
+
+    @Test
+    fun quickCalc_overrideCableSize_onlyOffersCatalogSizes_notFreeText() {
+        val mfg = "Elsewedy"
+        val cableType = "Cu/XLPE/PVC - 4C"
+        val sizes = catalogCableSizeOptions(mfg, cableType)
+
+        // All sizes must follow standard format and exist in Catalog.cableCatalog
+        val typeCode = Catalog.cableTypes.first { it.cableType.equals(cableType, ignoreCase = true) }.code
+        val rawSizes = Catalog.cableCatalog.filter { it.mfg.equals(mfg, ignoreCase = true) && it.typeCode == typeCode }.map { it.size }.toSet()
+
+        for (szStr in sizes) {
+            val num = szStr.replace("mm²", "").replace("mm\u00B2", "").trim().toDoubleOrNull()
+            assertNotNull("Size string '$szStr' must be parsable", num)
+            assertTrue("Size $num must exist in catalog", rawSizes.contains(num))
+        }
+    }
+
+    @Test
+    fun quickCalc_overrideRating_onlyOffersStandardRatings() {
+        val ratings = standardDeviceRatingOptions()
+        assertEquals(CableSizingEngine.STANDARD_RATINGS.size, ratings.size)
+        assertTrue(ratings.contains("100 A"))
+        assertTrue(ratings.contains("160 A"))
+        assertTrue(ratings.contains("250 A"))
+        assertTrue(ratings.contains("400 A"))
+    }
+
+    @Test
+    fun quickCalc_matchesProjectModeResult_forIdenticalCircuit() {
         val circuit = CircuitEntity(
             id = 999,
             projectId = "QUICK_CALC",
@@ -157,14 +205,14 @@ class QuickCableCalcTest {
             transformers = emptyList()
         )
 
-        // 2. Call directly on CableSizingEngine
+        // 2. Call directly on CableSizingEngine (Project mode)
         val directEngineResult = CableSizingEngine.sizeCircuit(
             circuit = circuit,
             parentCumulativeVD = 0.0,
             allCircuits = emptyList()
         )
 
-        // 3. Assert exact field-by-field equality (deterministic output proof)
+        // 3. Assert exact field-by-field equality (deterministic proof)
         assertEquals("Status must match", directEngineResult.status, quickResult.status)
         assertEquals("Ib_A must match", directEngineResult.Ib_A, quickResult.Ib_A, 0.0001)
         assertEquals("deviceSize_A must match", directEngineResult.deviceSize_A, quickResult.deviceSize_A, 0.0001)
@@ -183,6 +231,80 @@ class QuickCableCalcTest {
         assertEquals("insulation must match", directEngineResult.insulation, quickResult.insulation)
         assertEquals("cableOD_mm must match", directEngineResult.cableOD_mm, quickResult.cableOD_mm, 0.0001)
         assertEquals("earthOD_mm must match", directEngineResult.earthOD_mm, quickResult.earthOD_mm, 0.0001)
+    }
+
+    @Test
+    fun quickCalc_realisticVoltageDrop_notFallbackGarbage() {
+        val circuit = CircuitEntity(
+            id = 1,
+            projectId = "QUICK_CALC",
+            circuitName = "Realistic-Feeder",
+            loadKVA = 50.0,
+            voltageV = 400,
+            phases = "3P+N",
+            pf = 0.85,
+            safetyFactor = 1.0,
+            length_m = 50.0,
+            maxVDpct = 0.03,
+            parallelRuns = 1,
+            cableType = "Cu/XLPE/PVC - 4C",
+            manufacturer = "Elsewedy",
+            installation = "Laid in Free Air",
+            fedFrom = "Grid",
+            transformerId = ""
+        )
+
+        val result = CableCalculationService.calculateSingleCircuit(
+            circuit = circuit,
+            parentCumulativeVD = 0.0,
+            upstreamCircuits = emptyList(),
+            transformers = emptyList()
+        )
+
+        assertTrue("Result must PASS, got: ${result.status}", result.status.contains("PASS"))
+        assertTrue("Voltage drop % must be realistic (< 3.0%), got: ${result.vdPct}%", result.vdPct <= 3.0)
+        assertTrue("Voltage drop V must be realistic (< 12V), got: ${result.voltDrop_V}V", result.voltDrop_V < 12.0)
+        assertFalse("Must NOT produce fallback 198% voltage drop", result.vdPct > 10.0)
+    }
+
+    @Test
+    fun quickCalc_deratingApplied_whenEnvironmentalFactorsSet() {
+        val circuit = CircuitEntity(
+            id = 1,
+            projectId = "QUICK_CALC",
+            circuitName = "Derated-Feeder",
+            loadKVA = 45.0,
+            voltageV = 400,
+            phases = "3P+N",
+            pf = 0.85,
+            safetyFactor = 1.0,
+            length_m = 40.0,
+            maxVDpct = 0.03,
+            parallelRuns = 1,
+            cableType = "Cu/XLPE/PVC - 4C",
+            manufacturer = "Elsewedy",
+            installation = "Laid in Ducts",
+            airTempC = 50,
+            gndTempC = 40,
+            burialDepth_m = 1.0,
+            soilRes = 150,
+            noCircuits = 3,
+            formation = "Flat",
+            spacing = "Touching",
+            fedFrom = "Grid",
+            transformerId = ""
+        )
+
+        val result = CableCalculationService.calculateSingleCircuit(
+            circuit = circuit,
+            parentCumulativeVD = 0.0,
+            upstreamCircuits = emptyList(),
+            transformers = emptyList()
+        )
+
+        assertTrue("Result must PASS, got: ${result.status}", result.status.contains("PASS"))
+        assertTrue("cTotalDerating must be strictly less than 1.0, got: ${result.cTotalDerating}", result.cTotalDerating < 1.0)
+        assertTrue("cTotalDerating must be positive, got: ${result.cTotalDerating}", result.cTotalDerating > 0.3)
     }
 
     @Test
@@ -275,7 +397,7 @@ class QuickCableCalcTest {
             manufacturer = "Elsewedy",
             installation = "Laid in Free Air",
             fedFrom = "Grid",
-            overrideCableSize = "70",
+            overrideCableSize = "70 mm²",
             overrideDeviceType = "MCCB",
             overrideDeviceSize = 100.0
         )
