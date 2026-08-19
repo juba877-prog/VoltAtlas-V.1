@@ -154,6 +154,7 @@ class EvaluateCableCandidateTool(
             candidateSizeFormatted = formattedSize,
             candidateMaterial = candidateMaterial,
             parallelRuns = candidateParallelRuns,
+            selectionSource = interpretation.selectionSource,
             overallStatus = interpretation.overallStatus,
             governingCriterion = interpretation.governingCriterion,
             governingReason = interpretation.governingReason,

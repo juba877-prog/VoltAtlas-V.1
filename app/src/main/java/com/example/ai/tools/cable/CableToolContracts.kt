@@ -1,5 +1,6 @@
 package com.example.ai.tools.cable
 
+import com.example.ai.contracts.EngineeringValue
 import com.squareup.moshi.JsonClass
 
 /**
@@ -15,6 +16,21 @@ object CableToolNames {
 /**
  * Governing engineering criterion classifying why a specific cable/conductor size was selected
  * or why a candidate failed.
+ *
+ * Supported in Phase 6:
+ * - NONE: Clean pass without governing failure.
+ * - AMPACITY: Continuous current / protective device thermal ampacity failure.
+ * - VOLTAGE_DROP: Local circuit voltage drop exceeded limit.
+ * - CUMULATIVE_VOLTAGE_DROP: Cumulative voltage drop from supply exceeded limit.
+ * - CATALOG_AVAILABILITY: Requested cable type or size missing from manufacturer catalog.
+ * - INSTALLATION_DERATING: Total derating factor zero or invalid.
+ * - INCOMPLETE_INPUT: Missing required project data (e.g. source transformer or invalid input).
+ * - MULTIPLE_CONSTRAINTS: Multiple distinct checks failed simultaneously.
+ *
+ * NOT_SUPPORTED_IN_PHASE_6 (No authoritative producer in single-circuit cable sizing result path):
+ * - SHORT_CIRCUIT_WITHSTAND: Requires full short-circuit system network solver (Phase 8).
+ * - DEVICE_COMPATIBILITY: Requires full protective device coordination engine (Phase 8).
+ * - MANUAL_OVERRIDE: Maintained as selectionSource attribute, never hides engineering failure.
  */
 enum class GoverningCriterion {
     NONE,
@@ -47,9 +63,11 @@ enum class CandidateSortPolicy {
 data class EngineeringCheckItemDto(
     val checkName: String,
     val status: CheckStatus,
-    val actualValue: String,
-    val limitValue: String,
-    val unit: String,
+    val actualValue: EngineeringValue? = null,
+    val limitValue: EngineeringValue? = null,
+    val actualDisplay: String = "",
+    val limitDisplay: String = "",
+    val unit: String = "",
     val message: String
 )
 
@@ -104,6 +122,7 @@ data class CableSizingExecutionResult(
     val projectRevision: Long,
     val freshnessState: String,
     val isRecalculated: Boolean,
+    val selectionSource: String = "AUTO",
     val overallStatus: CheckStatus,
     val governingCriterion: GoverningCriterion,
     val governingReason: String,
@@ -137,6 +156,7 @@ data class CableCandidateEvaluationResult(
     val candidateSizeFormatted: String,
     val candidateMaterial: String,
     val parallelRuns: Int,
+    val selectionSource: String = "AUTO",
     val overallStatus: CheckStatus,
     val governingCriterion: GoverningCriterion,
     val governingReason: String,

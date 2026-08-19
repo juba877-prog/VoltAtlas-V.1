@@ -3,6 +3,8 @@ package com.example.ai.tools.cable
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.example.ai.contracts.EngineeringUnit
+import com.example.ai.contracts.EngineeringValue
 import com.example.ai.contracts.StructuredError
 import com.example.ai.contracts.ToolRequestEnvelope
 import com.example.ai.contracts.ToolResultEnvelope
@@ -85,7 +87,73 @@ class CableEngineeringToolsTest {
                     deratingDataJson = deratingDataJson,
                     transformersSeedJson = transformersSeedJson
                 )
-            } catch (_: Exception) {
+
+                Catalog.deratingData = org.json.JSONObject(deratingDataJson)
+                Catalog.cableTypes = org.json.JSONArray(findAssetFile("cable_types.json").readText()).let { arr ->
+                    (0 until arr.length()).map { i ->
+                        val obj = arr.getJSONObject(i)
+                        com.example.data.CableType(
+                            code = obj.getInt("code"),
+                            cableType = obj.getString("cableType"),
+                            conductor = obj.getString("conductor"),
+                            insulation = obj.getString("insulation"),
+                            armour = obj.getString("armour"),
+                            cores = obj.getString("cores"),
+                            voltage = obj.getString("voltage"),
+                            standard = obj.getString("standard"),
+                            rColumn = obj.getString("rColumn")
+                        )
+                    }
+                }
+                Catalog.dataSheet = org.json.JSONArray(findAssetFile("data_sheet.json").readText()).let { arr ->
+                    (0 until arr.length()).map { i ->
+                        val obj = arr.getJSONObject(i)
+                        com.example.data.DataSheetEntry(
+                            size = obj.getDouble("size"),
+                            R_Cu70 = obj.getDouble("R_Cu70"),
+                            X = obj.getDouble("X"),
+                            R_Al70 = obj.getDouble("R_Al70"),
+                            R_Cu90 = obj.getDouble("R_Cu90"),
+                            R_Al90 = obj.getDouble("R_Al90")
+                        )
+                    }
+                }
+                Catalog.cableCatalog = org.json.JSONArray(cableCatalogJson).let { arr ->
+                    (0 until arr.length()).map { i ->
+                        val obj = arr.getJSONObject(i)
+                        com.example.data.CableCatalogEntry(
+                            mfg = obj.getString("mfg"),
+                            typeCode = obj.getInt("typeCode"),
+                            size = obj.getDouble("size"),
+                            model = obj.optString("model", "IEC-Generic-${obj.optDouble("size")}"),
+                            gnd = obj.getDouble("gnd"),
+                            duct = obj.getDouble("duct"),
+                            air = obj.getDouble("air"),
+                            od = obj.optDouble("od", 0.0),
+                            wt = obj.optDouble("wt", 0.0)
+                        )
+                    }
+                }
+                Catalog.breakers = org.json.JSONArray(breakerCatalogJson).let { arr ->
+                    (0 until arr.length()).map { i ->
+                        val obj = arr.getJSONObject(i)
+                        com.example.data.BreakerEntry(
+                            mfg = obj.optString("mfg", obj.optString("Source", "Generic")),
+                            type = obj.optString("type", "MCCB"),
+                            series = obj.optString("series", obj.optString("Series", "")),
+                            frame = if (obj.has("frameA")) obj.optString("frameA", "") else obj.optString("frame", obj.optString("Frame", "")),
+                            version = obj.optString("version", obj.optString("Version", "")),
+                            rating_A = com.example.data.catalog.BreakerParser.parseRating(obj.opt("ratingA") ?: obj.opt("rating_A") ?: obj.opt("In (A)")),
+                            poles = com.example.data.catalog.BreakerParser.parsePoles(obj.opt("poles") ?: obj.opt("Poles")),
+                            icu_kA = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("icuKa") ?: obj.opt("icu_kA") ?: obj.opt("Icu@415V (kA)")),
+                            ics_kA = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("icsKa") ?: obj.opt("ics_kA") ?: obj.opt("Ics@415V (kA)")),
+                            icm_kA = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("icmKa") ?: obj.opt("icm_kA") ?: obj.opt("Icm@415V (kA)")),
+                            tripUnit = obj.optString("tripUnit", obj.optString("Trip Unit", "Thermal-Magnetic"))
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
@@ -105,10 +173,10 @@ class CableEngineeringToolsTest {
 
     @Before
     fun setUp() {
+        loadCatalogData()
         runBlocking {
             AppDatabase.useTestExecutors = true
             val context = ApplicationProvider.getApplicationContext<Context>()
-            Catalog.loadAll(context)
 
             database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
                 .allowMainThreadQueries()
@@ -1236,7 +1304,7 @@ class CableEngineeringToolsTest {
             vdPct = 0.5,
             cumulativeVDpct = 0.5,
             status = "✗ FAIL",
-            failReason = "Ampacity insufficient"
+            failReason = "Ampacity constraint Ib ≤ In ≤ Iz is not satisfied"
         )
         val circuit = CircuitEntity(id = 1, maxVDpct = 0.05)
 
@@ -1266,7 +1334,7 @@ class CableEngineeringToolsTest {
             vdPct = 5.0,
             cumulativeVDpct = 5.0,
             status = "✗ FAIL",
-            failReason = "Voltage drop exceeded"
+            failReason = "Cumulative voltage drop exceeds the allowed limit"
         )
         val circuit = CircuitEntity(id = 1, maxVDpct = 0.03) // 3% limit
 
@@ -1296,11 +1364,11 @@ class CableEngineeringToolsTest {
             vdPct = 2.0, // branch is 2% <= 3%
             cumulativeVDpct = 4.5, // cumulative is 4.5% > 3%
             status = "✗ FAIL",
-            failReason = "Cumulative voltage drop exceeded"
+            failReason = "Cumulative voltage drop exceeds the allowed limit"
         )
         val circuit = CircuitEntity(id = 1, maxVDpct = 0.03)
 
-        val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
+        val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit, parentCumulativeVD = 2.5)
         val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
 
         assertEquals(CheckStatus.FAIL, interp.overallStatus)
@@ -1313,14 +1381,16 @@ class CableEngineeringToolsTest {
             checkCode = CableCheckCode.SHORT_CIRCUIT_WITHSTAND,
             checkName = "Short-Circuit Thermal Withstand",
             status = CableCheckStatus.FAIL,
-            actualValue = "kS/sqrt(t)=12kA",
-            limitValue = "Isc=25kA",
+            actualValue = EngineeringValue.ofDecimal(12.0, com.example.ai.contracts.EngineeringUnit.KILOAMPERE),
+            limitValue = EngineeringValue.ofDecimal(25.0, com.example.ai.contracts.EngineeringUnit.KILOAMPERE),
+            actualDisplay = "12 kA",
+            limitDisplay = "25 kA",
             unit = "kA",
             message = "Thermal withstand exceeded",
             isGoverning = true
         )
         val eval = CableEngineeringEvaluation(
-            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "10 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✗ FAIL"),
+            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "10 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✗ FAIL", failReason = "Thermal withstand exceeded"),
             overallStatus = CableCheckStatus.FAIL,
             checks = listOf(check),
             governingCheckCode = CableCheckCode.SHORT_CIRCUIT_WITHSTAND,
@@ -1336,14 +1406,16 @@ class CableEngineeringToolsTest {
             checkCode = CableCheckCode.DEVICE_COMPATIBILITY,
             checkName = "Protective Device Compatibility",
             status = CableCheckStatus.FAIL,
-            actualValue = "Frame=63A",
-            limitValue = "Rating=100A",
+            actualValue = EngineeringValue.ofDecimal(63.0, com.example.ai.contracts.EngineeringUnit.AMPERE),
+            limitValue = EngineeringValue.ofDecimal(100.0, com.example.ai.contracts.EngineeringUnit.AMPERE),
+            actualDisplay = "63 A",
+            limitDisplay = "100 A",
             unit = "A",
             message = "Device rating exceeds frame capacity",
             isGoverning = true
         )
         val eval = CableEngineeringEvaluation(
-            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "25 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✗ FAIL"),
+            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "25 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✗ FAIL", failReason = "Device rating exceeds frame capacity"),
             overallStatus = CableCheckStatus.FAIL,
             checks = listOf(check),
             governingCheckCode = CableCheckCode.DEVICE_COMPATIBILITY,
@@ -1372,7 +1444,7 @@ class CableEngineeringToolsTest {
             vdPct = 0.5,
             cumulativeVDpct = 0.5,
             status = "✗ FAIL",
-            failReason = "Severe derating factor applied"
+            failReason = "Total derating factor is zero or invalid."
         )
         val circuit = CircuitEntity(id = 1, maxVDpct = 0.05)
 
@@ -1400,7 +1472,7 @@ class CableEngineeringToolsTest {
             vdPct = 10.0,
             cumulativeVDpct = 10.0,
             status = "✗ FAIL",
-            failReason = "Multiple engineering constraints violated"
+            failReason = "Ampacity constraint Ib ≤ In ≤ Iz is not satisfied; Cumulative voltage drop exceeds the allowed limit."
         )
         val circuit = CircuitEntity(id = 1, maxVDpct = 0.03)
 
@@ -1444,8 +1516,10 @@ class CableEngineeringToolsTest {
             checkCode = CableCheckCode.AMPACITY,
             checkName = "Ampacity High Utilization Warning",
             status = CableCheckStatus.WARNING,
-            actualValue = "98%",
-            limitValue = "100%",
+            actualValue = EngineeringValue.ofDecimal(98.0, com.example.ai.contracts.EngineeringUnit.PERCENT),
+            limitValue = EngineeringValue.ofDecimal(100.0, com.example.ai.contracts.EngineeringUnit.PERCENT),
+            actualDisplay = "98%",
+            limitDisplay = "100%",
             unit = "%",
             message = "High utilization warning"
         )
@@ -1485,7 +1559,8 @@ class CableEngineeringToolsTest {
         val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
         val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
         assertEquals(CheckStatus.PASS, interp.overallStatus)
-        assertEquals(GoverningCriterion.MANUAL_OVERRIDE, interp.governingCriterion)
+        assertEquals("MANUAL_OVERRIDE", interp.selectionSource)
+        assertEquals(GoverningCriterion.NONE, interp.governingCriterion)
     }
 
     @Test
@@ -1504,12 +1579,11 @@ class CableEngineeringToolsTest {
 
     @Test
     fun governingCriterion_adversarialPass_persistsEvenWithUnusualValues() {
-        // Even if numbers are unusual, authoritative engine status PASS is trusted without recalculation
         val eval = CableEngineeringEvaluation(
             sizingResult = SizingResult(1000.0, 100.0, "MCCB", 1.0, 100.0, "X", "1.5 mm²", 10.0, 10.0, 1000.0, "", "", 100.0, 50.0, 50.0, "✓ PASS"),
             overallStatus = CableCheckStatus.PASS,
             checks = listOf(
-                CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.PASS, "1000A", "10A", "A", "Pass")
+                CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.PASS, EngineeringValue.ofDecimal(10.0), EngineeringValue.ofDecimal(100.0), "10A", "100A", "A", "Pass")
             ),
             governingCheckCode = null,
             governingReason = "Engine declared pass"
@@ -1520,12 +1594,11 @@ class CableEngineeringToolsTest {
 
     @Test
     fun governingCriterion_adversarialFail_persistsEvenWhenRecomputationWouldPass() {
-        // Even if numbers look passing, authoritative engine status FAIL is trusted
         val eval = CableEngineeringEvaluation(
             sizingResult = SizingResult(10.0, 20.0, "MCB", 1.0, 20.0, "X", "240 mm²", 500.0, 500.0, 4.0, "", "", 0.1, 0.02, 0.02, "✗ FAIL", failReason = "Coordination constraint"),
             overallStatus = CableCheckStatus.FAIL,
             checks = listOf(
-                CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.FAIL, "10A", "500A", "A", "Failed by upstream policy")
+                CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.FAIL, EngineeringValue.ofDecimal(500.0), EngineeringValue.ofDecimal(20.0), "500A", "20A", "A", "Failed by upstream policy")
             ),
             governingCheckCode = CableCheckCode.AMPACITY,
             governingReason = "Failed by upstream policy"
@@ -1533,6 +1606,296 @@ class CableEngineeringToolsTest {
         val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
         assertEquals(CheckStatus.FAIL, interp.overallStatus)
         assertEquals(GoverningCriterion.AMPACITY, interp.governingCriterion)
+    }
+
+    // -------------------------------------------------------------------------
+    // Section 4: Voltage-Drop Unit Safety Tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun maxVdUnit_matchesExistingEngineContract() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", maxVDpct = 0.03, fedFrom = "Main")
+        val result = CableSizingEngine.sizeCircuit(circuit)
+        assertTrue("vdPct must be in percentage points (e.g. <= 3.0%)", result.vdPct <= 3.0)
+    }
+
+    @Test
+    fun voltageDrop_belowLimit_matchesLegacyEngineStatus() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 50.0, length_m = 10.0, maxVDpct = 0.05, fedFrom = "Main")
+        val sizingRes = CableSizingEngine.sizeCircuit(circuit)
+        val eval = CableCalculationService.evaluateEngineeringChecks(sizingRes, circuit)
+        assertEquals(CableCheckStatus.PASS, eval.overallStatus)
+        val vdCheck = eval.checks.first { it.checkCode == CableCheckCode.VOLTAGE_DROP }
+        assertEquals(CableCheckStatus.PASS, vdCheck.status)
+    }
+
+    @Test
+    fun voltageDrop_atLimit_matchesLegacyEngineStatus() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", maxVDpct = 0.03, fedFrom = "Main")
+        val dummyResult = SizingResult(
+            Ib_A = 10.0, deviceSize_A = 16.0, deviceType = "MCB", cTotalDerating = 1.0,
+            iRequired_perCable_A = 16.0, productCode = "C1", cableSize_mm2 = "2.5 mm²",
+            ratedI_table_A = 25.0, capacity_derated_Iz_A = 25.0, utilizationPct = 40.0,
+            neutral_mm2 = "2.5 mm²", earthCPC_mm2 = "2.5 mm²", voltDrop_V = 12.0,
+            vdPct = 3.0, cumulativeVDpct = 3.0, status = "✓ PASS"
+        )
+        val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
+        assertEquals(CableCheckStatus.PASS, eval.overallStatus)
+    }
+
+    @Test
+    fun voltageDrop_aboveLimit_matchesLegacyEngineStatus() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 50.0, length_m = 500.0, maxVDpct = 0.001, fedFrom = "Main")
+        val sizingRes = CableSizingEngine.sizeCircuit(circuit)
+        val eval = CableCalculationService.evaluateEngineeringChecks(sizingRes, circuit)
+        assertEquals(CableCheckStatus.FAIL, eval.overallStatus)
+        val vdCheck = eval.checks.first { it.checkCode == CableCheckCode.CUMULATIVE_VOLTAGE_DROP }
+        assertEquals(CableCheckStatus.FAIL, vdCheck.status)
+    }
+
+    @Test
+    fun cumulativeVd_failure_matchesLegacyEngineStatus() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 50.0, length_m = 20.0, maxVDpct = 0.03, fedFrom = "Main")
+        val sizingRes = CableSizingEngine.sizeCircuit(circuit, parentCumulativeVD = 2.9)
+        val eval = CableCalculationService.evaluateEngineeringChecks(sizingRes, circuit, parentCumulativeVD = 2.9)
+        if (sizingRes.status.contains("FAIL")) {
+            assertEquals(CableCheckStatus.FAIL, eval.overallStatus)
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Section 5: Manual Override Independent Model Tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun manualOverride_cleanPass_reportsManualSelectionAndNoFailureCriterion() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 50.0, overrideCableSize = "25 mm²", maxVDpct = 0.05, fedFrom = "Main")
+        val sizingRes = CableSizingEngine.sizeCircuit(circuit)
+        val eval = CableCalculationService.evaluateEngineeringChecks(sizingRes, circuit)
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+
+        assertEquals("MANUAL_OVERRIDE", interp.selectionSource)
+        assertEquals(CheckStatus.PASS, interp.overallStatus)
+        assertEquals(GoverningCriterion.NONE, interp.governingCriterion)
+    }
+
+    @Test
+    fun manualOverride_ampacityFail_preservesAmpacityFailure() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 300.0, overrideCableSize = "1.5 mm²", maxVDpct = 0.05, fedFrom = "Main")
+        val sizingRes = CableSizingEngine.sizeCircuit(circuit)
+        val eval = CableCalculationService.evaluateEngineeringChecks(sizingRes, circuit)
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+
+        assertEquals("MANUAL_OVERRIDE", interp.selectionSource)
+        assertEquals(CheckStatus.FAIL, interp.overallStatus)
+        assertTrue(
+            interp.governingCriterion == GoverningCriterion.AMPACITY ||
+            interp.governingCriterion == GoverningCriterion.MULTIPLE_CONSTRAINTS
+        )
+    }
+
+    @Test
+    fun manualOverride_multipleFailures_preservesMultipleConstraints() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 300.0, length_m = 500.0, overrideCableSize = "1.5 mm²", maxVDpct = 0.01, fedFrom = "Main")
+        val sizingRes = CableSizingEngine.sizeCircuit(circuit)
+        val eval = CableCalculationService.evaluateEngineeringChecks(sizingRes, circuit)
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+
+        assertEquals("MANUAL_OVERRIDE", interp.selectionSource)
+        assertEquals(CheckStatus.FAIL, interp.overallStatus)
+        assertEquals(GoverningCriterion.MULTIPLE_CONSTRAINTS, interp.governingCriterion)
+    }
+
+    @Test
+    fun manualOverride_doesNotConvertFailToPassOrNone() {
+        val dummyResult = SizingResult(
+            Ib_A = 500.0, deviceSize_A = 630.0, deviceType = "MCCB", cTotalDerating = 1.0,
+            iRequired_perCable_A = 630.0, productCode = "C1", cableSize_mm2 = "1.5 mm²",
+            ratedI_table_A = 20.0, capacity_derated_Iz_A = 20.0, utilizationPct = 2500.0,
+            neutral_mm2 = "1.5 mm²", earthCPC_mm2 = "1.5 mm²", voltDrop_V = 50.0,
+            vdPct = 12.0, cumulativeVDpct = 12.0, status = "✗ FAIL",
+            failReason = "Manual cable override failed validation: Ampacity constraint Ib ≤ In ≤ Iz is not satisfied"
+        )
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", overrideCableSize = "1.5 mm²", maxVDpct = 0.03, fedFrom = "Main")
+        val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+
+        assertEquals("MANUAL_OVERRIDE", interp.selectionSource)
+        assertEquals(CheckStatus.FAIL, interp.overallStatus)
+        assertNotEquals(GoverningCriterion.NONE, interp.governingCriterion)
+        assertEquals(GoverningCriterion.AMPACITY, interp.governingCriterion)
+    }
+
+    // -------------------------------------------------------------------------
+    // Section 7: Check Contract Typed Values Tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun structuredCheck_preservesTypedActualValueAndUnit() {
+        val dummyResult = SizingResult(
+            Ib_A = 100.0, deviceSize_A = 125.0, deviceType = "MCB", cTotalDerating = 1.0,
+            iRequired_perCable_A = 125.0, productCode = "C1", cableSize_mm2 = "50 mm²",
+            ratedI_table_A = 150.0, capacity_derated_Iz_A = 150.0, utilizationPct = 66.7,
+            neutral_mm2 = "25 mm²", earthCPC_mm2 = "25 mm²", voltDrop_V = 2.0,
+            vdPct = 0.5, cumulativeVDpct = 0.5, status = "✓ PASS"
+        )
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", maxVDpct = 0.03, fedFrom = "Main")
+        val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
+        val ampacityCheck = eval.checks.first { it.checkCode == CableCheckCode.AMPACITY }
+
+        assertNotNull(ampacityCheck.actualValue)
+        assertEquals(150.0, ampacityCheck.actualValue!!.decimalValue!!, 0.001)
+        assertEquals("A", ampacityCheck.unit)
+    }
+
+    @Test
+    fun structuredCheck_preservesTypedLimitAndUnit() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", maxVDpct = 0.03, fedFrom = "Main")
+        val dummyResult = SizingResult(
+            Ib_A = 100.0, deviceSize_A = 125.0, deviceType = "MCB", cTotalDerating = 1.0,
+            iRequired_perCable_A = 125.0, productCode = "C1", cableSize_mm2 = "50 mm²",
+            ratedI_table_A = 150.0, capacity_derated_Iz_A = 150.0, utilizationPct = 66.7,
+            neutral_mm2 = "25 mm²", earthCPC_mm2 = "25 mm²", voltDrop_V = 2.0,
+            vdPct = 0.5, cumulativeVDpct = 0.5, status = "✓ PASS"
+        )
+        val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
+        val vdCheck = eval.checks.first { it.checkCode == CableCheckCode.VOLTAGE_DROP }
+
+        assertNotNull(vdCheck.limitValue)
+        assertEquals(3.0, vdCheck.limitValue!!.decimalValue!!, 0.001)
+        assertEquals("%", vdCheck.unit)
+    }
+
+    @Test
+    fun structuredCheck_serializationIsLocaleIndependent() {
+        val prevLocale = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.GERMANY)
+            val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", maxVDpct = 0.03, fedFrom = "Main")
+            val dummyResult = SizingResult(
+                Ib_A = 100.0, deviceSize_A = 125.0, deviceType = "MCB", cTotalDerating = 1.0,
+                iRequired_perCable_A = 125.0, productCode = "C1", cableSize_mm2 = "50 mm²",
+                ratedI_table_A = 150.0, capacity_derated_Iz_A = 150.0, utilizationPct = 66.7,
+                neutral_mm2 = "25 mm²", earthCPC_mm2 = "25 mm²", voltDrop_V = 2.0,
+                vdPct = 0.5, cumulativeVDpct = 0.5, status = "✓ PASS"
+            )
+            val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
+            val vdCheck = eval.checks.first { it.checkCode == CableCheckCode.VOLTAGE_DROP }
+            assertTrue("Display must use US dot formatting", vdCheck.limitDisplay.contains("3.00%"))
+        } finally {
+            Locale.setDefault(prevLocale)
+        }
+    }
+
+    @Test
+    fun missingValue_remainsNull_notEmptyOrZero() {
+        val dummyResult = SizingResult(
+            Ib_A = 0.0, deviceSize_A = 0.0, deviceType = "N/A", cTotalDerating = 0.0,
+            iRequired_perCable_A = 0.0, productCode = "N/A", cableSize_mm2 = "N/A",
+            ratedI_table_A = 0.0, capacity_derated_Iz_A = 0.0, utilizationPct = 0.0,
+            neutral_mm2 = "N/A", earthCPC_mm2 = "N/A", voltDrop_V = 0.0,
+            vdPct = 0.0, cumulativeVDpct = 0.0, status = "✗ FAIL",
+            failReason = "Missing source transformer 'TX-9' in this project."
+        )
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", fedFrom = "Main")
+        val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
+        val ampacityCheck = eval.checks.first { it.checkCode == CableCheckCode.AMPACITY }
+        assertEquals(com.example.ai.contracts.EngineeringValueKind.MISSING, ampacityCheck.actualValue!!.kind)
+    }
+
+    // -------------------------------------------------------------------------
+    // Section 8: Required Parity Tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun structuredChecks_matchEngineOverallStatus() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 100.0, length_m = 50.0, maxVDpct = 0.05, fedFrom = "Main")
+        val engineResult = CableSizingEngine.sizeCircuit(circuit)
+        val eval = CableCalculationService.evaluateEngineeringChecks(engineResult, circuit)
+        val expected = if (engineResult.status.contains("PASS")) CableCheckStatus.PASS else CableCheckStatus.FAIL
+        assertEquals(expected, eval.overallStatus)
+    }
+
+    @Test
+    fun structuredAmpacityCheck_matchesEngineDecision() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 300.0, length_m = 10.0, maxVDpct = 0.05, overrideCableSize = "1.5 mm²", fedFrom = "Main")
+        val engineResult = CableSizingEngine.sizeCircuit(circuit)
+        val eval = CableCalculationService.evaluateEngineeringChecks(engineResult, circuit)
+        val ampacityCheck = eval.checks.first { it.checkCode == CableCheckCode.AMPACITY }
+        assertEquals(CableCheckStatus.FAIL, ampacityCheck.status)
+    }
+
+    @Test
+    fun structuredLocalVdCheck_matchesEngineDecision() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 50.0, length_m = 500.0, maxVDpct = 0.001, fedFrom = "Main")
+        val engineResult = CableSizingEngine.sizeCircuit(circuit)
+        val eval = CableCalculationService.evaluateEngineeringChecks(engineResult, circuit)
+        val vdCheck = eval.checks.first { it.checkCode == CableCheckCode.VOLTAGE_DROP }
+        assertEquals(CableCheckStatus.FAIL, vdCheck.status)
+    }
+
+    @Test
+    fun structuredCumulativeVdCheck_matchesEngineDecision() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 50.0, length_m = 100.0, maxVDpct = 0.03, fedFrom = "Main")
+        val engineResult = CableSizingEngine.sizeCircuit(circuit, parentCumulativeVD = 2.95)
+        val eval = CableCalculationService.evaluateEngineeringChecks(engineResult, circuit, parentCumulativeVD = 2.95)
+        if (engineResult.status.contains("FAIL")) {
+            val cumVdCheck = eval.checks.first { it.checkCode == CableCheckCode.CUMULATIVE_VOLTAGE_DROP }
+            assertEquals(CableCheckStatus.FAIL, cumVdCheck.status)
+        }
+    }
+
+    @Test
+    fun structuredCatalogFailure_matchesEngineDecision() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 50.0, overrideCableSize = "9999 mm²", fedFrom = "Main")
+        val engineResult = CableSizingEngine.sizeCircuit(circuit)
+        val eval = CableCalculationService.evaluateEngineeringChecks(engineResult, circuit)
+        assertEquals(CableCheckStatus.FAIL, eval.overallStatus)
+        assertEquals(CableCheckCode.CATALOG_AVAILABILITY, eval.governingCheckCode)
+    }
+
+    @Test
+    fun structuredIncompleteInput_matchesEngineDecision() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", fedFrom = "Transformer", transformerId = "NON_EXISTENT_TX")
+        val engineResult = CableCalculationService.calculateSingleCircuit(circuit, transformers = emptyList())
+        val eval = CableCalculationService.evaluateEngineeringChecks(engineResult, circuit)
+        assertEquals(CableCheckStatus.FAIL, eval.overallStatus)
+        assertEquals(CableCheckCode.INCOMPLETE_INPUT, eval.governingCheckCode)
+    }
+
+    @Test
+    fun noServiceCheckContradictsSizingResultStatus() {
+        val testCircuits = listOf(
+            CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 50.0, length_m = 20.0, maxVDpct = 0.05, fedFrom = "Main"),
+            CircuitEntity(id = 2, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 250.0, length_m = 100.0, maxVDpct = 0.03, fedFrom = "Main"),
+            CircuitEntity(id = 3, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 500.0, length_m = 300.0, maxVDpct = 0.02, overrideCableSize = "1.5 mm²", fedFrom = "Main")
+        )
+        for (c in testCircuits) {
+            val res = CableSizingEngine.sizeCircuit(c)
+            val eval = CableCalculationService.evaluateEngineeringChecks(res, c)
+            val expected = if (res.status.contains("PASS")) CableCheckStatus.PASS else CableCheckStatus.FAIL
+            assertEquals("Service status must match SizingResult status for circuit ${c.id}", expected, eval.overallStatus)
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Section 9: Static Duplication Guard
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun noDuplicateEngineeringRulesInServiceOrToolLayer() {
+        val serviceFile = listOf(
+            File("app/src/main/java/com/example/engine/coordinator/CableCalculationService.kt"),
+            File("src/main/java/com/example/engine/coordinator/CableCalculationService.kt"),
+            File("../app/src/main/java/com/example/engine/coordinator/CableCalculationService.kt")
+        ).firstOrNull { it.exists() } ?: throw IllegalStateException("Service file not found")
+
+        val content = serviceFile.readText()
+        assertFalse("Service must not recompute ampacity Ib <= In", content.contains("Ib_A <= result.deviceSize_A"))
+        assertFalse("Service must not recompute In <= Iz", content.contains("deviceSize_A <= result.capacity_derated_Iz_A"))
+        assertFalse("Service must not recompute vd <= maxAllowed", content.contains("result.vdPct <= maxAllowedVdPct"))
+        assertFalse("Service must not contain sqrt calculation", content.contains("sqrt("))
+        assertFalse("Service must not contain 0.70 constant", content.contains("0.70"))
     }
 
     @Test

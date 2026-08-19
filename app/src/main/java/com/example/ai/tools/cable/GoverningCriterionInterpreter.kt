@@ -15,6 +15,7 @@ import com.example.engine.coordinator.CableStructuredCheck
  * 1. Zero math/formulas: Does NOT calculate ampacity, voltage drop, or withstand.
  * 2. Zero thresholds: Owns zero numerical comparison limits or derating factors.
  * 3. Pure mapping: Translates authoritative engine checks and governing codes to public DTOs.
+ * 4. Manual override is reported as selectionSource and never masks an engineering failure.
  */
 object GoverningCriterionInterpreter {
 
@@ -22,6 +23,7 @@ object GoverningCriterionInterpreter {
         val overallStatus: CheckStatus,
         val governingCriterion: GoverningCriterion,
         val governingReason: String,
+        val selectionSource: String,
         val checks: List<EngineeringCheckItemDto>,
         val details: CableSizingDetailsDto
     )
@@ -31,7 +33,6 @@ object GoverningCriterionInterpreter {
         circuit: CircuitEntity,
         parentCumulativeVD: Double = 0.0
     ): Interpretation {
-        // Delegate authoritative checks determination to engine service layer
         val eval = CableCalculationService.evaluateEngineeringChecks(result, circuit, parentCumulativeVD)
         return fromEvaluation(eval)
     }
@@ -77,10 +78,9 @@ object GoverningCriterionInterpreter {
         val hasVdFail = eval.checks.any { (it.checkCode == CableCheckCode.VOLTAGE_DROP || it.checkCode == CableCheckCode.CUMULATIVE_VOLTAGE_DROP) && it.status == CableCheckStatus.FAIL }
 
         val criterion = when {
-            eval.isManualOverride -> GoverningCriterion.MANUAL_OVERRIDE
+            overallStatus == CheckStatus.PASS -> GoverningCriterion.NONE
             hasAmpacityFail && hasVdFail -> GoverningCriterion.MULTIPLE_CONSTRAINTS
             eval.governingCheckCode != null -> mapCode(eval.governingCheckCode)
-            overallStatus == CheckStatus.PASS -> GoverningCriterion.NONE
             else -> GoverningCriterion.MULTIPLE_CONSTRAINTS
         }
 
@@ -88,6 +88,7 @@ object GoverningCriterionInterpreter {
             overallStatus = overallStatus,
             governingCriterion = criterion,
             governingReason = eval.governingReason,
+            selectionSource = eval.selectionSource,
             checks = checkDtos,
             details = details
         )
@@ -108,7 +109,7 @@ object GoverningCriterionInterpreter {
         CableCheckCode.DEVICE_COMPATIBILITY -> GoverningCriterion.DEVICE_COMPATIBILITY
         CableCheckCode.CATALOG_AVAILABILITY -> GoverningCriterion.CATALOG_AVAILABILITY
         CableCheckCode.INSTALLATION_DERATING -> GoverningCriterion.INSTALLATION_DERATING
-        CableCheckCode.MANUAL_OVERRIDE -> GoverningCriterion.MANUAL_OVERRIDE
+        CableCheckCode.MANUAL_OVERRIDE -> GoverningCriterion.NONE
         CableCheckCode.INCOMPLETE_INPUT -> GoverningCriterion.INCOMPLETE_INPUT
     }
 
@@ -118,6 +119,8 @@ object GoverningCriterionInterpreter {
             status = mapStatus(check.status),
             actualValue = check.actualValue,
             limitValue = check.limitValue,
+            actualDisplay = check.actualDisplay,
+            limitDisplay = check.limitDisplay,
             unit = check.unit,
             message = check.message
         )

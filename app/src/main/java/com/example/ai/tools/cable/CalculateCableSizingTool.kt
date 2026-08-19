@@ -202,6 +202,7 @@ class CalculateCableSizingTool(
             projectRevision = rev,
             freshnessState = if (isRecalculated) CalculationState.CURRENT.name else freshness.state.name,
             isRecalculated = isRecalculated,
+            selectionSource = interpretation.selectionSource,
             overallStatus = interpretation.overallStatus,
             governingCriterion = interpretation.governingCriterion,
             governingReason = interpretation.governingReason,

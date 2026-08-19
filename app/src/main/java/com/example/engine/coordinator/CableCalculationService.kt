@@ -1,5 +1,7 @@
 package com.example.engine.coordinator
 
+import com.example.ai.contracts.EngineeringUnit
+import com.example.ai.contracts.EngineeringValue
 import com.example.data.CircuitEntity
 import com.example.data.TransformerEntity
 import com.example.engine.BuswayEngine
@@ -32,9 +34,11 @@ data class CableStructuredCheck(
     val checkCode: CableCheckCode,
     val checkName: String,
     val status: CableCheckStatus,
-    val actualValue: String,
-    val limitValue: String,
-    val unit: String,
+    val actualValue: EngineeringValue? = null,
+    val limitValue: EngineeringValue? = null,
+    val actualDisplay: String = "",
+    val limitDisplay: String = "",
+    val unit: String = "",
     val message: String,
     val isGoverning: Boolean = false
 )
@@ -45,17 +49,15 @@ data class CableEngineeringEvaluation(
     val checks: List<CableStructuredCheck>,
     val governingCheckCode: CableCheckCode?,
     val governingReason: String,
-    val isManualOverride: Boolean = false
+    val selectionSource: String = "AUTO"
 )
 
 /**
  * Service dedicated to orchestrating single-circuit and bulk cable sizing calculations.
  * Wraps [CableSizingEngine] and [BuswayEngine] without altering any underlying formulas.
- * Authoritatively determines engineering checks and governing criteria in the engine/service layer.
+ * Authoritatively adapts engine calculation outcomes into typed [CableEngineeringEvaluation] without recomputation.
  */
 object CableCalculationService {
-
-    private const val EPSILON = 1e-6
 
     /**
      * Normalizes circuit auto overrides before sizing execution.
@@ -69,11 +71,6 @@ object CableCalculationService {
 
     /**
      * Executes targeted sizing for a single circuit.
-     *
-     * @param circuit The circuit entity to size.
-     * @param parentCumulativeVD Percentage cumulative voltage drop from upstream parent boards.
-     * @param upstreamCircuits Resolved upstream circuit entities in the hierarchy path.
-     * @param transformers List of available project transformers for validation.
      */
     fun calculateSingleCircuit(
         circuit: CircuitEntity,
@@ -141,8 +138,8 @@ object CableCalculationService {
     }
 
     /**
-     * Authoritative engine-layer evaluation of engineering checks.
-     * Computes pass/fail status and governing criterion inside the deterministic service layer.
+     * Authoritative adaptation of [SizingResult] outcomes into typed [CableStructuredCheck] records.
+     * Derives check outcomes directly from the engine's authoritative status and failure reasons without recomputing.
      */
     fun evaluateEngineeringChecks(
         result: SizingResult,
@@ -151,44 +148,69 @@ object CableCalculationService {
     ): CableEngineeringEvaluation {
         val isManual = !circuit.overrideCableSize.isNullOrBlank() &&
             !circuit.overrideCableSize.equals("AUTO", ignoreCase = true)
+        val selectionSource = if (isManual) "MANUAL_OVERRIDE" else "AUTO"
 
-        val ampacityOk = result.Ib_A <= result.deviceSize_A + EPSILON &&
-            result.deviceSize_A <= result.capacity_derated_Iz_A + EPSILON &&
-            result.capacity_derated_Iz_A > 0.0
+        val isEnginePass = result.status.contains("PASS", ignoreCase = true) && result.failReason.isBlank()
+        val failReason = result.failReason.trim()
+
+        val isAmpacityFail = !isEnginePass && failReason.contains("Ampacity", ignoreCase = true)
+        val isVdFail = !isEnginePass && (
+            failReason.contains("voltage drop", ignoreCase = true) ||
+            failReason.contains("voltage-drop", ignoreCase = true)
+        )
+        val isCatalogFail = !isEnginePass && (
+            failReason.contains("Catalog", ignoreCase = true) ||
+            failReason.contains("not found in catalog", ignoreCase = true) ||
+            failReason.contains("does not exist for", ignoreCase = true)
+        )
+        val isDeratingFail = !isEnginePass && failReason.contains("derating", ignoreCase = true)
+        val isIncompleteFail = !isEnginePass && (
+            failReason.contains("Missing source transformer", ignoreCase = true) ||
+            failReason.contains("Voltage must be", ignoreCase = true) ||
+            failReason.contains("Load kVA", ignoreCase = true) ||
+            failReason.contains("Parallel runs", ignoreCase = true) ||
+            failReason.contains("Power factor", ignoreCase = true) ||
+            failReason.contains("Cable length", ignoreCase = true)
+        )
 
         val maxAllowedVdPct = circuit.maxVDpct * 100.0
-        val localVdOk = result.vdPct <= maxAllowedVdPct + EPSILON
-        val cumulativeVdOk = result.cumulativeVDpct <= maxAllowedVdPct + EPSILON
 
         val checks = mutableListOf<CableStructuredCheck>()
 
         // 1. Ampacity Check
+        val ampacityStatus = if (isAmpacityFail) CableCheckStatus.FAIL else CableCheckStatus.PASS
         checks.add(
             CableStructuredCheck(
                 checkCode = CableCheckCode.AMPACITY,
                 checkName = "Ampacity & Device Protection",
-                status = if (ampacityOk) CableCheckStatus.PASS else CableCheckStatus.FAIL,
-                actualValue = "Ib=${String.format(Locale.US, "%.1f", result.Ib_A)}A, In=${String.format(Locale.US, "%.1f", result.deviceSize_A)}A",
-                limitValue = "Iz=${String.format(Locale.US, "%.1f", result.capacity_derated_Iz_A)}A",
+                status = ampacityStatus,
+                actualValue = if (result.capacity_derated_Iz_A > 0.0) EngineeringValue.ofDecimal(result.capacity_derated_Iz_A, EngineeringUnit.AMPERE) else EngineeringValue.missing(),
+                limitValue = if (result.deviceSize_A > 0.0) EngineeringValue.ofDecimal(result.deviceSize_A, EngineeringUnit.AMPERE) else EngineeringValue.missing(),
+                actualDisplay = if (result.capacity_derated_Iz_A > 0.0) "${result.capacity_derated_Iz_A} A" else "N/A",
+                limitDisplay = if (result.deviceSize_A > 0.0) "${result.deviceSize_A} A" else "N/A",
                 unit = "A",
-                message = if (ampacityOk) {
-                    "Derated cable capacity (${result.capacity_derated_Iz_A} A) safely exceeds protective device rating (${result.deviceSize_A} A)."
+                message = if (ampacityStatus == CableCheckStatus.PASS) {
+                    "Derated cable capacity (${result.capacity_derated_Iz_A} A) safely protects continuous design current (${result.Ib_A} A) and device rating (${result.deviceSize_A} A)."
                 } else {
-                    "Derated cable capacity (${result.capacity_derated_Iz_A} A) is insufficient for protective device rating (${result.deviceSize_A} A)."
+                    "Derated cable capacity (${result.capacity_derated_Iz_A} A) does not satisfy protection/ampacity constraint for device rating (${result.deviceSize_A} A)."
                 }
             )
         )
 
         // 2. Local Voltage Drop Check
+        val isCumulativeOnlyFailure = isVdFail && parentCumulativeVD > 0.0
+        val localVdStatus = if (isVdFail && !isCumulativeOnlyFailure) CableCheckStatus.FAIL else CableCheckStatus.PASS
         checks.add(
             CableStructuredCheck(
                 checkCode = CableCheckCode.VOLTAGE_DROP,
                 checkName = "Local Voltage Drop",
-                status = if (localVdOk) CableCheckStatus.PASS else CableCheckStatus.FAIL,
-                actualValue = String.format(Locale.US, "%.2f", result.vdPct),
-                limitValue = String.format(Locale.US, "%.2f", maxAllowedVdPct),
+                status = localVdStatus,
+                actualValue = EngineeringValue.ofDecimal(result.vdPct, EngineeringUnit.PERCENT),
+                limitValue = EngineeringValue.ofDecimal(maxAllowedVdPct, EngineeringUnit.PERCENT),
+                actualDisplay = String.format(Locale.US, "%.2f%%", result.vdPct),
+                limitDisplay = String.format(Locale.US, "%.2f%%", maxAllowedVdPct),
                 unit = "%",
-                message = if (localVdOk) {
+                message = if (localVdStatus == CableCheckStatus.PASS) {
                     "Local voltage drop (${String.format(Locale.US, "%.2f", result.vdPct)}%) is within limit (${String.format(Locale.US, "%.2f", maxAllowedVdPct)}%)."
                 } else {
                     "Local voltage drop (${String.format(Locale.US, "%.2f", result.vdPct)}%) exceeds limit (${String.format(Locale.US, "%.2f", maxAllowedVdPct)}%)."
@@ -197,15 +219,18 @@ object CableCalculationService {
         )
 
         // 3. Cumulative Voltage Drop Check
+        val cumulativeVdStatus = if (isVdFail) CableCheckStatus.FAIL else CableCheckStatus.PASS
         checks.add(
             CableStructuredCheck(
                 checkCode = CableCheckCode.CUMULATIVE_VOLTAGE_DROP,
                 checkName = "Cumulative Voltage Drop",
-                status = if (cumulativeVdOk) CableCheckStatus.PASS else CableCheckStatus.FAIL,
-                actualValue = String.format(Locale.US, "%.2f", result.cumulativeVDpct),
-                limitValue = String.format(Locale.US, "%.2f", maxAllowedVdPct),
+                status = cumulativeVdStatus,
+                actualValue = EngineeringValue.ofDecimal(result.cumulativeVDpct, EngineeringUnit.PERCENT),
+                limitValue = EngineeringValue.ofDecimal(maxAllowedVdPct, EngineeringUnit.PERCENT),
+                actualDisplay = String.format(Locale.US, "%.2f%%", result.cumulativeVDpct),
+                limitDisplay = String.format(Locale.US, "%.2f%%", maxAllowedVdPct),
                 unit = "%",
-                message = if (cumulativeVdOk) {
+                message = if (cumulativeVdStatus == CableCheckStatus.PASS) {
                     "Cumulative voltage drop from supply (${String.format(Locale.US, "%.2f", result.cumulativeVDpct)}%) is within limit."
                 } else {
                     "Cumulative voltage drop (${String.format(Locale.US, "%.2f", result.cumulativeVDpct)}%) exceeds limit (${String.format(Locale.US, "%.2f", maxAllowedVdPct)}%)."
@@ -213,74 +238,52 @@ object CableCalculationService {
             )
         )
 
-        // Determine Overall Status & Governing Criterion in Engine Layer
-        val isEngineFail = result.status.contains("FAIL", ignoreCase = true) ||
-            result.failReason.isNotBlank() ||
-            !ampacityOk ||
-            !localVdOk ||
-            !cumulativeVdOk
-
-        val overallStatus: CableCheckStatus
+        // Determine overall status & governing constraint code from engine outcomes
+        val overallStatus = if (isEnginePass) CableCheckStatus.PASS else CableCheckStatus.FAIL
         val governingCode: CableCheckCode?
-        val reason: String
+        val governingReason: String
 
-        if (isEngineFail) {
-            overallStatus = CableCheckStatus.FAIL
-            val failReason = result.failReason.trim()
-
+        if (!isEnginePass) {
             when {
-                failReason.contains("Catalog data is not available", ignoreCase = true) ||
-                    failReason.contains("not found in catalog", ignoreCase = true) ||
-                    failReason.contains("does not exist for", ignoreCase = true) -> {
-                    governingCode = CableCheckCode.CATALOG_AVAILABILITY
-                    reason = failReason.ifEmpty { "Selected cable specification is not available in catalog." }
+                isAmpacityFail && isVdFail -> {
+                    governingCode = null // Multiple constraints
+                    governingReason = failReason
                 }
-                failReason.contains("Voltage must be", ignoreCase = true) ||
-                    failReason.contains("Load kVA", ignoreCase = true) ||
-                    failReason.contains("Parallel runs", ignoreCase = true) ||
-                    failReason.contains("Power factor", ignoreCase = true) ||
-                    failReason.contains("Cable length", ignoreCase = true) ||
-                    failReason.contains("Missing source transformer", ignoreCase = true) -> {
-                    governingCode = CableCheckCode.INCOMPLETE_INPUT
-                    reason = failReason
-                }
-                failReason.contains("derating", ignoreCase = true) -> {
-                    governingCode = CableCheckCode.INSTALLATION_DERATING
-                    reason = failReason
-                }
-                isManual -> {
-                    governingCode = CableCheckCode.MANUAL_OVERRIDE
-                    reason = "Manual override size ${result.cableSize_mm2} failed engineering checks: ${failReason.ifEmpty { "One or more constraints not met." }}"
-                }
-                !ampacityOk && (!localVdOk || !cumulativeVdOk) -> {
-                    governingCode = null // Multiple failures -> maps to MULTIPLE_CONSTRAINTS
-                    reason = "Candidate failed both ampacity (Iz=${result.capacity_derated_Iz_A}A < In=${result.deviceSize_A}A) and voltage drop (VD=${String.format(Locale.US, "%.2f", result.cumulativeVDpct)}% > ${String.format(Locale.US, "%.2f", maxAllowedVdPct)}%)."
-                }
-                !ampacityOk -> {
+                isAmpacityFail -> {
                     governingCode = CableCheckCode.AMPACITY
-                    reason = "Cable derated ampacity (${result.capacity_derated_Iz_A} A) is below protective device rating (${result.deviceSize_A} A)."
+                    governingReason = failReason.ifEmpty { "Ampacity constraint Ib <= In <= Iz is not satisfied." }
                 }
-                !cumulativeVdOk && localVdOk -> {
-                    governingCode = CableCheckCode.CUMULATIVE_VOLTAGE_DROP
-                    reason = "Cumulative voltage drop (${String.format(Locale.US, "%.2f", result.cumulativeVDpct)}%) exceeds limit (${String.format(Locale.US, "%.2f", maxAllowedVdPct)}%) due to upstream drop."
+                isVdFail -> {
+                    governingCode = if (isCumulativeOnlyFailure) {
+                        CableCheckCode.CUMULATIVE_VOLTAGE_DROP
+                    } else {
+                        CableCheckCode.VOLTAGE_DROP
+                    }
+                    governingReason = failReason.ifEmpty { "Voltage drop exceeds allowed limit." }
                 }
-                !localVdOk -> {
-                    governingCode = CableCheckCode.VOLTAGE_DROP
-                    reason = "Local voltage drop (${String.format(Locale.US, "%.2f", result.vdPct)}%) exceeds maximum limit (${String.format(Locale.US, "%.2f", maxAllowedVdPct)}%)."
+                isCatalogFail -> {
+                    governingCode = CableCheckCode.CATALOG_AVAILABILITY
+                    governingReason = failReason.ifEmpty { "Selected cable specification is not available in catalog." }
+                }
+                isDeratingFail -> {
+                    governingCode = CableCheckCode.INSTALLATION_DERATING
+                    governingReason = failReason.ifEmpty { "Total derating factor is zero or invalid." }
+                }
+                isIncompleteFail -> {
+                    governingCode = CableCheckCode.INCOMPLETE_INPUT
+                    governingReason = failReason.ifEmpty { "Missing required engineering inputs." }
                 }
                 else -> {
                     governingCode = null
-                    reason = failReason.ifEmpty { "Engine checks did not pass." }
+                    governingReason = failReason.ifEmpty { "One or more engineering checks failed." }
                 }
             }
         } else {
-            overallStatus = CableCheckStatus.PASS
-            if (isManual) {
-                governingCode = CableCheckCode.MANUAL_OVERRIDE
-                reason = "Conductor size ${result.cableSize_mm2} was configured via manual user override and satisfies all engineering constraints."
+            governingCode = null
+            governingReason = if (isManual) {
+                "Manual override size ${result.cableSize_mm2} satisfies all authoritative engineering constraints."
             } else {
-                governingCode = null // All passed -> Option B truthful result
-                reason = "All authoritative engineering checks passed (Ampacity, Voltage Drop, Cumulative Voltage Drop)."
+                "All authoritative engineering checks passed (Ampacity, Voltage Drop, Cumulative Voltage Drop)."
             }
         }
 
@@ -289,8 +292,8 @@ object CableCalculationService {
             overallStatus = overallStatus,
             checks = checks,
             governingCheckCode = governingCode,
-            governingReason = reason,
-            isManualOverride = isManual
+            governingReason = governingReason,
+            selectionSource = selectionSource
         )
     }
 
