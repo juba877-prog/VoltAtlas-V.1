@@ -102,6 +102,28 @@ object EngineeringCalculationCoordinator {
         coordinationCache.clear()
     }
 
+    // -------------------------------------------------------------------------
+    // Pure Read-Only Cache Accessors for ProjectContextProvider (Sub-Phase 3F)
+    // -------------------------------------------------------------------------
+
+    fun getCachedSizingResult(circuitId: Int): SizingResult? =
+        sizingCache[circuitId]?.second
+
+    fun getCachedTransformerResult(transformerId: String): TransformerResult? =
+        transformerCache[transformerId]?.second
+
+    fun getCachedShortCircuitResult(circuitId: Int): ShortCircuitResult? =
+        shortCircuitCache[circuitId]?.second
+
+    fun getCachedAdsResult(circuitId: Int): AdsResult? =
+        adsCache[circuitId]?.second
+
+    fun getCachedProtectionResult(circuitId: Int): ProtectionResult? =
+        protectionCache[circuitId]?.second
+
+    fun getCachedCoordinationResult(circuitId: Int): CoordinationResult? =
+        coordinationCache[circuitId]?.second
+
     /**
      * Invalidates cache for a specific circuit ID across sizing, short circuit, ads, protection, and coordination caches.
      */
