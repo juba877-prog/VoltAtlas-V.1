@@ -247,7 +247,12 @@ class CalculationFreshnessCorrectionTest {
         val childScFp = (ShortCircuitFreshnessAdapter().resolveFingerprint(childScScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved).fingerprint
         registry.recordCalculationCompleted(CalculationRecordMetadata(childScScope, 1L, childScFp, 1000L, "PASS", CalculationProvenance("ShortCircuitEngine")))
 
-        // 4. Resolve and record COORDINATION (all 3 upstream present -> COMPLETE)
+        // 4. Record child PROTECTION_ADS
+        val childProtScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.PROTECTION_ADS)
+        val childProtFp = (ProtectionAdsFreshnessAdapter().resolveFingerprint(childProtScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(childProtScope, 1L, childProtFp, 1000L, "PASS", CalculationProvenance("ProtectionEngine")))
+
+        // 5. Resolve and record COORDINATION (all 4 upstream present -> COMPLETE)
         val coordScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.COORDINATION)
         val coordRes = CoordinationFreshnessAdapter().resolveFingerprint(coordScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved
         assertEquals(FingerprintCoverage.COMPLETE, coordRes.coverage)
@@ -257,12 +262,12 @@ class CalculationFreshnessCorrectionTest {
         val initialSnap = freshnessProvider.getCalculationState(coordScope)
         assertEquals(CalculationState.CURRENT, initialSnap.state)
 
-        // 5. Mutate PARENT circuit (e.g. loadKVA) -> re-record parent CABLE_SIZING
+        // 6. Mutate PARENT circuit (e.g. loadKVA) -> re-record parent CABLE_SIZING
         dataProvider.addCircuit(parent.copy(loadKVA = 250.0))
         val newParentCableFp = (CableSizingFreshnessAdapter().resolveFingerprint(parentCableScope, dataProvider) as FingerprintResolution.Resolved).fingerprint
         registry.recordCalculationCompleted(CalculationRecordMetadata(parentCableScope, 1L, newParentCableFp, 2000L, "PASS", CalculationProvenance("CableSizingEngine")))
 
-        // 6. Child COORDINATION state must now be STALE with DEPENDENCY_CHANGED
+        // 7. Child COORDINATION state must now be STALE with DEPENDENCY_CHANGED
         val afterSnap = freshnessProvider.getCalculationState(coordScope)
         assertEquals(CalculationState.STALE, afterSnap.state)
         assertTrue("Parent cable sizing change must trigger UPSTREAM_DEPENDENCY staleness", afterSnap.changedComponents.contains(ChangedComponent.UPSTREAM_DEPENDENCY))
@@ -292,7 +297,12 @@ class CalculationFreshnessCorrectionTest {
         val scFp = (ShortCircuitFreshnessAdapter().resolveFingerprint(scScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved).fingerprint
         registry.recordCalculationCompleted(CalculationRecordMetadata(scScope, 1L, scFp, 1000L, "PASS", CalculationProvenance("ShortCircuitEngine")))
 
-        // 4. Resolve and record COORDINATION -> COMPLETE
+        // 4. Record root circuit PROTECTION_ADS
+        val protScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "201", CalculationDomain.PROTECTION_ADS)
+        val protFp = (ProtectionAdsFreshnessAdapter().resolveFingerprint(protScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(protScope, 1L, protFp, 1000L, "PASS", CalculationProvenance("ProtectionEngine")))
+
+        // 5. Resolve and record COORDINATION -> COMPLETE
         val coordScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "201", CalculationDomain.COORDINATION)
         val coordRes = CoordinationFreshnessAdapter().resolveFingerprint(coordScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved
         assertEquals(FingerprintCoverage.COMPLETE, coordRes.coverage)
@@ -300,12 +310,12 @@ class CalculationFreshnessCorrectionTest {
 
         assertEquals(CalculationState.CURRENT, freshnessProvider.getCalculationState(coordScope).state)
 
-        // 5. Mutate transformer (e.g. kVA 1000 -> 1600) -> re-record Transformer
+        // 6. Mutate transformer (e.g. kVA 1000 -> 1600) -> re-record Transformer
         dataProvider.addTransformer(tx.copy(kVA = 1600.0))
         val newTxFp = (TransformerFreshnessAdapter().resolveFingerprint(txScope, dataProvider) as FingerprintResolution.Resolved).fingerprint
         registry.recordCalculationCompleted(CalculationRecordMetadata(txScope, 1L, newTxFp, 2000L, "PASS", CalculationProvenance("TransformerEngine")))
 
-        // 6. COORDINATION must be STALE with UPSTREAM_DEPENDENCY
+        // 7. COORDINATION must be STALE with UPSTREAM_DEPENDENCY
         val snap = freshnessProvider.getCalculationState(coordScope)
         assertEquals(CalculationState.STALE, snap.state)
         assertTrue(snap.changedComponents.contains(ChangedComponent.UPSTREAM_DEPENDENCY))
@@ -332,6 +342,10 @@ class CalculationFreshnessCorrectionTest {
         val childScFp = (ShortCircuitFreshnessAdapter().resolveFingerprint(childScScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved).fingerprint
         registry.recordCalculationCompleted(CalculationRecordMetadata(childScScope, 1L, childScFp, 1000L, "PASS", CalculationProvenance("ShortCircuitEngine")))
 
+        val childProtScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.PROTECTION_ADS)
+        val childProtFp = (ProtectionAdsFreshnessAdapter().resolveFingerprint(childProtScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(childProtScope, 1L, childProtFp, 1000L, "PASS", CalculationProvenance("ProtectionEngine")))
+
         val coordScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.COORDINATION)
         val coordRes = CoordinationFreshnessAdapter().resolveFingerprint(coordScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved
         registry.recordCalculationCompleted(CalculationRecordMetadata(coordScope, 1L, coordRes.fingerprint, 1000L, "PASS", CalculationProvenance("CoordinationEngine")))
@@ -345,6 +359,128 @@ class CalculationFreshnessCorrectionTest {
         val snap = freshnessProvider.getCalculationState(coordScope)
         assertEquals(CalculationState.STALE, snap.state)
         assertTrue(snap.changedComponents.contains(ChangedComponent.UPSTREAM_DEPENDENCY))
+    }
+
+    @Test
+    fun coordination_protectionAdsFingerprintChange_returnsDependencyChanged() = runBlocking {
+        val pid = "PRJ_COORD_PROT_CHANGE"
+        revisionProvider.setRevision(pid, 1L)
+        val parent = CircuitEntity(id = 100, projectId = pid, circuitName = "MDB", loadKVA = 100.0)
+        val child = CircuitEntity(id = 101, projectId = pid, circuitName = "Sub", loadKVA = 20.0, parentId = 100, fedFrom = "MDB")
+        dataProvider.addCircuit(parent)
+        dataProvider.addCircuit(child)
+
+        // 1. Record parent CABLE_SIZING
+        val parentCableScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "100", CalculationDomain.CABLE_SIZING)
+        val parentCableFp = (CableSizingFreshnessAdapter().resolveFingerprint(parentCableScope, dataProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(parentCableScope, 1L, parentCableFp, 1000L, "PASS", CalculationProvenance("CableSizingEngine")))
+
+        // 2. Record child CABLE_SIZING
+        val childCableScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.CABLE_SIZING)
+        val childCableFp = (CableSizingFreshnessAdapter().resolveFingerprint(childCableScope, dataProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(childCableScope, 1L, childCableFp, 1000L, "PASS", CalculationProvenance("CableSizingEngine")))
+
+        // 3. Record child SHORT_CIRCUIT
+        val childScScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.SHORT_CIRCUIT)
+        val childScFp = (ShortCircuitFreshnessAdapter().resolveFingerprint(childScScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(childScScope, 1L, childScFp, 1000L, "PASS", CalculationProvenance("ShortCircuitEngine")))
+
+        // 4. Record child PROTECTION_ADS
+        val childProtScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.PROTECTION_ADS)
+        val childProtFp = (ProtectionAdsFreshnessAdapter().resolveFingerprint(childProtScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(childProtScope, 1L, childProtFp, 1000L, "PASS", CalculationProvenance("ProtectionEngine")))
+
+        // 5. Resolve COORDINATION -> COMPLETE and record
+        val coordScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.COORDINATION)
+        val coordRes = CoordinationFreshnessAdapter().resolveFingerprint(coordScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved
+        assertEquals(FingerprintCoverage.COMPLETE, coordRes.coverage)
+        registry.recordCalculationCompleted(CalculationRecordMetadata(coordScope, 1L, coordRes.fingerprint, 1000L, "PASS", CalculationProvenance("CoordinationEngine")))
+
+        assertEquals(CalculationState.CURRENT, freshnessProvider.getCalculationState(coordScope).state)
+
+        // 6. Mutate child PROTECTION_ADS metadata (re-record with changed inputSignature) without changing cable/SC
+        val modifiedProtFp = childProtFp.copy(inputSignature = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+        registry.recordCalculationCompleted(CalculationRecordMetadata(childProtScope, 1L, modifiedProtFp, 2000L, "PASS", CalculationProvenance("ProtectionEngine")))
+
+        // 7. COORDINATION must become STALE with ChangedComponent.UPSTREAM_DEPENDENCY
+        val snap = freshnessProvider.getCalculationState(coordScope)
+        assertEquals(CalculationState.STALE, snap.state)
+        assertTrue("Protection change must trigger UPSTREAM_DEPENDENCY", snap.changedComponents.contains(ChangedComponent.UPSTREAM_DEPENDENCY))
+    }
+
+    @Test
+    fun coordination_missingProtectionAdsFingerprint_cannotReturnCurrent() = runBlocking {
+        val pid = "PRJ_COORD_MISSING_PROT"
+        revisionProvider.setRevision(pid, 1L)
+        val parent = CircuitEntity(id = 100, projectId = pid, circuitName = "MDB", loadKVA = 100.0)
+        val child = CircuitEntity(id = 101, projectId = pid, circuitName = "Sub", loadKVA = 20.0, parentId = 100, fedFrom = "MDB")
+        dataProvider.addCircuit(parent)
+        dataProvider.addCircuit(child)
+
+        // Record parent cable, child cable, child SC - but NOT child protection_ads
+        val parentCableScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "100", CalculationDomain.CABLE_SIZING)
+        val parentCableFp = (CableSizingFreshnessAdapter().resolveFingerprint(parentCableScope, dataProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(parentCableScope, 1L, parentCableFp, 1000L, "PASS", CalculationProvenance("CableSizingEngine")))
+
+        val childCableScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.CABLE_SIZING)
+        val childCableFp = (CableSizingFreshnessAdapter().resolveFingerprint(childCableScope, dataProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(childCableScope, 1L, childCableFp, 1000L, "PASS", CalculationProvenance("CableSizingEngine")))
+
+        val childScScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.SHORT_CIRCUIT)
+        val childScFp = (ShortCircuitFreshnessAdapter().resolveFingerprint(childScScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(childScScope, 1L, childScFp, 1000L, "PASS", CalculationProvenance("ShortCircuitEngine")))
+
+        val coordScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.COORDINATION)
+        val coordRes = CoordinationFreshnessAdapter().resolveFingerprint(coordScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved
+        assertEquals("Missing PROTECTION_ADS must yield PARTIAL coverage", FingerprintCoverage.PARTIAL, coordRes.coverage)
+
+        registry.recordCalculationCompleted(CalculationRecordMetadata(coordScope, 1L, coordRes.fingerprint, 1000L, "PASS", CalculationProvenance("CoordinationEngine")))
+
+        val snap = freshnessProvider.getCalculationState(coordScope)
+        assertNotEquals("PARTIAL coverage cannot return CURRENT", CalculationState.CURRENT, snap.state)
+        assertEquals(CalculationState.STALE, snap.state)
+        assertEquals(FreshnessReasonCode.PROVENANCE_INCOMPLETE, snap.reasonCode)
+    }
+
+    @Test
+    fun coordination_allFourUpstreamPresentAndUnchanged_canReturnCurrent() = runBlocking {
+        val pid = "PRJ_COORD_FOUR_DEPS"
+        revisionProvider.setRevision(pid, 1L)
+        val parent = CircuitEntity(id = 100, projectId = pid, circuitName = "MDB", loadKVA = 100.0)
+        val child = CircuitEntity(id = 101, projectId = pid, circuitName = "Sub", loadKVA = 20.0, parentId = 100, fedFrom = "MDB")
+        dataProvider.addCircuit(parent)
+        dataProvider.addCircuit(child)
+
+        // 1. Parent CABLE_SIZING
+        val parentCableScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "100", CalculationDomain.CABLE_SIZING)
+        val parentCableFp = (CableSizingFreshnessAdapter().resolveFingerprint(parentCableScope, dataProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(parentCableScope, 1L, parentCableFp, 1000L, "PASS", CalculationProvenance("CableSizingEngine")))
+
+        // 2. Child CABLE_SIZING
+        val childCableScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.CABLE_SIZING)
+        val childCableFp = (CableSizingFreshnessAdapter().resolveFingerprint(childCableScope, dataProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(childCableScope, 1L, childCableFp, 1000L, "PASS", CalculationProvenance("CableSizingEngine")))
+
+        // 3. Child SHORT_CIRCUIT
+        val childScScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.SHORT_CIRCUIT)
+        val childScFp = (ShortCircuitFreshnessAdapter().resolveFingerprint(childScScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(childScScope, 1L, childScFp, 1000L, "PASS", CalculationProvenance("ShortCircuitEngine")))
+
+        // 4. Child PROTECTION_ADS
+        val childProtScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.PROTECTION_ADS)
+        val childProtFp = (ProtectionAdsFreshnessAdapter().resolveFingerprint(childProtScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(childProtScope, 1L, childProtFp, 1000L, "PASS", CalculationProvenance("ProtectionEngine")))
+
+        // 5. COORDINATION -> COMPLETE & CURRENT
+        val coordScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.COORDINATION)
+        val coordRes = CoordinationFreshnessAdapter().resolveFingerprint(coordScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved
+        assertEquals(FingerprintCoverage.COMPLETE, coordRes.coverage)
+
+        registry.recordCalculationCompleted(CalculationRecordMetadata(coordScope, 1L, coordRes.fingerprint, 1000L, "PASS", CalculationProvenance("CoordinationEngine")))
+
+        val snap = freshnessProvider.getCalculationState(coordScope)
+        assertEquals(CalculationState.CURRENT, snap.state)
+        assertEquals(FreshnessReasonCode.MATCH, snap.reasonCode)
     }
 
     @Test
@@ -371,7 +507,12 @@ class CalculationFreshnessCorrectionTest {
         val childScFp = (ShortCircuitFreshnessAdapter().resolveFingerprint(childScScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved).fingerprint
         registry.recordCalculationCompleted(CalculationRecordMetadata(childScScope, 1L, childScFp, 1000L, "PASS", CalculationProvenance("ShortCircuitEngine")))
 
-        // 4. Resolve COORDINATION -> COMPLETE
+        // 4. Record child PROTECTION_ADS
+        val childProtScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.PROTECTION_ADS)
+        val childProtFp = (ProtectionAdsFreshnessAdapter().resolveFingerprint(childProtScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved).fingerprint
+        registry.recordCalculationCompleted(CalculationRecordMetadata(childProtScope, 1L, childProtFp, 1000L, "PASS", CalculationProvenance("ProtectionEngine")))
+
+        // 5. Resolve COORDINATION -> COMPLETE
         val coordScope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "101", CalculationDomain.COORDINATION)
         val coordRes = CoordinationFreshnessAdapter().resolveFingerprint(coordScope, dataProvider, upstreamProvider) as FingerprintResolution.Resolved
         assertEquals(FingerprintCoverage.COMPLETE, coordRes.coverage)

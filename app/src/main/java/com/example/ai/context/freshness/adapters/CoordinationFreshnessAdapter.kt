@@ -127,6 +127,18 @@ class CoordinationFreshnessAdapter : DomainFreshnessAdapter {
             } else {
                 hasAllUpstreamFingerprints = false
             }
+
+            // (d) Downstream PROTECTION_ADS fingerprint (for protective device trip settings / curves)
+            val protScope = CalculationScope(
+                scope.projectId, CalculationEntityType.CIRCUIT, scope.entityId, CalculationDomain.PROTECTION_ADS
+            )
+            val protFp = upstreamFingerprintProvider.getRecordedFingerprint(protScope)
+            if (protFp != null) {
+                depEncoder.putString("downstreamProtectionAdsInput", protFp.inputSignature)
+                depEncoder.putString("downstreamProtectionAdsDep", protFp.dependencySignature)
+            } else {
+                hasAllUpstreamFingerprints = false
+            }
         } else {
             hasAllUpstreamFingerprints = false
         }

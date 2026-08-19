@@ -13,6 +13,16 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+import com.example.ai.context.freshness.adapters.InMemoryProjectFreshnessDataProvider
+import com.example.ai.context.freshness.adapters.ProjectFreshnessDataProvider
+import com.example.ai.context.freshness.contracts.*
+import com.example.ai.context.freshness.internal.DefaultCalculationFreshnessProvider
+import com.example.ai.context.freshness.internal.FreshnessLifecycleRecorder
+import com.example.ai.context.freshness.internal.InMemoryCalculationFreshnessMetadataRegistry
+import com.example.ai.context.revision.ProjectRevisionProvider
+import com.example.ai.context.revision.ProjectRevisionSnapshot
+import kotlinx.coroutines.runBlocking
+
 /**
  * Result data container for bulk project cable sizing.
  */
@@ -30,8 +40,48 @@ data class CableSizingProjectResult(
  * - Result caching and freshness verification
  * - Invoking [CableCalculationService], [TransformerCalculationService], [ShortCircuitCalculationService], [ProtectionCalculationService], and [CoordinationCalculationService]
  * - Providing a unified calculation API for both ViewModel and future AI tool layers
+ * - Operational freshness metadata lifecycle recording (side-effect only, non-breaking)
  */
 object EngineeringCalculationCoordinator {
+
+    val freshnessRegistry = InMemoryCalculationFreshnessMetadataRegistry()
+    var projectRevisionProvider: ProjectRevisionProvider? = null
+
+    private fun getRecorder(circuits: List<CircuitEntity>, transformers: List<TransformerEntity>): FreshnessLifecycleRecorder {
+        val dataProvider = InMemoryProjectFreshnessDataProvider(circuits, transformers)
+        return FreshnessLifecycleRecorder(freshnessRegistry, dataProvider)
+    }
+
+    private fun getProjectRevision(projectId: String): Long {
+        return try {
+            projectRevisionProvider?.let { provider ->
+                runBlocking { provider.getCurrentRevision(projectId).revision }
+            } ?: 1L
+        } catch (_: Exception) {
+            1L
+        }
+    }
+
+    fun clearProjectFreshness(projectId: String) {
+        freshnessRegistry.clearProject(projectId)
+    }
+
+    fun getFreshnessProvider(
+        customDataProvider: ProjectFreshnessDataProvider? = null,
+        customRevisionProvider: ProjectRevisionProvider? = null
+    ): CalculationFreshnessProvider {
+        val revProvider = customRevisionProvider ?: projectRevisionProvider ?: object : ProjectRevisionProvider {
+            override suspend fun getCurrentRevision(projectId: String): ProjectRevisionSnapshot {
+                return ProjectRevisionSnapshot(projectId, 1L, System.currentTimeMillis())
+            }
+        }
+        val dataProvider = customDataProvider ?: InMemoryProjectFreshnessDataProvider()
+        return DefaultCalculationFreshnessProvider(
+            revisionProvider = revProvider,
+            metadataRegistry = freshnessRegistry,
+            projectDataProvider = dataProvider
+        )
+    }
 
     private val sizingCache = ConcurrentHashMap<Int, Pair<Int, SizingResult>>()
     private val transformerCache = ConcurrentHashMap<String, Pair<Int, TransformerResult>>()
@@ -177,17 +227,47 @@ object EngineeringCalculationCoordinator {
         val targetSig = computeSignature(circuit, cumulativeVD, transformers)
         val cachedTarget = sizingCache[circuit.id]
         if (cachedTarget != null && cachedTarget.first == targetSig) {
+            val projectId = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val rev = getProjectRevision(projectId)
+            val status = if (cachedTarget.second.status.contains("FAIL")) "FAIL" else if (cachedTarget.second.status.contains("WARN")) "WARNING" else "PASS"
+            try {
+                runBlocking {
+                    getRecorder(allCircuits, transformers).recordCableSizing(projectId, circuit.id, status, rev)
+                }
+            } catch (_: Exception) { }
             return cachedTarget.second
         }
 
-        val freshResult = CableCalculationService.calculateSingleCircuit(
-            circuit = circuit,
-            parentCumulativeVD = cumulativeVD,
-            upstreamCircuits = ancestors,
-            transformers = transformers
-        )
-        sizingCache[circuit.id] = targetSig to freshResult
-        return freshResult
+        val projectId = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val scope = CalculationScope(projectId, CalculationEntityType.CIRCUIT, circuit.id.toString(), CalculationDomain.CABLE_SIZING)
+        val hasPrior = freshnessRegistry.getRecord(scope) != null
+        freshnessRegistry.startExecution(scope, hasPrior)
+
+        try {
+            val freshResult = CableCalculationService.calculateSingleCircuit(
+                circuit = circuit,
+                parentCumulativeVD = cumulativeVD,
+                upstreamCircuits = ancestors,
+                transformers = transformers
+            )
+            sizingCache[circuit.id] = targetSig to freshResult
+            val rev = getProjectRevision(projectId)
+            val status = if (freshResult.status.contains("FAIL")) "FAIL" else if (freshResult.status.contains("WARN")) "WARNING" else "PASS"
+            try {
+                runBlocking {
+                    getRecorder(allCircuits, transformers).recordCableSizing(projectId, circuit.id, status, rev)
+                }
+            } catch (_: Exception) { }
+            return freshResult
+        } catch (ex: Exception) {
+            try {
+                val rev = getProjectRevision(projectId)
+                getRecorder(allCircuits, transformers).recordError(scope, ExecutionErrorCode.ENGINE_RUNTIME_ERROR, ex.message, rev)
+            } catch (_: Exception) { }
+            throw ex
+        } finally {
+            freshnessRegistry.finishExecution(scope)
+        }
     }
 
     /**
@@ -253,6 +333,21 @@ object EngineeringCalculationCoordinator {
                 }
             }
             iterations++
+        }
+
+        val recorder = getRecorder(resolvedList, transformers)
+        resolvedList.forEach { circuit ->
+            val res = sizingResults[circuit.id]
+            if (res != null) {
+                val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+                val rev = getProjectRevision(pid)
+                val status = if (res.status.contains("FAIL")) "FAIL" else if (res.status.contains("WARN")) "WARNING" else "PASS"
+                try {
+                    runBlocking {
+                        recorder.recordCableSizing(pid, circuit.id, status, rev)
+                    }
+                } catch (_: Exception) { }
+            }
         }
 
         return CableSizingProjectResult(
@@ -346,12 +441,40 @@ object EngineeringCalculationCoordinator {
         val sig = computeTransformerSignature(transformer, allCircuits)
         val cached = transformerCache[transformer.transformerId]
         if (cached != null && cached.first == sig) {
+            val pid = transformer.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val rev = getProjectRevision(pid)
+            try {
+                runBlocking {
+                    getRecorder(allCircuits, listOf(transformer)).recordTransformer(pid, transformer.transformerId, "PASS", rev)
+                }
+            } catch (_: Exception) { }
             return cached.second
         }
 
-        val freshResult = TransformerCalculationService.calculateSingleTransformer(transformer, allCircuits)
-        transformerCache[transformer.transformerId] = sig to freshResult
-        return freshResult
+        val pid = transformer.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val scope = CalculationScope(pid, CalculationEntityType.TRANSFORMER, transformer.transformerId, CalculationDomain.TRANSFORMER)
+        val hasPrior = freshnessRegistry.getRecord(scope) != null
+        freshnessRegistry.startExecution(scope, hasPrior)
+
+        try {
+            val freshResult = TransformerCalculationService.calculateSingleTransformer(transformer, allCircuits)
+            transformerCache[transformer.transformerId] = sig to freshResult
+            val rev = getProjectRevision(pid)
+            try {
+                runBlocking {
+                    getRecorder(allCircuits, listOf(transformer)).recordTransformer(pid, transformer.transformerId, "PASS", rev)
+                }
+            } catch (_: Exception) { }
+            return freshResult
+        } catch (ex: Exception) {
+            try {
+                val rev = getProjectRevision(pid)
+                getRecorder(allCircuits, listOf(transformer)).recordError(scope, ExecutionErrorCode.ENGINE_RUNTIME_ERROR, ex.message, rev)
+            } catch (_: Exception) { }
+            throw ex
+        } finally {
+            freshnessRegistry.finishExecution(scope)
+        }
     }
 
     /**
@@ -361,9 +484,20 @@ object EngineeringCalculationCoordinator {
         circuits: List<CircuitEntity>,
         transformers: List<TransformerEntity>
     ): Map<String, TransformerResult> {
-        return transformers.associate { transformer ->
+        val results = transformers.associate { transformer ->
             transformer.transformerId to calculateTransformer(transformer, circuits)
         }
+        val recorder = getRecorder(circuits, transformers)
+        transformers.forEach { tx ->
+            val pid = tx.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val rev = getProjectRevision(pid)
+            try {
+                runBlocking {
+                    recorder.recordTransformer(pid, tx.transformerId, "PASS", rev)
+                }
+            } catch (_: Exception) { }
+        }
+        return results
     }
 
     /**
@@ -486,23 +620,53 @@ object EngineeringCalculationCoordinator {
 
         val cached = shortCircuitCache[circuit.id]
         if (cached != null && cached.first == sig) {
+            val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val rev = getProjectRevision(pid)
+            val status = if (cached.second.status.contains("FAIL") || cached.second.status.contains("MISSING")) "FAIL" else "PASS"
+            try {
+                runBlocking {
+                    getRecorder(allCircuits, allTransformers).recordShortCircuit(pid, circuitId, status, rev)
+                }
+            } catch (_: Exception) { }
             return cached.second
         }
 
-        val parentsMap = mutableMapOf<Int, Int>()
-        for (i in 1 until branchCircuits.size) {
-            parentsMap[branchCircuits[i].id] = branchCircuits[i - 1].id
-        }
+        val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val scope = CalculationScope(pid, CalculationEntityType.CIRCUIT, circuitId.toString(), CalculationDomain.SHORT_CIRCUIT)
+        val hasPrior = freshnessRegistry.getRecord(scope) != null
+        freshnessRegistry.startExecution(scope, hasPrior)
 
-        val fresh = ShortCircuitCalculationService.calculateSingleCircuitShortCircuit(
-            circuit = circuit,
-            ancestors = ancestors,
-            circuitParents = parentsMap,
-            sizingResults = branchSizings,
-            transformerResults = txMap
-        )
-        shortCircuitCache[circuit.id] = sig to fresh
-        return fresh
+        try {
+            val parentsMap = mutableMapOf<Int, Int>()
+            for (i in 1 until branchCircuits.size) {
+                parentsMap[branchCircuits[i].id] = branchCircuits[i - 1].id
+            }
+
+            val fresh = ShortCircuitCalculationService.calculateSingleCircuitShortCircuit(
+                circuit = circuit,
+                ancestors = ancestors,
+                circuitParents = parentsMap,
+                sizingResults = branchSizings,
+                transformerResults = txMap
+            )
+            shortCircuitCache[circuit.id] = sig to fresh
+            val rev = getProjectRevision(pid)
+            val status = if (fresh.status.contains("FAIL") || fresh.status.contains("MISSING")) "FAIL" else "PASS"
+            try {
+                runBlocking {
+                    getRecorder(allCircuits, allTransformers).recordShortCircuit(pid, circuitId, status, rev)
+                }
+            } catch (_: Exception) { }
+            return fresh
+        } catch (ex: Exception) {
+            try {
+                val rev = getProjectRevision(pid)
+                getRecorder(allCircuits, allTransformers).recordError(scope, ExecutionErrorCode.ENGINE_RUNTIME_ERROR, ex.message, rev)
+            } catch (_: Exception) { }
+            throw ex
+        } finally {
+            freshnessRegistry.finishExecution(scope)
+        }
     }
 
     /**
@@ -591,6 +755,22 @@ object EngineeringCalculationCoordinator {
                 val sig = computeShortCircuitSignature(circuit, sizing, txResult, ancestorPairs)
                 shortCircuitCache[circuit.id] = sig to fresh
                 results[circuit.id] = fresh
+            }
+        }
+
+        val txList = transformerResults.keys.map { id -> TransformerEntity(transformerId = id) }
+        val recorder = getRecorder(resolvedCircuits, txList)
+        resolvedCircuits.forEach { c ->
+            val sc = results[c.id]
+            if (sc != null) {
+                val pid = c.projectId.ifEmpty { "DEFAULT_PROJECT" }
+                val rev = getProjectRevision(pid)
+                val status = if (sc.status.contains("FAIL") || sc.status.contains("MISSING")) "FAIL" else "PASS"
+                try {
+                    runBlocking {
+                        recorder.recordShortCircuit(pid, c.id, status, rev)
+                    }
+                } catch (_: Exception) { }
             }
         }
 
@@ -726,18 +906,46 @@ object EngineeringCalculationCoordinator {
         val sig = computeProtectionSignature(circuit, sizingResult, scResult, upstreamIn, upstreamName)
         val cached = protectionCache[circuit.id]
         if (cached != null && cached.first == sig) {
+            val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val rev = getProjectRevision(pid)
+            try {
+                runBlocking {
+                    getRecorder(allCircuits, allTransformers).recordProtectionAds(pid, circuitId, cached.second.finalStatus, rev)
+                }
+            } catch (_: Exception) { }
             return cached.second
         }
 
-        val fresh = ProtectionCalculationService.evaluateProtection(
-            circuit = circuit,
-            sizingResult = sizingResult,
-            shortCircuitResult = scResult,
-            upstreamIn_A = upstreamIn,
-            upstreamName = upstreamName
-        )
-        protectionCache[circuit.id] = sig to fresh
-        return fresh
+        val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val scope = CalculationScope(pid, CalculationEntityType.CIRCUIT, circuitId.toString(), CalculationDomain.PROTECTION_ADS)
+        val hasPrior = freshnessRegistry.getRecord(scope) != null
+        freshnessRegistry.startExecution(scope, hasPrior)
+
+        try {
+            val fresh = ProtectionCalculationService.evaluateProtection(
+                circuit = circuit,
+                sizingResult = sizingResult,
+                shortCircuitResult = scResult,
+                upstreamIn_A = upstreamIn,
+                upstreamName = upstreamName
+            )
+            protectionCache[circuit.id] = sig to fresh
+            val rev = getProjectRevision(pid)
+            try {
+                runBlocking {
+                    getRecorder(allCircuits, allTransformers).recordProtectionAds(pid, circuitId, fresh.finalStatus, rev)
+                }
+            } catch (_: Exception) { }
+            return fresh
+        } catch (ex: Exception) {
+            try {
+                val rev = getProjectRevision(pid)
+                getRecorder(allCircuits, allTransformers).recordError(scope, ExecutionErrorCode.ENGINE_RUNTIME_ERROR, ex.message, rev)
+            } catch (_: Exception) { }
+            throw ex
+        } finally {
+            freshnessRegistry.finishExecution(scope)
+        }
     }
 
     /**
@@ -804,6 +1012,22 @@ object EngineeringCalculationCoordinator {
                 results[circuit.id] = fresh
             }
         }
+
+        val txList = transformerResults.keys.map { id -> TransformerEntity(transformerId = id) }
+        val recorder = getRecorder(resolvedCircuits, txList)
+        resolvedCircuits.forEach { c ->
+            val prot = results[c.id]
+            if (prot != null) {
+                val pid = c.projectId.ifEmpty { "DEFAULT_PROJECT" }
+                val rev = getProjectRevision(pid)
+                try {
+                    runBlocking {
+                        recorder.recordProtectionAds(pid, c.id, prot.finalStatus, rev)
+                    }
+                } catch (_: Exception) { }
+            }
+        }
+
         return results
     }
 
@@ -910,17 +1134,45 @@ object EngineeringCalculationCoordinator {
         val sig = computeCoordinationSignature(circuit, sizingResult, upstreamName, upstreamRating)
         val cached = coordinationCache[circuit.id]
         if (cached != null && cached.first == sig) {
+            val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val rev = getProjectRevision(pid)
+            try {
+                runBlocking {
+                    getRecorder(allCircuits, allTransformers).recordCoordination(pid, circuitId, cached.second.status, rev)
+                }
+            } catch (_: Exception) { }
             return cached.second
         }
 
-        val fresh = CoordinationCalculationService.calculateCoordination(
-            downstreamCircuit = circuit,
-            downstreamResult = sizingResult,
-            upstreamName = upstreamName,
-            upstreamRating = upstreamRating
-        )
-        coordinationCache[circuit.id] = sig to fresh
-        return fresh
+        val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val scope = CalculationScope(pid, CalculationEntityType.CIRCUIT, circuitId.toString(), CalculationDomain.COORDINATION)
+        val hasPrior = freshnessRegistry.getRecord(scope) != null
+        freshnessRegistry.startExecution(scope, hasPrior)
+
+        try {
+            val fresh = CoordinationCalculationService.calculateCoordination(
+                downstreamCircuit = circuit,
+                downstreamResult = sizingResult,
+                upstreamName = upstreamName,
+                upstreamRating = upstreamRating
+            )
+            coordinationCache[circuit.id] = sig to fresh
+            val rev = getProjectRevision(pid)
+            try {
+                runBlocking {
+                    getRecorder(allCircuits, allTransformers).recordCoordination(pid, circuitId, fresh.status, rev)
+                }
+            } catch (_: Exception) { }
+            return fresh
+        } catch (ex: Exception) {
+            try {
+                val rev = getProjectRevision(pid)
+                getRecorder(allCircuits, allTransformers).recordError(scope, ExecutionErrorCode.ENGINE_RUNTIME_ERROR, ex.message, rev)
+            } catch (_: Exception) { }
+            throw ex
+        } finally {
+            freshnessRegistry.finishExecution(scope)
+        }
     }
 
     /**
@@ -933,7 +1185,7 @@ object EngineeringCalculationCoordinator {
         transformerResults: Map<String, TransformerResult>,
         allCircuits: List<CircuitEntity> = resolvedCircuits
     ): List<CoordinationResult> {
-        return resolvedCircuits.mapNotNull { circ ->
+        val results = resolvedCircuits.mapNotNull { circ ->
             val sizingRes = sizingResults[circ.id] ?: return@mapNotNull null
             val parentId = circuitParents[circ.id]
             val upstreamName: String
@@ -974,6 +1226,21 @@ object EngineeringCalculationCoordinator {
                 fresh
             }
         }
+
+        val txList = transformerResults.keys.map { id -> TransformerEntity(transformerId = id) }
+        val recorder = getRecorder(allCircuits, txList)
+        results.forEach { coord ->
+            try {
+                val c = allCircuits.find { it.id == coord.downstreamCircuitId }
+                val pid = c?.projectId?.ifEmpty { "DEFAULT_PROJECT" } ?: "DEFAULT_PROJECT"
+                val rev = getProjectRevision(pid)
+                runBlocking {
+                    recorder.recordCoordination(pid, coord.downstreamCircuitId, coord.status, rev)
+                }
+            } catch (_: Exception) { }
+        }
+
+        return results
     }
 
     /**
