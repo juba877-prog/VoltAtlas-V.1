@@ -30,6 +30,7 @@ import com.example.data.TransformerEntity
 import com.example.data.catalog.CatalogRepository
 import com.example.engine.coordinator.EngineeringCalculationCoordinator
 import java.io.File
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -1440,5 +1441,206 @@ class DeterministicReadToolsTest {
         )
 
         assertEquals(ToolStatus.PASS, res.status)
+    }
+
+    // =========================================================================
+    // CANONICAL REQUEST SIGNATURE & CRYPTOGRAPHIC COLLISION TESTS (Section 3)
+    // =========================================================================
+
+    @Test
+    fun sameTypedRequest_sameSignatureAcrossSeparateInstances() {
+        val encoder = DefaultReadRequestSignatureEncoder()
+        val req1 = ToolRequestEnvelope(
+            requestId = "REQ-1",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CATALOG_ITEM,
+            parameters = GetCatalogItemRequest(category = "CABLE", query = "elsewedy", limit = 10)
+        )
+        val req2 = ToolRequestEnvelope(
+            requestId = "REQ-2", // different envelope requestId must not affect semantic signature
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CATALOG_ITEM,
+            parameters = GetCatalogItemRequest(category = "CABLE", query = "elsewedy", limit = 10)
+        )
+        val sig1 = encoder.signature(req1)
+        val sig2 = encoder.signature(req2)
+        assertEquals(sig1, sig2)
+    }
+
+    @Test
+    fun sameSemanticMap_differentInsertionOrder_sameSignature() {
+        val encoder = DefaultReadRequestSignatureEncoder()
+        val map1 = linkedMapOf<String, Any>("z" to "last", "a" to 100, "m" to true)
+        val map2 = linkedMapOf<String, Any>("a" to 100, "m" to true, "z" to "last")
+
+        val req1 = ToolRequestEnvelope(requestId = "R1", projectId = projectId, toolName = "custom_map", parameters = map1)
+        val req2 = ToolRequestEnvelope(requestId = "R2", projectId = projectId, toolName = "custom_map", parameters = map2)
+
+        assertEquals(encoder.signature(req1), encoder.signature(req2))
+    }
+
+    @Test
+    fun differentRequestFields_differentSignature() {
+        val encoder = DefaultReadRequestSignatureEncoder()
+        val req1 = ToolRequestEnvelope(requestId = "R1", projectId = projectId, toolName = ReadToolNames.GET_CATALOG_ITEM, parameters = GetCatalogItemRequest(category = "CABLE", limit = 10))
+        val req2 = ToolRequestEnvelope(requestId = "R2", projectId = projectId, toolName = ReadToolNames.GET_CATALOG_ITEM, parameters = GetCatalogItemRequest(category = "CABLE", limit = 20))
+        assertNotEquals(encoder.signature(req1), encoder.signature(req2))
+    }
+
+    @Test
+    fun nullAndEmptyRemainDistinctWhenSemanticallyDistinct() {
+        val encoder = DefaultReadRequestSignatureEncoder()
+        val reqNull = ToolRequestEnvelope(requestId = "R1", projectId = projectId, toolName = ReadToolNames.GET_CATALOG_ITEM, parameters = GetCatalogItemRequest(category = "CABLE", query = null))
+        val reqEmpty = ToolRequestEnvelope(requestId = "R2", projectId = projectId, toolName = ReadToolNames.GET_CATALOG_ITEM, parameters = GetCatalogItemRequest(category = "CABLE", query = ""))
+        assertNotEquals(encoder.signature(reqNull), encoder.signature(reqEmpty))
+    }
+
+    @Test
+    fun listOrderChangesSignatureWhenOrderIsSemantic() {
+        val encoder = DefaultReadRequestSignatureEncoder()
+        val req1 = ToolRequestEnvelope(requestId = "R1", projectId = projectId, toolName = "list_tool", parameters = listOf("ALPHA", "BETA"))
+        val req2 = ToolRequestEnvelope(requestId = "R2", projectId = projectId, toolName = "list_tool", parameters = listOf("BETA", "ALPHA"))
+        assertNotEquals(encoder.signature(req1), encoder.signature(req2))
+    }
+
+    @Test
+    fun numericEncoding_isLocaleIndependent() {
+        val encoder = DefaultReadRequestSignatureEncoder()
+        val req = ToolRequestEnvelope(
+            requestId = "R1",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CATALOG_ITEM,
+            parameters = GetCatalogItemRequest(category = "CABLE", ratingA = 123.456, sizeMm2 = 50.0)
+        )
+
+        val defaultLocale = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.GERMAN) // German uses comma ',' as decimal separator
+            val sigGerman = encoder.signature(req)
+
+            Locale.setDefault(Locale.FRENCH) // French uses comma ','
+            val sigFrench = encoder.signature(req)
+
+            Locale.setDefault(Locale.US)
+            val sigUS = encoder.signature(req)
+
+            assertEquals(sigUS, sigGerman)
+            assertEquals(sigUS, sigFrench)
+        } finally {
+            Locale.setDefault(defaultLocale)
+        }
+    }
+
+    @Test
+    fun signature_isStableAcrossRepeatedInvocations() {
+        val encoder = DefaultReadRequestSignatureEncoder()
+        val req = ToolRequestEnvelope(
+            requestId = "R-STABLE",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId, includeValidation = true)
+        )
+        val baselineBytes = encoder.canonicalBytes(req)
+        val baselineSig = encoder.signature(req)
+
+        for (i in 0 until 50) {
+            assertArrayEquals(baselineBytes, encoder.canonicalBytes(req))
+            assertEquals(baselineSig, encoder.signature(req))
+        }
+    }
+
+    @Test
+    fun signatureUsesVersionPrefixAndSha256Hex() {
+        val encoder = DefaultReadRequestSignatureEncoder()
+        val req = ToolRequestEnvelope(
+            requestId = "R-FMT",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId)
+        )
+        val sig = encoder.signature(req)
+        assertTrue("Signature must start with READ-V1:", sig.startsWith("READ-V1:"))
+        val hexPart = sig.removePrefix("READ-V1:")
+        assertEquals(64, hexPart.length)
+        assertTrue("Hex part must be lowercase sha-256", hexPart.matches(Regex("^[0-9a-f]{64}$")))
+    }
+
+    @Test
+    fun knownJavaHashCollision_doesNotDeduplicateDifferentRequests() {
+        val encoder = DefaultReadRequestSignatureEncoder()
+        // "FB" and "Ea" produce identical 32-bit String.hashCode() (2236) in Java
+        assertEquals("FB".hashCode(), "Ea".hashCode())
+
+        val req1 = ToolRequestEnvelope(
+            requestId = "R-COL-1",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CATALOG_ITEM,
+            parameters = GetCatalogItemRequest(category = "CABLE", query = "FB")
+        )
+        val req2 = ToolRequestEnvelope(
+            requestId = "R-COL-2",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CATALOG_ITEM,
+            parameters = GetCatalogItemRequest(category = "CABLE", query = "Ea")
+        )
+
+        // Old implementation using parameters.hashCode() produced false collision:
+        assertEquals(req1.parameters.hashCode(), req2.parameters.hashCode())
+
+        // Canonical SHA-256 encoder guarantees distinct signatures:
+        val sig1 = encoder.signature(req1)
+        val sig2 = encoder.signature(req2)
+        assertNotEquals("Distinct requests with colliding 32-bit hashCode must have distinct SHA-256 signatures", sig1, sig2)
+    }
+
+    @Test
+    fun managedInvoker_hashCollisionRequests_doNotShareTask() = runBlocking {
+        // "FB" and "Ea" collide under old 32-bit hashCode()
+        val req1 = ToolRequestEnvelope(
+            requestId = "R-TASK-COL-1",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CATALOG_ITEM,
+            parameters = GetCatalogItemRequest(category = "CABLE", query = "FB")
+        )
+        val req2 = ToolRequestEnvelope(
+            requestId = "R-TASK-COL-2",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CATALOG_ITEM,
+            parameters = GetCatalogItemRequest(category = "CABLE", query = "Ea")
+        )
+
+        val sig1 = invoker.computeCanonicalSignature(req1)
+        val sig2 = invoker.computeCanonicalSignature(req2)
+        assertNotEquals(sig1, sig2)
+
+        val res1 = invoker.executeManaged<GetCatalogItemRequest, CatalogSearchResult>(req1, taskManager)
+        val res2 = invoker.executeManaged<GetCatalogItemRequest, CatalogSearchResult>(req2, taskManager)
+
+        assertNotNull(res1)
+        assertNotNull(res2)
+    }
+
+    @Test
+    fun signatureEncodingFailure_returnsTypedError_notRawException() = runBlocking {
+        // An invoker equipped with a throwing signature encoder safely returns typed error instead of escaping
+        val throwingEncoder = object : ReadRequestSignatureEncoder {
+            override fun canonicalBytes(request: ToolRequestEnvelope<*>): ByteArray = throw IllegalStateException("Encoder internal fault")
+            override fun signature(request: ToolRequestEnvelope<*>): String = throw IllegalStateException("Encoder internal fault")
+        }
+        val safeInvoker = DeterministicReadToolInvoker(registry, throwingEncoder)
+
+        val req = ToolRequestEnvelope(
+            requestId = "R-THROW",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId)
+        )
+
+        val computedSig = safeInvoker.computeCanonicalSignature(req)
+        assertTrue(computedSig.startsWith("READ-V1:ERROR:"))
+
+        val resultEnvelope = safeInvoker.executeManaged<GetProjectContextRequest, ProjectContextResult>(req, taskManager)
+        assertEquals(ToolStatus.PASS, resultEnvelope.status)
+        assertNotNull(resultEnvelope.result)
     }
 }

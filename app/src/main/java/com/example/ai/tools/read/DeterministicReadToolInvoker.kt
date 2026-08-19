@@ -14,22 +14,28 @@ import com.example.ai.task.TaskOwner
  *
  * Guarantees:
  * 1. Type safety: Type mismatches or malformed payloads return typed INVALID_INPUT / ERROR envelopes,
- *    never throwing ClassCastException through the public boundary.
- * 2. Canonical Request Signatures: Automatically computes canonical deterministic request signatures
- *    to guard against forged or mismatched caller signatures.
+ *    never throwing ClassCastException or serialization errors through the public boundary.
+ * 2. Canonical Request Signatures: Automatically computes cryptographic canonical deterministic request signatures
+ *    using [ReadRequestSignatureEncoder] to eliminate false deduplication from 32-bit hash collisions.
  * 3. Managed Asynchronous Execution: Dispatches safely via [EngineeringTaskManager] with
  *    latest-task-wins supersession and multi-subscriber safety.
  */
 class DeterministicReadToolInvoker(
-    private val registry: DeterministicReadToolRegistry
+    private val registry: DeterministicReadToolRegistry,
+    private val signatureEncoder: ReadRequestSignatureEncoder = DefaultReadRequestSignatureEncoder()
 ) {
 
     /**
      * Computes the deterministic, canonical request signature from a strongly typed request envelope.
+     * Format: `READ-V1:<lowercase SHA-256 hex>`
      */
     fun computeCanonicalSignature(request: ToolRequestEnvelope<*>): String {
-        val payloadHash = request.parameters?.hashCode() ?: 0
-        return "READ:${request.projectId}:${request.toolName}:${request.entityType ?: ""}:${request.entityId ?: ""}:$payloadHash"
+        return try {
+            signatureEncoder.signature(request)
+        } catch (t: Throwable) {
+            // Safe fallback to prevent raw uncaught exception from escaping
+            "READ-V1:ERROR:${t.javaClass.simpleName}"
+        }
     }
 
     /**
@@ -94,6 +100,9 @@ class DeterministicReadToolInvoker(
     /**
      * Executes a tool request asynchronously through [EngineeringTaskManager] with
      * project-scoped deduplication and latest-task-wins supersession.
+     *
+     * Note: Caller-provided [requestSignature] parameter is ignored; canonical SHA-256
+     * signatures are computed internally from typed request envelopes.
      */
     suspend fun <TReq, TRes> executeManaged(
         request: ToolRequestEnvelope<TReq>,
@@ -117,7 +126,7 @@ class DeterministicReadToolInvoker(
             requestVariant = request.toolName
         )
 
-        // Always compute and enforce canonical signature internally to prevent forged signature deduplication
+        // Always compute and enforce canonical SHA-256 signature internally to prevent forged signature deduplication
         val canonicalSignature = computeCanonicalSignature(request)
 
         val handle = taskManager.submit<TRes>(
