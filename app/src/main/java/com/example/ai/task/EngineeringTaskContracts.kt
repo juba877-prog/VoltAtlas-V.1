@@ -49,10 +49,10 @@ data class EngineeringTaskKey(
  * - [CANCELLED]: Task was cancelled cooperatively or superseded by a newer task.
  * - [STALE]: Underlying inputs/dependencies mutated during or after execution.
  *
- * Reserved states (reserved for future Phase 5 proposal/mutation workflows):
- * - [WAITING_FOR_INPUT]: Interactive clarification needed.
- * - [WAITING_FOR_APPROVAL]: Proposal pending user confirmation.
- * - [APPLYING]: Mutation applying to project database.
+ * Reserved states (unreachable in Phase 4):
+ * - [WAITING_FOR_INPUT]: Reserved for future interactive conversational prompts.
+ * - [WAITING_FOR_APPROVAL]: Reserved for Phase 7 proposal/approval workflows.
+ * - [APPLYING]: Reserved for Phase 7 project database mutation execution.
  */
 enum class EngineeringTaskState {
     QUEUED,

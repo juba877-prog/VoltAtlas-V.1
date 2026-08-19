@@ -27,11 +27,16 @@ class EngineeringTaskManagerTest {
         testClock = FakeTaskClock(1000L)
     }
 
-    private fun createManager(scope: CoroutineScope, dispatcher: CoroutineDispatcher = Dispatchers.Default): EngineeringTaskManager {
+    private fun createManager(
+        scope: CoroutineScope,
+        dispatcher: CoroutineDispatcher = Dispatchers.Default,
+        idGen: () -> String = { java.util.UUID.randomUUID().toString() }
+    ): EngineeringTaskManager {
         return DefaultEngineeringTaskManager(
             coroutineScope = scope,
             clock = testClock,
-            dispatcher = dispatcher
+            dispatcher = dispatcher,
+            idGenerator = idGen
         )
     }
 
@@ -1298,6 +1303,503 @@ class EngineeringTaskManagerTest {
             assertFalse(content.contains("com.google.firebase"))
             assertFalse(content.contains("com.google.ai"))
             assertFalse(content.contains("Gemini"))
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Final Closure Audit & Targeted Verification Tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun cancelImmediatelyAfterSubmit_beforeWorkerStarts_doesNotExecuteWork() {
+        runBlocking {
+            val executionInvoked = AtomicBoolean(false)
+            val singleThreadExecutor = Executors.newSingleThreadExecutor()
+            val pauseLatch = CountDownLatch(1)
+            singleThreadExecutor.submit { pauseLatch.await() }
+            val dispatcher = singleThreadExecutor.asCoroutineDispatcher()
+            val manager = createManager(this, dispatcher = dispatcher)
+            val key = EngineeringTaskKey(projectId = "PROJ-FAST", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING)
+
+            val handle = manager.submit<String>(key, TaskOwner.VIEW_MODEL) {
+                executionInvoked.set(true)
+                ToolResultEnvelope(contractVersion = 1, requestId = "1", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-FAST", status = ToolStatus.PASS, result = "FAST", completedAt = testClock.currentTimeMillis())
+            }
+
+            // Immediately cancel while worker is held in queue
+            manager.cancel(handle.taskId)
+
+            // Release worker
+            pauseLatch.countDown()
+
+            val result = handle.awaitResult()
+            assertEquals(ToolStatus.CANCELLED, result.status)
+            assertEquals(EngineeringTaskState.CANCELLED, handle.snapshot.value.state)
+            assertFalse("Worker execution block must not run after immediate cancellation", executionInvoked.get())
+            dispatcher.close()
+            singleThreadExecutor.shutdown()
+        }
+    }
+
+    @Test
+    fun supersedeImmediatelyAfterSubmit_beforeOldWorkerStarts_doesNotPublishOldWork() {
+        runBlocking {
+            val oldInvoked = AtomicBoolean(false)
+            val singleThreadExecutor = Executors.newSingleThreadExecutor()
+            val pauseLatch = CountDownLatch(1)
+            singleThreadExecutor.submit { pauseLatch.await() }
+            val dispatcher = singleThreadExecutor.asCoroutineDispatcher()
+            val manager = createManager(this, dispatcher = dispatcher)
+            val key = EngineeringTaskKey(projectId = "PROJ-FAST", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING)
+
+            val handle1 = manager.submit<String>(key, TaskOwner.VIEW_MODEL, requestSignature = "SIG-1") {
+                oldInvoked.set(true)
+                ToolResultEnvelope(contractVersion = 1, requestId = "1", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-FAST", status = ToolStatus.PASS, result = "OLD", completedAt = testClock.currentTimeMillis())
+            }
+
+            // Immediately submit newer task while old worker is held in queue
+            val handle2 = manager.submit<String>(key, TaskOwner.VIEW_MODEL, requestSignature = "SIG-2") {
+                ToolResultEnvelope(contractVersion = 1, requestId = "2", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-FAST", status = ToolStatus.PASS, result = "NEW", completedAt = testClock.currentTimeMillis())
+            }
+
+            // Release worker queue
+            pauseLatch.countDown()
+
+            val res2 = handle2.awaitResult()
+            assertEquals("NEW", res2.result)
+            assertEquals(EngineeringTaskState.CANCELLED, handle1.snapshot.value.state)
+            assertEquals(ToolStatus.CANCELLED, handle1.awaitResult().status)
+            assertFalse("Superseded old worker block must not run", oldInvoked.get())
+            dispatcher.close()
+            singleThreadExecutor.shutdown()
+        }
+    }
+
+    @Test
+    fun ownerDisposedBeforeWorkerStarts_doesNotExecuteWork() {
+        runBlocking {
+            val invoked = AtomicBoolean(false)
+            val singleThreadExecutor = Executors.newSingleThreadExecutor()
+            val pauseLatch = CountDownLatch(1)
+            singleThreadExecutor.submit { pauseLatch.await() }
+            val dispatcher = singleThreadExecutor.asCoroutineDispatcher()
+            val manager = createManager(this, dispatcher = dispatcher)
+            val key = EngineeringTaskKey(projectId = "PROJ-FAST", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING)
+            val owner = TaskOwner.screen("TransientScreen")
+
+            val handle = manager.submit<String>(key, owner) {
+                invoked.set(true)
+                ToolResultEnvelope(contractVersion = 1, requestId = "1", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-FAST", status = ToolStatus.PASS, result = "R", completedAt = testClock.currentTimeMillis())
+            }
+
+            manager.cancelByOwner(owner)
+
+            // Release worker queue
+            pauseLatch.countDown()
+
+            val res = handle.awaitResult()
+            assertEquals(ToolStatus.CANCELLED, res.status)
+            assertFalse("Disposed owner work must not execute", invoked.get())
+            dispatcher.close()
+            singleThreadExecutor.shutdown()
+        }
+    }
+
+    @Test
+    fun launchFailure_afterRecordPublication_failsAndCleansActiveMapping() {
+        runBlocking {
+            val cancelledScope = CoroutineScope(Dispatchers.Default + Job().apply { cancel() })
+            val manager = DefaultEngineeringTaskManager(
+                coroutineScope = cancelledScope,
+                clock = testClock
+            )
+            val key = EngineeringTaskKey(projectId = "PROJ-ERR", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING)
+
+            try {
+                manager.submit<String>(key, TaskOwner.VIEW_MODEL) {
+                    ToolResultEnvelope(contractVersion = 1, requestId = "1", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-ERR", status = ToolStatus.PASS, result = "R", completedAt = testClock.currentTimeMillis())
+                }
+                fail("Submit on cancelled scope must fail")
+            } catch (ce: CancellationException) {
+                // Expected launch failure
+                assertNull("Active task mapping must be cleaned on launch failure", manager.observeActiveTask(key).value)
+            }
+        }
+    }
+
+    @Test
+    fun sharedOwnerHandle_cannotCancelOtherSubscriberByDefault() {
+        runBlocking {
+            val manager = createManager(this)
+            val key = EngineeringTaskKey(projectId = "PROJ-01", taskType = EngineeringTaskType.CALCULATE_SHORT_CIRCUIT, entityId = "SHARED-1")
+            val ownerA = TaskOwner.screen("ScreenA")
+            val ownerB = TaskOwner.screen("ScreenB")
+            val hold = CompletableDeferred<Unit>()
+
+            val handleA = manager.submit<String>(key, ownerA, requestSignature = "SIG-S") {
+                hold.await()
+                ToolResultEnvelope(contractVersion = 1, requestId = "1", toolName = "CALCULATE_SHORT_CIRCUIT", projectId = "PROJ-01", status = ToolStatus.PASS, result = "SHARED_RES", completedAt = testClock.currentTimeMillis())
+            }
+
+            val handleB = manager.submit<String>(key, ownerB, requestSignature = "SIG-S") {
+                ToolResultEnvelope(contractVersion = 1, requestId = "2", toolName = "CALCULATE_SHORT_CIRCUIT", projectId = "PROJ-01", status = ToolStatus.PASS, result = "SHARED_RES", completedAt = testClock.currentTimeMillis())
+            }
+
+            // Owner A cancels their handle
+            handleA.cancel()
+
+            // Task must remain active for Owner B
+            assertEquals(EngineeringTaskState.RUNNING, handleB.snapshot.value.state)
+            assertTrue(handleB.snapshot.value.subscribers.contains(ownerB))
+            assertFalse(handleB.snapshot.value.subscribers.contains(ownerA))
+
+            hold.complete(Unit)
+            val resB = handleB.awaitResult()
+            assertEquals("SHARED_RES", resB.result)
+            assertEquals(EngineeringTaskState.COMPLETED, handleB.snapshot.value.state)
+        }
+    }
+
+    @Test
+    fun explicitAdministrativeCancel_cancelsAllSubscribers() {
+        runBlocking {
+            val manager = createManager(this)
+            val key = EngineeringTaskKey(projectId = "PROJ-01", taskType = EngineeringTaskType.CALCULATE_SHORT_CIRCUIT, entityId = "SHARED-2")
+            val ownerA = TaskOwner.screen("ScreenA")
+            val ownerB = TaskOwner.screen("ScreenB")
+            val hold = CompletableDeferred<Unit>()
+
+            val handleA = manager.submit<String>(key, ownerA, requestSignature = "SIG-S2") {
+                hold.await()
+                ToolResultEnvelope(contractVersion = 1, requestId = "1", toolName = "CALCULATE_SHORT_CIRCUIT", projectId = "PROJ-01", status = ToolStatus.PASS, result = "SHARED_RES", completedAt = testClock.currentTimeMillis())
+            }
+
+            val handleB = manager.submit<String>(key, ownerB, requestSignature = "SIG-S2") {
+                ToolResultEnvelope(contractVersion = 1, requestId = "2", toolName = "CALCULATE_SHORT_CIRCUIT", projectId = "PROJ-01", status = ToolStatus.PASS, result = "SHARED_RES", completedAt = testClock.currentTimeMillis())
+            }
+
+            // Administrative cancellation by taskId
+            manager.cancel(handleA.taskId)
+
+            assertEquals(EngineeringTaskState.CANCELLED, handleA.snapshot.value.state)
+            assertEquals(EngineeringTaskState.CANCELLED, handleB.snapshot.value.state)
+            assertEquals(ToolStatus.CANCELLED, handleA.awaitResult().status)
+            assertEquals(ToolStatus.CANCELLED, handleB.awaitResult().status)
+            hold.complete(Unit)
+        }
+    }
+
+    @Test
+    fun cancelByLastOwner_cancelsUnderlyingTask() {
+        runBlocking {
+            val manager = createManager(this)
+            val key = EngineeringTaskKey(projectId = "PROJ-01", taskType = EngineeringTaskType.CALCULATE_SHORT_CIRCUIT, entityId = "SOLO")
+            val ownerA = TaskOwner.screen("ScreenA")
+            val hold = CompletableDeferred<Unit>()
+
+            val handleA = manager.submit<String>(key, ownerA, requestSignature = "SIG-SOLO") {
+                hold.await()
+                ToolResultEnvelope(contractVersion = 1, requestId = "1", toolName = "CALCULATE_SHORT_CIRCUIT", projectId = "PROJ-01", status = ToolStatus.PASS, result = "SOLO", completedAt = testClock.currentTimeMillis())
+            }
+
+            manager.cancelByOwner(ownerA)
+
+            assertEquals(EngineeringTaskState.CANCELLED, handleA.snapshot.value.state)
+            assertEquals(ToolStatus.CANCELLED, handleA.awaitResult().status)
+            hold.complete(Unit)
+        }
+    }
+
+    @Test
+    fun cancelByUnknownOwner_hasNoEffect() {
+        runBlocking {
+            val manager = createManager(this)
+            val key = EngineeringTaskKey(projectId = "PROJ-01", taskType = EngineeringTaskType.CALCULATE_SHORT_CIRCUIT, entityId = "SOLO2")
+            val ownerA = TaskOwner.screen("ScreenA")
+            val started = CompletableDeferred<Unit>()
+            val hold = CompletableDeferred<Unit>()
+
+            val handleA = manager.submit<String>(key, ownerA) {
+                started.complete(Unit)
+                hold.await()
+                ToolResultEnvelope(contractVersion = 1, requestId = "1", toolName = "CALCULATE_SHORT_CIRCUIT", projectId = "PROJ-01", status = ToolStatus.PASS, result = "OK", completedAt = testClock.currentTimeMillis())
+            }
+
+            started.await()
+            // Cancel with unknown owner
+            manager.cancelByOwner(TaskOwner.screen("UnknownScreen"))
+
+            assertEquals(EngineeringTaskState.RUNNING, handleA.snapshot.value.state)
+            hold.complete(Unit)
+            assertEquals("OK", handleA.awaitResult().result)
+        }
+    }
+
+    @Test
+    fun structuredError_sensitiveMessage_isSanitizedAtPublicBoundary() {
+        runBlocking {
+            val manager = createManager(this)
+            val key = EngineeringTaskKey(projectId = "PROJ-ERR", taskType = EngineeringTaskType.VALIDATE_PROJECT)
+
+            val sensitiveRawError = StructuredError(
+                errorCode = "DB_QUERY_FAILED",
+                message = "Failed executing SELECT * FROM users WHERE path = C:\\secrets\\key.pem with token bearer eyJhbGciOi...",
+                isRecoverable = false
+            )
+
+            val handle = manager.submit<String>(key, TaskOwner.VIEW_MODEL) {
+                ToolResultEnvelope(
+                    contractVersion = 1,
+                    requestId = "1",
+                    toolName = "VALIDATE_PROJECT",
+                    projectId = "PROJ-ERR",
+                    status = ToolStatus.ERROR,
+                    errors = listOf(sensitiveRawError),
+                    completedAt = testClock.currentTimeMillis()
+                )
+            }
+
+            handle.awaitResult()
+            val snap = handle.snapshot.value
+            assertEquals(EngineeringTaskState.FAILED, snap.state)
+            assertEquals("DB_QUERY_FAILED", snap.error?.errorCode)
+            assertFalse(snap.error!!.message.contains("SELECT * FROM users"))
+            assertFalse(snap.error!!.message.contains("C:\\secrets\\key.pem"))
+            assertFalse(snap.error!!.message.contains("bearer eyJhbGciOi"))
+        }
+    }
+
+    @Test
+    fun structuredError_codeAndSafeEngineeringFields_arePreserved() {
+        runBlocking {
+            val manager = createManager(this)
+            val key = EngineeringTaskKey(projectId = "PROJ-ERR", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING)
+
+            val safeError = StructuredError(
+                errorCode = "CABLE_AMPACITY_EXCEEDED",
+                message = "Calculated current 320A exceeds maximum tray ampacity 290A for cable C-101.",
+                isRecoverable = false
+            )
+
+            val handle = manager.submit<String>(key, TaskOwner.VIEW_MODEL) {
+                ToolResultEnvelope(
+                    contractVersion = 1,
+                    requestId = "1",
+                    toolName = "CALCULATE_CABLE_SIZING",
+                    projectId = "PROJ-ERR",
+                    status = ToolStatus.ERROR,
+                    errors = listOf(safeError),
+                    completedAt = testClock.currentTimeMillis()
+                )
+            }
+
+            handle.awaitResult()
+            val snap = handle.snapshot.value
+            assertEquals("CABLE_AMPACITY_EXCEEDED", snap.error?.errorCode)
+            assertEquals("Calculated current 320A exceeds maximum tray ampacity 290A for cable C-101.", snap.error?.message)
+            assertEquals(safeError, snap.error?.structuredError)
+        }
+    }
+
+    @Test
+    fun rawThrowableAndStackTrace_areNeverExposed() {
+        runBlocking {
+            val manager = createManager(this)
+            val key = EngineeringTaskKey(projectId = "PROJ-ERR", taskType = EngineeringTaskType.CALCULATE_TRANSFORMER)
+
+            val handle = manager.submit<String>(key, TaskOwner.VIEW_MODEL) {
+                throw IllegalStateException("Fatal internal engine assertion failure\n\tat com.example.internal.SecretEngine.compute(SecretEngine.kt:99)")
+            }
+
+            handle.awaitResult()
+            val snap = handle.snapshot.value
+            assertEquals(EngineeringTaskState.FAILED, snap.state)
+            assertFalse(snap.error!!.message.contains("at com.example.internal"))
+        }
+    }
+
+    @Test
+    fun terminalTask_removedFromActiveKeyImmediately() {
+        runBlocking {
+            val manager = createManager(this)
+            val key = EngineeringTaskKey(projectId = "PROJ-01", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING, entityId = "T-1")
+
+            val handle = manager.submit<String>(key, TaskOwner.VIEW_MODEL) {
+                ToolResultEnvelope(contractVersion = 1, requestId = "1", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-01", status = ToolStatus.PASS, result = "DONE", completedAt = testClock.currentTimeMillis())
+            }
+
+            handle.awaitResult()
+            assertNull("Terminal task must not occupy active tasks by key", manager.observeActiveTask(key).value)
+        }
+    }
+
+    @Test
+    fun clearCompleted_removesPerTaskObservationResources() {
+        runBlocking {
+            val manager = createManager(this)
+            val key = EngineeringTaskKey(projectId = "PROJ-01", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING, entityId = "T-2")
+
+            val handle = manager.submit<String>(key, TaskOwner.VIEW_MODEL) {
+                ToolResultEnvelope(contractVersion = 1, requestId = "1", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-01", status = ToolStatus.PASS, result = "DONE", completedAt = testClock.currentTimeMillis())
+            }
+
+            handle.awaitResult()
+            assertNotNull(manager.observeTask(handle.taskId).value)
+
+            manager.clearCompleted("PROJ-01")
+            assertNull(manager.observeTask(handle.taskId).value)
+        }
+    }
+
+    @Test
+    fun projectDeletion_cleansOnlyDeletedProjectTasks() {
+        runBlocking {
+            val manager = createManager(this)
+            val keyA = EngineeringTaskKey(projectId = "PROJ-DEL-A", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING)
+            val keyB = EngineeringTaskKey(projectId = "PROJ-DEL-B", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING)
+
+            val handleA = manager.submit<String>(keyA, TaskOwner.VIEW_MODEL) {
+                ToolResultEnvelope(contractVersion = 1, requestId = "A", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-DEL-A", status = ToolStatus.PASS, result = "A", completedAt = testClock.currentTimeMillis())
+            }
+            val handleB = manager.submit<String>(keyB, TaskOwner.VIEW_MODEL) {
+                ToolResultEnvelope(contractVersion = 1, requestId = "B", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-DEL-B", status = ToolStatus.PASS, result = "B", completedAt = testClock.currentTimeMillis())
+            }
+
+            handleA.awaitResult()
+            handleB.awaitResult()
+
+            manager.clearProjectTasks("PROJ-DEL-A")
+
+            assertEquals(0, manager.observeProjectTasks("PROJ-DEL-A").value.size)
+            assertEquals(1, manager.observeProjectTasks("PROJ-DEL-B").value.size)
+        }
+    }
+
+    @Test
+    fun managerClose_cancelsActiveTasksAndClearsObservers() {
+        runBlocking {
+            val manager = createManager(this)
+            val key = EngineeringTaskKey(projectId = "PROJ-01", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING)
+            val hold = CompletableDeferred<Unit>()
+
+            val handle = manager.submit<String>(key, TaskOwner.VIEW_MODEL) {
+                hold.await()
+                ToolResultEnvelope(contractVersion = 1, requestId = "1", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-01", status = ToolStatus.PASS, result = "DONE", completedAt = testClock.currentTimeMillis())
+            }
+
+            manager.close()
+
+            assertEquals(EngineeringTaskState.CANCELLED, handle.snapshot.value.state)
+            assertEquals(TaskCancellationReason.SHUTDOWN, handle.snapshot.value.cancellationReason)
+            hold.complete(Unit)
+        }
+    }
+
+    @Test
+    fun repeatedTransientKeys_doNotLeakActiveFlowEntries() {
+        runBlocking {
+            val manager = createManager(this)
+            for (i in 1..10) {
+                val key = EngineeringTaskKey(projectId = "PROJ-01", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING, entityId = "TRANS-$i")
+                val handle = manager.submit<String>(key, TaskOwner.VIEW_MODEL) {
+                    ToolResultEnvelope(contractVersion = 1, requestId = "$i", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-01", status = ToolStatus.PASS, result = "R", completedAt = testClock.currentTimeMillis())
+                }
+                handle.awaitResult()
+                assertNull(manager.observeActiveTask(key).value)
+            }
+        }
+    }
+
+    @Test
+    fun concurrentSubmissions_generateUniqueTaskIds() {
+        runBlocking {
+            val manager = createManager(this)
+            val ids = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+            val latch = CountDownLatch(20)
+
+            repeat(20) { idx ->
+                launch(Dispatchers.Default) {
+                    val key = EngineeringTaskKey(projectId = "PROJ-CONC", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING, entityId = "E-$idx")
+                    val handle = manager.submit<String>(key, TaskOwner.VIEW_MODEL) {
+                        ToolResultEnvelope(contractVersion = 1, requestId = "$idx", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-CONC", status = ToolStatus.PASS, result = "$idx", completedAt = testClock.currentTimeMillis())
+                    }
+                    ids.add(handle.taskId)
+                    latch.countDown()
+                }
+            }
+
+            assertTrue(latch.await(3, TimeUnit.SECONDS))
+            assertEquals(20, ids.size)
+        }
+    }
+
+    @Test
+    fun idCollision_neverOverwritesExistingTask() {
+        runBlocking {
+            val collisionId = "COLLISION-UUID"
+            val idCounter = AtomicInteger(0)
+            val manager = createManager(this, idGen = {
+                if (idCounter.getAndIncrement() < 2) collisionId else java.util.UUID.randomUUID().toString()
+            })
+
+            val key1 = EngineeringTaskKey(projectId = "PROJ-01", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING, entityId = "1")
+            val key2 = EngineeringTaskKey(projectId = "PROJ-01", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING, entityId = "2")
+
+            val handle1 = manager.submit<String>(key1, TaskOwner.VIEW_MODEL) {
+                ToolResultEnvelope(contractVersion = 1, requestId = "1", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-01", status = ToolStatus.PASS, result = "1", completedAt = testClock.currentTimeMillis())
+            }
+
+            val handle2 = manager.submit<String>(key2, TaskOwner.VIEW_MODEL) {
+                ToolResultEnvelope(contractVersion = 1, requestId = "2", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-01", status = ToolStatus.PASS, result = "2", completedAt = testClock.currentTimeMillis())
+            }
+
+            assertNotEquals("Tasks must have unique IDs despite duplicate ID generator sequence", handle1.taskId, handle2.taskId)
+            assertEquals("1", handle1.awaitResult().result)
+            assertEquals("2", handle2.awaitResult().result)
+        }
+    }
+
+    @Test
+    fun clockRegression_doesNotProduceBackwardUpdatedAt() {
+        runBlocking {
+            val manager = createManager(this)
+            val key = EngineeringTaskKey(projectId = "PROJ-01", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING)
+
+            testClock.time = 5000L
+            val handle = manager.submit<String>(key, TaskOwner.VIEW_MODEL) { reporter ->
+                testClock.time = 2000L // Clock steps backward
+                reporter(TaskProgress(0.5, "Running"))
+                ToolResultEnvelope(contractVersion = 1, requestId = "1", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-01", status = ToolStatus.PASS, result = "OK", completedAt = testClock.currentTimeMillis())
+            }
+
+            handle.awaitResult()
+            val snap = handle.snapshot.value
+            assertTrue("updatedAt (${snap.updatedAt}) must never be less than startedAt (${snap.startedAt})", snap.updatedAt >= snap.startedAt)
+            assertTrue(snap.updatedAt >= 5000L)
+        }
+    }
+
+    @Test
+    fun sameTimestamp_historyUsesTaskIdTieBreaker() {
+        runBlocking {
+            val manager = createManager(this)
+            val key1 = EngineeringTaskKey(projectId = "PROJ-TIE", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING, entityId = "B")
+            val key2 = EngineeringTaskKey(projectId = "PROJ-TIE", taskType = EngineeringTaskType.CALCULATE_CABLE_SIZING, entityId = "A")
+
+            testClock.time = 1000L
+            val handle1 = manager.submit<String>(key1, TaskOwner.VIEW_MODEL) {
+                ToolResultEnvelope(contractVersion = 1, requestId = "1", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-TIE", status = ToolStatus.PASS, result = "1", completedAt = 1000L)
+            }
+            val handle2 = manager.submit<String>(key2, TaskOwner.VIEW_MODEL) {
+                ToolResultEnvelope(contractVersion = 1, requestId = "2", toolName = "CALCULATE_CABLE_SIZING", projectId = "PROJ-TIE", status = ToolStatus.PASS, result = "2", completedAt = 1000L)
+            }
+
+            handle1.awaitResult()
+            handle2.awaitResult()
+
+            val history = manager.observeProjectTasks("PROJ-TIE").value
+            assertEquals(2, history.size)
+            assertTrue("History must be deterministically sorted", history[0].taskId < history[1].taskId)
         }
     }
 }

@@ -31,9 +31,9 @@ interface EngineeringTaskManager {
      * Submits an asynchronous engineering task with deduplication and latest-task-wins semantics.
      *
      * Semantics:
-     * 1. Deduplication: If an active task with identical [key] AND identical [requestSignature]
-     *    is already running, returns the existing active handle without launching new work.
-     * 2. Supersession: If an active task with identical [key] but different (or null) [requestSignature]
+     * 1. Deduplication: If an active task with identical [key] AND identical non-blank [requestSignature]
+     *    is already running, adds [owner] to subscribers and returns the shared active handle without launching new work.
+     * 2. Supersession: If an active task with identical [key] but different (or null/blank) [requestSignature]
      *    exists, supersedes and cancels the older task, and starts the new task.
      * 3. Late Result Rejection: If an older superseded or cancelled task finishes execution,
      *    its result is discarded and will never overwrite active or newer task state.
@@ -51,7 +51,7 @@ interface EngineeringTaskManager {
     ): EngineeringTaskHandle<T>
 
     /**
-     * Explicitly requests cancellation of a specific task by [taskId].
+     * Administratively cancels a specific task by [taskId] for all subscribers.
      */
     suspend fun cancel(
         taskId: String,
@@ -59,7 +59,18 @@ interface EngineeringTaskManager {
     )
 
     /**
+     * Cancels / detaches a specific [owner]'s subscription from a specific task by [taskId].
+     * If the specified owner is the last remaining subscriber, cancels the underlying task.
+     */
+    suspend fun cancelForOwner(
+        taskId: String,
+        owner: TaskOwner,
+        reason: TaskCancellationReason = TaskCancellationReason.USER_REQUESTED
+    )
+
+    /**
      * Cancels all active tasks belonging to a specific [owner].
+     * If other owners share subscription to any of the tasks, only detaches this owner.
      */
     suspend fun cancelByOwner(
         owner: TaskOwner,
@@ -78,4 +89,14 @@ interface EngineeringTaskManager {
      * Clears terminal task history. If [projectId] is provided, clears only for that project.
      */
     suspend fun clearCompleted(projectId: String? = null)
+
+    /**
+     * Clears all task history and active state for a specific [projectId].
+     */
+    suspend fun clearProjectTasks(projectId: String)
+
+    /**
+     * Closes the task manager, cancelling all active tasks and clearing observers.
+     */
+    suspend fun close()
 }

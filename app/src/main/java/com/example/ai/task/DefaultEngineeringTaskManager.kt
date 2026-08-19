@@ -23,8 +23,9 @@ import kotlinx.coroutines.sync.withLock
  * 5. Immutable terminal states and centralized legal state transition enforcement.
  * 6. Thread-safe progress emission serialized with task cancellation/completion.
  * 7. Late-result rejection for superseded or cancelled tasks.
- * 8. Sanitized structured error containment.
- * 9. Deterministic observer history ordering.
+ * 8. Sanitized structured error containment at public boundaries.
+ * 9. Deterministic observer history ordering with task ID tie-breaker.
+ * 10. Monotonic timestamps resilient to system clock regression.
  */
 class DefaultEngineeringTaskManager(
     private val coroutineScope: CoroutineScope,
@@ -34,6 +35,8 @@ class DefaultEngineeringTaskManager(
 ) : EngineeringTaskManager {
 
     private val mutex = Mutex()
+
+    @Volatile private var lastObservedTimestamp: Long = 0L
 
     private val tasks = ConcurrentHashMap<String, TaskRecord<*>>()
     private val activeTasksByKey = ConcurrentHashMap<EngineeringTaskKey, String>()
@@ -60,6 +63,15 @@ class DefaultEngineeringTaskManager(
         }
         val snapshot: EngineeringTaskSnapshot
             get() = flow.value
+    }
+
+    private fun getMonotonicTimestamp(): Long {
+        val raw = clock.currentTimeMillis()
+        synchronized(this) {
+            val ts = if (raw >= lastObservedTimestamp) raw else lastObservedTimestamp
+            lastObservedTimestamp = ts
+            return ts
+        }
     }
 
     override fun observeTask(taskId: String): StateFlow<EngineeringTaskSnapshot?> {
@@ -90,7 +102,10 @@ class DefaultEngineeringTaskManager(
         requestSignature: String?,
         executionBlock: suspend (progressReporter: (TaskProgress) -> Unit) -> ToolResultEnvelope<T>
     ): EngineeringTaskHandle<T> = mutex.withLock {
-        val newTaskId = idGenerator()
+        var newTaskId = idGenerator()
+        while (tasks.containsKey(newTaskId)) {
+            newTaskId = idGenerator() + "-retry"
+        }
 
         // 1. Check for existing active task for the same key
         val existingTaskId = activeTasksByKey[key]
@@ -102,10 +117,10 @@ class DefaultEngineeringTaskManager(
                     existingRecord.subscribers.add(owner)
                     val updatedSnap = existingRecord.snapshot.copy(
                         subscribers = existingRecord.subscribers.toSet(),
-                        updatedAt = clock.currentTimeMillis()
+                        updatedAt = getMonotonicTimestamp()
                     )
                     publishTaskUpdate(existingRecord, updatedSnap)
-                    return createHandle(existingRecord)
+                    return createHandle(existingRecord, owner)
                 }
 
                 // Latest-task-wins: supersede and cancel older task
@@ -114,7 +129,7 @@ class DefaultEngineeringTaskManager(
         }
 
         // 2. Instantiate new task record
-        val now = clock.currentTimeMillis()
+        val now = getMonotonicTimestamp()
         val initialSnapshot = EngineeringTaskSnapshot(
             taskId = newTaskId,
             taskKey = key,
@@ -147,45 +162,70 @@ class DefaultEngineeringTaskManager(
         publishTaskUpdate(record, initialSnapshot)
 
         // 3. Launch execution in coroutine scope
-        val job = coroutineScope.launch(dispatcher) {
-            try {
-                // Atomic transition to RUNNING under mutex
-                mutex.withLock {
-                    if (record.isSuperseded || record.snapshot.state.isTerminal) {
+        if (!coroutineScope.isActive) {
+            activeTasksByKey.remove(key)
+            val err = TaskError("SCOPE_CANCELLED", "Manager coroutine scope is cancelled")
+            transitionStateInternal(record, EngineeringTaskState.FAILED, error = err)
+            val typed = record as TaskRecord<Any?>
+            typed.deferred.complete(createErrorEnvelope(record, err))
+            throw CancellationException("Cannot submit task to cancelled manager scope")
+        }
+
+        val job: Job
+        try {
+            job = coroutineScope.launch(dispatcher) {
+                try {
+                    // Atomic transition to RUNNING under mutex
+                    val shouldExecute = mutex.withLock {
+                        if (record.isSuperseded || record.snapshot.state.isTerminal || record.subscribers.isEmpty()) {
+                            false
+                        } else {
+                            transitionStateInternal(record, EngineeringTaskState.RUNNING)
+                        }
+                    }
+                    if (!shouldExecute) {
                         return@launch
                     }
-                    transitionStateInternal(record, EngineeringTaskState.RUNNING)
-                }
 
-                ensureActive()
+                    ensureActive()
 
-                // Progress reporter strictly serialized
-                val progressReporter: (TaskProgress) -> Unit = { progress ->
-                    updateProgressInternal(record, progress)
-                }
+                    // Direct, thread-safe progress reporter
+                    val progressReporter: (TaskProgress) -> Unit = { progress ->
+                        updateProgressInternal(record, progress)
+                    }
 
-                // Execute block
-                val resultEnvelope = executionBlock(progressReporter)
+                    // Execute block
+                    val resultEnvelope = executionBlock(progressReporter)
 
-                ensureActive()
+                    ensureActive()
 
-                // Complete under mutex
-                mutex.withLock {
-                    handleExecutionSuccess(record, resultEnvelope)
-                }
-            } catch (ce: CancellationException) {
-                mutex.withLock {
-                    handleExecutionCancellation(record, ce)
-                }
-            } catch (t: Throwable) {
-                mutex.withLock {
-                    handleExecutionFailure(record, t)
+                    // Complete under mutex
+                    mutex.withLock {
+                        handleExecutionSuccess(record, resultEnvelope)
+                    }
+                } catch (ce: CancellationException) {
+                    mutex.withLock {
+                        handleExecutionCancellation(record, ce)
+                    }
+                } catch (t: Throwable) {
+                    mutex.withLock {
+                        handleExecutionFailure(record, t)
+                    }
                 }
             }
+        } catch (t: Throwable) {
+            activeTasksByKey.remove(key)
+            val err = TaskError("LAUNCH_FAILED", "Failed to launch background worker", causeType = t.javaClass.simpleName)
+            transitionStateInternal(record, EngineeringTaskState.FAILED, error = err)
+            val typed = record as TaskRecord<Any?>
+            if (!typed.deferred.isCompleted) {
+                typed.deferred.complete(createErrorEnvelope(record, err))
+            }
+            throw t
         }
 
         record.job = job
-        return createHandle(record)
+        return createHandle(record, owner)
     }
 
     override suspend fun cancel(taskId: String, reason: TaskCancellationReason): Unit = mutex.withLock {
@@ -193,6 +233,28 @@ class DefaultEngineeringTaskManager(
         if (record.snapshot.state.isTerminal) return
 
         cancelRecordInternal(record, reason)
+    }
+
+    override suspend fun cancelForOwner(
+        taskId: String,
+        owner: TaskOwner,
+        reason: TaskCancellationReason
+    ): Unit = mutex.withLock {
+        val record = tasks[taskId] ?: return
+        if (record.snapshot.state.isTerminal) return
+
+        if (record.subscribers.contains(owner)) {
+            record.subscribers.remove(owner)
+            if (record.subscribers.isEmpty()) {
+                cancelRecordInternal(record, reason)
+            } else {
+                val updatedSnap = record.snapshot.copy(
+                    subscribers = record.subscribers.toSet(),
+                    updatedAt = getMonotonicTimestamp()
+                )
+                publishTaskUpdate(record, updatedSnap)
+            }
+        }
     }
 
     override suspend fun cancelByOwner(owner: TaskOwner, reason: TaskCancellationReason): Unit = mutex.withLock {
@@ -203,7 +265,7 @@ class DefaultEngineeringTaskManager(
             } else {
                 val updatedSnap = record.snapshot.copy(
                     subscribers = record.subscribers.toSet(),
-                    updatedAt = clock.currentTimeMillis()
+                    updatedAt = getMonotonicTimestamp()
                 )
                 publishTaskUpdate(record, updatedSnap)
             }
@@ -233,6 +295,36 @@ class DefaultEngineeringTaskManager(
         }
     }
 
+    override suspend fun clearProjectTasks(projectId: String): Unit = mutex.withLock {
+        // Cancel all active tasks for project
+        tasks.values.filter { it.taskKey.projectId == projectId && it.snapshot.state.isActive }.forEach { record ->
+            cancelRecordInternal(record, TaskCancellationReason.PROJECT_DELETED)
+        }
+
+        val toRemove = tasks.values.filter { it.taskKey.projectId == projectId }.map { it.taskId }
+        toRemove.forEach { id ->
+            val record = tasks.remove(id)
+            if (record != null && activeTasksByKey[record.taskKey] == id) {
+                activeTasksByKey.remove(record.taskKey)
+                activeTaskFlows.remove(record.taskKey)?.value = null
+            }
+            taskFlows.remove(id)
+        }
+
+        projectTaskFlows.remove(projectId)?.value = emptyList()
+    }
+
+    override suspend fun close(): Unit = mutex.withLock {
+        tasks.values.filter { it.snapshot.state.isActive }.forEach { record ->
+            cancelRecordInternal(record, TaskCancellationReason.SHUTDOWN)
+        }
+        tasks.clear()
+        activeTasksByKey.clear()
+        taskFlows.clear()
+        activeTaskFlows.clear()
+        projectTaskFlows.clear()
+    }
+
     // -------------------------------------------------------------------------
     // Centralized Atomic State Transitions (Holding Mutex Required)
     // -------------------------------------------------------------------------
@@ -256,6 +348,7 @@ class DefaultEngineeringTaskManager(
             EngineeringTaskState.QUEUED -> targetState in setOf(
                 EngineeringTaskState.RUNNING,
                 EngineeringTaskState.CANCELLED,
+                EngineeringTaskState.FAILED,
                 EngineeringTaskState.STALE
             )
             EngineeringTaskState.RUNNING -> targetState in setOf(
@@ -278,7 +371,7 @@ class DefaultEngineeringTaskManager(
             return false
         }
 
-        val now = clock.currentTimeMillis()
+        val now = getMonotonicTimestamp()
         val updatedSnapshot = currentSnapshot.copy(
             state = targetState,
             progress = progress,
@@ -309,7 +402,7 @@ class DefaultEngineeringTaskManager(
             return false
         }
 
-        val now = clock.currentTimeMillis()
+        val now = getMonotonicTimestamp()
         val updatedSnapshot = currentSnapshot.copy(
             progress = progress,
             updatedAt = now
@@ -372,11 +465,15 @@ class DefaultEngineeringTaskManager(
 
         val taskError = if (targetState == EngineeringTaskState.FAILED) {
             val firstErr = envelope.errors.firstOrNull()
+            val sanitizedStructured = firstErr?.let {
+                it.copy(message = sanitizeErrorMessage(it.message))
+            }
             TaskError(
                 errorCode = firstErr?.errorCode ?: "TASK_FAILED",
-                message = firstErr?.message ?: "Task execution finished with error status ${envelope.status}",
+                message = sanitizedStructured?.message ?: "Task execution finished with error status ${envelope.status}",
                 details = emptyMap(),
-                structuredError = firstErr
+                causeType = null,
+                structuredError = sanitizedStructured
             )
         } else null
 
@@ -421,12 +518,16 @@ class DefaultEngineeringTaskManager(
     private fun sanitizeErrorMessage(rawMessage: String?): String {
         if (rawMessage.isNullOrBlank()) return "Task encountered an internal execution error."
         var safe = rawMessage
-        if (safe.contains("/") || safe.contains("\\") || safe.contains("SELECT") || safe.contains("INSERT")) {
-            safe = safe.replace(Regex("""[a-zA-Z]:\\[^\s]+"""), "[PATH]")
-                .replace(Regex("""/[^\s]+"""), "[PATH]")
-                .replace(Regex("""(?i)(SELECT|INSERT|UPDATE|DELETE)\s+.*"""), "[QUERY]")
-        }
-        return if (safe.length > 200) safe.take(200) + "..." else safe
+        // Redact file paths
+        safe = safe.replace(Regex("""[a-zA-Z]:\\[^\s\r\n]+"""), "[PATH]")
+            .replace(Regex("""/(?:[a-zA-Z0-9._-]+/)+[a-zA-Z0-9._-]+"""), "[PATH]")
+        // Redact SQL statements
+        safe = safe.replace(Regex("""(?i)\b(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|DROP\s+TABLE)\b.*"""), "[DATABASE_QUERY]")
+        // Redact secret tokens
+        safe = safe.replace(Regex("""(?i)\b(bearer\s+[a-zA-Z0-9._-]+|password\s*=\s*[^\s]+|secret\s*=\s*[^\s]+|token\s*=\s*[^\s]+)\b"""), "[REDACTED_CREDENTIAL]")
+        // Redact raw Java stack traces
+        safe = safe.replace(Regex("""(?m)^\s*at\s+[\w.]+\(.*\)"""), "")
+        return if (safe.length > 200) safe.take(200) + "..." else safe.trim()
     }
 
     private fun publishTaskUpdate(record: TaskRecord<*>, snapshot: EngineeringTaskSnapshot) {
@@ -461,7 +562,7 @@ class DefaultEngineeringTaskManager(
             .sortedWith(compareBy<EngineeringTaskSnapshot> { it.startedAt }.thenBy { it.taskId })
     }
 
-    private fun <T> createHandle(record: TaskRecord<T>): EngineeringTaskHandle<T> {
+    private fun <T> createHandle(record: TaskRecord<T>, owner: TaskOwner): EngineeringTaskHandle<T> {
         return object : EngineeringTaskHandle<T> {
             override val taskId: String = record.taskId
             override val taskKey: EngineeringTaskKey = record.taskKey
@@ -470,7 +571,7 @@ class DefaultEngineeringTaskManager(
             override suspend fun awaitResult(): ToolResultEnvelope<T> = record.deferred.await()
 
             override suspend fun cancel(reason: TaskCancellationReason) {
-                this@DefaultEngineeringTaskManager.cancel(record.taskId, reason)
+                this@DefaultEngineeringTaskManager.cancelForOwner(record.taskId, owner, reason)
             }
         }
     }
@@ -479,7 +580,7 @@ class DefaultEngineeringTaskManager(
         record: TaskRecord<*>,
         reason: TaskCancellationReason
     ): ToolResultEnvelope<T> {
-        val now = clock.currentTimeMillis()
+        val now = getMonotonicTimestamp()
         return ToolResultEnvelope(
             contractVersion = 1,
             requestId = record.taskId,
@@ -497,7 +598,7 @@ class DefaultEngineeringTaskManager(
         record: TaskRecord<*>,
         error: TaskError
     ): ToolResultEnvelope<T> {
-        val now = clock.currentTimeMillis()
+        val now = getMonotonicTimestamp()
         val structured = error.structuredError ?: StructuredError(
             errorCode = error.errorCode,
             message = error.message,
