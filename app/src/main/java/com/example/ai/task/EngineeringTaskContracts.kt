@@ -39,24 +39,41 @@ data class EngineeringTaskKey(
 
 /**
  * Authoritative lifecycle states for asynchronous engineering tasks.
+ *
+ * Operational states in Phase 4:
+ * - [QUEUED]: Task is scheduled and waiting for worker execution.
+ * - [RUNNING]: Task is actively executing on the background dispatcher.
+ * - [REVALIDATING]: Revalidation sub-stage is in progress.
+ * - [COMPLETED]: Task completed execution with valid result (PASS/WARNING/FAIL).
+ * - [FAILED]: Task execution failed with structured error or unhandled exception.
+ * - [CANCELLED]: Task was cancelled cooperatively or superseded by a newer task.
+ * - [STALE]: Underlying inputs/dependencies mutated during or after execution.
+ *
+ * Reserved states (reserved for future Phase 5 proposal/mutation workflows):
+ * - [WAITING_FOR_INPUT]: Interactive clarification needed.
+ * - [WAITING_FOR_APPROVAL]: Proposal pending user confirmation.
+ * - [APPLYING]: Mutation applying to project database.
  */
 enum class EngineeringTaskState {
     QUEUED,
     RUNNING,
-    WAITING_FOR_INPUT,
-    WAITING_FOR_APPROVAL,
-    APPLYING,
     REVALIDATING,
     COMPLETED,
     FAILED,
     CANCELLED,
-    STALE;
+    STALE,
+    WAITING_FOR_INPUT,
+    WAITING_FOR_APPROVAL,
+    APPLYING;
 
     val isTerminal: Boolean
         get() = this in setOf(COMPLETED, FAILED, CANCELLED, STALE)
 
     val isActive: Boolean
         get() = this in setOf(QUEUED, RUNNING, REVALIDATING, WAITING_FOR_INPUT, WAITING_FOR_APPROVAL, APPLYING)
+
+    val isOperationalInPhase4: Boolean
+        get() = this in setOf(QUEUED, RUNNING, REVALIDATING, COMPLETED, FAILED, CANCELLED, STALE)
 }
 
 /**
@@ -135,6 +152,7 @@ data class EngineeringTaskSnapshot(
     val startedAt: Long,
     val updatedAt: Long,
     val owner: TaskOwner,
+    val subscribers: Set<TaskOwner> = emptySet(),
     val requestSignature: String? = null,
     val supersededByTaskId: String? = null,
     val cancellationReason: TaskCancellationReason? = null,

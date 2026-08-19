@@ -17,11 +17,14 @@ import kotlinx.coroutines.sync.withLock
  *
  * Enforces:
  * 1. Strict task identity and project isolation.
- * 2. Active task deduplication based on key + request signature.
- * 3. Latest-task-wins supersession for identical task keys.
- * 4. Late-result rejection for superseded or cancelled tasks.
- * 5. Cooperative cancellation without corrupted state.
- * 6. Structured error containment and non-blocking asynchronous execution.
+ * 2. Active task deduplication based on key + canonical request signature.
+ * 3. Shared multi-owner subscription tracking with safe partial detachment.
+ * 4. Latest-task-wins supersession for identical task keys.
+ * 5. Immutable terminal states and centralized legal state transition enforcement.
+ * 6. Thread-safe progress emission serialized with task cancellation/completion.
+ * 7. Late-result rejection for superseded or cancelled tasks.
+ * 8. Sanitized structured error containment.
+ * 9. Deterministic observer history ordering.
  */
 class DefaultEngineeringTaskManager(
     private val coroutineScope: CoroutineScope,
@@ -42,15 +45,19 @@ class DefaultEngineeringTaskManager(
     private class TaskRecord<T>(
         val taskId: String,
         val taskKey: EngineeringTaskKey,
-        val owner: TaskOwner,
+        val primaryOwner: TaskOwner,
         val requestSignature: String?,
         val flow: MutableStateFlow<EngineeringTaskSnapshot>,
         val deferred: CompletableDeferred<ToolResultEnvelope<T>>,
         var job: Job? = null,
+        val subscribers: MutableSet<TaskOwner> = ConcurrentHashMap.newKeySet(),
         @Volatile var isSuperseded: Boolean = false,
         @Volatile var supersededByTaskId: String? = null,
         @Volatile var explicitCancellationReason: TaskCancellationReason? = null
     ) {
+        init {
+            subscribers.add(primaryOwner)
+        }
         val snapshot: EngineeringTaskSnapshot
             get() = flow.value
     }
@@ -90,8 +97,14 @@ class DefaultEngineeringTaskManager(
         if (existingTaskId != null) {
             val existingRecord = tasks[existingTaskId] as? TaskRecord<T>
             if (existingRecord != null && existingRecord.snapshot.state.isActive) {
-                // Deduplication: exact same key AND exact same non-null request signature
-                if (requestSignature != null && existingRecord.requestSignature == requestSignature) {
+                // Deduplication: exact same key AND non-blank identical request signature
+                if (!requestSignature.isNullOrBlank() && existingRecord.requestSignature == requestSignature) {
+                    existingRecord.subscribers.add(owner)
+                    val updatedSnap = existingRecord.snapshot.copy(
+                        subscribers = existingRecord.subscribers.toSet(),
+                        updatedAt = clock.currentTimeMillis()
+                    )
+                    publishTaskUpdate(existingRecord, updatedSnap)
                     return createHandle(existingRecord)
                 }
 
@@ -110,6 +123,7 @@ class DefaultEngineeringTaskManager(
             startedAt = now,
             updatedAt = now,
             owner = owner,
+            subscribers = setOf(owner),
             requestSignature = requestSignature,
             supersededByTaskId = null,
             cancellationReason = null,
@@ -121,7 +135,7 @@ class DefaultEngineeringTaskManager(
         val record = TaskRecord(
             taskId = newTaskId,
             taskKey = key,
-            owner = owner,
+            primaryOwner = owner,
             requestSignature = requestSignature,
             flow = flow,
             deferred = deferred
@@ -135,37 +149,27 @@ class DefaultEngineeringTaskManager(
         // 3. Launch execution in coroutine scope
         val job = coroutineScope.launch(dispatcher) {
             try {
-                // Transition to RUNNING
+                // Atomic transition to RUNNING under mutex
                 mutex.withLock {
                     if (record.isSuperseded || record.snapshot.state.isTerminal) {
                         return@launch
                     }
-                    val runningSnapshot = record.snapshot.copy(
-                        state = EngineeringTaskState.RUNNING,
-                        updatedAt = clock.currentTimeMillis()
-                    )
-                    publishTaskUpdate(record, runningSnapshot)
+                    transitionStateInternal(record, EngineeringTaskState.RUNNING)
                 }
 
                 ensureActive()
 
-                // Progress callback
+                // Progress reporter strictly serialized
                 val progressReporter: (TaskProgress) -> Unit = { progress ->
-                    if (!record.snapshot.state.isTerminal && !record.isSuperseded) {
-                        val progSnapshot = record.snapshot.copy(
-                            progress = progress,
-                            updatedAt = clock.currentTimeMillis()
-                        )
-                        publishTaskUpdate(record, progSnapshot)
-                    }
+                    updateProgressInternal(record, progress)
                 }
 
-                // Execute user block
+                // Execute block
                 val resultEnvelope = executionBlock(progressReporter)
 
                 ensureActive()
 
-                // Complete under lock
+                // Complete under mutex
                 mutex.withLock {
                     handleExecutionSuccess(record, resultEnvelope)
                 }
@@ -188,30 +192,21 @@ class DefaultEngineeringTaskManager(
         val record = tasks[taskId] ?: return
         if (record.snapshot.state.isTerminal) return
 
-        record.explicitCancellationReason = reason
-        record.job?.cancel(CancellationException("Task cancelled: $reason"))
-
-        val now = clock.currentTimeMillis()
-        val cancelledSnapshot = record.snapshot.copy(
-            state = EngineeringTaskState.CANCELLED,
-            cancellationReason = reason,
-            updatedAt = now
-        )
-        if (activeTasksByKey[record.taskKey] == record.taskId) {
-            activeTasksByKey.remove(record.taskKey)
-        }
-        publishTaskUpdate(record, cancelledSnapshot)
-
-        @Suppress("UNCHECKED_CAST")
-        val typedRecord = record as TaskRecord<Any?>
-        if (!typedRecord.deferred.isCompleted) {
-            typedRecord.deferred.complete(createCancelledEnvelope(record, reason))
-        }
+        cancelRecordInternal(record, reason)
     }
 
     override suspend fun cancelByOwner(owner: TaskOwner, reason: TaskCancellationReason): Unit = mutex.withLock {
-        tasks.values.filter { it.owner == owner && it.snapshot.state.isActive }.forEach { record ->
-            cancelRecordInternal(record, reason)
+        tasks.values.filter { it.subscribers.contains(owner) && it.snapshot.state.isActive }.forEach { record ->
+            record.subscribers.remove(owner)
+            if (record.subscribers.isEmpty()) {
+                cancelRecordInternal(record, reason)
+            } else {
+                val updatedSnap = record.snapshot.copy(
+                    subscribers = record.subscribers.toSet(),
+                    updatedAt = clock.currentTimeMillis()
+                )
+                publishTaskUpdate(record, updatedSnap)
+            }
         }
     }
 
@@ -239,8 +234,89 @@ class DefaultEngineeringTaskManager(
     }
 
     // -------------------------------------------------------------------------
-    // Private Internal Helpers (Must be invoked while holding [mutex] when mutating)
+    // Centralized Atomic State Transitions (Holding Mutex Required)
     // -------------------------------------------------------------------------
+
+    private fun transitionStateInternal(
+        record: TaskRecord<*>,
+        targetState: EngineeringTaskState,
+        error: TaskError? = null,
+        progress: TaskProgress? = record.snapshot.progress,
+        cancellationReason: TaskCancellationReason? = null,
+        supersededByTaskId: String? = null
+    ): Boolean {
+        val currentSnapshot = record.snapshot
+        val currentState = currentSnapshot.state
+
+        if (currentState.isTerminal) {
+            return false
+        }
+
+        val isLegal = when (currentState) {
+            EngineeringTaskState.QUEUED -> targetState in setOf(
+                EngineeringTaskState.RUNNING,
+                EngineeringTaskState.CANCELLED,
+                EngineeringTaskState.STALE
+            )
+            EngineeringTaskState.RUNNING -> targetState in setOf(
+                EngineeringTaskState.REVALIDATING,
+                EngineeringTaskState.COMPLETED,
+                EngineeringTaskState.FAILED,
+                EngineeringTaskState.CANCELLED,
+                EngineeringTaskState.STALE
+            )
+            EngineeringTaskState.REVALIDATING -> targetState in setOf(
+                EngineeringTaskState.COMPLETED,
+                EngineeringTaskState.FAILED,
+                EngineeringTaskState.CANCELLED,
+                EngineeringTaskState.STALE
+            )
+            else -> false
+        }
+
+        if (!isLegal) {
+            return false
+        }
+
+        val now = clock.currentTimeMillis()
+        val updatedSnapshot = currentSnapshot.copy(
+            state = targetState,
+            progress = progress,
+            updatedAt = now,
+            error = error ?: currentSnapshot.error,
+            cancellationReason = cancellationReason ?: currentSnapshot.cancellationReason,
+            supersededByTaskId = supersededByTaskId ?: currentSnapshot.supersededByTaskId,
+            subscribers = record.subscribers.toSet()
+        )
+
+        if (targetState.isTerminal && activeTasksByKey[record.taskKey] == record.taskId) {
+            activeTasksByKey.remove(record.taskKey)
+        }
+
+        publishTaskUpdate(record, updatedSnapshot)
+        return true
+    }
+
+    private fun updateProgressInternal(
+        record: TaskRecord<*>,
+        progress: TaskProgress
+    ): Boolean {
+        val currentSnapshot = record.snapshot
+        if (currentSnapshot.state.isTerminal || record.isSuperseded) {
+            return false
+        }
+        if (currentSnapshot.state != EngineeringTaskState.RUNNING && currentSnapshot.state != EngineeringTaskState.REVALIDATING) {
+            return false
+        }
+
+        val now = clock.currentTimeMillis()
+        val updatedSnapshot = currentSnapshot.copy(
+            progress = progress,
+            updatedAt = now
+        )
+        publishTaskUpdate(record, updatedSnapshot)
+        return true
+    }
 
     private fun supersedeRecordInternal(record: TaskRecord<*>, supersedingTaskId: String) {
         record.isSuperseded = true
@@ -248,14 +324,12 @@ class DefaultEngineeringTaskManager(
         record.explicitCancellationReason = TaskCancellationReason.SUPERSEDED_BY_NEWER_TASK
         record.job?.cancel(CancellationException("Superseded by $supersedingTaskId"))
 
-        val now = clock.currentTimeMillis()
-        val supersededSnapshot = record.snapshot.copy(
-            state = EngineeringTaskState.CANCELLED,
-            supersededByTaskId = supersedingTaskId,
+        transitionStateInternal(
+            record = record,
+            targetState = EngineeringTaskState.CANCELLED,
             cancellationReason = TaskCancellationReason.SUPERSEDED_BY_NEWER_TASK,
-            updatedAt = now
+            supersededByTaskId = supersedingTaskId
         )
-        publishTaskUpdate(record, supersededSnapshot)
 
         @Suppress("UNCHECKED_CAST")
         val typed = record as TaskRecord<Any?>
@@ -265,21 +339,14 @@ class DefaultEngineeringTaskManager(
     }
 
     private fun cancelRecordInternal(record: TaskRecord<*>, reason: TaskCancellationReason) {
-        if (record.snapshot.state.isTerminal) return
-
         record.explicitCancellationReason = reason
         record.job?.cancel(CancellationException("Task cancelled: $reason"))
 
-        val now = clock.currentTimeMillis()
-        val cancelledSnapshot = record.snapshot.copy(
-            state = EngineeringTaskState.CANCELLED,
-            cancellationReason = reason,
-            updatedAt = now
+        transitionStateInternal(
+            record = record,
+            targetState = EngineeringTaskState.CANCELLED,
+            cancellationReason = reason
         )
-        if (activeTasksByKey[record.taskKey] == record.taskId) {
-            activeTasksByKey.remove(record.taskKey)
-        }
-        publishTaskUpdate(record, cancelledSnapshot)
 
         @Suppress("UNCHECKED_CAST")
         val typed = record as TaskRecord<Any?>
@@ -289,11 +356,7 @@ class DefaultEngineeringTaskManager(
     }
 
     private fun <T> handleExecutionSuccess(record: TaskRecord<T>, envelope: ToolResultEnvelope<T>) {
-        // Late result rejection: if superseded or already cancelled, discard output
         if (record.isSuperseded || record.snapshot.state.isTerminal) {
-            if (!record.deferred.isCompleted) {
-                record.deferred.complete(envelope)
-            }
             return
         }
 
@@ -317,17 +380,7 @@ class DefaultEngineeringTaskManager(
             )
         } else null
 
-        val now = clock.currentTimeMillis()
-        val finalSnapshot = record.snapshot.copy(
-            state = targetState,
-            updatedAt = now,
-            error = taskError
-        )
-
-        if (activeTasksByKey[record.taskKey] == record.taskId) {
-            activeTasksByKey.remove(record.taskKey)
-        }
-        publishTaskUpdate(record, finalSnapshot)
+        transitionStateInternal(record, targetState, error = taskError)
 
         if (!record.deferred.isCompleted) {
             record.deferred.complete(envelope)
@@ -336,17 +389,7 @@ class DefaultEngineeringTaskManager(
 
     private fun <T> handleExecutionCancellation(record: TaskRecord<T>, ce: CancellationException) {
         val reason = record.explicitCancellationReason ?: TaskCancellationReason.USER_REQUESTED
-        val now = clock.currentTimeMillis()
-        val finalSnapshot = record.snapshot.copy(
-            state = EngineeringTaskState.CANCELLED,
-            cancellationReason = reason,
-            updatedAt = now
-        )
-
-        if (activeTasksByKey[record.taskKey] == record.taskId) {
-            activeTasksByKey.remove(record.taskKey)
-        }
-        publishTaskUpdate(record, finalSnapshot)
+        transitionStateInternal(record, EngineeringTaskState.CANCELLED, cancellationReason = reason)
 
         if (!record.deferred.isCompleted) {
             record.deferred.complete(createCancelledEnvelope(record, reason))
@@ -356,32 +399,34 @@ class DefaultEngineeringTaskManager(
     private fun <T> handleExecutionFailure(record: TaskRecord<T>, t: Throwable) {
         if (record.isSuperseded || record.snapshot.state.isTerminal) return
 
-        val now = clock.currentTimeMillis()
+        val safeMsg = sanitizeErrorMessage(t.message)
         val error = TaskError(
-            errorCode = "UNHANDLED_EXCEPTION",
-            message = t.message ?: "Task threw unexpected exception",
-            causeType = t.javaClass.name,
+            errorCode = "TASK_EXECUTION_ERROR",
+            message = safeMsg,
+            causeType = t.javaClass.simpleName,
             structuredError = StructuredError(
-                errorCode = "UNHANDLED_EXCEPTION",
-                message = t.message ?: "Task threw unexpected exception",
+                errorCode = "TASK_EXECUTION_ERROR",
+                message = safeMsg,
                 isRecoverable = false
             )
         )
 
-        val finalSnapshot = record.snapshot.copy(
-            state = EngineeringTaskState.FAILED,
-            error = error,
-            updatedAt = now
-        )
-
-        if (activeTasksByKey[record.taskKey] == record.taskId) {
-            activeTasksByKey.remove(record.taskKey)
-        }
-        publishTaskUpdate(record, finalSnapshot)
+        transitionStateInternal(record, EngineeringTaskState.FAILED, error = error)
 
         if (!record.deferred.isCompleted) {
             record.deferred.complete(createErrorEnvelope(record, error))
         }
+    }
+
+    private fun sanitizeErrorMessage(rawMessage: String?): String {
+        if (rawMessage.isNullOrBlank()) return "Task encountered an internal execution error."
+        var safe = rawMessage
+        if (safe.contains("/") || safe.contains("\\") || safe.contains("SELECT") || safe.contains("INSERT")) {
+            safe = safe.replace(Regex("""[a-zA-Z]:\\[^\s]+"""), "[PATH]")
+                .replace(Regex("""/[^\s]+"""), "[PATH]")
+                .replace(Regex("""(?i)(SELECT|INSERT|UPDATE|DELETE)\s+.*"""), "[QUERY]")
+        }
+        return if (safe.length > 200) safe.take(200) + "..." else safe
     }
 
     private fun publishTaskUpdate(record: TaskRecord<*>, snapshot: EngineeringTaskSnapshot) {
@@ -410,7 +455,10 @@ class DefaultEngineeringTaskManager(
     }
 
     private fun getProjectSnapshots(projectId: String): List<EngineeringTaskSnapshot> {
-        return tasks.values.filter { it.taskKey.projectId == projectId }.map { it.snapshot }
+        return tasks.values
+            .filter { it.taskKey.projectId == projectId }
+            .map { it.snapshot }
+            .sortedWith(compareBy<EngineeringTaskSnapshot> { it.startedAt }.thenBy { it.taskId })
     }
 
     private fun <T> createHandle(record: TaskRecord<T>): EngineeringTaskHandle<T> {
@@ -419,9 +467,7 @@ class DefaultEngineeringTaskManager(
             override val taskKey: EngineeringTaskKey = record.taskKey
             override val snapshot: StateFlow<EngineeringTaskSnapshot> = record.flow.asStateFlow()
 
-            override suspend fun awaitResult(): ToolResultEnvelope<T> {
-                return record.deferred.await()
-            }
+            override suspend fun awaitResult(): ToolResultEnvelope<T> = record.deferred.await()
 
             override suspend fun cancel(reason: TaskCancellationReason) {
                 this@DefaultEngineeringTaskManager.cancel(record.taskId, reason)
