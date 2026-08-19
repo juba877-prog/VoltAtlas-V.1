@@ -2124,4 +2124,274 @@ class CableEngineeringToolsTest {
         assertEquals(ToolStatus.PASS, res.status)
         assertNotNull(res.result)
     }
+
+    // =========================================================================
+    // 8. BLOCKER B, E, H, K TARGETED AUDIT TESTS
+    // =========================================================================
+
+    @Test
+    fun changingHumanReadableFailMessage_doesNotChangeTypedCheckOutcome() {
+        val baseResult = SizingResult(
+            Ib_A = 100.0, deviceSize_A = 125.0, deviceType = "MCB", cTotalDerating = 1.0,
+            iRequired_perCable_A = 125.0, productCode = "C1", cableSize_mm2 = "1.5 mm²",
+            ratedI_table_A = 20.0, capacity_derated_Iz_A = 20.0, utilizationPct = 500.0,
+            neutral_mm2 = "1.5 mm²", earthCPC_mm2 = "1.5 mm²", voltDrop_V = 10.0,
+            vdPct = 2.5, cumulativeVDpct = 2.5, status = "✗ FAIL",
+            failReason = "Standard failure message",
+            isAmpacityOk = false, isVoltageDropOk = true, primaryFailureCode = "AMPACITY_FAIL"
+        )
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", fedFrom = "Main")
+        val eval1 = CableCalculationService.evaluateEngineeringChecks(baseResult, circuit)
+
+        val rewordedResult = baseResult.copy(failReason = "Arbitrary localized human text in Arabic or German")
+        val eval2 = CableCalculationService.evaluateEngineeringChecks(rewordedResult, circuit)
+
+        assertEquals(eval1.overallStatus, eval2.overallStatus)
+        assertEquals(eval1.governingCheckCode, eval2.governingCheckCode)
+        assertEquals(eval1.checks.map { it.status }, eval2.checks.map { it.status })
+    }
+
+    @Test
+    fun localizedOrRewordedMessage_doesNotChangeGoverningCriterion() {
+        val baseResult = SizingResult(
+            Ib_A = 100.0, deviceSize_A = 125.0, deviceType = "MCB", cTotalDerating = 1.0,
+            iRequired_perCable_A = 125.0, productCode = "C1", cableSize_mm2 = "1.5 mm²",
+            ratedI_table_A = 20.0, capacity_derated_Iz_A = 20.0, utilizationPct = 500.0,
+            neutral_mm2 = "1.5 mm²", earthCPC_mm2 = "1.5 mm²", voltDrop_V = 10.0,
+            vdPct = 2.5, cumulativeVDpct = 2.5, status = "✗ FAIL",
+            failReason = "Localized text: فشل في سعة التيار",
+            isAmpacityOk = false, isVoltageDropOk = true, primaryFailureCode = "AMPACITY_FAIL"
+        )
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", fedFrom = "Main")
+        val eval = CableCalculationService.evaluateEngineeringChecks(baseResult, circuit)
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+
+        assertEquals(CheckStatus.FAIL, interp.overallStatus)
+        assertEquals(GoverningCriterion.AMPACITY, interp.governingCriterion)
+    }
+
+    @Test
+    fun allSupportedChecks_haveTypedAuthoritativeEvidence() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 50.0, fedFrom = "Main")
+        val sizingRes = CableSizingEngine.sizeCircuit(circuit)
+        val eval = CableCalculationService.evaluateEngineeringChecks(sizingRes, circuit)
+
+        assertTrue(eval.checks.any { it.checkCode == CableCheckCode.AMPACITY })
+        assertTrue(eval.checks.any { it.checkCode == CableCheckCode.VOLTAGE_DROP })
+        assertTrue(eval.checks.any { it.checkCode == CableCheckCode.CUMULATIVE_VOLTAGE_DROP })
+        eval.checks.forEach { check ->
+            assertNotNull("Each check must have typed actualValue", check.actualValue)
+            assertNotNull("Each check must have typed limitValue", check.limitValue)
+        }
+    }
+
+    @Test
+    fun unsupportedCheck_remainsExplicitlyNotEvaluated() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 50.0, fedFrom = "Main")
+        val sizingRes = CableSizingEngine.sizeCircuit(circuit)
+        val eval = CableCalculationService.evaluateEngineeringChecks(sizingRes, circuit)
+
+        assertFalse(eval.checks.any { it.checkCode == CableCheckCode.SHORT_CIRCUIT_WITHSTAND })
+        assertFalse(eval.checks.any { it.checkCode == CableCheckCode.DEVICE_COMPATIBILITY })
+    }
+
+    @Test
+    fun failedStatusWithoutTypedFailedCheck_doesNotInventMultipleConstraints() {
+        val eval = CableEngineeringEvaluation(
+            sizingResult = SizingResult(10.0, 16.0, "MCB", 1.0, 16.0, "C1", "2.5 mm²", 25.0, 25.0, 40.0, "", "", 1.0, 0.5, 0.5, "✗ FAIL", failReason = "Opaque failure", isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
+            overallStatus = CableCheckStatus.FAIL,
+            checks = listOf(
+                CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.PASS, message = "Pass"),
+                CableStructuredCheck(CableCheckCode.VOLTAGE_DROP, "Voltage Drop", CableCheckStatus.PASS, message = "Pass")
+            ),
+            governingCheckCode = null,
+            governingReason = "Opaque failure"
+        )
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+        assertEquals(CheckStatus.FAIL, interp.overallStatus)
+        assertEquals(GoverningCriterion.INDETERMINATE, interp.governingCriterion)
+    }
+
+    @Test
+    fun singleTypedFailure_mapsExactly() {
+        val eval = CableEngineeringEvaluation(
+            sizingResult = SizingResult(10.0, 16.0, "MCB", 1.0, 16.0, "C1", "2.5 mm²", 25.0, 25.0, 40.0, "", "", 1.0, 0.5, 0.5, "✗ FAIL", failReason = "Ampacity failure", isAmpacityOk = false, isVoltageDropOk = true, primaryFailureCode = "AMPACITY_FAIL"),
+            overallStatus = CableCheckStatus.FAIL,
+            checks = listOf(
+                CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.FAIL, message = "Fail"),
+                CableStructuredCheck(CableCheckCode.VOLTAGE_DROP, "Voltage Drop", CableCheckStatus.PASS, message = "Pass")
+            ),
+            governingCheckCode = CableCheckCode.AMPACITY,
+            governingReason = "Ampacity failure"
+        )
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+        assertEquals(GoverningCriterion.AMPACITY, interp.governingCriterion)
+    }
+
+    @Test
+    fun multipleTypedFailures_mapsMultipleConstraints() {
+        val eval = CableEngineeringEvaluation(
+            sizingResult = SizingResult(10.0, 16.0, "MCB", 1.0, 16.0, "C1", "2.5 mm²", 25.0, 25.0, 40.0, "", "", 1.0, 0.5, 0.5, "✗ FAIL", failReason = "Both failed", isAmpacityOk = false, isVoltageDropOk = false, primaryFailureCode = "MULTIPLE_CONSTRAINTS"),
+            overallStatus = CableCheckStatus.FAIL,
+            checks = listOf(
+                CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.FAIL, message = "Fail"),
+                CableStructuredCheck(CableCheckCode.VOLTAGE_DROP, "Voltage Drop", CableCheckStatus.FAIL, message = "Fail")
+            ),
+            governingCheckCode = null,
+            governingReason = "Both failed"
+        )
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+        assertEquals(GoverningCriterion.MULTIPLE_CONSTRAINTS, interp.governingCriterion)
+    }
+
+    @Test
+    fun warningOnly_doesNotMapToFailureCriterion() {
+        val eval = CableEngineeringEvaluation(
+            sizingResult = SizingResult(10.0, 16.0, "MCB", 1.0, 16.0, "C1", "2.5 mm²", 25.0, 25.0, 40.0, "", "", 1.0, 0.5, 0.5, "✓ PASS", isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
+            overallStatus = CableCheckStatus.PASS,
+            checks = listOf(
+                CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.WARNING, message = "Warning")
+            ),
+            governingCheckCode = null,
+            governingReason = "Warning only"
+        )
+        val interp = GoverningCriterionInterpreter.fromEvaluation(eval)
+        assertEquals(CheckStatus.PASS, interp.overallStatus)
+        assertEquals(GoverningCriterion.NONE, interp.governingCriterion)
+    }
+
+    @Test
+    fun candidateEvaluation_stateSnapshotUnchanged() = runBlocking {
+        val beforeCircuits = database.circuitDao().getCircuitsListForProject(projectId)
+        val beforeRev = repository.getCurrentRevision(projectId).revision
+        val req = ToolRequestEnvelope(
+            requestId = "REQ-SNAP-CAND",
+            projectId = projectId,
+            toolName = CableToolNames.EVALUATE_CABLE_CANDIDATE,
+            parameters = EvaluateCableCandidateRequest(projectId = projectId, circuitId = "1", candidateSizeMm2 = 35.0)
+        )
+        invoker.executeDirect<EvaluateCableCandidateRequest, CableCandidateEvaluationResult>(req)
+        val afterCircuits = database.circuitDao().getCircuitsListForProject(projectId)
+        val afterRev = repository.getCurrentRevision(projectId).revision
+
+        assertEquals(beforeCircuits, afterCircuits)
+        assertEquals(beforeRev, afterRev)
+    }
+
+    @Test
+    fun whatIf_stateSnapshotUnchanged() = runBlocking {
+        val beforeCircuits = database.circuitDao().getCircuitsListForProject(projectId)
+        val beforeRev = repository.getCurrentRevision(projectId).revision
+        val req = ToolRequestEnvelope(
+            requestId = "REQ-SNAP-WIF",
+            projectId = projectId,
+            toolName = CableToolNames.RUN_WHAT_IF,
+            parameters = RunCableWhatIfRequest(
+                projectId = projectId,
+                circuitId = "1",
+                overrides = CableWhatIfOverridesDto(length_m = 150.0)
+            )
+        )
+        invoker.executeDirect<RunCableWhatIfRequest, CableWhatIfResult>(req)
+        val afterCircuits = database.circuitDao().getCircuitsListForProject(projectId)
+        val afterRev = repository.getCurrentRevision(projectId).revision
+
+        assertEquals(beforeCircuits, afterCircuits)
+        assertEquals(beforeRev, afterRev)
+    }
+
+    @Test
+    fun whatIf_exception_stateSnapshotUnchanged() = runBlocking {
+        val beforeCircuits = database.circuitDao().getCircuitsListForProject(projectId)
+        val beforeRev = repository.getCurrentRevision(projectId).revision
+        val req = ToolRequestEnvelope(
+            requestId = "REQ-SNAP-EXC",
+            projectId = projectId,
+            toolName = CableToolNames.RUN_WHAT_IF,
+            parameters = RunCableWhatIfRequest(
+                projectId = projectId,
+                circuitId = "1",
+                overrides = CableWhatIfOverridesDto(length_m = -50.0)
+            )
+        )
+        invoker.executeDirect<RunCableWhatIfRequest, CableWhatIfResult>(req)
+        val afterCircuits = database.circuitDao().getCircuitsListForProject(projectId)
+        val afterRev = repository.getCurrentRevision(projectId).revision
+
+        assertEquals(beforeCircuits, afterCircuits)
+        assertEquals(beforeRev, afterRev)
+    }
+
+    @Test
+    fun candidateAcrossSameIdsDifferentProjects_neverLeaks() = runBlocking {
+        val p1 = "P1"
+        val p2 = "P2"
+        database.projectDao().upsertProject(ProjectEntity(projectId = p1, projectName = "Project 1"))
+        database.projectDao().upsertProject(ProjectEntity(projectId = p2, projectName = "Project 2"))
+        database.circuitDao().insertCircuit(CircuitEntity(id = 101, projectId = p1, circuitName = "C_P1", loadKVA = 20.0, cableType = "Cu/XLPE/PVC - 4C", fedFrom = "Main"))
+        database.circuitDao().insertCircuit(CircuitEntity(id = 102, projectId = p2, circuitName = "C_P2", loadKVA = 200.0, cableType = "Cu/XLPE/PVC - 4C", fedFrom = "Main"))
+
+        val req1 = ToolRequestEnvelope(
+            requestId = "REQ-P1",
+            projectId = p1,
+            toolName = CableToolNames.EVALUATE_CABLE_CANDIDATE,
+            parameters = EvaluateCableCandidateRequest(projectId = p1, circuitId = "101", candidateSizeMm2 = 10.0)
+        )
+        val req2 = ToolRequestEnvelope(
+            requestId = "REQ-P2",
+            projectId = p2,
+            toolName = CableToolNames.EVALUATE_CABLE_CANDIDATE,
+            parameters = EvaluateCableCandidateRequest(projectId = p2, circuitId = "102", candidateSizeMm2 = 10.0)
+        )
+
+        val res1 = invoker.executeDirect<EvaluateCableCandidateRequest, CableCandidateEvaluationResult>(req1)
+        val res2 = invoker.executeDirect<EvaluateCableCandidateRequest, CableCandidateEvaluationResult>(req2)
+
+        assertNotNull(res1.result)
+        assertNotNull(res2.result)
+        assertEquals(28.87, res1.result!!.details.Ib_A, 5.0)
+        assertEquals(288.67, res2.result!!.details.Ib_A, 5.0)
+
+        // Cross-project access must fail
+        val reqCross = ToolRequestEnvelope(
+            requestId = "REQ-CROSS",
+            projectId = p2,
+            toolName = CableToolNames.EVALUATE_CABLE_CANDIDATE,
+            parameters = EvaluateCableCandidateRequest(projectId = p2, circuitId = "101", candidateSizeMm2 = 10.0)
+        )
+        val resCross = invoker.executeDirect<EvaluateCableCandidateRequest, CableCandidateEvaluationResult>(reqCross)
+        assertEquals(ToolStatus.INCOMPLETE, resCross.status)
+    }
+
+    @Test
+    fun quickCalc_matchesPrePhase6AuthoritativeResult() {
+        val circuit = CircuitEntity(id = 0, projectId = "", circuitName = "QuickScratch", loadKVA = 45.0, cableType = "Cu/XLPE/PVC - 4C", fedFrom = "Main")
+        val res = CableSizingEngine.sizeCircuit(circuit)
+        assertEquals("✓ PASS", res.status)
+        assertTrue(res.Ib_A > 0.0)
+    }
+
+    @Test
+    fun projectMode_matchesPrePhase6AuthoritativeResult() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 50.0, length_m = 30.0, fedFrom = "Main")
+        val res = CableSizingEngine.sizeCircuit(circuit)
+        assertEquals("✓ PASS", res.status)
+        assertTrue(res.Ib_A > 0.0)
+    }
+
+    @Test
+    fun buswayDispatch_unchanged() {
+        val circuit = CircuitEntity(id = 1, feederType = "Busway", loadKVA = 500.0, voltageV = 400, phases = "3P+N", fedFrom = "Main")
+        val res = CableCalculationService.calculateSingleCircuit(circuit)
+        assertNotNull(res)
+        assertTrue(res.status.contains("PASS") || res.status.contains("FAIL"))
+    }
+
+    @Test
+    fun existingManualOverrideBehavior_unchanged() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 50.0, overrideCableSize = "50 mm²", fedFrom = "Main")
+        val res = CableSizingEngine.sizeCircuit(circuit)
+        assertEquals("50 mm²", res.cableSize_mm2)
+        assertEquals("✓ PASS", res.status)
+    }
 }

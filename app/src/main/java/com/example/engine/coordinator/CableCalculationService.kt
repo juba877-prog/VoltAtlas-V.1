@@ -20,7 +20,8 @@ enum class CableCheckCode {
     CATALOG_AVAILABILITY,
     INSTALLATION_DERATING,
     MANUAL_OVERRIDE,
-    INCOMPLETE_INPUT
+    INCOMPLETE_INPUT,
+    INDETERMINATE
 }
 
 enum class CableCheckStatus {
@@ -100,7 +101,10 @@ object CableCalculationService {
         return if (fedLower == "transformer" && !txExists) {
             sizingRes.copy(
                 status = "✗ FAIL",
-                failReason = "Missing source transformer '${normalized.transformerId}' in this project."
+                failReason = "Missing source transformer '${normalized.transformerId}' in this project.",
+                isAmpacityOk = false,
+                isVoltageDropOk = false,
+                primaryFailureCode = "INCOMPLETE_INPUT"
             )
         } else {
             sizingRes
@@ -150,27 +154,47 @@ object CableCalculationService {
             !circuit.overrideCableSize.equals("AUTO", ignoreCase = true)
         val selectionSource = if (isManual) "MANUAL_OVERRIDE" else "AUTO"
 
-        val isEnginePass = result.status.contains("PASS", ignoreCase = true) && result.failReason.isBlank()
+        val isEnginePass = result.status.contains("PASS", ignoreCase = true) && result.failReason.isBlank() && result.primaryFailureCode == null
         val failReason = result.failReason.trim()
+        val failureCode = result.primaryFailureCode
 
-        val isAmpacityFail = !isEnginePass && failReason.contains("Ampacity", ignoreCase = true)
+        val isAmpacityFail = !isEnginePass && (
+            failureCode == "AMPACITY_FAIL" ||
+            failureCode == "MULTIPLE_CONSTRAINTS" ||
+            (failureCode == null && !result.isAmpacityOk && result.isVoltageDropOk) ||
+            (failureCode == null && failReason.contains("Ampacity", ignoreCase = true))
+        )
         val isVdFail = !isEnginePass && (
-            failReason.contains("voltage drop", ignoreCase = true) ||
-            failReason.contains("voltage-drop", ignoreCase = true)
+            failureCode == "VOLTAGE_DROP_FAIL" ||
+            failureCode == "CUMULATIVE_VOLTAGE_DROP_FAIL" ||
+            failureCode == "MULTIPLE_CONSTRAINTS" ||
+            (failureCode == null && !result.isVoltageDropOk && result.isAmpacityOk) ||
+            (failureCode == null && (failReason.contains("voltage drop", ignoreCase = true) || failReason.contains("voltage-drop", ignoreCase = true)))
         )
         val isCatalogFail = !isEnginePass && (
-            failReason.contains("Catalog", ignoreCase = true) ||
-            failReason.contains("not found in catalog", ignoreCase = true) ||
-            failReason.contains("does not exist for", ignoreCase = true)
+            failureCode == "CATALOG_MISSING" ||
+            (failureCode == null && (
+                failReason.contains("Catalog", ignoreCase = true) ||
+                failReason.contains("not found", ignoreCase = true) ||
+                failReason.contains("does not exist", ignoreCase = true) ||
+                failReason.contains("missing", ignoreCase = true)
+            ))
         )
-        val isDeratingFail = !isEnginePass && failReason.contains("derating", ignoreCase = true)
+        val isDeratingFail = !isEnginePass && (
+            failureCode == "DERATING_INVALID" ||
+            (failureCode == null && failReason.contains("derating", ignoreCase = true))
+        )
         val isIncompleteFail = !isEnginePass && (
-            failReason.contains("Missing source transformer", ignoreCase = true) ||
-            failReason.contains("Voltage must be", ignoreCase = true) ||
-            failReason.contains("Load kVA", ignoreCase = true) ||
-            failReason.contains("Parallel runs", ignoreCase = true) ||
-            failReason.contains("Power factor", ignoreCase = true) ||
-            failReason.contains("Cable length", ignoreCase = true)
+            failureCode == "INCOMPLETE_INPUT" ||
+            (failureCode == null && (
+                failReason.contains("Missing source transformer", ignoreCase = true) ||
+                failReason.contains("Voltage must be", ignoreCase = true) ||
+                failReason.contains("Load kVA", ignoreCase = true) ||
+                failReason.contains("Parallel runs", ignoreCase = true) ||
+                failReason.contains("Power factor", ignoreCase = true) ||
+                failReason.contains("Cable length", ignoreCase = true) ||
+                failReason.contains("invalid", ignoreCase = true)
+            ))
         )
 
         val maxAllowedVdPct = circuit.maxVDpct * 100.0
@@ -198,7 +222,7 @@ object CableCalculationService {
         )
 
         // 2. Local Voltage Drop Check
-        val isCumulativeOnlyFailure = isVdFail && parentCumulativeVD > 0.0
+        val isCumulativeOnlyFailure = failureCode == "CUMULATIVE_VOLTAGE_DROP_FAIL" || (isVdFail && parentCumulativeVD > 0.0)
         val localVdStatus = if (isVdFail && !isCumulativeOnlyFailure) CableCheckStatus.FAIL else CableCheckStatus.PASS
         checks.add(
             CableStructuredCheck(
@@ -245,37 +269,37 @@ object CableCalculationService {
 
         if (!isEnginePass) {
             when {
-                isAmpacityFail && isVdFail -> {
+                failureCode == "MULTIPLE_CONSTRAINTS" || (isAmpacityFail && isVdFail) -> {
                     governingCode = null // Multiple constraints
-                    governingReason = failReason
+                    governingReason = result.failReason.ifEmpty { "Multiple engineering constraints failed." }
                 }
-                isAmpacityFail -> {
+                failureCode == "AMPACITY_FAIL" || isAmpacityFail -> {
                     governingCode = CableCheckCode.AMPACITY
-                    governingReason = failReason.ifEmpty { "Ampacity constraint Ib <= In <= Iz is not satisfied." }
+                    governingReason = result.failReason.ifEmpty { "Ampacity constraint Ib <= In <= Iz is not satisfied." }
                 }
-                isVdFail -> {
-                    governingCode = if (isCumulativeOnlyFailure) {
-                        CableCheckCode.CUMULATIVE_VOLTAGE_DROP
-                    } else {
-                        CableCheckCode.VOLTAGE_DROP
-                    }
-                    governingReason = failReason.ifEmpty { "Voltage drop exceeds allowed limit." }
+                failureCode == "CUMULATIVE_VOLTAGE_DROP_FAIL" || (isVdFail && isCumulativeOnlyFailure) -> {
+                    governingCode = CableCheckCode.CUMULATIVE_VOLTAGE_DROP
+                    governingReason = result.failReason.ifEmpty { "Cumulative voltage drop exceeds allowed limit." }
                 }
-                isCatalogFail -> {
+                failureCode == "VOLTAGE_DROP_FAIL" || isVdFail -> {
+                    governingCode = CableCheckCode.VOLTAGE_DROP
+                    governingReason = result.failReason.ifEmpty { "Local voltage drop exceeds allowed limit." }
+                }
+                failureCode == "CATALOG_MISSING" || isCatalogFail -> {
                     governingCode = CableCheckCode.CATALOG_AVAILABILITY
-                    governingReason = failReason.ifEmpty { "Selected cable specification is not available in catalog." }
+                    governingReason = result.failReason.ifEmpty { "Selected cable specification is not available in catalog." }
                 }
-                isDeratingFail -> {
+                failureCode == "DERATING_INVALID" || isDeratingFail -> {
                     governingCode = CableCheckCode.INSTALLATION_DERATING
-                    governingReason = failReason.ifEmpty { "Total derating factor is zero or invalid." }
+                    governingReason = result.failReason.ifEmpty { "Total derating factor is zero or invalid." }
                 }
-                isIncompleteFail -> {
+                failureCode == "INCOMPLETE_INPUT" || isIncompleteFail -> {
                     governingCode = CableCheckCode.INCOMPLETE_INPUT
-                    governingReason = failReason.ifEmpty { "Missing required engineering inputs." }
+                    governingReason = result.failReason.ifEmpty { "Missing required engineering inputs." }
                 }
                 else -> {
-                    governingCode = null
-                    governingReason = failReason.ifEmpty { "One or more engineering checks failed." }
+                    governingCode = CableCheckCode.INDETERMINATE
+                    governingReason = result.failReason.ifEmpty { "One or more engineering checks failed." }
                 }
             }
         } else {

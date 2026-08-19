@@ -43,7 +43,8 @@ enum class GoverningCriterion {
     INSTALLATION_DERATING,
     MANUAL_OVERRIDE,
     MULTIPLE_CONSTRAINTS,
-    INCOMPLETE_INPUT
+    INCOMPLETE_INPUT,
+    INDETERMINATE
 }
 
 enum class CheckStatus {

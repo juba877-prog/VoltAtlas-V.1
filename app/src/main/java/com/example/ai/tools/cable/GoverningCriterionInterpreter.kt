@@ -74,14 +74,14 @@ object GoverningCriterionInterpreter {
         val checkDtos = eval.checks.map { mapCheck(it) }
         val overallStatus = mapStatus(eval.overallStatus)
 
-        val hasAmpacityFail = eval.checks.any { it.checkCode == CableCheckCode.AMPACITY && it.status == CableCheckStatus.FAIL }
-        val hasVdFail = eval.checks.any { (it.checkCode == CableCheckCode.VOLTAGE_DROP || it.checkCode == CableCheckCode.CUMULATIVE_VOLTAGE_DROP) && it.status == CableCheckStatus.FAIL }
+        val failingChecks = eval.checks.filter { it.status == CableCheckStatus.FAIL }
 
         val criterion = when {
             overallStatus == CheckStatus.PASS -> GoverningCriterion.NONE
-            hasAmpacityFail && hasVdFail -> GoverningCriterion.MULTIPLE_CONSTRAINTS
             eval.governingCheckCode != null -> mapCode(eval.governingCheckCode)
-            else -> GoverningCriterion.MULTIPLE_CONSTRAINTS
+            failingChecks.size > 1 -> GoverningCriterion.MULTIPLE_CONSTRAINTS
+            failingChecks.size == 1 -> mapCode(failingChecks.first().checkCode)
+            else -> GoverningCriterion.INDETERMINATE
         }
 
         return Interpretation(
@@ -111,6 +111,7 @@ object GoverningCriterionInterpreter {
         CableCheckCode.INSTALLATION_DERATING -> GoverningCriterion.INSTALLATION_DERATING
         CableCheckCode.MANUAL_OVERRIDE -> GoverningCriterion.NONE
         CableCheckCode.INCOMPLETE_INPUT -> GoverningCriterion.INCOMPLETE_INPUT
+        CableCheckCode.INDETERMINATE -> GoverningCriterion.INDETERMINATE
     }
 
     private fun mapCheck(check: CableStructuredCheck): EngineeringCheckItemDto =
