@@ -1,7 +1,9 @@
 package com.example.ai.tools.read
 
+import com.example.ai.contracts.StructuredError
 import com.example.ai.contracts.ToolRequestEnvelope
 import com.example.ai.contracts.ToolResultEnvelope
+import com.example.ai.contracts.ToolStatus
 import com.example.ai.task.EngineeringTaskKey
 import com.example.ai.task.EngineeringTaskManager
 import com.example.ai.task.EngineeringTaskType
@@ -10,13 +12,25 @@ import com.example.ai.task.TaskOwner
 /**
  * Deterministic, no-LLM internal invoker for executing read tools without Gemini.
  *
- * Supports:
- * 1. Direct pure in-memory execution (zero TaskManager overhead).
- * 2. Managed asynchronous execution via [EngineeringTaskManager] with deduplication and latest-task-wins.
+ * Guarantees:
+ * 1. Type safety: Type mismatches or malformed payloads return typed INVALID_INPUT / ERROR envelopes,
+ *    never throwing ClassCastException through the public boundary.
+ * 2. Canonical Request Signatures: Automatically computes canonical deterministic request signatures
+ *    to guard against forged or mismatched caller signatures.
+ * 3. Managed Asynchronous Execution: Dispatches safely via [EngineeringTaskManager] with
+ *    latest-task-wins supersession and multi-subscriber safety.
  */
 class DeterministicReadToolInvoker(
     private val registry: DeterministicReadToolRegistry
 ) {
+
+    /**
+     * Computes the deterministic, canonical request signature from a strongly typed request envelope.
+     */
+    fun computeCanonicalSignature(request: ToolRequestEnvelope<*>): String {
+        val payloadHash = request.parameters?.hashCode() ?: 0
+        return "READ:${request.projectId}:${request.toolName}:${request.entityType ?: ""}:${request.entityId ?: ""}:$payloadHash"
+    }
 
     /**
      * Executes a tool request synchronously/directly without TaskManager overhead.
@@ -32,7 +46,49 @@ class DeterministicReadToolInvoker(
                 reason = "Tool '${request.toolName}' is not registered in the deterministic read tool registry."
             )
 
-        return tool.execute(request)
+        return try {
+            tool.execute(request)
+        } catch (e: ClassCastException) {
+            ToolResultEnvelope.invalidInput(
+                requestId = request.requestId,
+                toolName = request.toolName,
+                projectId = request.projectId,
+                errors = listOf(
+                    StructuredError(
+                        errorCode = "INVALID_REQUEST_PAYLOAD",
+                        message = "Tool request payload does not match the expected contract for '${request.toolName}'.",
+                        isRecoverable = false
+                    )
+                )
+            )
+        } catch (e: IllegalArgumentException) {
+            ToolResultEnvelope.invalidInput(
+                requestId = request.requestId,
+                toolName = request.toolName,
+                projectId = request.projectId,
+                errors = listOf(
+                    StructuredError(
+                        errorCode = "INVALID_REQUEST_PARAMETERS",
+                        message = e.message ?: "Invalid request parameters.",
+                        isRecoverable = true
+                    )
+                )
+            )
+        } catch (t: Throwable) {
+            ToolResultEnvelope.executionFailure(
+                requestId = request.requestId,
+                toolName = request.toolName,
+                projectId = request.projectId,
+                status = ToolStatus.ERROR,
+                errors = listOf(
+                    StructuredError(
+                        errorCode = "TOOL_EXECUTION_ERROR",
+                        message = "An unexpected error occurred while executing read tool '${request.toolName}'.",
+                        isRecoverable = false
+                    )
+                )
+            )
+        }
     }
 
     /**
@@ -61,12 +117,15 @@ class DeterministicReadToolInvoker(
             requestVariant = request.toolName
         )
 
+        // Always compute and enforce canonical signature internally to prevent forged signature deduplication
+        val canonicalSignature = computeCanonicalSignature(request)
+
         val handle = taskManager.submit<TRes>(
             key = taskKey,
             owner = owner,
-            requestSignature = requestSignature
+            requestSignature = canonicalSignature
         ) { _ ->
-            tool.execute(request)
+            executeDirect(request)
         }
 
         return handle.awaitResult()

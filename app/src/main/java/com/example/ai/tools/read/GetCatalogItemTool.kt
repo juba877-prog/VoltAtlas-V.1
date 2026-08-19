@@ -23,7 +23,24 @@ class GetCatalogItemTool(
         val started = System.currentTimeMillis()
         val params = request.parameters
         val category = params.category.trim().uppercase()
-        val limit = (params.limit.takeIf { it in 1..50 } ?: 20)
+
+        if (params.limit <= 0) {
+            return ToolResultEnvelope.invalidInput(
+                requestId = request.requestId,
+                toolName = toolName,
+                projectId = request.projectId,
+                errors = listOf(
+                    StructuredError(
+                        errorCode = "INVALID_REQUEST_PARAMETERS",
+                        message = "Limit must be a positive integer greater than 0.",
+                        isRecoverable = true
+                    )
+                ),
+                startedAt = started
+            )
+        }
+
+        val effectiveLimit = params.limit.coerceAtMost(50)
         val query = params.query?.trim()?.lowercase()
         val mfgFilter = params.manufacturer?.trim()?.lowercase()
 
@@ -39,7 +56,7 @@ class GetCatalogItemTool(
                     val matchesQuery = query == null || p.model.lowercase().contains(query) || p.mfg.lowercase().contains(query)
                     matchesMfg && matchesSize && matchesQuery
                 }
-                products.take(limit).forEach { p ->
+                products.take(effectiveLimit).forEach { p ->
                     matchingItems.add(
                         CatalogItemDto(
                             category = "CABLE",
@@ -66,7 +83,7 @@ class GetCatalogItemTool(
                             b.frame.lowercase().contains(query) || b.mfg.lowercase().contains(query)
                     matchesMfg && matchesRating && matchesQuery
                 }
-                breakers.take(limit).forEach { b ->
+                breakers.take(effectiveLimit).forEach { b ->
                     matchingItems.add(
                         CatalogItemDto(
                             category = "BREAKER",
@@ -92,7 +109,7 @@ class GetCatalogItemTool(
                     val matchesQuery = query == null || tx.transformerId.lowercase().contains(query)
                     matchesSize && matchesQuery
                 }
-                seeds.take(limit).forEach { tx ->
+                seeds.take(effectiveLimit).forEach { tx ->
                     matchingItems.add(
                         CatalogItemDto(
                             category = "TRANSFORMER",
@@ -118,7 +135,7 @@ class GetCatalogItemTool(
                             a.description.lowercase().contains(query) || a.category.lowercase().contains(query)
                     matchesMfg && matchesQuery
                 }
-                accessories.take(limit).forEach { a ->
+                accessories.take(effectiveLimit).forEach { a ->
                     matchingItems.add(
                         CatalogItemDto(
                             category = "ACCESSORY",
@@ -143,7 +160,7 @@ class GetCatalogItemTool(
                     val matchesQuery = query == null || b.model.lowercase().contains(query) || b.mfg.lowercase().contains(query)
                     matchesMfg && matchesRating && matchesQuery
                 }
-                busways.take(limit).forEach { b ->
+                busways.take(effectiveLimit).forEach { b ->
                     matchingItems.add(
                         CatalogItemDto(
                             category = "BUSWAY",
@@ -177,11 +194,21 @@ class GetCatalogItemTool(
             }
         }
 
+        if (matchingItems.isEmpty()) {
+            return ToolResultEnvelope.incomplete(
+                requestId = request.requestId,
+                toolName = toolName,
+                projectId = request.projectId,
+                missingDataReason = "No matching catalog items found for category '$category' with the requested filters.",
+                startedAt = started
+            )
+        }
+
         val result = CatalogSearchResult(
             category = category,
             matchCount = matchingItems.size,
             items = matchingItems,
-            isTruncated = matchingItems.size >= limit,
+            isTruncated = matchingItems.size >= effectiveLimit,
             provenance = provenanceSource
         )
 

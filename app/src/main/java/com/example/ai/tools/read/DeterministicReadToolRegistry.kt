@@ -13,7 +13,14 @@ class DeterministicReadToolRegistry {
 
     private val tools = ConcurrentHashMap<String, DeterministicReadTool<*, *>>()
 
-    fun register(tool: DeterministicReadTool<*, *>) {
+    /**
+     * Registers a tool. Throws [IllegalArgumentException] if a tool with the same name
+     * is already registered and [allowOverride] is false.
+     */
+    fun register(tool: DeterministicReadTool<*, *>, allowOverride: Boolean = false) {
+        if (!allowOverride && tools.containsKey(tool.toolName)) {
+            throw IllegalArgumentException("Tool '${tool.toolName}' is already registered in DeterministicReadToolRegistry.")
+        }
         tools[tool.toolName] = tool
     }
 

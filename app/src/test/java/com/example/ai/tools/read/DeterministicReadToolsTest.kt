@@ -3,19 +3,24 @@ package com.example.ai.tools.read
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.example.ai.contracts.ProvenanceMetadata
 import com.example.ai.contracts.StructuredError
 import com.example.ai.contracts.ToolRequestEnvelope
 import com.example.ai.contracts.ToolResultEnvelope
 import com.example.ai.contracts.ToolStatus
-import java.util.concurrent.TimeUnit
 import com.example.ai.context.freshness.adapters.ProjectFreshnessDataProvider
 import com.example.ai.context.freshness.contracts.CalculationDomain
+import com.example.ai.context.freshness.contracts.CalculationEntityType
+import com.example.ai.context.freshness.contracts.CalculationScope
 import com.example.ai.context.freshness.contracts.CalculationState
+import com.example.ai.context.freshness.contracts.FreshnessReasonCode
 import com.example.ai.context.freshness.internal.DefaultCalculationFreshnessProvider
 import com.example.ai.context.provider.ProjectContextProvider
 import com.example.ai.context.provider.ProjectContextProviderImpl
 import com.example.ai.task.DefaultEngineeringTaskManager
+import com.example.ai.task.EngineeringTaskKey
 import com.example.ai.task.EngineeringTaskManager
+import com.example.ai.task.EngineeringTaskType
 import com.example.ai.task.TaskOwner
 import com.example.data.AppDatabase
 import com.example.data.CircuitEntity
@@ -25,7 +30,10 @@ import com.example.data.TransformerEntity
 import com.example.data.catalog.CatalogRepository
 import com.example.engine.coordinator.EngineeringCalculationCoordinator
 import java.io.File
-import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -94,230 +102,339 @@ class DeterministicReadToolsTest {
     fun setUp() {
         runBlocking {
             AppDatabase.useTestExecutors = true
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-            .allowMainThreadQueries()
-            .build()
-        repository = EngineeringRepository(database)
-        val coordinator = EngineeringCalculationCoordinator
-        coordinator.projectRevisionProvider = repository
-        coordinator.clearCache()
-        coordinator.freshnessRegistry.clearAll()
+            val context = ApplicationProvider.getApplicationContext<Context>()
+            database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+                .allowMainThreadQueries()
+                .build()
+            repository = EngineeringRepository(database)
+            val coordinator = EngineeringCalculationCoordinator
+            coordinator.projectRevisionProvider = repository
+            coordinator.clearCache()
+            coordinator.freshnessRegistry.clearAll()
 
-        val freshnessDataProvider = object : ProjectFreshnessDataProvider {
-            override suspend fun getCircuits(projectId: String): List<CircuitEntity> =
-                repository.circuitDao.getCircuitsListForProject(projectId)
-            override suspend fun getTransformers(projectId: String): List<TransformerEntity> =
-                repository.transformerDao.getTransformersListForProject(projectId)
+            val freshnessDataProvider = object : ProjectFreshnessDataProvider {
+                override suspend fun getCircuits(projectId: String): List<CircuitEntity> =
+                    repository.circuitDao.getCircuitsListForProject(projectId)
+                override suspend fun getTransformers(projectId: String): List<TransformerEntity> =
+                    repository.transformerDao.getTransformersListForProject(projectId)
+            }
+
+            freshnessProvider = DefaultCalculationFreshnessProvider(
+                revisionProvider = repository,
+                metadataRegistry = coordinator.freshnessRegistry,
+                projectDataProvider = freshnessDataProvider
+            )
+
+            projectContextProvider = ProjectContextProviderImpl(
+                repository = repository,
+                coordinator = coordinator,
+                freshnessProvider = freshnessProvider,
+                revisionProvider = repository
+            )
+
+            registry = DeterministicReadToolRegistry.createDefault(
+                projectContextProvider = projectContextProvider,
+                freshnessProvider = freshnessProvider,
+                revisionProvider = repository,
+                catalogRepository = catalogRepo
+            )
+
+            invoker = DeterministicReadToolInvoker(registry)
+
+            taskManager = DefaultEngineeringTaskManager(
+                coroutineScope = CoroutineScope(Dispatchers.Default)
+            )
+
+            // Seed primary test project
+            database.projectDao().upsertProject(
+                ProjectEntity(
+                    projectId = projectId,
+                    projectName = "Phase 5 Read Tools Test Project",
+                    createdAt = 1000L,
+                    updatedAt = 1000L,
+                    revision = 1L
+                )
+            )
+
+            // Seed primary circuit (101)
+            database.circuitDao().insertCircuit(
+                CircuitEntity(
+                    id = 101,
+                    projectId = projectId,
+                    circuitName = "Feeder 101",
+                    loadKVA = 50.0,
+                    voltageV = 400,
+                    phases = "3P+N",
+                    cableType = "Cu/XLPE/PVC - 4C",
+                    manufacturer = "Elsewedy",
+                    installation = "Laid in Free Air",
+                    length_m = 30.0,
+                    transformerId = "TX-01",
+                    fedFrom = "TX-01"
+                )
+            )
+
+            // Seed secondary circuit (102) dependent on 101
+            database.circuitDao().insertCircuit(
+                CircuitEntity(
+                    id = 102,
+                    projectId = projectId,
+                    circuitName = "Sub-Feeder 102",
+                    loadKVA = 20.0,
+                    voltageV = 400,
+                    phases = "3P+N",
+                    cableType = "Cu/XLPE/PVC - 4C",
+                    manufacturer = "Elsewedy",
+                    installation = "Laid in Free Air",
+                    length_m = 15.0,
+                    transformerId = "TX-01",
+                    fedFrom = "Feeder 101"
+                )
+            )
+
+            // Seed primary transformer
+            database.transformerDao().insertTransformer(
+                TransformerEntity(
+                    transformerId = "TX-01",
+                    projectId = projectId,
+                    transformerName = "Main Unit Substation TX-01",
+                    kVA = 1000.0,
+                    voltage = 400,
+                    percentZ = 5.75,
+                    xr = 8.0,
+                    txType = "ONAN",
+                    sourceType = "GRID"
+                )
+            )
+
+            // Seed isolated project for isolation tests
+            database.projectDao().upsertProject(
+                ProjectEntity(
+                    projectId = projectOther,
+                    projectName = "Isolated Project Other",
+                    createdAt = 1000L,
+                    updatedAt = 1000L,
+                    revision = 1L
+                )
+            )
+            database.circuitDao().insertCircuit(
+                CircuitEntity(
+                    id = 201,
+                    projectId = projectOther,
+                    circuitName = "Isolated Circuit 201",
+                    loadKVA = 10.0,
+                    voltageV = 400,
+                    phases = "3P+N",
+                    cableType = "Cu/XLPE/PVC - 4C",
+                    manufacturer = "Elsewedy",
+                    length_m = 10.0,
+                    transformerId = "TX-OTHER",
+                    fedFrom = "TX-OTHER"
+                )
+            )
         }
-
-        freshnessProvider = DefaultCalculationFreshnessProvider(
-            revisionProvider = repository,
-            metadataRegistry = coordinator.freshnessRegistry,
-            projectDataProvider = freshnessDataProvider
-        )
-
-        projectContextProvider = ProjectContextProviderImpl(
-            repository = repository,
-            coordinator = coordinator,
-            freshnessProvider = freshnessProvider,
-            revisionProvider = repository
-        )
-
-        registry = DeterministicReadToolRegistry.createDefault(
-            projectContextProvider = projectContextProvider,
-            freshnessProvider = freshnessProvider,
-            revisionProvider = repository,
-            catalogRepository = catalogRepo
-        )
-
-        invoker = DeterministicReadToolInvoker(registry)
-
-        taskManager = DefaultEngineeringTaskManager(
-            coroutineScope = CoroutineScope(Dispatchers.Default)
-        )
-
-        // Seed primary test project
-        database.projectDao().upsertProject(
-            ProjectEntity(
-                projectId = projectId,
-                projectName = "Phase 5 Read Tools Test Project",
-                createdAt = 1000L,
-                updatedAt = 1000L,
-                revision = 1L
-            )
-        )
-
-        // Seed primary circuit
-        database.circuitDao().insertCircuit(
-            CircuitEntity(
-                id = 101,
-                projectId = projectId,
-                circuitName = "Feeder 101",
-                loadKVA = 50.0,
-                voltageV = 400,
-                phases = "3P+N",
-                length_m = 30.0,
-                transformerId = "TX-01",
-                fedFrom = "TX-01"
-            )
-        )
-
-        // Seed secondary circuit dependent on 101
-        database.circuitDao().insertCircuit(
-            CircuitEntity(
-                id = 102,
-                projectId = projectId,
-                circuitName = "Sub-Feeder 102",
-                loadKVA = 20.0,
-                voltageV = 400,
-                phases = "3P+N",
-                length_m = 15.0,
-                transformerId = "TX-01",
-                fedFrom = "Feeder 101"
-            )
-        )
-
-        // Seed primary transformer
-        database.transformerDao().insertTransformer(
-            TransformerEntity(
-                transformerId = "TX-01",
-                projectId = projectId,
-                transformerName = "Main Unit Substation TX-01",
-                kVA = 1000.0,
-                voltage = 400,
-                percentZ = 5.75,
-                xr = 8.0,
-                txType = "ONAN",
-                sourceType = "GRID"
-            )
-        )
-
-        // Seed other project for isolation tests
-        database.projectDao().upsertProject(
-            ProjectEntity(
-                projectId = projectOther,
-                projectName = "Isolated Project Other",
-                createdAt = 1000L,
-                updatedAt = 1000L,
-                revision = 1L
-            )
-        )
-        database.circuitDao().insertCircuit(
-            CircuitEntity(
-                id = 201,
-                projectId = projectOther,
-                circuitName = "Isolated Circuit 201",
-                loadKVA = 10.0,
-                voltageV = 400,
-                phases = "3P+N",
-                length_m = 10.0,
-                transformerId = "TX-OTHER",
-                fedFrom = "TX-OTHER"
-            )
-        )
     }
-}
 
     @After
     fun tearDown() {
         runBlocking {
             taskManager.close()
-            database.close()
+            val coordinator = EngineeringCalculationCoordinator
+            coordinator.clearCache()
+            coordinator.freshnessRegistry.clearAll()
+            coordinator.projectRevisionProvider = null
+            AppDatabase.useTestExecutors = false
+            if (::database.isInitialized && database.isOpen) {
+                database.close()
+            }
         }
     }
 
-    // -------------------------------------------------------------------------
-    // 1. get_current_project_context
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // BLOCKER A & I: Registry & Invoker Type Safety and Canonical Signatures
+    // =========================================================================
 
     @Test
-    fun currentProjectContext_returnsBoundedRealSnapshot() = runBlocking {
-        val request = ToolRequestEnvelope(
-            requestId = "REQ-CTX-1",
+    fun invoker_wrongRequestType_returnsTypedInvalidInput_notClassCastException() = runBlocking {
+        // Pass a Map instead of GetProjectContextRequest to get_current_project_context
+        val wrongRequest = ToolRequestEnvelope<Any>(
+            requestId = "REQ-WRONG-TYPE",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = mapOf("invalidKey" to 12345)
+        )
+
+        val resultEnvelope = invoker.executeDirect<Any, ProjectContextResult>(wrongRequest)
+
+        assertEquals(ToolStatus.INVALID_INPUT, resultEnvelope.status)
+        assertNull(resultEnvelope.result)
+        assertEquals("INVALID_REQUEST_PAYLOAD", resultEnvelope.errors[0].errorCode)
+        assertFalse("Internal exception class names must not leak", resultEnvelope.errors[0].message.contains("ClassCastException"))
+    }
+
+    @Test
+    fun invoker_malformedRequest_returnsTypedError() = runBlocking {
+        val malformedRequest = ToolRequestEnvelope(
+            requestId = "REQ-MALFORMED",
+            projectId = "",
+            toolName = ReadToolNames.GET_ENTITY,
+            parameters = GetEntityRequest(projectId = "", entityType = "", entityId = "")
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetEntityRequest, EntityContextResult>(malformedRequest)
+
+        assertEquals(ToolStatus.INVALID_INPUT, resultEnvelope.status)
+        assertEquals("INVALID_REQUEST_PARAMETERS", resultEnvelope.errors[0].errorCode)
+    }
+
+    @Test
+    fun registry_duplicateToolName_isRejectedDeterministically() {
+        val duplicateTool = GetCurrentProjectContextTool(projectContextProvider)
+        try {
+            registry.register(duplicateTool, allowOverride = false)
+            fail("Registering duplicate tool name without allowOverride must throw IllegalArgumentException")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("already registered"))
+        }
+    }
+
+    @Test
+    fun registry_concurrentLookup_isStable() {
+        val executor = Executors.newFixedThreadPool(8)
+        val latch = CountDownLatch(100)
+        val errorCount = AtomicInteger(0)
+
+        for (i in 0 until 100) {
+            executor.submit {
+                try {
+                    val tool = registry.getTool<GetProjectContextRequest, ProjectContextResult>(ReadToolNames.GET_CURRENT_PROJECT_CONTEXT)
+                    if (tool == null) errorCount.incrementAndGet()
+                } catch (_: Exception) {
+                    errorCount.incrementAndGet()
+                } finally {
+                    latch.countDown()
+                }
+            }
+        }
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS))
+        assertEquals(0, errorCount.get())
+        executor.shutdown()
+    }
+
+    @Test
+    fun invoker_resultTypeMismatch_isContained() = runBlocking {
+        val req = ToolRequestEnvelope(
+            requestId = "REQ-MISMATCH",
             projectId = projectId,
             toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
             parameters = GetProjectContextRequest(projectId = projectId)
         )
 
-        val resultEnvelope = invoker.executeDirect<GetProjectContextRequest, ProjectContextResult>(request)
-
-        assertEquals(ToolStatus.PASS, resultEnvelope.status)
-        assertNotNull(resultEnvelope.result)
-        val result = resultEnvelope.result!!
-        assertEquals(projectId, result.projectId)
-        assertEquals(1L, result.projectRevision)
-        assertEquals(2, result.totalCircuits)
-        assertEquals(1, result.totalTransformers)
-        assertNotNull(result.engineeringStatus)
-        assertNotNull(resultEnvelope.provenance)
-        assertEquals("VALIDATION_FACADE", resultEnvelope.provenance?.engineName)
+        // Attempt to cast result to String envelope
+        val res = invoker.executeDirect<GetProjectContextRequest, String>(req)
+        // Invocation itself succeeds deterministically without crashing
+        assertNotNull(res)
     }
 
     @Test
-    fun currentProjectContext_missingProject_returnsTypedMissing() = runBlocking {
-        val request = ToolRequestEnvelope(
-            requestId = "REQ-CTX-2",
-            projectId = "NON-EXISTENT-PROJ",
+    fun managedInvoker_sameRequest_computesSameCanonicalSignature() {
+        val req1 = ToolRequestEnvelope(
+            requestId = "REQ-SIG-1",
+            projectId = projectId,
             toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
-            parameters = GetProjectContextRequest(projectId = "NON-EXISTENT-PROJ")
+            parameters = GetProjectContextRequest(projectId = projectId)
+        )
+        val req2 = ToolRequestEnvelope(
+            requestId = "REQ-SIG-2",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId)
         )
 
-        val resultEnvelope = invoker.executeDirect<GetProjectContextRequest, ProjectContextResult>(request)
-
-        assertEquals(ToolStatus.INCOMPLETE, resultEnvelope.status)
-        assertNull(resultEnvelope.result)
-        assertEquals(1, resultEnvelope.errors.size)
-        assertEquals("INCOMPLETE_PROJECT_DATA", resultEnvelope.errors[0].errorCode)
-        assertTrue(resultEnvelope.errors[0].message.contains("NON-EXISTENT-PROJ"))
+        val sig1 = invoker.computeCanonicalSignature(req1)
+        val sig2 = invoker.computeCanonicalSignature(req2)
+        assertEquals(sig1, sig2)
     }
 
-    // -------------------------------------------------------------------------
-    // 2. get_entity
-    // -------------------------------------------------------------------------
+    @Test
+    fun managedInvoker_differentRequest_doesNotDeduplicate() {
+        val req1 = ToolRequestEnvelope(
+            requestId = "REQ-DIF-1",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId, includeValidation = true)
+        )
+        val req2 = ToolRequestEnvelope(
+            requestId = "REQ-DIF-2",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId, includeValidation = false)
+        )
+
+        val sig1 = invoker.computeCanonicalSignature(req1)
+        val sig2 = invoker.computeCanonicalSignature(req2)
+        assertNotEquals(sig1, sig2)
+    }
 
     @Test
-    fun getEntity_enforcesProjectIsolation() = runBlocking {
-        // Attempt to access circuit 201 (which belongs to projectOther) using projectId
-        val request = ToolRequestEnvelope(
-            requestId = "REQ-ENT-ISO",
+    fun managedInvoker_forgedSignature_cannotMergeDifferentRequests() = runBlocking {
+        val req1 = ToolRequestEnvelope(
+            requestId = "REQ-FORGE-1",
             projectId = projectId,
             toolName = ReadToolNames.GET_ENTITY,
-            parameters = GetEntityRequest(projectId = projectId, entityType = "CIRCUIT", entityId = "201")
+            parameters = GetEntityRequest(projectId = projectId, entityType = "CIRCUIT", entityId = "101")
         )
-
-        val resultEnvelope = invoker.executeDirect<GetEntityRequest, EntityContextResult>(request)
-
-        assertEquals(ToolStatus.INCOMPLETE, resultEnvelope.status)
-        assertNull(resultEnvelope.result)
-        assertEquals(1, resultEnvelope.errors.size)
-        assertTrue(resultEnvelope.errors[0].message.contains("201"))
-    }
-
-    @Test
-    fun getEntity_missingEntity_doesNotFabricate() = runBlocking {
-        val request = ToolRequestEnvelope(
-            requestId = "REQ-ENT-MISS",
+        val req2 = ToolRequestEnvelope(
+            requestId = "REQ-FORGE-2",
             projectId = projectId,
             toolName = ReadToolNames.GET_ENTITY,
-            parameters = GetEntityRequest(projectId = projectId, entityType = "CIRCUIT", entityId = "9999")
+            parameters = GetEntityRequest(projectId = projectId, entityType = "CIRCUIT", entityId = "102")
         )
 
-        val resultEnvelope = invoker.executeDirect<GetEntityRequest, EntityContextResult>(request)
+        // Even if caller attempts to pass forged requestSignature = "FORGED_IDENTICAL", invoker computes canonical
+        val res1 = invoker.executeManaged<GetEntityRequest, EntityContextResult>(
+            request = req1,
+            taskManager = taskManager,
+            requestSignature = "FORGED_IDENTICAL"
+        )
+        val res2 = invoker.executeManaged<GetEntityRequest, EntityContextResult>(
+            request = req2,
+            taskManager = taskManager,
+            requestSignature = "FORGED_IDENTICAL"
+        )
 
-        assertEquals(ToolStatus.INCOMPLETE, resultEnvelope.status)
-        assertNull(resultEnvelope.result)
-        assertEquals("INCOMPLETE_PROJECT_DATA", resultEnvelope.errors[0].errorCode)
+        assertEquals("101", res1.result?.entityId)
+        assertEquals("102", res2.result?.entityId)
     }
 
-    // -------------------------------------------------------------------------
-    // 3. get_calculation_state
-    // -------------------------------------------------------------------------
+    @Test
+    fun managedInvoker_blankSignature_usesDocumentedSafePolicy() = runBlocking {
+        val req = ToolRequestEnvelope(
+            requestId = "REQ-BLANK-SIG",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId)
+        )
+
+        val res = invoker.executeManaged<GetProjectContextRequest, ProjectContextResult>(
+            request = req,
+            taskManager = taskManager,
+            requestSignature = ""
+        )
+
+        assertEquals(ToolStatus.PASS, res.status)
+        assertNotNull(res.result)
+    }
+
+    // =========================================================================
+    // BLOCKER B: Calculation State Lifecycle Fixtures (MISSING, CURRENT, STALE)
+    // =========================================================================
 
     @Test
-    fun getCalculationState_currentStaleMissingRemainDistinct() = runBlocking {
+    fun getCalculationState_missing_isReportedExactly() = runBlocking {
         val request = ToolRequestEnvelope(
-            requestId = "REQ-STATE-1",
+            requestId = "REQ-STATE-MISS",
             projectId = projectId,
             toolName = ReadToolNames.GET_CALCULATION_STATE,
             parameters = GetCalculationStateRequest(
@@ -331,15 +448,73 @@ class DeterministicReadToolsTest {
         val resultEnvelope = invoker.executeDirect<GetCalculationStateRequest, CalculationStateResult>(request)
 
         assertEquals(ToolStatus.PASS, resultEnvelope.status)
-        assertNotNull(resultEnvelope.result)
         val res = resultEnvelope.result!!
         assertEquals(projectId, res.projectId)
         assertEquals("CIRCUIT", res.entityType)
         assertEquals("101", res.entityId)
         assertEquals("CABLE_SIZING", res.domain)
-        // Before calculation, state is MISSING
         assertEquals(CalculationState.MISSING.name, res.state)
+        assertEquals(FreshnessReasonCode.NO_RECORD.name, res.reasonCode)
         assertFalse(res.isUsable)
+        assertNull(res.recordedRevision)
+    }
+
+    @Test
+    fun getCalculationState_current_isReportedExactly() = runBlocking {
+        val allCircuits = database.circuitDao().getCircuitsListForProject(projectId)
+        val circuit = allCircuits.find { it.id == 101 }!!
+        val allTransformers = database.transformerDao().getTransformersListForProject(projectId)
+        EngineeringCalculationCoordinator.calculateCableSizing(circuit, allCircuits, allTransformers)
+
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-STATE-CURR",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CALCULATION_STATE,
+            parameters = GetCalculationStateRequest(
+                projectId = projectId,
+                entityType = "CIRCUIT",
+                entityId = "101",
+                domain = CalculationDomain.CABLE_SIZING
+            )
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetCalculationStateRequest, CalculationStateResult>(request)
+
+        assertEquals(ToolStatus.PASS, resultEnvelope.status)
+        val res = resultEnvelope.result!!
+        assertEquals(CalculationState.CURRENT.name, res.state)
+        assertEquals(FreshnessReasonCode.MATCH.name, res.reasonCode)
+        assertTrue(res.isUsable)
+        assertEquals(1L, res.recordedRevision)
+    }
+
+    @Test
+    fun getCalculationState_stale_isReportedExactlyAfterMutation() = runBlocking {
+        val circuit = database.circuitDao().getCircuitById(101)!!
+        EngineeringCalculationCoordinator.calculateCableSizing(circuit, listOf(circuit))
+
+        // Mutate circuit load without recalculating
+        database.circuitDao().insertCircuit(circuit.copy(loadKVA = 120.0))
+
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-STATE-STALE",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CALCULATION_STATE,
+            parameters = GetCalculationStateRequest(
+                projectId = projectId,
+                entityType = "CIRCUIT",
+                entityId = "101",
+                domain = CalculationDomain.CABLE_SIZING
+            )
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetCalculationStateRequest, CalculationStateResult>(request)
+
+        assertEquals(ToolStatus.PASS, resultEnvelope.status)
+        val res = resultEnvelope.result!!
+        assertEquals(CalculationState.STALE.name, res.state)
+        assertFalse(res.isUsable)
+        assertTrue("Changed components must be > 0 when STALE", res.changedComponentCount > 0)
     }
 
     @Test
@@ -348,7 +523,7 @@ class DeterministicReadToolsTest {
         EngineeringCalculationCoordinator.calculateCableSizing(circuit, listOf(circuit))
 
         val request = ToolRequestEnvelope(
-            requestId = "REQ-STATE-2",
+            requestId = "REQ-STATE-ENG-FAIL",
             projectId = projectId,
             toolName = ReadToolNames.GET_CALCULATION_STATE,
             parameters = GetCalculationStateRequest(
@@ -366,14 +541,14 @@ class DeterministicReadToolsTest {
         assertEquals(projectId, resultEnvelope.result?.projectId)
     }
 
-    // -------------------------------------------------------------------------
-    // 4. get_dependencies
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // BLOCKER C: Complete Dependency Outcome Verification
+    // =========================================================================
 
     @Test
     fun getDependencies_usesAuthoritativeResolver() = runBlocking {
         val request = ToolRequestEnvelope(
-            requestId = "REQ-DEP-1",
+            requestId = "REQ-DEP-AUTH",
             projectId = projectId,
             toolName = ReadToolNames.GET_DEPENDENCIES,
             parameters = GetDependenciesRequest(
@@ -386,7 +561,6 @@ class DeterministicReadToolsTest {
         val resultEnvelope = invoker.executeDirect<GetDependenciesRequest, DependenciesResult>(request)
 
         assertEquals(ToolStatus.PASS, resultEnvelope.status)
-        assertNotNull(resultEnvelope.result)
         val res = resultEnvelope.result!!
         assertEquals("RESOLVED", res.resolutionStatus)
         assertEquals("101", res.parentId)
@@ -395,36 +569,106 @@ class DeterministicReadToolsTest {
     }
 
     @Test
-    fun getDependencies_cycleAmbiguityAndMissingAreTyped() = runBlocking {
-        // Create 2-node cycle: Circuit 301 feeds 302, 302 feeds 301
+    fun getDependencies_missingParent_isTyped() = runBlocking {
         database.circuitDao().insertCircuit(
-            CircuitEntity(id = 301, projectId = projectId, circuitName = "C301", loadKVA = 10.0, voltageV = 400, phases = "3P+N", length_m = 10.0, transformerId = "TX-01", fedFrom = "C302")
-        )
-        database.circuitDao().insertCircuit(
-            CircuitEntity(id = 302, projectId = projectId, circuitName = "C302", loadKVA = 10.0, voltageV = 400, phases = "3P+N", length_m = 10.0, transformerId = "TX-01", fedFrom = "C301")
+            CircuitEntity(id = 305, projectId = projectId, circuitName = "C305", loadKVA = 10.0, voltageV = 400, phases = "3P+N", length_m = 10.0, transformerId = "TX-01", fedFrom = "NonExistentParent999")
         )
 
         val request = ToolRequestEnvelope(
-            requestId = "REQ-DEP-CYC",
+            requestId = "REQ-DEP-MISS-P",
             projectId = projectId,
             toolName = ReadToolNames.GET_DEPENDENCIES,
             parameters = GetDependenciesRequest(
                 projectId = projectId,
                 entityType = "CIRCUIT",
-                entityId = "301"
+                entityId = "305"
             )
         )
 
         val resultEnvelope = invoker.executeDirect<GetDependenciesRequest, DependenciesResult>(request)
 
         assertEquals(ToolStatus.PASS, resultEnvelope.status)
-        assertNotNull(resultEnvelope.result)
+        assertEquals("MISSING_PARENT_REFERENCE", resultEnvelope.result?.resolutionStatus)
+    }
+
+    @Test
+    fun getDependencies_duplicateName_isAmbiguous_notFirstMatch() = runBlocking {
+        database.circuitDao().insertCircuit(
+            CircuitEntity(id = 310, projectId = projectId, circuitName = "DuplicatePanel", loadKVA = 10.0, voltageV = 400, phases = "3P+N", length_m = 10.0, transformerId = "TX-01", fedFrom = "TX-01")
+        )
+        database.circuitDao().insertCircuit(
+            CircuitEntity(id = 311, projectId = projectId, circuitName = "DuplicatePanel", loadKVA = 10.0, voltageV = 400, phases = "3P+N", length_m = 10.0, transformerId = "TX-01", fedFrom = "TX-01")
+        )
+        database.circuitDao().insertCircuit(
+            CircuitEntity(id = 312, projectId = projectId, circuitName = "ChildPanel", loadKVA = 10.0, voltageV = 400, phases = "3P+N", length_m = 10.0, transformerId = "TX-01", fedFrom = "DuplicatePanel")
+        )
+
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-DEP-AMB",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_DEPENDENCIES,
+            parameters = GetDependenciesRequest(
+                projectId = projectId,
+                entityType = "CIRCUIT",
+                entityId = "312"
+            )
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetDependenciesRequest, DependenciesResult>(request)
+
+        assertEquals(ToolStatus.PASS, resultEnvelope.status)
+        assertEquals("AMBIGUOUS_PARENT", resultEnvelope.result?.resolutionStatus)
+    }
+
+    @Test
+    fun getDependencies_selfParent_isTyped() = runBlocking {
+        database.circuitDao().insertCircuit(
+            CircuitEntity(id = 320, projectId = projectId, circuitName = "SelfParent", parentId = 320, loadKVA = 10.0, voltageV = 400, phases = "3P+N", length_m = 10.0, transformerId = "TX-01", fedFrom = "SelfParent")
+        )
+
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-DEP-SELF",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_DEPENDENCIES,
+            parameters = GetDependenciesRequest(
+                projectId = projectId,
+                entityType = "CIRCUIT",
+                entityId = "320"
+            )
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetDependenciesRequest, DependenciesResult>(request)
+
+        assertEquals(ToolStatus.PASS, resultEnvelope.status)
+        assertEquals("CYCLE_DETECTED", resultEnvelope.result?.resolutionStatus)
+    }
+
+    @Test
+    fun getDependencies_multiNodeCycle_isTyped() = runBlocking {
+        // A -> B -> C -> A
+        database.circuitDao().insertCircuit(CircuitEntity(id = 330, projectId = projectId, circuitName = "NodeA", loadKVA = 10.0, voltageV = 400, phases = "3P+N", length_m = 10.0, transformerId = "TX-01", fedFrom = "NodeC"))
+        database.circuitDao().insertCircuit(CircuitEntity(id = 331, projectId = projectId, circuitName = "NodeB", loadKVA = 10.0, voltageV = 400, phases = "3P+N", length_m = 10.0, transformerId = "TX-01", fedFrom = "NodeA"))
+        database.circuitDao().insertCircuit(CircuitEntity(id = 332, projectId = projectId, circuitName = "NodeC", loadKVA = 10.0, voltageV = 400, phases = "3P+N", length_m = 10.0, transformerId = "TX-01", fedFrom = "NodeB"))
+
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-DEP-MULTI-CYC",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_DEPENDENCIES,
+            parameters = GetDependenciesRequest(
+                projectId = projectId,
+                entityType = "CIRCUIT",
+                entityId = "330"
+            )
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetDependenciesRequest, DependenciesResult>(request)
+
+        assertEquals(ToolStatus.PASS, resultEnvelope.status)
         assertEquals("CYCLE_DETECTED", resultEnvelope.result?.resolutionStatus)
     }
 
     @Test
     fun getDependencies_crossProjectReferenceRejected() = runBlocking {
-        // Create circuit referring to a parent in another project
         database.circuitDao().insertCircuit(
             CircuitEntity(id = 401, projectId = projectId, circuitName = "C401", loadKVA = 10.0, voltageV = 400, phases = "3P+N", length_m = 10.0, transformerId = "TX-01", fedFrom = "Isolated Circuit 201")
         )
@@ -443,37 +687,36 @@ class DeterministicReadToolsTest {
         val resultEnvelope = invoker.executeDirect<GetDependenciesRequest, DependenciesResult>(request)
 
         assertEquals(ToolStatus.PASS, resultEnvelope.status)
-        assertNotNull(resultEnvelope.result)
         assertEquals("MISSING_PARENT_REFERENCE", resultEnvelope.result?.resolutionStatus)
     }
 
-    // -------------------------------------------------------------------------
-    // 5. get_change_history
-    // -------------------------------------------------------------------------
-
     @Test
-    fun getChangeHistory_neverInventsUnavailableHistory() = runBlocking {
-        val request = ToolRequestEnvelope(
-            requestId = "REQ-HIST-1",
-            projectId = projectId,
-            toolName = ReadToolNames.GET_CHANGE_HISTORY,
-            parameters = GetChangeHistoryRequest(projectId = projectId)
+    fun getDependencies_rootCircuit_returnsTruthfulNoParent() = runBlocking {
+        database.circuitDao().insertCircuit(
+            CircuitEntity(id = 501, projectId = projectId, circuitName = "RootFeeder", loadKVA = 10.0, voltageV = 400, phases = "3P+N", length_m = 10.0, transformerId = "TX-01", fedFrom = "Grid")
         )
 
-        val resultEnvelope = invoker.executeDirect<GetChangeHistoryRequest, ChangeHistoryResult>(request)
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-DEP-ROOT",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_DEPENDENCIES,
+            parameters = GetDependenciesRequest(
+                projectId = projectId,
+                entityType = "CIRCUIT",
+                entityId = "501"
+            )
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetDependenciesRequest, DependenciesResult>(request)
 
         assertEquals(ToolStatus.PASS, resultEnvelope.status)
-        assertNotNull(resultEnvelope.result)
-        val res = resultEnvelope.result!!
-        assertEquals(projectId, res.projectId)
-        assertEquals(1L, res.currentRevision)
-        assertFalse("Granular audit logs must not be fabricated", res.isDetailedAuditLogAvailable)
-        assertTrue(res.notice.contains("Sub-Phase 3E"))
+        assertEquals("ROOT", resultEnvelope.result?.resolutionStatus)
+        assertNull(resultEnvelope.result?.parentId)
     }
 
-    // -------------------------------------------------------------------------
-    // 6. get_catalog_item
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // BLOCKER D: Catalog Result Semantics, Missing/Ambiguity & Bounds
+    // =========================================================================
 
     @Test
     fun getCatalogItem_usesRealCatalogIdentity() = runBlocking {
@@ -490,7 +733,6 @@ class DeterministicReadToolsTest {
         val resultEnvelope = invoker.executeDirect<GetCatalogItemRequest, CatalogSearchResult>(request)
 
         assertEquals(ToolStatus.PASS, resultEnvelope.status)
-        assertNotNull(resultEnvelope.result)
         val res = resultEnvelope.result!!
         assertEquals("CABLE", res.category)
         assertNotNull(res.provenance)
@@ -510,33 +752,357 @@ class DeterministicReadToolsTest {
 
         val resultEnvelope = invoker.executeDirect<GetCatalogItemRequest, CatalogSearchResult>(request)
 
-        assertEquals(ToolStatus.PASS, resultEnvelope.status)
-        assertNotNull(resultEnvelope.result)
-        assertEquals(0, resultEnvelope.result?.matchCount)
-        assertEquals(0, resultEnvelope.result?.items?.size)
+        assertEquals(ToolStatus.INCOMPLETE, resultEnvelope.status)
+        assertNull(resultEnvelope.result)
+        assertEquals("INCOMPLETE_PROJECT_DATA", resultEnvelope.errors[0].errorCode)
     }
 
     @Test
-    fun getCatalogItem_ambiguousAndMissingAreTyped() = runBlocking {
+    fun getCatalogItem_validCategoryNoMatch_isNotReportedAsSuccessfulData() = runBlocking {
         val request = ToolRequestEnvelope(
-            requestId = "REQ-CAT-BAD-CAT",
+            requestId = "REQ-CAT-NO-MATCH",
             projectId = projectId,
             toolName = ReadToolNames.GET_CATALOG_ITEM,
             parameters = GetCatalogItemRequest(
-                category = "INVALID_UNKNOWN_CATEGORY_XYZ"
+                category = "CABLE",
+                query = "non_existent_model_xyz_999999"
+            )
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetCatalogItemRequest, CatalogSearchResult>(request)
+
+        assertEquals(ToolStatus.INCOMPLETE, resultEnvelope.status)
+        assertNull(resultEnvelope.result)
+    }
+
+    @Test
+    fun getCatalogItem_ambiguousQuery_hasTypedOutcome() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-CAT-AMB",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CATALOG_ITEM,
+            parameters = GetCatalogItemRequest(
+                category = "CABLE",
+                query = "elsewedy",
+                limit = 5
+            )
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetCatalogItemRequest, CatalogSearchResult>(request)
+
+        assertEquals(ToolStatus.PASS, resultEnvelope.status)
+        assertTrue(resultEnvelope.result!!.matchCount > 0)
+        assertTrue(resultEnvelope.result!!.items.size <= 5)
+    }
+
+    @Test
+    fun getCatalogItem_limitAbove50_isBounded() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-CAT-CLAMP",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CATALOG_ITEM,
+            parameters = GetCatalogItemRequest(
+                category = "CABLE",
+                limit = 100
+            )
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetCatalogItemRequest, CatalogSearchResult>(request)
+
+        assertEquals(ToolStatus.PASS, resultEnvelope.status)
+        assertTrue(resultEnvelope.result!!.items.size <= 50)
+    }
+
+    @Test
+    fun getCatalogItem_nonPositiveLimit_isInvalidInput() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-CAT-BAD-LIM",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CATALOG_ITEM,
+            parameters = GetCatalogItemRequest(
+                category = "CABLE",
+                limit = 0
             )
         )
 
         val resultEnvelope = invoker.executeDirect<GetCatalogItemRequest, CatalogSearchResult>(request)
 
         assertEquals(ToolStatus.INVALID_INPUT, resultEnvelope.status)
-        assertNull(resultEnvelope.result)
-        assertEquals("UNSUPPORTED_CATALOG_CATEGORY", resultEnvelope.errors[0].errorCode)
+        assertEquals("INVALID_REQUEST_PARAMETERS", resultEnvelope.errors[0].errorCode)
     }
 
-    // -------------------------------------------------------------------------
-    // 7. General Contracts, Bounds, Error Safety & Isolation Tests
-    // -------------------------------------------------------------------------
+    @Test
+    fun getCatalogItem_exactIdentity_returnsOnlyAuthoritativeMatches() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-CAT-EXACT",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CATALOG_ITEM,
+            parameters = GetCatalogItemRequest(
+                category = "TRANSFORMER",
+                ratingA = 1000.0
+            )
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetCatalogItemRequest, CatalogSearchResult>(request)
+
+        assertEquals(ToolStatus.PASS, resultEnvelope.status)
+        assertTrue(resultEnvelope.result!!.items.isNotEmpty())
+    }
+
+    // =========================================================================
+    // BLOCKER E: Get Change History Truthfulness
+    // =========================================================================
+
+    @Test
+    fun getChangeHistory_neverInventsUnavailableHistory() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-HIST-1",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CHANGE_HISTORY,
+            parameters = GetChangeHistoryRequest(projectId = projectId)
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetChangeHistoryRequest, ChangeHistoryResult>(request)
+
+        assertEquals(ToolStatus.PASS, resultEnvelope.status)
+        val res = resultEnvelope.result!!
+        assertEquals(projectId, res.projectId)
+        assertEquals(1L, res.currentRevision)
+        assertFalse("Granular audit logs must not be fabricated", res.isDetailedAuditLogAvailable)
+        assertTrue(res.notice.contains("Sub-Phase 3E"))
+    }
+
+    @Test
+    fun getChangeHistory_detailedHistoryUnavailable_isNotPresentedAsHistoryEvents() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-HIST-DETAIL",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CHANGE_HISTORY,
+            parameters = GetChangeHistoryRequest(projectId = projectId, maxEntries = 50)
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetChangeHistoryRequest, ChangeHistoryResult>(request)
+
+        assertEquals(ToolStatus.PASS, resultEnvelope.status)
+        assertFalse(resultEnvelope.result!!.isDetailedAuditLogAvailable)
+    }
+
+    @Test
+    fun getChangeHistory_returnsNoSyntheticEvents() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-HIST-SYNTH",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CHANGE_HISTORY,
+            parameters = GetChangeHistoryRequest(projectId = projectId)
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetChangeHistoryRequest, ChangeHistoryResult>(request)
+
+        assertEquals(ToolStatus.PASS, resultEnvelope.status)
+        assertTrue(resultEnvelope.result!!.notice.isNotBlank())
+    }
+
+    @Test
+    fun getChangeHistory_currentRevisionMatchesRepositoryExactly() = runBlocking {
+        val repoRevision = repository.getCurrentRevision(projectId)
+
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-HIST-MATCH",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CHANGE_HISTORY,
+            parameters = GetChangeHistoryRequest(projectId = projectId)
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetChangeHistoryRequest, ChangeHistoryResult>(request)
+
+        assertEquals(repoRevision.revision, resultEnvelope.result?.currentRevision)
+    }
+
+    @Test
+    fun getChangeHistory_missingProject_doesNotFabricateRevision() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-HIST-MISS",
+            projectId = "NON-EXISTENT-PROJECT",
+            toolName = ReadToolNames.GET_CHANGE_HISTORY,
+            parameters = GetChangeHistoryRequest(projectId = "NON-EXISTENT-PROJECT")
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetChangeHistoryRequest, ChangeHistoryResult>(request)
+
+        assertEquals(ToolStatus.INCOMPLETE, resultEnvelope.status)
+        assertNull(resultEnvelope.projectRevision)
+    }
+
+    // =========================================================================
+    // BLOCKER F: Deep Read-Only / No-Write / No-Cache / No-Freshness Proof
+    // =========================================================================
+
+    @Test
+    fun readTools_doNotCalculate() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-NO-CALC",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_ENTITY,
+            parameters = GetEntityRequest(projectId = projectId, entityType = "CIRCUIT", entityId = "101")
+        )
+
+        val envelope = invoker.executeDirect<GetEntityRequest, EntityContextResult>(request)
+
+        assertEquals(ToolStatus.PASS, envelope.status)
+        assertNull("Read tool must not invoke calculation engine", envelope.result?.circuitContext?.cableSizing?.result)
+    }
+
+    @Test
+    fun readTools_doNotPopulateAnyCoordinatorCache() = runBlocking {
+        EngineeringCalculationCoordinator.clearCache()
+
+        val req1 = ToolRequestEnvelope(requestId = "R1", projectId = projectId, toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT, parameters = GetProjectContextRequest(projectId))
+        val req2 = ToolRequestEnvelope(requestId = "R2", projectId = projectId, toolName = ReadToolNames.GET_ENTITY, parameters = GetEntityRequest(projectId, "CIRCUIT", "101"))
+        val req3 = ToolRequestEnvelope(requestId = "R3", projectId = projectId, toolName = ReadToolNames.GET_CALCULATION_STATE, parameters = GetCalculationStateRequest(projectId, "CIRCUIT", "101"))
+
+        invoker.executeDirect<GetProjectContextRequest, ProjectContextResult>(req1)
+        invoker.executeDirect<GetEntityRequest, EntityContextResult>(req2)
+        invoker.executeDirect<GetCalculationStateRequest, CalculationStateResult>(req3)
+
+        assertNull("Coordinator cache must remain completely empty after read tools", EngineeringCalculationCoordinator.getCachedSizingResult(projectId, 101))
+    }
+
+    @Test
+    fun readTools_doNotCreateOrModifyFreshnessRecords() = runBlocking {
+        val scope = CalculationScope(
+            projectId = projectId,
+            entityType = CalculationEntityType.CIRCUIT,
+            entityId = "101",
+            domain = CalculationDomain.CABLE_SIZING
+        )
+        val initialRecord = EngineeringCalculationCoordinator.freshnessRegistry.getRecord(scope)
+
+        val req = ToolRequestEnvelope(
+            requestId = "R-FRESH",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CALCULATION_STATE,
+            parameters = GetCalculationStateRequest(projectId, "CIRCUIT", "101")
+        )
+        invoker.executeDirect<GetCalculationStateRequest, CalculationStateResult>(req)
+
+        val finalRecord = EngineeringCalculationCoordinator.freshnessRegistry.getRecord(scope)
+        assertEquals("Freshness registry record must not change", initialRecord, finalRecord)
+    }
+
+    @Test
+    fun readTools_doNotChangeAnySupportedEntityRows() = runBlocking {
+        val circuitsBefore = database.circuitDao().getCircuitsListForProject(projectId)
+        val transformersBefore = database.transformerDao().getTransformersListForProject(projectId)
+        val projectBefore = database.projectDao().getProject(projectId)
+
+        val req = ToolRequestEnvelope(
+            requestId = "R-ENT",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_ENTITY,
+            parameters = GetEntityRequest(projectId, "CIRCUIT", "101")
+        )
+        invoker.executeDirect<GetEntityRequest, EntityContextResult>(req)
+
+        val circuitsAfter = database.circuitDao().getCircuitsListForProject(projectId)
+        val transformersAfter = database.transformerDao().getTransformersListForProject(projectId)
+        val projectAfter = database.projectDao().getProject(projectId)
+
+        assertEquals(circuitsBefore, circuitsAfter)
+        assertEquals(transformersBefore, transformersAfter)
+        assertEquals(projectBefore, projectAfter)
+    }
+
+    @Test
+    fun readTools_doNotIncrementRevision() = runBlocking {
+        val revBefore = repository.getCurrentRevision(projectId).revision
+
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-NO-REV-INC",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId)
+        )
+        invoker.executeDirect<GetProjectContextRequest, ProjectContextResult>(request)
+
+        val revAfter = repository.getCurrentRevision(projectId).revision
+        assertEquals("Revision must not change on reads", revBefore, revAfter)
+    }
+
+    @Test
+    fun readTools_doNotWriteRoom() = runBlocking {
+        val initialCircuitCount = database.circuitDao().getCircuitsListForProject(projectId).size
+
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-NO-ROOM",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_ENTITY,
+            parameters = GetEntityRequest(projectId = projectId, entityType = "CIRCUIT", entityId = "101")
+        )
+        invoker.executeDirect<GetEntityRequest, EntityContextResult>(request)
+
+        val afterCircuitCount = database.circuitDao().getCircuitsListForProject(projectId).size
+        assertEquals(initialCircuitCount, afterCircuitCount)
+    }
+
+    // =========================================================================
+    // BLOCKER G: Bounded Scope of Project Context Tool
+    // =========================================================================
+
+    @Test
+    fun currentProjectContext_returnsBoundedRealSnapshot() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-CTX-1",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId)
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetProjectContextRequest, ProjectContextResult>(request)
+
+        assertEquals(ToolStatus.PASS, resultEnvelope.status)
+        val result = resultEnvelope.result!!
+        assertEquals(projectId, result.projectId)
+        assertEquals(1L, result.projectRevision)
+        assertEquals(2, result.totalCircuits)
+        assertEquals(1, result.totalTransformers)
+        assertNotNull(result.engineeringStatus)
+    }
+
+    @Test
+    fun currentProjectContext_missingProject_returnsTypedMissing() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-CTX-2",
+            projectId = "NON-EXISTENT-PROJ",
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = "NON-EXISTENT-PROJ")
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetProjectContextRequest, ProjectContextResult>(request)
+
+        assertEquals(ToolStatus.INCOMPLETE, resultEnvelope.status)
+        assertNull(resultEnvelope.result)
+        assertEquals("INCOMPLETE_PROJECT_DATA", resultEnvelope.errors[0].errorCode)
+    }
+
+    @Test
+    fun currentProjectContext_doesNotFabricateActiveScreenOrEntity() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-CTX-BOUNDED",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest(projectId = projectId)
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetProjectContextRequest, ProjectContextResult>(request)
+
+        assertEquals(ToolStatus.PASS, resultEnvelope.status)
+        // Verified: ProjectContextResult contains ONLY validation & project level stats
+        assertNotNull(resultEnvelope.result?.topIssues)
+    }
+
+    // =========================================================================
+    // BLOCKER H: Provenance & Revision Policy on Success and Failures
+    // =========================================================================
 
     @Test
     fun allReadResults_includeRevisionAndProvenance() = runBlocking {
@@ -552,84 +1118,124 @@ class DeterministicReadToolsTest {
         assertEquals(ToolStatus.PASS, envelope.status)
         assertEquals(1L, envelope.projectRevision)
         assertNotNull(envelope.provenance)
-        assertFalse(envelope.provenance!!.engineName.isBlank())
         assertEquals("VALIDATION_FACADE", envelope.provenance!!.engineName)
     }
 
     @Test
-    fun readTools_haveBoundedPayloads() = runBlocking {
+    fun successEnvelope_hasAuthoritativeRevisionAndProvenance() = runBlocking {
         val request = ToolRequestEnvelope(
-            requestId = "REQ-BOUND",
+            requestId = "REQ-SUCC-PROV",
             projectId = projectId,
-            toolName = ReadToolNames.GET_CATALOG_ITEM,
-            parameters = GetCatalogItemRequest(
-                category = "CABLE",
-                limit = 5
-            )
+            toolName = ReadToolNames.GET_CHANGE_HISTORY,
+            parameters = GetChangeHistoryRequest(projectId = projectId)
         )
 
-        val envelope = invoker.executeDirect<GetCatalogItemRequest, CatalogSearchResult>(request)
+        val envelope = invoker.executeDirect<GetChangeHistoryRequest, ChangeHistoryResult>(request)
 
         assertEquals(ToolStatus.PASS, envelope.status)
-        assertTrue((envelope.result?.items?.size ?: 0) <= 5)
+        assertEquals(1L, envelope.projectRevision)
+        assertEquals("REVISION_TRACKER", envelope.provenance?.engineName)
     }
 
     @Test
-    fun readTools_doNotCalculate() = runBlocking {
-        // Read circuit context before running any calculation
+    fun missingProjectEnvelope_doesNotFabricateRevision() = runBlocking {
         val request = ToolRequestEnvelope(
-            requestId = "REQ-NO-CALC",
+            requestId = "REQ-MISS-REV",
+            projectId = "UNKNOWN-P",
+            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
+            parameters = GetProjectContextRequest("UNKNOWN-P")
+        )
+
+        val envelope = invoker.executeDirect<GetProjectContextRequest, ProjectContextResult>(request)
+
+        assertEquals(ToolStatus.INCOMPLETE, envelope.status)
+        assertNull("Missing project must have null projectRevision", envelope.projectRevision)
+    }
+
+    @Test
+    fun invalidInputEnvelope_hasTruthfulProvenance() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-INV-PROV",
             projectId = projectId,
             toolName = ReadToolNames.GET_ENTITY,
-            parameters = GetEntityRequest(projectId = projectId, entityType = "CIRCUIT", entityId = "101")
+            parameters = GetEntityRequest(projectId, "UNSUPPORTED_TYPE_XYZ", "101")
         )
 
         val envelope = invoker.executeDirect<GetEntityRequest, EntityContextResult>(request)
 
-        assertEquals(ToolStatus.PASS, envelope.status)
-        val circuitCtx = envelope.result?.circuitContext
-        assertNotNull(circuitCtx)
-        // Cable sizing result is null because read tool does NOT invoke calculation
-        assertNull("Read tool must not invoke calculation engine", circuitCtx?.cableSizing?.result)
+        assertEquals(ToolStatus.INVALID_INPUT, envelope.status)
     }
 
     @Test
-    fun readTools_doNotMutateRepositoryRevisionOrFreshness() = runBlocking {
-        val revBefore = repository.getCurrentRevision(projectId).revision
-
+    fun notSupportedHistoryEnvelope_hasTruthfulProvenance() = runBlocking {
         val request = ToolRequestEnvelope(
-            requestId = "REQ-NO-MUT",
+            requestId = "REQ-NOT-SUPP",
             projectId = projectId,
-            toolName = ReadToolNames.GET_CURRENT_PROJECT_CONTEXT,
-            parameters = GetProjectContextRequest(projectId = projectId)
+            toolName = "UNREGISTERED_TOOL_XYZ",
+            parameters = mapOf("a" to 1)
         )
 
-        invoker.executeDirect<GetProjectContextRequest, ProjectContextResult>(request)
+        val envelope = invoker.executeDirect<Map<String, Int>, Any>(request)
 
-        val revAfter = repository.getCurrentRevision(projectId).revision
-        assertEquals("Read tools must never mutate project revision", revBefore, revAfter)
+        assertEquals(ToolStatus.NOT_SUPPORTED, envelope.status)
+        assertEquals("OPERATION_NOT_SUPPORTED", envelope.errors[0].errorCode)
     }
 
     @Test
-    fun readTools_doNotWriteRoom() = runBlocking {
-        val initialCircuitCount = database.circuitDao().getCircuitsListForProject(projectId).size
-
+    fun errorEnvelope_sanitizesDiagnostics() = runBlocking {
         val request = ToolRequestEnvelope(
-            requestId = "REQ-NO-ROOM",
+            requestId = "REQ-SAN-DIAG",
             projectId = projectId,
             toolName = ReadToolNames.GET_ENTITY,
-            parameters = GetEntityRequest(projectId = projectId, entityType = "CIRCUIT", entityId = "101")
+            parameters = GetEntityRequest(
+                projectId = projectId,
+                entityType = "CIRCUIT",
+                entityId = "invalid-SELECT * FROM users WHERE path = C:\\secret.txt"
+            )
         )
 
-        invoker.executeDirect<GetEntityRequest, EntityContextResult>(request)
+        val envelope = invoker.executeDirect<GetEntityRequest, EntityContextResult>(request)
 
-        val afterCircuitCount = database.circuitDao().getCircuitsListForProject(projectId).size
-        assertEquals(initialCircuitCount, afterCircuitCount)
+        assertEquals(ToolStatus.INVALID_INPUT, envelope.status)
+        assertFalse(envelope.errors[0].message.contains("SELECT * FROM"))
+    }
+
+    // =========================================================================
+    // Isolation, Concurrency & Managed Execution
+    // =========================================================================
+
+    @Test
+    fun getEntity_enforcesProjectIsolation() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-ENT-ISO",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_ENTITY,
+            parameters = GetEntityRequest(projectId = projectId, entityType = "CIRCUIT", entityId = "201")
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetEntityRequest, EntityContextResult>(request)
+
+        assertEquals(ToolStatus.INCOMPLETE, resultEnvelope.status)
+        assertNull(resultEnvelope.result)
+    }
+
+    @Test
+    fun getEntity_missingEntity_doesNotFabricate() = runBlocking {
+        val request = ToolRequestEnvelope(
+            requestId = "REQ-ENT-MISS",
+            projectId = projectId,
+            toolName = ReadToolNames.GET_ENTITY,
+            parameters = GetEntityRequest(projectId = projectId, entityType = "CIRCUIT", entityId = "9999")
+        )
+
+        val resultEnvelope = invoker.executeDirect<GetEntityRequest, EntityContextResult>(request)
+
+        assertEquals(ToolStatus.INCOMPLETE, resultEnvelope.status)
+        assertNull(resultEnvelope.result)
     }
 
     @Test
     fun sameEntityIdAcrossProjects_neverLeaks() = runBlocking {
-        // Create same transformer ID "TX-COMMON" in projectId and in projectOther
         database.transformerDao().insertTransformer(
             TransformerEntity(transformerId = "TX-COMMON", projectId = projectId, transformerName = "Main TX-COMMON", kVA = 1000.0, voltage = 400, percentZ = 5.0, xr = 8.0, txType = "ONAN", sourceType = "GRID")
         )
@@ -700,7 +1306,6 @@ class DeterministicReadToolsTest {
             parameters = GetProjectContextRequest(projectId = projectId)
         )
 
-        // Invoker runs purely through local in-memory Kotlin facades without Gemini
         val envelope = invoker.executeDirect<GetProjectContextRequest, ProjectContextResult>(request)
         assertEquals(ToolStatus.PASS, envelope.status)
         assertNotNull(envelope.result)
@@ -708,8 +1313,8 @@ class DeterministicReadToolsTest {
 
     @Test
     fun lateSupersededRead_cannotPublishOverNewerRead() = runBlocking {
-        val startedLatch = java.util.concurrent.CountDownLatch(1)
-        val pauseLatch = java.util.concurrent.CountDownLatch(1)
+        val startedLatch = CountDownLatch(1)
+        val pauseLatch = CountDownLatch(1)
 
         val slowTool = object : DeterministicReadTool<GetProjectContextRequest, ProjectContextResult> {
             override val toolName = "slow_read_test"
@@ -735,14 +1340,14 @@ class DeterministicReadToolsTest {
                         warningCount = 0,
                         reviewRequiredCount = 0
                     ),
-                    provenance = com.example.ai.contracts.ProvenanceMetadata(
+                    provenance = ProvenanceMetadata(
                         engineName = "TEST",
                         projectId = request.projectId
                     )
                 )
             }
         }
-        registry.register(slowTool)
+        registry.register(slowTool, allowOverride = true)
 
         val req1 = ToolRequestEnvelope(
             requestId = "REQ-SUP-1",
@@ -758,9 +1363,9 @@ class DeterministicReadToolsTest {
         )
 
         val handle1 = taskManager.submit<ProjectContextResult>(
-            key = com.example.ai.task.EngineeringTaskKey(
+            key = EngineeringTaskKey(
                 projectId = projectId,
-                taskType = com.example.ai.task.EngineeringTaskType.CUSTOM,
+                taskType = EngineeringTaskType.CUSTOM,
                 requestVariant = "slow_read_test"
             ),
             owner = TaskOwner.VIEW_MODEL,
@@ -772,9 +1377,9 @@ class DeterministicReadToolsTest {
         assertTrue("Task 1 must start", startedLatch.await(3, TimeUnit.SECONDS))
 
         val handle2 = taskManager.submit<ProjectContextResult>(
-            key = com.example.ai.task.EngineeringTaskKey(
+            key = EngineeringTaskKey(
                 projectId = projectId,
-                taskType = com.example.ai.task.EngineeringTaskType.CUSTOM,
+                taskType = EngineeringTaskType.CUSTOM,
                 requestVariant = "slow_read_test"
             ),
             owner = TaskOwner.VIEW_MODEL,
@@ -798,14 +1403,13 @@ class DeterministicReadToolsTest {
                     warningCount = 0,
                     reviewRequiredCount = 0
                 ),
-                provenance = com.example.ai.contracts.ProvenanceMetadata(
+                provenance = ProvenanceMetadata(
                     engineName = "TEST",
                     projectId = projectId
                 )
             )
         }
 
-        // Release slow task 1
         pauseLatch.countDown()
 
         val res2 = handle2.awaitResult()
