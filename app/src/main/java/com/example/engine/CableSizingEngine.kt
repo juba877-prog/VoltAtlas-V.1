@@ -53,9 +53,9 @@ data class SizingResult(
     val clearingTime_s: Double = 0.1,
     val odSourceMfg: String = "Elsewedy",
     val isODApproximated: Boolean = false,
-    val resultStatus: SizingResultStatus = if (status.contains("PASS")) SizingResultStatus.PASS else SizingResultStatus.FAIL,
-    val isAmpacityOk: Boolean = resultStatus == SizingResultStatus.PASS,
-    val isVoltageDropOk: Boolean = resultStatus == SizingResultStatus.PASS,
+    val resultStatus: SizingResultStatus = SizingResultStatus.PASS,
+    val isAmpacityOk: Boolean = true,
+    val isVoltageDropOk: Boolean = true,
     val primaryFailureCode: CableFailureCode? = null
 )
 

@@ -193,7 +193,11 @@ object BuswayEngine {
             xUsed = buswayRes.xMOhmPerM,
             clearingTime_s = 1.0,
             odSourceMfg = selected?.mfg ?: "Elsewedy",
-            isODApproximated = false
+            isODApproximated = false,
+            resultStatus = if (selected != null && buswayRes.icwCheckStatus == "PASS" && buswayRes.failReason.isEmpty()) SizingResultStatus.PASS else SizingResultStatus.FAIL,
+            isAmpacityOk = selected != null,
+            isVoltageDropOk = buswayRes.failReason.isEmpty(),
+            primaryFailureCode = if (selected != null && buswayRes.icwCheckStatus == "PASS" && buswayRes.failReason.isEmpty()) null else if (selected == null) CableFailureCode.CATALOG_MISSING else CableFailureCode.VOLTAGE_DROP_FAIL
         )
     }
 

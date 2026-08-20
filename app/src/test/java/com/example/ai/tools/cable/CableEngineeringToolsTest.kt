@@ -29,6 +29,7 @@ import com.example.data.ProjectEntity
 import com.example.data.TransformerEntity
 import com.example.data.catalog.CatalogRepository
 import com.example.engine.CableSizingEngine
+import com.example.engine.BuswayEngine
 import com.example.engine.SizingResult
 import com.example.engine.SizingResultStatus
 import com.example.engine.CableFailureCode
@@ -1803,7 +1804,11 @@ class CableEngineeringToolsTest {
                 iRequired_perCable_A = 125.0, productCode = "C1", cableSize_mm2 = "50 mm²",
                 ratedI_table_A = 150.0, capacity_derated_Iz_A = 150.0, utilizationPct = 66.7,
                 neutral_mm2 = "25 mm²", earthCPC_mm2 = "25 mm²", voltDrop_V = 2.0,
-                vdPct = 0.5, cumulativeVDpct = 0.5, status = "✓ PASS"
+                vdPct = 0.5, cumulativeVDpct = 0.5, status = "✓ PASS",
+                resultStatus = SizingResultStatus.PASS,
+                isAmpacityOk = true,
+                isVoltageDropOk = true,
+                primaryFailureCode = null
             )
             val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
             val vdCheck = eval.checks.first { it.checkCode == CableCheckCode.VOLTAGE_DROP }
@@ -1821,7 +1826,11 @@ class CableEngineeringToolsTest {
             ratedI_table_A = 0.0, capacity_derated_Iz_A = 0.0, utilizationPct = 0.0,
             neutral_mm2 = "N/A", earthCPC_mm2 = "N/A", voltDrop_V = 0.0,
             vdPct = 0.0, cumulativeVDpct = 0.0, status = "✗ FAIL",
-            failReason = "Missing source transformer 'TX-9' in this project."
+            failReason = "Missing source transformer 'TX-9' in this project.",
+            resultStatus = SizingResultStatus.FAIL,
+            isAmpacityOk = false,
+            isVoltageDropOk = false,
+            primaryFailureCode = CableFailureCode.INCOMPLETE_INPUT
         )
         val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", fedFrom = "Main")
         val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
@@ -2164,6 +2173,7 @@ class CableEngineeringToolsTest {
             neutral_mm2 = "1.5 mm²", earthCPC_mm2 = "1.5 mm²", voltDrop_V = 10.0,
             vdPct = 2.5, cumulativeVDpct = 2.5, status = "✗ FAIL",
             failReason = "Standard failure message",
+            resultStatus = SizingResultStatus.FAIL,
             isAmpacityOk = false, isVoltageDropOk = true, primaryFailureCode = CableFailureCode.AMPACITY_FAIL
         )
         val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", fedFrom = "Main")
@@ -2186,6 +2196,7 @@ class CableEngineeringToolsTest {
             neutral_mm2 = "1.5 mm²", earthCPC_mm2 = "1.5 mm²", voltDrop_V = 10.0,
             vdPct = 2.5, cumulativeVDpct = 2.5, status = "✗ FAIL",
             failReason = "Localized text: فشل في سعة التيار",
+            resultStatus = SizingResultStatus.FAIL,
             isAmpacityOk = false, isVoltageDropOk = true, primaryFailureCode = CableFailureCode.AMPACITY_FAIL
         )
         val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", fedFrom = "Main")
@@ -2224,7 +2235,7 @@ class CableEngineeringToolsTest {
     @Test
     fun failedStatusWithoutTypedFailedCheck_doesNotInventMultipleConstraints() {
         val eval = CableEngineeringEvaluation(
-            sizingResult = SizingResult(10.0, 16.0, "MCB", 1.0, 16.0, "C1", "2.5 mm²", 25.0, 25.0, 40.0, "", "", 1.0, 0.5, 0.5, "✗ FAIL", failReason = "Opaque failure", isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
+            sizingResult = SizingResult(10.0, 16.0, "MCB", 1.0, 16.0, "C1", "2.5 mm²", 25.0, 25.0, 40.0, "", "", 1.0, 0.5, 0.5, "✗ FAIL", failReason = "Opaque failure", resultStatus = SizingResultStatus.FAIL, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
             overallStatus = CableCheckStatus.FAIL,
             checks = listOf(
                 CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.PASS, message = "Pass"),
@@ -2241,7 +2252,7 @@ class CableEngineeringToolsTest {
     @Test
     fun singleTypedFailure_mapsExactly() {
         val eval = CableEngineeringEvaluation(
-            sizingResult = SizingResult(10.0, 16.0, "MCB", 1.0, 16.0, "C1", "2.5 mm²", 25.0, 25.0, 40.0, "", "", 1.0, 0.5, 0.5, "✗ FAIL", failReason = "Ampacity failure", isAmpacityOk = false, isVoltageDropOk = true, primaryFailureCode = CableFailureCode.AMPACITY_FAIL),
+            sizingResult = SizingResult(10.0, 16.0, "MCB", 1.0, 16.0, "C1", "2.5 mm²", 25.0, 25.0, 40.0, "", "", 1.0, 0.5, 0.5, "✗ FAIL", failReason = "Ampacity failure", resultStatus = SizingResultStatus.FAIL, isAmpacityOk = false, isVoltageDropOk = true, primaryFailureCode = CableFailureCode.AMPACITY_FAIL),
             overallStatus = CableCheckStatus.FAIL,
             checks = listOf(
                 CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.FAIL, message = "Fail"),
@@ -2257,7 +2268,7 @@ class CableEngineeringToolsTest {
     @Test
     fun multipleTypedFailures_mapsMultipleConstraints() {
         val eval = CableEngineeringEvaluation(
-            sizingResult = SizingResult(10.0, 16.0, "MCB", 1.0, 16.0, "C1", "2.5 mm²", 25.0, 25.0, 40.0, "", "", 1.0, 0.5, 0.5, "✗ FAIL", failReason = "Both failed", isAmpacityOk = false, isVoltageDropOk = false, primaryFailureCode = CableFailureCode.MULTIPLE_CONSTRAINTS),
+            sizingResult = SizingResult(10.0, 16.0, "MCB", 1.0, 16.0, "C1", "2.5 mm²", 25.0, 25.0, 40.0, "", "", 1.0, 0.5, 0.5, "✗ FAIL", failReason = "Both failed", resultStatus = SizingResultStatus.FAIL, isAmpacityOk = false, isVoltageDropOk = false, primaryFailureCode = CableFailureCode.MULTIPLE_CONSTRAINTS),
             overallStatus = CableCheckStatus.FAIL,
             checks = listOf(
                 CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.FAIL, message = "Fail"),
@@ -2273,7 +2284,7 @@ class CableEngineeringToolsTest {
     @Test
     fun warningOnly_doesNotMapToFailureCriterion() {
         val eval = CableEngineeringEvaluation(
-            sizingResult = SizingResult(10.0, 16.0, "MCB", 1.0, 16.0, "C1", "2.5 mm²", 25.0, 25.0, 40.0, "", "", 1.0, 0.5, 0.5, "✓ PASS", isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
+            sizingResult = SizingResult(10.0, 16.0, "MCB", 1.0, 16.0, "C1", "2.5 mm²", 25.0, 25.0, 40.0, "", "", 1.0, 0.5, 0.5, "✓ PASS", resultStatus = SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
             overallStatus = CableCheckStatus.PASS,
             checks = listOf(
                 CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.WARNING, message = "Warning")
@@ -2765,5 +2776,66 @@ class CableEngineeringToolsTest {
         val failingOverrideRes = CableSizingEngine.sizeCircuit(failingOverrideCircuit)
         assertEquals(SizingResultStatus.FAIL, failingOverrideRes.resultStatus)
         assertTrue(failingOverrideRes.primaryFailureCode == CableFailureCode.AMPACITY_FAIL || failingOverrideRes.primaryFailureCode == CableFailureCode.MULTIPLE_CONSTRAINTS)
+    }
+
+    @Test
+    fun sizingResult_hasNoStringDerivedTypedDefaults() {
+        val res = SizingResult(
+            Ib_A = 10.0, deviceSize_A = 16.0, deviceType = "MCB", cTotalDerating = 1.0,
+            iRequired_perCable_A = 16.0, productCode = "C1", cableSize_mm2 = "2.5 mm²",
+            ratedI_table_A = 25.0, capacity_derated_Iz_A = 25.0, utilizationPct = 40.0,
+            neutral_mm2 = "", earthCPC_mm2 = "", voltDrop_V = 1.0, vdPct = 0.5,
+            cumulativeVDpct = 0.5, status = "✗ FAIL"
+        )
+        assertEquals(SizingResultStatus.PASS, res.resultStatus)
+    }
+
+    @Test
+    fun allProductionSizingResultCallSites_supplyTypedFields() {
+        val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", loadKVA = 50.0, length_m = 25.0, fedFrom = "Main")
+        val autoRes = CableSizingEngine.sizeCircuit(circuit)
+        assertEquals(SizingResultStatus.PASS, autoRes.resultStatus)
+        assertNull(autoRes.primaryFailureCode)
+
+        val buswayRes = BuswayEngine.sizeBusway(circuit)
+        val adapted = BuswayEngine.toSizingResult(buswayRes)
+        assertNotNull(adapted.resultStatus)
+    }
+
+    @Test
+    fun misleadingDisplayStatus_cannotInitializeTypedStatus() {
+        val result = SizingResult(
+            Ib_A = 10.0, deviceSize_A = 16.0, deviceType = "MCB", cTotalDerating = 1.0,
+            iRequired_perCable_A = 16.0, productCode = "C1", cableSize_mm2 = "2.5 mm²",
+            ratedI_table_A = 25.0, capacity_derated_Iz_A = 25.0, utilizationPct = 40.0,
+            neutral_mm2 = "", earthCPC_mm2 = "", voltDrop_V = 1.0, vdPct = 0.5,
+            cumulativeVDpct = 0.5, status = "✓ PASS DECEPTIVE",
+            resultStatus = SizingResultStatus.FAIL,
+            isAmpacityOk = false,
+            isVoltageDropOk = false,
+            primaryFailureCode = CableFailureCode.AMPACITY_FAIL
+        )
+        assertEquals(SizingResultStatus.FAIL, result.resultStatus)
+        assertFalse(result.isAmpacityOk)
+    }
+
+    @Test
+    fun blankFailReason_cannotInitializePassState() {
+        val result = SizingResult(
+            Ib_A = 10.0, deviceSize_A = 16.0, deviceType = "MCB", cTotalDerating = 1.0,
+            iRequired_perCable_A = 16.0, productCode = "C1", cableSize_mm2 = "2.5 mm²",
+            ratedI_table_A = 25.0, capacity_derated_Iz_A = 25.0, utilizationPct = 40.0,
+            neutral_mm2 = "", earthCPC_mm2 = "", voltDrop_V = 1.0, vdPct = 0.5,
+            cumulativeVDpct = 0.5, status = "✗ FAIL",
+            failReason = "",
+            resultStatus = SizingResultStatus.FAIL,
+            isAmpacityOk = false,
+            isVoltageDropOk = false,
+            primaryFailureCode = CableFailureCode.INDETERMINATE
+        )
+        val circuit = CircuitEntity(id = 1, maxVDpct = 0.05)
+        val eval = CableCalculationService.evaluateEngineeringChecks(result, circuit)
+        assertEquals(CableCheckStatus.FAIL, eval.overallStatus)
+        assertEquals(CableCheckCode.INDETERMINATE, eval.governingCheckCode)
     }
 }
