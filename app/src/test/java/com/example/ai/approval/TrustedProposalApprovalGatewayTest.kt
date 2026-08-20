@@ -23,7 +23,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.util.UUID
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -89,7 +88,7 @@ class TrustedProposalApprovalGatewayTest {
             approvalGrantDao = approvalGrantDao,
             durableWorkflow = workflow,
             clock = { currentTime },
-            principalProvider = DefaultTrustedPrincipalProvider("eng-mahmoud-local")
+            principalProvider = DefaultTrustedPrincipalProvider { "eng-mahmoud-auth" }
         )
 
         runBlocking {
@@ -195,9 +194,7 @@ class TrustedProposalApprovalGatewayTest {
             approvalGrantDao = approvalGrantDao,
             durableWorkflow = workflow,
             clock = { currentTime },
-            principalProvider = object : TrustedPrincipalProvider {
-                override fun getTrustedPrincipalId(): String? = null
-            }
+            principalProvider = DefaultTrustedPrincipalProvider { null }
         )
 
         val proposal = createValidProposal()
@@ -210,6 +207,10 @@ class TrustedProposalApprovalGatewayTest {
 
         val result = noPrincipalGateway.processApprovalAndExecute(request)
         assertTrue(result is TrustedApprovalGateResult.PrincipalMissing)
+
+        // Verify zero grants inserted
+        val grants = approvalGrantDao.getGrantsForProject(projectId)
+        assertEquals(0, grants.size)
     }
 
     // 3. Stale revision fails before grant insertion
@@ -273,6 +274,7 @@ class TrustedProposalApprovalGatewayTest {
         val grant = approvalGrantDao.getGrantById(approvalId)
         assertNotNull(grant)
         assertEquals(ApprovalStatus.CONSUMED, grant?.status)
+        assertEquals("eng-mahmoud-auth", grant?.approvedBy)
     }
 
     // 5. Double tap reuses single active grant and returns existing receipt without remutation

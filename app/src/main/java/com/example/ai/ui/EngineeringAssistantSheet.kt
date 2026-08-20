@@ -244,8 +244,8 @@ fun EngineeringAssistantSheet(
                                 AssistantApprovalConfirmationCard(
                                     reviewModel = card.model,
                                     isSubmitting = card.isSubmitting,
-                                    onConfirmApprove = { /* Trusted confirmation */ },
-                                    onCancel = { /* Cancel confirmation */ }
+                                    onConfirmApprove = { viewModel.onConfirmApproveAndApply() },
+                                    onCancel = { viewModel.onCancelApproval() }
                                 )
                             }
                             is AssistantCardUiModel.MutationReceiptCard -> {

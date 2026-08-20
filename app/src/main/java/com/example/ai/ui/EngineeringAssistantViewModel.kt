@@ -2,7 +2,15 @@ package com.example.ai.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.ai.approval.TrustedApprovalGateResult
+import com.example.ai.approval.TrustedApprovalRequest
+import com.example.ai.approval.TrustedProposalApprovalGateway
 import com.example.ai.context.EngineeringContext
+import com.example.ai.proposal.CableEngineeringProposal
+import com.example.ai.proposal.DurableMutationOutcome
+import com.example.ai.proposal.RevalidationOutcome
+import com.example.ai.proposal.RevalidationStatus
+import com.example.ai.runtime.BoundedProjectContext
 import com.example.ai.service.AssistantMessage
 import com.example.ai.service.AssistantResponse
 import com.example.ai.service.EngineeringAiService
@@ -13,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /**
  * Entry points for invoking the VoltAtlas Engineering AI Assistant.
@@ -53,6 +62,7 @@ data class AssistantUiState(
     val context: EngineeringContext = EngineeringContext(),
     val messages: List<AssistantMessage> = emptyList(),
     val typedCards: List<AssistantCardUiModel> = emptyList(),
+    val approvalExecutionState: ApprovalExecutionUiState = ApprovalExecutionUiState.Idle,
     val inputText: String = "",
     val isThinking: Boolean = false,
     val errorMessage: String? = null
@@ -67,11 +77,13 @@ data class AssistantUiState(
 }
 
 /**
- * ViewModel managing Assistant container state, conversations, and back-gesture consumption.
+ * ViewModel managing Assistant container state, conversations, trusted approval execution, and back-gesture consumption.
  */
 class EngineeringAssistantViewModel(
     private val aiService: EngineeringAiService = FirebaseAiServiceImpl()
 ) : ViewModel() {
+
+    internal var approvalGateway: TrustedProposalApprovalGateway? = null
 
     private val _uiState = MutableStateFlow(AssistantUiState())
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
@@ -163,12 +175,228 @@ class EngineeringAssistantViewModel(
     }
 
     /**
+     * Explicit UI action transitioning proposal review into step 2 confirmation.
+     */
+    fun onContinueToApproval(proposal: CableEngineeringProposal, reviewModel: ProposalReviewUiModel) {
+        _uiState.update { current ->
+            val confirmationCard = AssistantCardUiModel.ApprovalConfirmationCard(
+                cardId = "CONFIRM-" + proposal.proposalId,
+                model = reviewModel,
+                isSubmitting = false
+            )
+            current.copy(
+                approvalExecutionState = ApprovalExecutionUiState.Confirming(proposal, reviewModel),
+                typedCards = current.typedCards + confirmationCard
+            )
+        }
+    }
+
+    /**
+     * Cancels active approval confirmation with zero database/proposal writes.
+     */
+    fun onCancelApproval() {
+        _uiState.update { current ->
+            current.copy(
+                approvalExecutionState = ApprovalExecutionUiState.Idle,
+                typedCards = current.typedCards.filterNot { it is AssistantCardUiModel.ApprovalConfirmationCard }
+            )
+        }
+    }
+
+    /**
+     * Sole trusted physical UI action invoking [TrustedProposalApprovalGateway].
+     * Enforces single in-flight submission and double-tap prevention.
+     */
+    fun onConfirmApproveAndApply() {
+        val current = _uiState.value
+        val confirmingState = current.approvalExecutionState as? ApprovalExecutionUiState.Confirming ?: return
+
+        val proposal = confirmingState.proposal
+        val reviewModel = confirmingState.reviewModel
+        val userActionId = UUID.randomUUID().toString()
+
+        // 1. Transition to SubmittingApproval (Disables button, establishes in-flight request identity)
+        _uiState.update { state ->
+            val updatedCards = state.typedCards.map { card ->
+                if (card is AssistantCardUiModel.ApprovalConfirmationCard) card.copy(isSubmitting = true) else card
+            }
+            state.copy(
+                approvalExecutionState = ApprovalExecutionUiState.SubmittingApproval(proposal.proposalId, userActionId),
+                typedCards = updatedCards
+            )
+        }
+
+        val gateway = approvalGateway
+        if (gateway == null) {
+            _uiState.update { state ->
+                state.copy(
+                    approvalExecutionState = ApprovalExecutionUiState.FailedPreCommit("Trusted approval gateway is unavailable.")
+                )
+            }
+            return
+        }
+
+        val boundedContext = BoundedProjectContext(
+            projectId = proposal.projectId,
+            projectName = current.context.projectName,
+            liveRevision = proposal.baseProjectRevision,
+            activeScreen = "AssistantReview",
+            activeEntityType = proposal.targetEntityType,
+            activeEntityId = proposal.targetEntityId,
+            activeEntityName = current.context.activeEntityName
+        )
+
+        viewModelScope.launch {
+            val gateResult = gateway.processApprovalAndExecute(
+                TrustedApprovalRequest(
+                    proposal = proposal,
+                    projectContext = boundedContext,
+                    userActionId = userActionId
+                )
+            )
+
+            when (gateResult) {
+                is TrustedApprovalGateResult.Success -> {
+                    when (val outcome = gateResult.outcome) {
+                        is DurableMutationOutcome.Completed -> {
+                            val receiptCard = AssistantCardUiModel.MutationReceiptCard(
+                                cardId = "RECEIPT-" + outcome.receipt.executionId,
+                                receiptId = outcome.receipt.executionId,
+                                revisionBefore = outcome.receipt.revisionBefore,
+                                revisionAfter = outcome.receipt.revisionAfter,
+                                appliedChanges = reviewModel.fieldChanges,
+                                revalidationStatus = "SUCCEEDED"
+                            )
+                            _uiState.update { state ->
+                                state.copy(
+                                    approvalExecutionState = ApprovalExecutionUiState.Completed(
+                                        receiptId = outcome.receipt.executionId,
+                                        revisionBefore = outcome.receipt.revisionBefore,
+                                        revisionAfter = outcome.receipt.revisionAfter,
+                                        appliedChanges = reviewModel.fieldChanges,
+                                        revalidationStatus = "SUCCEEDED"
+                                    ),
+                                    typedCards = state.typedCards.filterNot { it is AssistantCardUiModel.ApprovalConfirmationCard } + receiptCard
+                                )
+                            }
+                        }
+                        is DurableMutationOutcome.CommittedPartial -> {
+                            val receiptCard = AssistantCardUiModel.MutationReceiptCard(
+                                cardId = "RECEIPT-" + outcome.receipt.executionId,
+                                receiptId = outcome.receipt.executionId,
+                                revisionBefore = outcome.receipt.revisionBefore,
+                                revisionAfter = outcome.receipt.revisionAfter,
+                                appliedChanges = reviewModel.fieldChanges,
+                                revalidationStatus = "PARTIAL",
+                                isPartialOrFailed = true
+                            )
+                            _uiState.update { state ->
+                                state.copy(
+                                    approvalExecutionState = ApprovalExecutionUiState.CommittedPartial(
+                                        receiptId = outcome.receipt.executionId,
+                                        revisionBefore = outcome.receipt.revisionBefore,
+                                        revisionAfter = outcome.receipt.revisionAfter,
+                                        appliedChanges = reviewModel.fieldChanges,
+                                        revalidationNote = "Partial revalidation"
+                                    ),
+                                    typedCards = state.typedCards.filterNot { it is AssistantCardUiModel.ApprovalConfirmationCard } + receiptCard
+                                )
+                            }
+                        }
+                        is DurableMutationOutcome.CommittedRevalidationFailed -> {
+                            val receiptCard = AssistantCardUiModel.MutationReceiptCard(
+                                cardId = "RECEIPT-" + outcome.receipt.executionId,
+                                receiptId = outcome.receipt.executionId,
+                                revisionBefore = outcome.receipt.revisionBefore,
+                                revisionAfter = outcome.receipt.revisionAfter,
+                                appliedChanges = reviewModel.fieldChanges,
+                                revalidationStatus = "FAILED",
+                                isPartialOrFailed = true
+                            )
+                            _uiState.update { state ->
+                                state.copy(
+                                    approvalExecutionState = ApprovalExecutionUiState.CommittedRevalidationFailed(
+                                        receiptId = outcome.receipt.executionId,
+                                        revisionBefore = outcome.receipt.revisionBefore,
+                                        revisionAfter = outcome.receipt.revisionAfter,
+                                        appliedChanges = reviewModel.fieldChanges,
+                                        failureReason = "Revalidation failed"
+                                    ),
+                                    typedCards = state.typedCards.filterNot { it is AssistantCardUiModel.ApprovalConfirmationCard } + receiptCard
+                                )
+                            }
+                        }
+                        is DurableMutationOutcome.ExistingReceiptReturned -> {
+                            val receiptCard = AssistantCardUiModel.MutationReceiptCard(
+                                cardId = "RECEIPT-" + outcome.receipt.executionId,
+                                receiptId = outcome.receipt.executionId,
+                                revisionBefore = outcome.receipt.revisionBefore,
+                                revisionAfter = outcome.receipt.revisionAfter,
+                                appliedChanges = reviewModel.fieldChanges,
+                                revalidationStatus = outcome.receipt.revalidationStatus.name,
+                                isAlreadyApplied = true
+                            )
+                            _uiState.update { state ->
+                                state.copy(
+                                    approvalExecutionState = ApprovalExecutionUiState.AlreadyApplied(
+                                        receiptId = outcome.receipt.executionId,
+                                        revisionAfter = outcome.receipt.revisionAfter,
+                                        appliedChanges = reviewModel.fieldChanges
+                                    ),
+                                    typedCards = state.typedCards.filterNot { it is AssistantCardUiModel.ApprovalConfirmationCard } + receiptCard
+                                )
+                            }
+                        }
+                        else -> {
+                            _uiState.update { state ->
+                                state.copy(
+                                    approvalExecutionState = ApprovalExecutionUiState.FailedPreCommit("Unable to complete mutation: $outcome")
+                                )
+                            }
+                        }
+                    }
+                }
+                is TrustedApprovalGateResult.StaleProposal -> {
+                    _uiState.update { state ->
+                        state.copy(
+                            approvalExecutionState = ApprovalExecutionUiState.StaleBeforeApproval(gateResult.reason)
+                        )
+                    }
+                }
+                is TrustedApprovalGateResult.PrincipalMissing,
+                is TrustedApprovalGateResult.ValidationFailed,
+                is TrustedApprovalGateResult.Failure -> {
+                    _uiState.update { state ->
+                        state.copy(
+                            approvalExecutionState = ApprovalExecutionUiState.FailedPreCommit("Approval validation failed.")
+                        )
+                    }
+                }
+                is TrustedApprovalGateResult.DuplicateActiveApproval -> {
+                    // Ignored or existing grant used
+                }
+            }
+        }
+    }
+
+    /**
      * Predictive Back Tier-0 consumer.
      * Returns true if back gesture was consumed by the assistant; false if assistant was closed.
      */
     fun onBackHandled(): Boolean {
         val current = _uiState.value
         if (!current.isOpen) return false
+
+        if (current.approvalExecutionState is ApprovalExecutionUiState.Confirming) {
+            // Cancel confirmation without mutating
+            onCancelApproval()
+            return true
+        }
+
+        if (current.approvalExecutionState is ApprovalExecutionUiState.SubmittingApproval) {
+            // Submitting in progress: consume Back to prevent UI race
+            return true
+        }
 
         if (current.isExpanded) {
             // Collapse to compact first
