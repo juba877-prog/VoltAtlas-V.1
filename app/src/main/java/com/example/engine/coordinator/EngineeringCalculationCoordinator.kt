@@ -1361,4 +1361,270 @@ object EngineeringCalculationCoordinator {
             allCircuits = allCircuits
         )
     }
+
+    // -------------------------------------------------------------------------
+    // Revision-Guarded Targeted Calculation Entrypoints (Phase 7D)
+    // -------------------------------------------------------------------------
+
+    fun calculateCableSizingGuarded(
+        circuit: CircuitEntity,
+        allCircuits: List<CircuitEntity>,
+        transformers: List<TransformerEntity> = emptyList(),
+        expectedRevision: Long
+    ): GuardedCalculationResult<SizingResult> {
+        val ancestors = resolveAncestorChain(circuit, allCircuits)
+        var cumulativeVD = 0.0
+        for (ancestor in ancestors) {
+            val ancestorPid = ancestor.projectId.ifEmpty { "DEFAULT_PROJECT" }
+            val ancestorKey = ProjectCircuitKey(ancestorPid, ancestor.id)
+            val ancestorSig = computeSignature(ancestor, cumulativeVD, transformers)
+            val cached = sizingCache[ancestorKey]
+            val ancestorResult = if (cached != null && cached.first == ancestorSig) {
+                cached.second
+            } else {
+                val fresh = CableCalculationService.calculateSingleCircuit(
+                    circuit = ancestor,
+                    parentCumulativeVD = cumulativeVD,
+                    upstreamCircuits = ancestors,
+                    transformers = transformers
+                )
+                sizingCache[ancestorKey] = ancestorSig to fresh
+                fresh
+            }
+            cumulativeVD = ancestorResult.cumulativeVDpct
+        }
+
+        val targetPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val targetKey = ProjectCircuitKey(targetPid, circuit.id)
+        val targetSig = computeSignature(circuit, cumulativeVD, transformers)
+
+        val freshResult = CableCalculationService.calculateSingleCircuit(
+            circuit = circuit,
+            parentCumulativeVD = cumulativeVD,
+            upstreamCircuits = ancestors,
+            transformers = transformers
+        )
+
+        val liveRev = getProjectRevision(targetPid)
+        if (liveRev != expectedRevision) {
+            return GuardedCalculationResult.Superseded(expectedRevision, liveRev)
+        }
+
+        sizingCache[targetKey] = targetSig to freshResult
+        val status = if (freshResult.status.contains("FAIL")) "FAIL" else if (freshResult.status.contains("WARN")) "WARNING" else "PASS"
+        try {
+            runBlocking {
+                getRecorder(allCircuits, transformers).recordCableSizing(targetPid, circuit.id, status, liveRev)
+            }
+        } catch (_: Exception) { }
+
+        return GuardedCalculationResult.Published(freshResult, liveRev)
+    }
+
+    fun calculateShortCircuitGuarded(
+        circuitId: Int,
+        allCircuits: List<CircuitEntity>,
+        allTransformers: List<TransformerEntity>,
+        expectedRevision: Long
+    ): GuardedCalculationResult<ShortCircuitResult> {
+        val circuit = allCircuits.firstOrNull { it.id == circuitId }
+            ?: return GuardedCalculationResult.Failed("Circuit $circuitId not found in project")
+
+        val ancestors = resolveAncestorChain(circuit, allCircuits)
+        val branchCircuits = ancestors + circuit
+
+        val branchSizings = mutableMapOf<Int, SizingResult>()
+        for (item in branchCircuits) {
+            branchSizings[item.id] = calculateCableSizing(item, allCircuits, allTransformers)
+        }
+
+        var curr = circuit
+        var txResult: TransformerResult? = null
+        val visitedTxLookup = mutableSetOf<Int>()
+        while (true) {
+            visitedTxLookup.add(curr.id)
+            val fedLower = curr.fedFrom.trim().lowercase()
+            if (fedLower in listOf("transformer", "ats", "generator", "grid") || curr.transformerId.isNotBlank()) {
+                val txId = curr.transformerId
+                if (txId.isNotBlank()) {
+                    txResult = calculateTransformer(txId, allCircuits, allTransformers)
+                    break
+                }
+            }
+            val parent = (if (curr.parentId != null) allCircuits.find { it.id == curr.parentId } else null)
+                ?: allCircuits.find { it.circuitName.equals(curr.fedFrom.trim(), ignoreCase = true) }
+            if (parent == null || parent.id == curr.id || visitedTxLookup.contains(parent.id)) break
+            curr = parent
+        }
+
+        val txMap = if (txResult != null && curr.transformerId.isNotBlank()) {
+            mapOf(curr.transformerId to txResult)
+        } else {
+            emptyMap()
+        }
+
+        val parentsMap = mutableMapOf<Int, Int>()
+        for (i in 1 until branchCircuits.size) {
+            parentsMap[branchCircuits[i].id] = branchCircuits[i - 1].id
+        }
+
+        val fresh = ShortCircuitCalculationService.calculateSingleCircuitShortCircuit(
+            circuit = circuit,
+            ancestors = ancestors,
+            circuitParents = parentsMap,
+            sizingResults = branchSizings,
+            transformerResults = txMap
+        )
+
+        val ancestorPairs = ancestors.map { it to branchSizings[it.id] }
+        val sig = computeShortCircuitSignature(
+            circuit = circuit,
+            sizingResult = branchSizings[circuit.id],
+            transformerResult = txResult,
+            ancestorSizings = ancestorPairs
+        )
+
+        val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val scKey = ProjectCircuitKey(pid, circuit.id)
+
+        val liveRev = getProjectRevision(pid)
+        if (liveRev != expectedRevision) {
+            return GuardedCalculationResult.Superseded(expectedRevision, liveRev)
+        }
+
+        shortCircuitCache[scKey] = sig to fresh
+        val status = if (fresh.status.contains("FAIL") || fresh.status.contains("MISSING")) "FAIL" else "PASS"
+        try {
+            runBlocking {
+                getRecorder(allCircuits, allTransformers).recordShortCircuit(pid, circuitId, status, liveRev)
+            }
+        } catch (_: Exception) { }
+
+        return GuardedCalculationResult.Published(fresh, liveRev)
+    }
+
+    fun calculateProtectionGuarded(
+        circuitId: Int,
+        allCircuits: List<CircuitEntity>,
+        allTransformers: List<TransformerEntity>,
+        expectedRevision: Long
+    ): GuardedCalculationResult<ProtectionResult> {
+        val circuit = allCircuits.firstOrNull { it.id == circuitId }
+            ?: return GuardedCalculationResult.Failed("Circuit $circuitId not found in project")
+
+        val sizingResult = calculateCableSizing(circuit, allCircuits, allTransformers)
+        val scResult = calculateShortCircuit(circuitId, allCircuits, allTransformers)
+
+        val parent = (if (circuit.parentId != null) allCircuits.find { it.id == circuit.parentId } else null)
+            ?: allCircuits.find { it.circuitName.equals(circuit.fedFrom.trim(), ignoreCase = true) }
+
+        val upstreamIn: Double
+        val upstreamName: String
+        if (parent != null && parent.id != circuit.id) {
+            val parentSizing = calculateCableSizing(parent, allCircuits, allTransformers)
+            upstreamIn = parentSizing.deviceSize_A
+            upstreamName = parent.circuitName
+        } else {
+            val txResult = if (circuit.transformerId.isNotBlank()) {
+                calculateTransformer(circuit.transformerId, allCircuits, allTransformers)
+            } else null
+            upstreamIn = txResult?.flc ?: 0.0
+            upstreamName = if (circuit.transformerId.isNotBlank()) "Incomer (${circuit.transformerId})" else "Incomer"
+        }
+
+        val fresh = ProtectionCalculationService.evaluateProtection(
+            circuit = circuit,
+            sizingResult = sizingResult,
+            shortCircuitResult = scResult,
+            upstreamIn_A = upstreamIn,
+            upstreamName = upstreamName
+        )
+
+        val sig = computeProtectionSignature(circuit, sizingResult, scResult, upstreamIn, upstreamName)
+        val protPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val protKey = ProjectCircuitKey(protPid, circuit.id)
+
+        val liveRev = getProjectRevision(protPid)
+        if (liveRev != expectedRevision) {
+            return GuardedCalculationResult.Superseded(expectedRevision, liveRev)
+        }
+
+        protectionCache[protKey] = sig to fresh
+        try {
+            runBlocking {
+                getRecorder(allCircuits, allTransformers).recordProtectionAds(protPid, circuitId, fresh.finalStatus, liveRev)
+            }
+        } catch (_: Exception) { }
+
+        return GuardedCalculationResult.Published(fresh, liveRev)
+    }
+
+    fun calculateCoordinationGuarded(
+        circuitId: Int,
+        allCircuits: List<CircuitEntity>,
+        allTransformers: List<TransformerEntity> = emptyList(),
+        expectedRevision: Long
+    ): GuardedCalculationResult<CoordinationResult> {
+        val circuit = allCircuits.firstOrNull { it.id == circuitId }
+            ?: return GuardedCalculationResult.Failed("Circuit $circuitId not found in project")
+
+        val sizingResult = calculateCableSizing(circuit, allCircuits, allTransformers)
+
+        val visited = mutableSetOf<Int>()
+        visited.add(circuit.id)
+        val parent = (if (circuit.parentId != null) allCircuits.find { it.id == circuit.parentId } else null)
+            ?: allCircuits.find { it.circuitName.equals(circuit.fedFrom.trim(), ignoreCase = true) }
+
+        val upstreamName: String
+        val upstreamRating: Double
+
+        if (parent != null && parent.id != circuit.id && !visited.contains(parent.id)) {
+            val parentSizing = calculateCableSizing(parent, allCircuits, allTransformers)
+            upstreamRating = parentSizing.deviceSize_A
+            upstreamName = parent.circuitName
+        } else if (circuit.fedFrom.equals("Transformer", ignoreCase = true) || circuit.transformerId.isNotBlank()) {
+            val tx = allTransformers.firstOrNull { it.transformerId.equals(circuit.transformerId.trim(), ignoreCase = true) }
+            if (tx != null) {
+                val txResult = calculateTransformer(tx, allCircuits)
+                upstreamRating = txResult.flc
+                upstreamName = "Incomer (${tx.transformerId})"
+            } else {
+                return GuardedCalculationResult.Failed("Source transformer '${circuit.transformerId}' not found in project")
+            }
+        } else {
+            return GuardedCalculationResult.Failed("Upstream parent device or source transformer not found")
+        }
+
+        val fresh = CoordinationCalculationService.calculateCoordination(
+            downstreamCircuit = circuit,
+            downstreamResult = sizingResult,
+            upstreamName = upstreamName,
+            upstreamRating = upstreamRating
+        )
+
+        val sig = computeCoordinationSignature(circuit, sizingResult, upstreamName, upstreamRating)
+        val coordPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
+        val coordKey = ProjectCircuitKey(coordPid, circuit.id)
+
+        val liveRev = getProjectRevision(coordPid)
+        if (liveRev != expectedRevision) {
+            return GuardedCalculationResult.Superseded(expectedRevision, liveRev)
+        }
+
+        coordinationCache[coordKey] = sig to fresh
+        try {
+            runBlocking {
+                getRecorder(allCircuits, allTransformers).recordCoordination(coordPid, circuitId, fresh.status, liveRev)
+            }
+        } catch (_: Exception) { }
+
+        return GuardedCalculationResult.Published(fresh, liveRev)
+    }
 }
+
+sealed class GuardedCalculationResult<out T> {
+    data class Published<T>(val result: T, val revision: Long) : GuardedCalculationResult<T>()
+    data class Superseded(val expectedRevision: Long, val actualRevision: Long) : GuardedCalculationResult<Nothing>()
+    data class Failed(val reason: String) : GuardedCalculationResult<Nothing>()
+}
+
