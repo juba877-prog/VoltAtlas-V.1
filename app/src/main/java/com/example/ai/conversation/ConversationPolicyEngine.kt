@@ -483,11 +483,12 @@ object ConversationPolicyEngine {
     }
 
     private fun isApplyOrAffirmation(lower: String): Boolean {
-        return lower == "apply" || lower == "طبق" || lower == "نفذ" ||
+        return lower == "apply" || lower == "طبق" || lower == "نفذ" || lower == "موافق" ||
                 lower == "ok" || lower == "yes" || lower == "sure" ||
                 lower == "ok apply" || lower == "yes apply" || lower == "do it" ||
-                lower == "تمام" || lower == "نعم" ||
+                lower == "تمام" || lower == "نعم" || lower.contains("موافق") || lower.contains("اعتمد") ||
                 lower.startsWith("apply") || lower.startsWith("طبق") || lower.startsWith("نفذ") ||
+                lower.startsWith("اعتمد") || lower.startsWith("تمام") ||
                 lower.startsWith("commit") || lower.startsWith("save changes")
     }
 
