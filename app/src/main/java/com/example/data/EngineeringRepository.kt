@@ -246,7 +246,7 @@ class EngineeringRepository(
     }
 
     suspend fun createProject(name: String, client: String? = null): String {
-        val id = "PRJ_" + System.currentTimeMillis()
+        val id = "PRJ_" + System.currentTimeMillis() + "_" + java.util.UUID.randomUUID().toString().replace("-", "").take(8)
         val now = System.currentTimeMillis()
         projectDao.upsertProject(
             ProjectEntity(

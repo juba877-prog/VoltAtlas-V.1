@@ -46,6 +46,11 @@ internal class EngineeringMutationEngine(
             return MutationOutcome.ApprovalNotVerified(approvalResult.reason)
         }
 
+        val numericValidationError = preValidateNumericBounds(intent.instructions)
+        if (numericValidationError != null) {
+            return MutationOutcome.InvalidPatch(numericValidationError)
+        }
+
         val catalogValidationResult = preValidateCatalogConstraints(intent.instructions)
         if (catalogValidationResult != null) {
             return MutationOutcome.InvalidPatch(catalogValidationResult)
@@ -87,16 +92,22 @@ internal class EngineeringMutationEngine(
                     )
                 }
 
-                // 2.4. Build Patched Entity and Typed Field Change Records
+                // 2.4. Validate Final Merged Combination Against Authoritative Catalog
+                val finalCombinationError = validateMergedCatalogCombination(circuit, intent.instructions)
+                if (finalCombinationError != null) {
+                    throw InternalRollbackException.InvalidPatch(finalCombinationError)
+                }
+
+                // 2.5. Build Patched Entity and Typed Field Change Records
                 val (patchedCircuit, fieldChanges) = buildPatchedCircuit(circuit, intent.instructions)
 
-                // 2.5. Checked Project-Scoped Circuit Write
+                // 2.6. Checked Project-Scoped Circuit Write
                 val circuitRowsUpdated = circuitDao.updateCircuit(patchedCircuit)
                 if (circuitRowsUpdated != 1) {
                     throw InternalRollbackException.CircuitUpdateFailed(intent.projectId, targetCircuitId)
                 }
 
-                // 2.6. Return Internal Success (Commit Linearization Point)
+                // 2.7. Return Internal Success (Commit Linearization Point)
                 InternalMutationSuccess(
                     proposalId = intent.proposalId,
                     proposalDigest = intent.proposalDigest,
@@ -120,6 +131,7 @@ internal class EngineeringMutationEngine(
                 resultingRevision = internalSuccess.resultingRevision,
                 appliedChanges = internalSuccess.fieldChanges,
                 committedAt = internalSuccess.committedAt,
+                status = MutationSuccessStatus.COMMITTED_REVALIDATION_REQUIRED,
                 impact = MutationImpact(
                     projectId = internalSuccess.projectId,
                     entityType = "CIRCUIT",
@@ -129,6 +141,7 @@ internal class EngineeringMutationEngine(
                     resultingRevision = internalSuccess.resultingRevision,
                     candidateAffectedDomains = internalSuccess.candidateAffectedDomains,
                     committedAt = internalSuccess.committedAt,
+                    status = MutationSuccessStatus.COMMITTED_REVALIDATION_REQUIRED,
                     requiresRevalidation = true
                 )
             )
@@ -159,6 +172,34 @@ internal class EngineeringMutationEngine(
                 diagnosticRef = "TX-ERR-$now"
             )
         }
+    }
+
+    private fun preValidateNumericBounds(instructions: CablePatchInstructions): String? {
+        instructions.parallelRuns?.let {
+            if (it.action == PatchAction.SET && it.value != null) {
+                if (it.value < 1 || it.value > 20) {
+                    return "parallelRuns must be between 1 and 20, got ${it.value}."
+                }
+            }
+        }
+
+        instructions.lengthM?.let {
+            if (it.action == PatchAction.SET && it.value != null) {
+                if (it.value.isNaN() || it.value.isInfinite() || it.value <= 0.0 || it.value > 10000.0) {
+                    return "lengthM must be a finite positive number <= 10000.0, got ${it.value}."
+                }
+            }
+        }
+
+        instructions.overrideDeviceSize?.let {
+            if (it.action == PatchAction.SET && it.value != null) {
+                if (it.value.isNaN() || it.value.isInfinite() || it.value <= 0.0 || it.value > 100000.0) {
+                    return "overrideDeviceSize must be a finite positive number <= 100000.0, got ${it.value}."
+                }
+            }
+        }
+
+        return null
     }
 
     private fun preValidateCatalogConstraints(instructions: CablePatchInstructions): String? {
@@ -193,6 +234,74 @@ internal class EngineeringMutationEngine(
                     if (!exists) {
                         return "Device type '${instr.value}' is not recognized in the breaker catalog."
                     }
+                }
+            }
+        }
+
+        return null
+    }
+
+    private fun validateMergedCatalogCombination(
+        circuit: CircuitEntity,
+        instructions: CablePatchInstructions
+    ): String? {
+        val catRepo = catalogRepository ?: return null
+
+        val finalCableType = instructions.cableType?.value ?: circuit.cableType
+        val finalMfg = instructions.manufacturer?.value ?: circuit.manufacturer
+        val finalSize = when (instructions.overrideCableSize?.action) {
+            PatchAction.SET -> instructions.overrideCableSize.value
+            PatchAction.CLEAR -> null
+            null -> circuit.overrideCableSize
+        }
+        val finalDeviceType = when (instructions.overrideDeviceType?.action) {
+            PatchAction.SET -> instructions.overrideDeviceType.value
+            PatchAction.CLEAR -> null
+            null -> circuit.overrideDeviceType
+        }
+        val finalDeviceSize = when (instructions.overrideDeviceSize?.action) {
+            PatchAction.SET -> instructions.overrideDeviceSize.value
+            PatchAction.CLEAR -> null
+            null -> circuit.overrideDeviceSize
+        }
+
+        if (catRepo.cableTypesData.isNotEmpty()) {
+            val typeEntry = catRepo.cableTypesData.firstOrNull { it.cableType.equals(finalCableType, ignoreCase = true) }
+            if (typeEntry == null) {
+                return "Cable type '$finalCableType' is not recognized in the cable catalog."
+            }
+
+            if (catRepo.cableProducts.isNotEmpty()) {
+                val mfgProducts = catRepo.cableProducts.filter {
+                    it.mfg.equals(finalMfg, ignoreCase = true) && it.typeCode == typeEntry.typeCode
+                }
+                if (mfgProducts.isEmpty()) {
+                    return "Manufacturer '$finalMfg' does not supply cable type '$finalCableType'."
+                }
+
+                if (finalSize != null) {
+                    val numericSize = finalSize.replace("mm²", "").replace("mm2", "").trim().toDoubleOrNull()
+                    val sizeExists = if (numericSize != null) {
+                        mfgProducts.any { it.size == numericSize }
+                    } else {
+                        mfgProducts.any { it.model.contains(finalSize, ignoreCase = true) }
+                    }
+                    if (!sizeExists) {
+                        return "Cable size '$finalSize' is not available for manufacturer '$finalMfg' and cable type '$finalCableType'."
+                    }
+                }
+            }
+        }
+
+        if (finalDeviceType != null && catRepo.breakers.isNotEmpty()) {
+            val breakersForType = catRepo.breakers.filter { it.type.equals(finalDeviceType, ignoreCase = true) }
+            if (breakersForType.isEmpty()) {
+                return "Device type '$finalDeviceType' is not recognized in the breaker catalog."
+            }
+            if (finalDeviceSize != null) {
+                val ratingExists = breakersForType.any { it.ratingA == finalDeviceSize }
+                if (!ratingExists) {
+                    return "Device rating ${finalDeviceSize}A is not available for breaker type '$finalDeviceType'."
                 }
             }
         }

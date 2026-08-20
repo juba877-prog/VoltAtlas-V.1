@@ -50,6 +50,14 @@ data class FieldChangeRecord(
     val displayChange: String? = null
 )
 
+enum class MutationSuccessStatus {
+    /**
+     * Database transaction committed successfully. Cache invalidation and calculation
+     * revalidation are mandatory before exposing results to public runtime or users.
+     */
+    COMMITTED_REVALIDATION_REQUIRED
+}
+
 /**
  * Data payload describing the scope of mutation impact for handoff to Phase 7D revalidation.
  * Data only: Does NOT execute calculation or invalidation in Phase 7C.
@@ -64,6 +72,7 @@ data class MutationImpact(
     val resultingRevision: Long,
     val candidateAffectedDomains: Set<String>,
     val committedAt: Long,
+    val status: MutationSuccessStatus = MutationSuccessStatus.COMMITTED_REVALIDATION_REQUIRED,
     val requiresRevalidation: Boolean = true
 )
 
@@ -74,6 +83,7 @@ sealed class MutationOutcome {
     /**
      * Mutation successfully applied, project revision incremented by exactly 1,
      * and SQLite WAL transaction committed.
+     * Note: Requires Phase 7D revalidation before results are current.
      */
     data class Success(
         val proposalId: String,
@@ -84,6 +94,7 @@ sealed class MutationOutcome {
         val resultingRevision: Long,
         val appliedChanges: List<FieldChangeRecord>,
         val committedAt: Long,
+        val status: MutationSuccessStatus = MutationSuccessStatus.COMMITTED_REVALIDATION_REQUIRED,
         val impact: MutationImpact
     ) : MutationOutcome()
 

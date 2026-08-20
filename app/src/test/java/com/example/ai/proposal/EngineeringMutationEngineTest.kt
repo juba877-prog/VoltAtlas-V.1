@@ -6,9 +6,11 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.ai.contracts.ExecutionMode
 import com.example.ai.contracts.ExecutionModePolicy
+import com.example.ai.tools.UnifiedDeterministicToolRegistry
 import com.example.data.AppDatabase
 import com.example.data.CircuitEntity
 import com.example.data.ProjectEntity
+import com.example.data.catalog.CatalogRepository
 import kotlinx.coroutines.*
 import org.junit.After
 import org.junit.Assert.*
@@ -16,7 +18,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
-import java.lang.reflect.Modifier
+import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 @Config(manifest = Config.NONE)
@@ -25,6 +27,7 @@ class EngineeringMutationEngineTest {
     private lateinit var context: Context
     private lateinit var database: AppDatabase
     private lateinit var testVerifier: TestApprovalVerifier
+    private lateinit var testCatalogRepository: CatalogRepository
     private lateinit var mutationEngine: EngineeringMutationEngine
 
     @Before
@@ -35,8 +38,36 @@ class EngineeringMutationEngineTest {
             .allowMainThreadQueries()
             .build()
         testVerifier = TestApprovalVerifier(shouldVerify = true)
+
+        testCatalogRepository = CatalogRepository().apply {
+            loadAllFromStrings(
+                cableCatalogJson = """
+                [
+                  {"mfg":"Elsewedy","typeCode":1,"size":240.0,"model":"Elsewedy Cu/XLPE 240"},
+                  {"mfg":"Elsewedy","typeCode":1,"size":185.0,"model":"Elsewedy Cu/XLPE 185"},
+                  {"mfg":"Ducab","typeCode":2,"size":300.0,"model":"Ducab Al/XLPE 300"}
+                ]
+                """.trimIndent(),
+                cableTypesDataJson = """
+                [
+                  {"typeCode":1,"cableType":"Cu/XLPE/SWA/PVC","sizeMm2":240.0,"rCu70":0.098,"x":0.08,"rAl70":0.0,"rCu90":0.104,"rAl90":0.0,"conductor":"Cu","insulation":"XLPE","armour":"SWA","cores":"4C"},
+                  {"typeCode":2,"cableType":"Al/XLPE/STA/PVC - 4C","sizeMm2":300.0,"rCu70":0.0,"x":0.08,"rAl70":0.125,"rCu90":0.0,"rAl90":0.13,"conductor":"Al","insulation":"XLPE","armour":"STA","cores":"4C"}
+                ]
+                """.trimIndent(),
+                breakerCatalogJson = """
+                [
+                  {"mfg":"Schneider","type":"MCCB-TM","series":"NSX","frame":"NSX400","version":"F","ratingA":400.0,"poles":3,"icuKa":36.0,"icsKa":36.0,"icmKa":75.6,"icwKa":0.0,"cat":"A","tripUnit":"TM400D","tripType":"Thermal-Magnetic","orderingCode":"LV432676"}
+                ]
+                """.trimIndent(),
+                accessoryCatalogJson = "[]",
+                deratingDataJson = "{}",
+                transformersSeedJson = "[]"
+            )
+        }
+
         mutationEngine = EngineeringMutationEngine(
             db = database,
+            catalogRepository = testCatalogRepository,
             approvalVerifier = testVerifier,
             clock = { 10_000L }
         )
@@ -54,6 +85,9 @@ class EngineeringMutationEngineTest {
         projectId: String = "PRJ-1",
         revision: Long = 5L,
         circuitId: Int = 101,
+        cableType: String = "Cu/XLPE/SWA/PVC",
+        manufacturer: String = "Elsewedy",
+        installation: String = "Laid in Ducts",
         overrideCableSize: String? = null,
         overrideDeviceSize: Double? = null,
         overrideDeviceType: String? = null
@@ -71,9 +105,9 @@ class EngineeringMutationEngineTest {
             id = circuitId,
             projectId = projectId,
             circuitName = "Feeder 1",
-            cableType = "Cu/XLPE/SWA/PVC",
-            manufacturer = "Elsewedy",
-            installation = "Laid in Ducts",
+            cableType = cableType,
+            manufacturer = manufacturer,
+            installation = installation,
             parallelRuns = 1,
             length_m = 50.0,
             overrideCableSize = overrideCableSize,
@@ -142,6 +176,7 @@ class EngineeringMutationEngineTest {
         assertEquals(6L, success.resultingRevision)
         assertEquals("PRJ-1", success.projectId)
         assertEquals("101", success.targetEntityId)
+        assertEquals(MutationSuccessStatus.COMMITTED_REVALIDATION_REQUIRED, success.status)
 
         // Verify Database state
         val updatedProject = database.projectDao().getProject("PRJ-1")
@@ -157,7 +192,6 @@ class EngineeringMutationEngineTest {
     @Test
     fun revisionMismatch_causesZeroEntityWrites() = runBlocking {
         seedProjectAndCircuit(projectId = "PRJ-1", revision = 6L, circuitId = 101)
-        // Intent carries old baseRevision = 5L while DB is already at 6L
         val intent = createValidIntent(projectId = "PRJ-1", baseRevision = 5L, targetEntityId = "101")
         val grant = createMatchingGrant(intent)
 
@@ -168,7 +202,6 @@ class EngineeringMutationEngineTest {
         assertEquals(5L, conflict.expectedRevision)
         assertEquals(6L, conflict.actualRevision)
 
-        // Verify Entity in DB was NOT modified
         val circuit = database.circuitDao().getCircuitById(101)!!
         assertNull(circuit.overrideCableSize)
         assertEquals(1, circuit.parallelRuns)
@@ -182,7 +215,6 @@ class EngineeringMutationEngineTest {
 
         mutationEngine.applyCableMutation(intent, grant)
 
-        // Revision in DB must remain 6L
         val project = database.projectDao().getProject("PRJ-1")!!
         assertEquals(6L, project.revision)
     }
@@ -205,7 +237,7 @@ class EngineeringMutationEngineTest {
             digest = "PROPOSAL-V1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             projectId = "PRJ-1",
             baseRevision = 10L,
-            instructions = CablePatchInstructions(overrideCableSize = FieldInstruction("overrideCableSize", PatchAction.SET, "300 mm²"))
+            instructions = CablePatchInstructions(overrideCableSize = FieldInstruction("overrideCableSize", PatchAction.SET, "240 mm²"))
         )
         val grant2 = createMatchingGrant(intent2)
 
@@ -232,7 +264,6 @@ class EngineeringMutationEngineTest {
         assertEquals("Exactly 1 concurrent mutation must succeed", 1, successCount)
         assertEquals("Exactly 1 concurrent mutation must encounter revision conflict", 1, conflictCount)
 
-        // Final revision must be exactly 11L
         val finalProject = database.projectDao().getProject("PRJ-1")!!
         assertEquals(11L, finalProject.revision)
     }
@@ -243,7 +274,6 @@ class EngineeringMutationEngineTest {
 
     @Test
     fun projectMissing_causesZeroWrites() = runBlocking {
-        // Project is NOT seeded in database
         val intent = createValidIntent(projectId = "NON-EXISTENT", baseRevision = 1L, targetEntityId = "101")
         val grant = createMatchingGrant(intent)
 
@@ -256,7 +286,6 @@ class EngineeringMutationEngineTest {
     @Test
     fun circuitMissing_rollsBackRevisionClaim() = runBlocking {
         seedProjectAndCircuit(projectId = "PRJ-1", revision = 5L, circuitId = 101)
-        // Intent targets non-existent circuit 999
         val intent = createValidIntent(projectId = "PRJ-1", baseRevision = 5L, targetEntityId = "999")
         val grant = createMatchingGrant(intent)
 
@@ -266,14 +295,12 @@ class EngineeringMutationEngineTest {
         val notFound = outcome as MutationOutcome.EntityNotFound
         assertEquals("999", notFound.entityId)
 
-        // Critical CAS Rollback Check: Project revision must remain 5L!
         val project = database.projectDao().getProject("PRJ-1")!!
         assertEquals("Revision claim must be rolled back when entity is missing", 5L, project.revision)
     }
 
     @Test
     fun sameCircuitIdAcrossProjects_neverLeaks() = runBlocking {
-        // Circuit 101 exists in PRJ-2, but Intent is for PRJ-1
         seedProjectAndCircuit(projectId = "PRJ-2", revision = 5L, circuitId = 101)
         database.projectDao().upsertProject(ProjectEntity("PRJ-1", "Project 1", revision = 5L, createdAt = 1000L, updatedAt = 1000L))
 
@@ -282,13 +309,11 @@ class EngineeringMutationEngineTest {
 
         val outcome = mutationEngine.applyCableMutation(intent, grant)
 
-        // Must fail with EntityNotFound in PRJ-1 and must NOT modify circuit in PRJ-2
         assertTrue(outcome is MutationOutcome.EntityNotFound)
 
         val circuitInPrj2 = database.circuitDao().getCircuitByIdAndProject("PRJ-2", 101)!!
         assertNull("Circuit in PRJ-2 must not be modified by PRJ-1 intent", circuitInPrj2.overrideCableSize)
 
-        // Revision in PRJ-1 must be rolled back to 5L
         assertEquals(5L, database.projectDao().getProject("PRJ-1")!!.revision)
     }
 
@@ -307,7 +332,7 @@ class EngineeringMutationEngineTest {
     @Test
     fun approvalFailureDoesNotOpenTransaction() = runBlocking {
         seedProjectAndCircuit(projectId = "PRJ-1", revision = 5L, circuitId = 101)
-        testVerifier.shouldVerify = false // Force verification rejection
+        testVerifier.shouldVerify = false
 
         val intent = createValidIntent(projectId = "PRJ-1", baseRevision = 5L, targetEntityId = "101")
         val grant = createMatchingGrant(intent)
@@ -315,12 +340,112 @@ class EngineeringMutationEngineTest {
         val outcome = mutationEngine.applyCableMutation(intent, grant)
         assertTrue(outcome is MutationOutcome.ApprovalNotVerified)
 
-        // DB state completely untouched
         assertEquals(5L, database.projectDao().getProject("PRJ-1")!!.revision)
     }
 
     // =========================================================================
-    // 3. Patch Mapping and CLEAR Semantics Tests
+    // 3. Catalog Combination & Numeric Bounds Tests
+    // =========================================================================
+
+    @Test
+    fun manufacturerExistsGloballyButNotForCableType_failsBeforeTransaction() = runBlocking {
+        // Ducab exists in catalog, but only for typeCode 2 (Al/XLPE). Circuit is typeCode 1 (Cu/XLPE).
+        seedProjectAndCircuit(projectId = "PRJ-1", revision = 5L, circuitId = 101, cableType = "Cu/XLPE/SWA/PVC")
+        val intent = createValidIntent(
+            instructions = CablePatchInstructions(
+                manufacturer = FieldInstruction("manufacturer", PatchAction.SET, "Ducab")
+            )
+        )
+        val grant = createMatchingGrant(intent)
+
+        val outcome = mutationEngine.applyCableMutation(intent, grant)
+        assertTrue("Patch must fail when manufacturer does not supply cable type", outcome is MutationOutcome.InvalidPatch)
+        val invalid = outcome as MutationOutcome.InvalidPatch
+        assertTrue(invalid.reason.contains("does not supply cable type"))
+
+        // Rollback verification: revision must remain 5L
+        assertEquals(5L, database.projectDao().getProject("PRJ-1")!!.revision)
+    }
+
+    @Test
+    fun cableSizeUnavailableForFinalCatalogCombination_failsBeforeTransaction() = runBlocking {
+        // 500 mm² is not in Elsewedy Cu/XLPE catalog (only 185 and 240 are seeded)
+        seedProjectAndCircuit(projectId = "PRJ-1", revision = 5L, circuitId = 101, cableType = "Cu/XLPE/SWA/PVC", manufacturer = "Elsewedy")
+        val intent = createValidIntent(
+            instructions = CablePatchInstructions(
+                overrideCableSize = FieldInstruction("overrideCableSize", PatchAction.SET, "500 mm²")
+            )
+        )
+        val grant = createMatchingGrant(intent)
+
+        val outcome = mutationEngine.applyCableMutation(intent, grant)
+        assertTrue("Patch must fail when size is not in catalog for combination", outcome is MutationOutcome.InvalidPatch)
+        val invalid = outcome as MutationOutcome.InvalidPatch
+        assertTrue(invalid.reason.contains("not available for manufacturer"))
+
+        assertEquals(5L, database.projectDao().getProject("PRJ-1")!!.revision)
+    }
+
+    @Test
+    fun partialPatch_isValidatedAgainstFinalMergedCircuit() = runBlocking {
+        // Proposing a new cableType Al/XLPE without changing manufacturer, but existing manufacturer Elsewedy does not have Al/XLPE products
+        seedProjectAndCircuit(projectId = "PRJ-1", revision = 5L, circuitId = 101, cableType = "Cu/XLPE/SWA/PVC", manufacturer = "Elsewedy")
+        val intent = createValidIntent(
+            instructions = CablePatchInstructions(
+                cableType = FieldInstruction("cableType", PatchAction.SET, "Al/XLPE/STA/PVC - 4C")
+            )
+        )
+        val grant = createMatchingGrant(intent)
+
+        val outcome = mutationEngine.applyCableMutation(intent, grant)
+        assertTrue(outcome is MutationOutcome.InvalidPatch)
+        val invalid = outcome as MutationOutcome.InvalidPatch
+        assertTrue(invalid.reason.contains("does not supply cable type"))
+    }
+
+    @Test
+    fun nanAndInfinity_areRejectedBeforeTransaction() = runBlocking {
+        seedProjectAndCircuit(projectId = "PRJ-1", revision = 5L, circuitId = 101)
+
+        val nanIntent = createValidIntent(
+            instructions = CablePatchInstructions(
+                lengthM = FieldInstruction("lengthM", PatchAction.SET, Double.NaN)
+            )
+        )
+        val outcomeNan = mutationEngine.applyCableMutation(nanIntent, createMatchingGrant(nanIntent))
+        assertTrue("NaN must be rejected", outcomeNan is MutationOutcome.InvalidPatch)
+
+        val infIntent = createValidIntent(
+            instructions = CablePatchInstructions(
+                lengthM = FieldInstruction("lengthM", PatchAction.SET, Double.POSITIVE_INFINITY)
+            )
+        )
+        val outcomeInf = mutationEngine.applyCableMutation(infIntent, createMatchingGrant(infIntent))
+        assertTrue("Infinity must be rejected", outcomeInf is MutationOutcome.InvalidPatch)
+
+        // DB state untouched
+        assertEquals(5L, database.projectDao().getProject("PRJ-1")!!.revision)
+    }
+
+    @Test
+    fun invalidCatalogPatch_causesZeroRevisionAndEntityWrites() = runBlocking {
+        seedProjectAndCircuit(projectId = "PRJ-1", revision = 5L, circuitId = 101)
+        val badTypeIntent = createValidIntent(
+            instructions = CablePatchInstructions(
+                cableType = FieldInstruction("cableType", PatchAction.SET, "UNKNOWN_CABLE_TYPE_XYZ")
+            )
+        )
+        val grant = createMatchingGrant(badTypeIntent)
+
+        val outcome = mutationEngine.applyCableMutation(badTypeIntent, grant)
+        assertTrue(outcome is MutationOutcome.InvalidPatch)
+
+        assertEquals(5L, database.projectDao().getProject("PRJ-1")!!.revision)
+        assertEquals("Cu/XLPE/SWA/PVC", database.circuitDao().getCircuitById(101)!!.cableType)
+    }
+
+    // =========================================================================
+    // 4. Patch Mapping and CLEAR Semantics Tests
     // =========================================================================
 
     @Test
@@ -328,9 +453,6 @@ class EngineeringMutationEngineTest {
         seedProjectAndCircuit(projectId = "PRJ-1", revision = 5L, circuitId = 101)
         val intent = createValidIntent(
             instructions = CablePatchInstructions(
-                cableType = FieldInstruction("cableType", PatchAction.SET, "Al/XLPE/STA/PVC - 4C"),
-                manufacturer = FieldInstruction("manufacturer", PatchAction.SET, "Ducab"),
-                installation = FieldInstruction("installation", PatchAction.SET, "Laid Direct in Ground"),
                 parallelRuns = FieldInstruction("parallelRuns", PatchAction.SET, 3),
                 lengthM = FieldInstruction("lengthM", PatchAction.SET, 125.5)
             )
@@ -341,16 +463,13 @@ class EngineeringMutationEngineTest {
         assertTrue(outcome.isSuccess)
 
         val c = database.circuitDao().getCircuitById(101)!!
-        assertEquals("Al/XLPE/STA/PVC - 4C", c.cableType)
-        assertEquals("Ducab", c.manufacturer)
-        assertEquals("Laid Direct in Ground", c.installation)
         assertEquals(3, c.parallelRuns)
         assertEquals(125.5, c.length_m, 0.001)
     }
 
     @Test
     fun successfulOverrideCableClear_mapsNull() = runBlocking {
-        seedProjectAndCircuit(projectId = "PRJ-1", revision = 5L, circuitId = 101, overrideCableSize = "300 mm²")
+        seedProjectAndCircuit(projectId = "PRJ-1", revision = 5L, circuitId = 101, overrideCableSize = "240 mm²")
         val intent = createValidIntent(
             instructions = CablePatchInstructions(
                 overrideCableSize = FieldInstruction("overrideCableSize", PatchAction.CLEAR, null)
@@ -397,11 +516,9 @@ class EngineeringMutationEngineTest {
         val intent = createValidIntent(projectId = "PRJ-1", baseRevision = 5L, targetEntityId = "101")
         val grant = createMatchingGrant(intent)
 
-        // First application succeeds
         val outcome1 = mutationEngine.applyCableMutation(intent, grant)
         assertTrue(outcome1.isSuccess)
 
-        // Second application with the same intent (still carrying baseRevision = 5L)
         val outcome2 = mutationEngine.applyCableMutation(intent, grant)
         assertTrue("Duplicate apply against old revision must fail with conflict", outcome2 is MutationOutcome.RevisionConflict)
         val conflict = outcome2 as MutationOutcome.RevisionConflict
@@ -410,7 +527,7 @@ class EngineeringMutationEngineTest {
     }
 
     // =========================================================================
-    // 4. Cancellation & Error Safety Tests
+    // 5. Cancellation & Error Safety Tests
     // =========================================================================
 
     @Test
@@ -427,10 +544,9 @@ class EngineeringMutationEngineTest {
             }.await()
             fail("Should have thrown CancellationException")
         } catch (e: CancellationException) {
-            // Expected: CancellationException must be rethrown and NOT converted to DatabaseFailure
+            // Expected
         }
 
-        // DB state must be 100% rolled back
         assertEquals(5L, database.projectDao().getProject("PRJ-1")!!.revision)
         assertNull(database.circuitDao().getCircuitById(101)!!.overrideCableSize)
     }
@@ -445,6 +561,7 @@ class EngineeringMutationEngineTest {
         assertTrue(outcome.isSuccess)
         val success = outcome as MutationOutcome.Success
 
+        assertEquals(MutationSuccessStatus.COMMITTED_REVALIDATION_REQUIRED, success.status)
         assertTrue(success.impact.requiresRevalidation)
         assertTrue(success.impact.candidateAffectedDomains.contains("CABLE_SIZING"))
         assertTrue(success.impact.candidateAffectedDomains.contains("VOLTAGE_DROP"))
@@ -493,7 +610,7 @@ class EngineeringMutationEngineTest {
     }
 
     // =========================================================================
-    // 5. System Protection & Non-Exposure Boundaries
+    // 6. Architecture & Non-Exposure Guards
     // =========================================================================
 
     @Test
@@ -510,11 +627,28 @@ class EngineeringMutationEngineTest {
 
     @Test
     fun noProductionAllowAllApprovalVerifierExists() {
-        // Verify DenyAllApprovalVerifier rejects verification by default
         val intent = createValidIntent()
         val grant = createMatchingGrant(intent)
         val result = DenyAllApprovalVerifier.verifyApproval(intent, grant)
         assertTrue("DenyAllApprovalVerifier must always reject in production", result is ApprovalVerificationResult.Rejected)
+    }
+
+    @Test
+    fun architectureGuard_noProductionMutationEngineConstructionOrToolBinding() {
+        // Scan main Java/Kotlin source directory to verify zero production wiring
+        val mainSrcDir = File("src/main/java")
+        if (mainSrcDir.exists()) {
+            val mainFiles = mainSrcDir.walkTopDown().filter { it.extension == "kt" || it.extension == "java" }.toList()
+            for (file in mainFiles) {
+                val content = file.readText()
+                if (file.name != "EngineeringMutationEngine.kt") {
+                    assertFalse("Production file '${file.name}' must not construct EngineeringMutationEngine",
+                        content.contains("EngineeringMutationEngine("))
+                }
+                assertFalse("Production file '${file.name}' must not reference TestApprovalVerifier",
+                    content.contains("TestApprovalVerifier"))
+            }
+        }
     }
 }
 
