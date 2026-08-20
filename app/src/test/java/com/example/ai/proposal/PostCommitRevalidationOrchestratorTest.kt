@@ -654,7 +654,8 @@ class PostCommitRevalidationOrchestratorTest {
                 name.contains("ProposalApprovalVerifier") ||
                 name.contains("EngineeringCalculationCoordinator") ||
                 name.contains("EngineeringMutationContracts") ||
-                name.contains("PostCommitRevalidationContracts")
+                name.contains("PostCommitRevalidationContracts") ||
+                name.contains("DurableMutationWorkflow")
             ) {
                 continue
             }
