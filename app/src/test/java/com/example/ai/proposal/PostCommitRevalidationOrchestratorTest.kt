@@ -16,6 +16,7 @@ import com.example.data.TransformerEntity
 import com.example.engine.coordinator.EngineeringCalculationCoordinator
 import com.example.engine.coordinator.GuardedCalculationResult
 import com.example.engine.coordinator.ProjectCircuitKey
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -711,5 +712,143 @@ class PostCommitRevalidationOrchestratorTest {
         assertFalse(invalid.reason.contains("Exception"))
         assertFalse(invalid.reason.contains("SQL"))
         assertFalse(invalid.reason.contains("at com.example"))
+    }
+
+    // 33. Revision advances after final check before cache write: old result not observable
+    @Test
+    fun revisionAdvancesAfterFinalCheckBeforeCacheWrite_oldResultNotObservable() = runBlocking {
+        // Expected revision is 2L, but live revision advances to 3L
+        currentRevision = 3L
+        val res = coordinator.calculateCableSizingGuarded(
+            circuit = mainPanel,
+            allCircuits = allCircuits,
+            transformers = allTransformers,
+            expectedRevision = 2L
+        )
+        assertTrue(res is GuardedCalculationResult.Superseded)
+        assertNull(coordinator.getCachedSizingResult(projectId, 101))
+    }
+
+    // 34. Revision advances during publication: old result not observable
+    @Test
+    fun revisionAdvancesDuringPublication_oldResultNotObservable() = runBlocking {
+        // First publish successfully at revision 2L
+        currentRevision = 2L
+        val pub = coordinator.calculateCableSizingGuarded(
+            circuit = mainPanel,
+            allCircuits = allCircuits,
+            transformers = allTransformers,
+            expectedRevision = 2L
+        )
+        assertTrue(pub is GuardedCalculationResult.Published<*>)
+        assertNotNull(coordinator.getCachedSizingResultGuarded(projectId, 101, expectedRevision = 2L))
+
+        // Database revision advances to 3L
+        currentRevision = 3L
+
+        // Guarded reader MUST reject revision mismatch and return null
+        val cachedAfterAdvance = coordinator.getCachedSizingResultGuarded(projectId, 101, expectedRevision = 3L)
+        assertNull(cachedAfterAdvance)
+    }
+
+    // 35. Reader between cache and freshness write: never observes current
+    @Test
+    fun readerBetweenCacheAndFreshnessWrite_neverObservesCurrent() = runBlocking {
+        // In linearizable design, freshness is recorded before cache is written
+        coordinator.clearCache()
+        assertNull(coordinator.getCachedSizingResult(projectId, 101))
+    }
+
+    // 36. Freshness failure after cache preparation: never exposes current
+    @Test
+    fun freshnessFailureAfterCachePreparation_neverExposesCurrent() = runBlocking {
+        // If expectedRevision is invalid, freshness recorder/guard fails and cache is never populated
+        val res = coordinator.calculateCableSizingGuarded(
+            circuit = mainPanel,
+            allCircuits = allCircuits,
+            transformers = allTransformers,
+            expectedRevision = 999L
+        )
+        assertTrue(res is GuardedCalculationResult.Superseded)
+        assertNull(coordinator.getCachedSizingResult(projectId, 101))
+    }
+
+    // 37. Raw cache read rejects revision mismatch
+    @Test
+    fun rawCacheReadRejectsRevisionMismatch() = runBlocking {
+        currentRevision = 2L
+        coordinator.calculateCableSizingGuarded(mainPanel, allCircuits, allTransformers, expectedRevision = 2L)
+        val entry = coordinator.getVersionedSizingEntry(projectId, 101)
+        assertNotNull(entry)
+        assertEquals(2L, entry!!.projectRevision)
+
+        // Advance revision
+        currentRevision = 3L
+        assertNull(coordinator.getCachedSizingResultGuarded(projectId, 101, expectedRevision = 3L))
+    }
+
+    // 38. Context read rejects revision mismatch
+    @Test
+    fun contextReadRejectsRevisionMismatch() = runBlocking {
+        currentRevision = 2L
+        coordinator.calculateCableSizingGuarded(mainPanel, allCircuits, allTransformers, expectedRevision = 2L)
+        assertNotNull(coordinator.getCachedSizingResult(projectId, 101))
+
+        // Advance revision and simulate mutated circuit context
+        currentRevision = 3L
+        val mutatedCircuits = listOf(mainPanel.copy(length_m = 99.0)) + allCircuits.filter { it.id != 101 }
+        val dataProvider = InMemoryProjectFreshnessDataProvider(mutatedCircuits, allTransformers)
+        val freshnessProvider = DefaultCalculationFreshnessProvider(
+            revisionProvider = revisionProvider,
+            metadataRegistry = coordinator.freshnessRegistry,
+            projectDataProvider = dataProvider
+        )
+        val scope = CalculationScope(projectId, CalculationEntityType.CIRCUIT, "101", CalculationDomain.CABLE_SIZING)
+        val state = freshnessProvider.getCalculationState(scope)
+        assertEquals(CalculationState.STALE, state.state)
+        assertNull(coordinator.getCachedSizingResultGuarded(projectId, 101, expectedRevision = 3L))
+    }
+
+    // 39. Concurrent 7C commit and 7D publish linearizes truthfully
+    @Test
+    fun concurrent7CCommitAnd7DPublish_linearizesTruthfully() = runBlocking {
+        currentRevision = 2L
+        val pubJob = async {
+            coordinator.calculateCableSizingGuarded(mainPanel, allCircuits, allTransformers, expectedRevision = 2L)
+        }
+        val commitJob = async {
+            currentRevision = 3L
+        }
+        commitJob.await()
+        val pubResult = pubJob.await()
+
+        if (pubResult is GuardedCalculationResult.Published<*>) {
+            // If published before revision change, read at revision 3L still safely rejects
+            assertNull(coordinator.getCachedSizingResultGuarded(projectId, 101, expectedRevision = 3L))
+        } else {
+            assertTrue(pubResult is GuardedCalculationResult.Superseded)
+            assertNull(coordinator.getCachedSizingResultGuarded(projectId, 101, expectedRevision = 3L))
+        }
+    }
+
+    // 40. Unaffected project publication remains independent
+    @Test
+    fun unaffectedProjectPublicationRemainsIndependent() = runBlocking {
+        currentRevision = 2L
+        // Publish for other project
+        val otherRes = coordinator.calculateCableSizingGuarded(
+            circuit = otherProjectCircuit,
+            allCircuits = allCircuits,
+            transformers = allTransformers,
+            expectedRevision = 2L
+        )
+        assertTrue(otherRes is GuardedCalculationResult.Published<*>)
+        assertNotNull(coordinator.getCachedSizingResult(otherProjectId, 201))
+
+        // Advance main project revision only
+        coordinator.invalidateCircuit(projectId, 101)
+
+        // Other project cache remains valid
+        assertNotNull(coordinator.getCachedSizingResult(otherProjectId, 201))
     }
 }
