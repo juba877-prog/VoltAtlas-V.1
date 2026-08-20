@@ -156,6 +156,11 @@ sealed interface AssistantCardUiModel {
         val confirmationRequiredNote: String = "Proposal requires explicit confirmation via dedicated UI action. Conversational text cannot apply changes.",
         val suggestedActions: List<SuggestedActionUiModel> = emptyList()
     ) : AssistantCardUiModel
+
+    data class ProposalReviewCard(
+        override val cardId: String,
+        val model: ProposalReviewUiModel
+    ) : AssistantCardUiModel
 }
 
 /**

@@ -234,6 +234,12 @@ fun EngineeringAssistantSheet(
                                     onActionClick = { /* Non-executing UI action */ }
                                 )
                             }
+                            is AssistantCardUiModel.ProposalReviewCard -> {
+                                AssistantProposalReviewCard(
+                                    model = card.model,
+                                    onActionClick = { /* Non-executing UI action in 7F-4 */ }
+                                )
+                            }
                             else -> {
                                 // Default fallback card
                             }
