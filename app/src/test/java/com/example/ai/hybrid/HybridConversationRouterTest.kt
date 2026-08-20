@@ -3,7 +3,9 @@ package com.example.ai.hybrid
 import com.example.ai.conversation.*
 import com.example.ai.runtime.BoundedProjectContext
 import com.example.ai.runtime.RuntimePromptCompiler
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
@@ -268,5 +270,57 @@ class HybridConversationRouterTest {
     fun promptBudget_reservesHeadroomMargin() {
         val defaultBudget = RuntimePromptCompiler.DEFAULT_MAX_BUDGET_CHARACTERS
         assertTrue("Budget must be at least 8000 characters", defaultBudget >= 8000)
+    }
+
+    // 8. Genuine external cancellation propagates and does NOT trigger local fallback
+    @Test
+    fun genuineCancellation_propagatesAndDoesNotFallBackToLocal() = runTest {
+        val neverCompletingCloudEngine = object : ConversationEngine {
+            val deferred = CompletableDeferred<HybridEngineResult>()
+            override suspend fun evaluateTurn(
+                input: ConversationTurnInput,
+                decisionIdProvider: () -> String
+            ): HybridEngineResult {
+                return deferred.await()
+            }
+        }
+
+        var localEngineCallCount = 0
+        val trackingLocalEngine = object : ConversationEngine {
+            override suspend fun evaluateTurn(
+                input: ConversationTurnInput,
+                decisionIdProvider: () -> String
+            ): HybridEngineResult {
+                localEngineCallCount++
+                return localEngine.evaluateTurn(input, decisionIdProvider)
+            }
+        }
+
+        val router = HybridConversationRouter(
+            cloudEngine = neverCompletingCloudEngine,
+            localEngine = trackingLocalEngine,
+            connectivityProbe = DefaultNetworkConnectivityProbe { true },
+            cloudTimeoutMs = 60_000L // Long timeout so it won't trigger during test
+        )
+
+        val input = ConversationTurnInput(
+            userUtterance = "Size this cable",
+            projectContext = sampleContext,
+            priorState = null
+        )
+
+        val job = launch {
+            router.evaluateTurn(input)
+        }
+
+        // Allow coroutine to start and enter cloudEngine.evaluateTurn
+        testScheduler.advanceTimeBy(50)
+
+        // Cancel the job externally (simulating user closing the sheet / scope cancellation)
+        job.cancel(kotlinx.coroutines.CancellationException("User closed sheet"))
+        job.join()
+
+        assertTrue("Job must be cancelled", job.isCancelled)
+        assertEquals("Local engine must NEVER be invoked on genuine cancellation", 0, localEngineCallCount)
     }
 }

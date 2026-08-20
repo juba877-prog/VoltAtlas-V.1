@@ -1,6 +1,7 @@
 package com.example.ai.hybrid
 
 import com.example.ai.conversation.ConversationTurnInput
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 
@@ -11,6 +12,7 @@ import kotlinx.coroutines.withTimeout
  * - Offline Fast Probe: If [connectivityProbe] reports offline, immediately routes to local engine.
  * - Timebox & Headroom: Cloud call bounded by [cloudTimeoutMs]; on timeout, cancels cleanly and executes local engine.
  * - Engineering-Value Fabrication Guard: Plain text responses asserting unbacked values are discarded and rerouted to local engine.
+ * - Structured Concurrency: Genuine external CancellationException propagates immediately and does not trigger local fallback.
  * - Consistent Contract: Both paths emit identical [HybridEngineResult] wrapping typed [com.example.ai.conversation.ConversationTurnDecision].
  */
 class HybridConversationRouter(
@@ -70,6 +72,9 @@ class HybridConversationRouter(
                 source = ConversationEngineSource.LOCAL_RULE_ENGINE,
                 cloudDegradationReason = CloudDegradationReason.NETWORK_TIMEOUT
             )
+        } catch (e: CancellationException) {
+            // Genuine external cancellation (e.g. parent job cancelled / user dismissed sheet) must propagate
+            throw e
         } catch (e: Exception) {
             val localFallback = localEngine.evaluateTurn(input, decisionIdProvider)
             localFallback.copy(
