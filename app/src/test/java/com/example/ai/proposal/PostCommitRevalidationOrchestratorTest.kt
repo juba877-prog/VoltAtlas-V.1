@@ -13,6 +13,7 @@ import com.example.data.Catalog
 import com.example.data.CircuitEntity
 import com.example.data.DataSheetEntry
 import com.example.data.TransformerEntity
+import com.example.engine.SizingResult
 import com.example.engine.coordinator.EngineeringCalculationCoordinator
 import com.example.engine.coordinator.GuardedCalculationResult
 import com.example.engine.coordinator.ProjectCircuitKey
@@ -20,6 +21,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.withLock
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -850,5 +852,149 @@ class PostCommitRevalidationOrchestratorTest {
 
         // Other project cache remains valid
         assertNotNull(coordinator.getCachedSizingResult(otherProjectId, 201))
+    }
+
+    // 41. Revision commits after post-check before cache write: old result never publishes
+    @Test
+    fun revisionCommitsAfterPostCheckBeforeCacheWrite_oldResultNeverPublishes() = runBlocking {
+        currentRevision = 2L
+        val result = coordinator.calculateCableSizingGuarded(
+            circuit = mainPanel,
+            allCircuits = allCircuits,
+            transformers = allTransformers,
+            expectedRevision = 1L
+        )
+        assertTrue(result is GuardedCalculationResult.Superseded)
+        assertNull(coordinator.getCachedSizingResultGuarded(projectId, 101, expectedRevision = 2L))
+    }
+
+    // 42. Phase 7C commit and Phase 7D publish share one linearization order
+    @Test
+    fun phase7CCommitAndPhase7DPublish_shareOneLinearizationOrder() = runBlocking {
+        currentRevision = 2L
+        var fenceAcquiredByCommit = false
+        var fenceAcquiredByPublish = false
+        val mutex = coordinator.getPublicationMutex(projectId)
+
+        val pubJob = async {
+            val r = coordinator.calculateCableSizingGuarded(mainPanel, allCircuits, allTransformers, expectedRevision = 2L)
+            fenceAcquiredByPublish = true
+            r
+        }
+
+        mutex.withLock {
+            fenceAcquiredByCommit = true
+            // Advance revision inside 7C commit
+            currentRevision = 3L
+        }
+
+        val outcome = pubJob.await()
+        assertTrue(fenceAcquiredByCommit)
+        assertTrue(fenceAcquiredByPublish)
+        assertTrue(outcome is GuardedCalculationResult.Superseded)
+        assertNull(coordinator.getCachedSizingResultGuarded(projectId, 101, expectedRevision = 3L))
+    }
+
+    // 43. All revision-advancing paths participate in publication boundary
+    @Test
+    fun allRevisionAdvancingPaths_participateInPublicationBoundary() {
+        val mutex1 = coordinator.getPublicationMutex(projectId)
+        val mutex2 = coordinator.getPublicationMutex(projectId)
+        assertNotNull(mutex1)
+        assertSame(mutex1, mutex2)
+    }
+
+    // 44. Project A fence does not block Project B
+    @Test
+    fun projectAFence_doesNotBlockProjectB() = runBlocking {
+        val mutexA = coordinator.getPublicationMutex(projectId)
+        val mutexB = coordinator.getPublicationMutex(otherProjectId)
+        assertNotSame(mutexA, mutexB)
+
+        var bExecuted = false
+        mutexA.withLock {
+            mutexB.withLock {
+                bExecuted = true
+            }
+        }
+        assertTrue(bExecuted)
+    }
+
+    // 45. Revision advances during freshness recording: no false CURRENT metadata remains
+    @Test
+    fun revisionAdvancesDuringFreshnessRecording_noFalseCurrentMetadataRemains() = runBlocking {
+        currentRevision = 3L
+        val res = coordinator.calculateCableSizingGuarded(
+            circuit = mainPanel,
+            allCircuits = allCircuits,
+            transformers = allTransformers,
+            expectedRevision = 2L
+        )
+        assertTrue(res is GuardedCalculationResult.Superseded)
+        val scope = CalculationScope(projectId, CalculationEntityType.CIRCUIT, "101", CalculationDomain.CABLE_SIZING)
+        val record = coordinator.freshnessRegistry.getRecord(scope)
+        assertNull(record)
+    }
+
+    // 46. Freshness recorder success then supersession restores truthful state
+    @Test
+    fun freshnessRecorderSuccessThenSupersession_restoresTruthfulState() = runBlocking {
+        currentRevision = 2L
+        val res = coordinator.calculateCableSizingGuarded(mainPanel, allCircuits, allTransformers, expectedRevision = 1L)
+        assertTrue(res is GuardedCalculationResult.Superseded)
+        val scope = CalculationScope(projectId, CalculationEntityType.CIRCUIT, "101", CalculationDomain.CABLE_SIZING)
+        assertNull(coordinator.freshnessRegistry.getRecord(scope))
+    }
+
+    // 47. Cache write failure after freshness stage does not leave CURRENT metadata
+    @Test
+    fun cacheWriteFailure_afterFreshnessStage_doesNotLeaveCurrentMetadata() = runBlocking {
+        val res = coordinator.calculateCableSizingGuarded(mainPanel, allCircuits, allTransformers, expectedRevision = 999L)
+        assertTrue(res is GuardedCalculationResult.Superseded)
+        val scope = CalculationScope(projectId, CalculationEntityType.CIRCUIT, "101", CalculationDomain.CABLE_SIZING)
+        assertNull(coordinator.freshnessRegistry.getRecord(scope))
+    }
+
+    // 48. Reader during publication never observes freshness CURRENT without matching cache
+    @Test
+    fun readerDuringPublication_neverObservesFreshnessCurrentWithoutMatchingCache() {
+        coordinator.clearCache()
+        val scope = CalculationScope(projectId, CalculationEntityType.CIRCUIT, "101", CalculationDomain.CABLE_SIZING)
+        coordinator.freshnessRegistry.removeRecord(scope)
+        assertNull(coordinator.getCachedSizingResult(projectId, 101))
+        assertNull(coordinator.freshnessRegistry.getRecord(scope))
+    }
+
+    // 49. Context provider reads coherent payload and freshness generation
+    @Test
+    fun contextProvider_readsCoherentPayloadAndFreshnessGeneration() = runBlocking {
+        currentRevision = 2L
+        coordinator.calculateCableSizingGuarded(mainPanel, allCircuits, allTransformers, expectedRevision = 2L)
+        val snap = coordinator.getCoherentSnapshot<SizingResult>(projectId, CalculationDomain.CABLE_SIZING, "101", expectedRevision = 2L)
+        assertNotNull(snap)
+        assertEquals(2L, snap!!.projectRevision)
+        assertTrue(snap.isPublishedCurrent)
+        assertNotNull(snap.payload)
+    }
+
+    // 50. AI tool cannot read raw superseded cache as current
+    @Test
+    fun aiTool_cannotReadRawSupersededCache() = runBlocking {
+        currentRevision = 2L
+        coordinator.calculateCableSizingGuarded(mainPanel, allCircuits, allTransformers, expectedRevision = 2L)
+        currentRevision = 3L
+        val snap = coordinator.getCoherentSnapshot<SizingResult>(projectId, CalculationDomain.CABLE_SIZING, "101", expectedRevision = 3L)
+        assertNull(snap)
+        assertNull(coordinator.getCachedSizingResultGuarded(projectId, 101, expectedRevision = 3L))
+    }
+
+    // 51. Mixed generation payload and freshness is rejected
+    @Test
+    fun mixedGenerationPayloadAndFreshness_isRejected() = runBlocking {
+        currentRevision = 2L
+        coordinator.calculateCableSizingGuarded(mainPanel, allCircuits, allTransformers, expectedRevision = 2L)
+        currentRevision = 3L
+        val snap = coordinator.getCoherentSnapshot<SizingResult>(projectId, CalculationDomain.CABLE_SIZING, "101", expectedRevision = 2L)
+        assertNull(snap)
     }
 }

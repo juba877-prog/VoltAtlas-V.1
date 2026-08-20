@@ -33,6 +33,12 @@ class InMemoryCalculationFreshnessMetadataRegistry : CalculationFreshnessRecorde
         return metadataStore[scope]
     }
 
+    fun removeRecord(scope: CalculationScope) {
+        metadataStore.remove(scope)
+        activeExecutionStore.remove(scope)
+        errorStore.remove(scope)
+    }
+
     fun getError(scope: CalculationScope): CalculationExecutionErrorMetadata? {
         return errorStore[scope]
     }

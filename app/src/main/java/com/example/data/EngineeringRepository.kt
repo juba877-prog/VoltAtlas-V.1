@@ -4,8 +4,10 @@ import android.content.Context
 import androidx.room.withTransaction
 import com.example.ai.context.revision.ProjectRevisionProvider
 import com.example.ai.context.revision.ProjectRevisionSnapshot
+import com.example.engine.coordinator.EngineeringCalculationCoordinator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.InputStream
@@ -28,19 +30,44 @@ class EngineeringRepository(
     }
 
     private suspend fun <T> withProjectMutation(projectId: String, block: suspend () -> T): T {
-        return db.withTransaction {
-            val result = block()
-            val rowsUpdated = projectDao.incrementRevision(projectId, System.currentTimeMillis())
-            if (rowsUpdated == 0) {
-                val exists = projectDao.getProject(projectId) != null
-                if (!exists) {
-                    throw NoSuchElementException("Cannot advance revision: project '$projectId' does not exist.")
-                } else {
-                    throw IllegalStateException("Project revision overflow: maximum revision reached for project '$projectId'.")
+        return EngineeringCalculationCoordinator.getPublicationMutex(projectId).withLock {
+            db.withTransaction {
+                val result = block()
+                val rowsUpdated = projectDao.incrementRevision(projectId, System.currentTimeMillis())
+                if (rowsUpdated == 0) {
+                    val exists = projectDao.getProject(projectId) != null
+                    if (!exists) {
+                        throw NoSuchElementException("Cannot advance revision: project '$projectId' does not exist.")
+                    } else {
+                        throw IllegalStateException("Project revision overflow: maximum revision reached for project '$projectId'.")
+                    }
+                }
+                result
+            }
+        }
+    }
+
+    private suspend fun <T> withProjectsMutation(projectIds: List<String>, block: suspend () -> T): T {
+        val uniqueSortedPids = projectIds.filter { it.isNotBlank() }.distinct().sorted()
+        if (uniqueSortedPids.isEmpty()) return block()
+        if (uniqueSortedPids.size == 1) return withProjectMutation(uniqueSortedPids.first(), block)
+
+        suspend fun acquireRecursively(index: Int): T {
+            return if (index >= uniqueSortedPids.size) {
+                db.withTransaction {
+                    val result = block()
+                    uniqueSortedPids.forEach { pid ->
+                        projectDao.incrementRevision(pid, System.currentTimeMillis())
+                    }
+                    result
+                }
+            } else {
+                EngineeringCalculationCoordinator.getPublicationMutex(uniqueSortedPids[index]).withLock {
+                    acquireRecursively(index + 1)
                 }
             }
-            result
         }
+        return acquireRecursively(0)
     }
 
     val circuitsFlow: Flow<List<CircuitEntity>> = circuitDao.getAllCircuits()
@@ -166,17 +193,8 @@ class EngineeringRepository(
     suspend fun insertCircuits(circuits: List<CircuitEntity>) {
         if (circuits.isEmpty()) return
         val projectIds = circuits.map { it.projectId }.distinct()
-        if (projectIds.size == 1) {
-            withProjectMutation(projectIds.first()) {
-                circuitDao.insertCircuits(circuits)
-            }
-        } else {
-            db.withTransaction {
-                circuitDao.insertCircuits(circuits)
-                projectIds.forEach { pid ->
-                    projectDao.incrementRevision(pid, System.currentTimeMillis())
-                }
-            }
+        withProjectsMutation(projectIds) {
+            circuitDao.insertCircuits(circuits)
         }
     }
     suspend fun updateCircuit(circuit: CircuitEntity) = withProjectMutation(circuit.projectId) {
@@ -196,17 +214,8 @@ class EngineeringRepository(
     suspend fun insertTransformers(transformers: List<TransformerEntity>) {
         if (transformers.isEmpty()) return
         val projectIds = transformers.map { it.projectId }.distinct()
-        if (projectIds.size == 1) {
-            withProjectMutation(projectIds.first()) {
-                transformerDao.insertTransformers(transformers)
-            }
-        } else {
-            db.withTransaction {
-                transformerDao.insertTransformers(transformers)
-                projectIds.forEach { pid ->
-                    projectDao.incrementRevision(pid, System.currentTimeMillis())
-                }
-            }
+        withProjectsMutation(projectIds) {
+            transformerDao.insertTransformers(transformers)
         }
     }
     suspend fun updateTransformer(transformer: TransformerEntity) = withProjectMutation(transformer.projectId) {
@@ -1171,17 +1180,8 @@ class EngineeringRepository(
     suspend fun saveSldNodePositions(positions: List<SldNodePositionEntity>) {
         if (positions.isEmpty()) return
         val projectIds = positions.map { it.projectId }.distinct()
-        if (projectIds.size == 1) {
-            withProjectMutation(projectIds.first()) {
-                sldNodePositionDao.insertOrUpdatePositions(positions)
-            }
-        } else {
-            db.withTransaction {
-                sldNodePositionDao.insertOrUpdatePositions(positions)
-                projectIds.forEach { pid ->
-                    projectDao.incrementRevision(pid, System.currentTimeMillis())
-                }
-            }
+        withProjectsMutation(projectIds) {
+            sldNodePositionDao.insertOrUpdatePositions(positions)
         }
     }
 

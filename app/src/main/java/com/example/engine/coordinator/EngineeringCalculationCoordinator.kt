@@ -21,7 +21,10 @@ import com.example.ai.context.freshness.internal.FreshnessLifecycleRecorder
 import com.example.ai.context.freshness.internal.InMemoryCalculationFreshnessMetadataRegistry
 import com.example.ai.context.revision.ProjectRevisionProvider
 import com.example.ai.context.revision.ProjectRevisionSnapshot
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Strongly typed project-scoped cache keys ensuring complete calculation cache isolation across projects.
@@ -128,6 +131,17 @@ object EngineeringCalculationCoordinator {
         freshnessRegistry.clearProject(projectId)
     }
 
+    private val publicationMutexes = ConcurrentHashMap<String, Mutex>()
+
+    /**
+     * Authoritative project-scoped publication mutex shared across 7C Room CAS mutations,
+     * repository mutations, and 7D guarded calculation publications.
+     */
+    fun getPublicationMutex(projectId: String): Mutex =
+        publicationMutexes.computeIfAbsent(projectId) { Mutex() }
+
+    fun getPublicationFence(projectId: String): Mutex = getPublicationMutex(projectId)
+
     // -------------------------------------------------------------------------
     // Pure Read-Only Project-Scoped Cache Accessors (Sub-Phase 3F & 7D)
     // -------------------------------------------------------------------------
@@ -158,8 +172,106 @@ object EngineeringCalculationCoordinator {
         return entry.result
     }
 
+    fun getCachedTransformerResultGuarded(projectId: String, transformerId: String, expectedRevision: Long): TransformerResult? {
+        val entry = transformerCache[ProjectTransformerKey(projectId, transformerId)] ?: return null
+        if (entry.projectRevision != expectedRevision) return null
+        val liveRev = getProjectRevision(projectId)
+        if (liveRev != expectedRevision) return null
+        return entry.result
+    }
+
+    fun getCachedShortCircuitResultGuarded(projectId: String, circuitId: Int, expectedRevision: Long): ShortCircuitResult? {
+        val entry = shortCircuitCache[ProjectCircuitKey(projectId, circuitId)] ?: return null
+        if (entry.projectRevision != expectedRevision) return null
+        val liveRev = getProjectRevision(projectId)
+        if (liveRev != expectedRevision) return null
+        return entry.result
+    }
+
+    fun getCachedAdsResultGuarded(projectId: String, circuitId: Int, expectedRevision: Long): AdsResult? {
+        val entry = adsCache[ProjectCircuitKey(projectId, circuitId)] ?: return null
+        if (entry.projectRevision != expectedRevision) return null
+        val liveRev = getProjectRevision(projectId)
+        if (liveRev != expectedRevision) return null
+        return entry.result
+    }
+
+    fun getCachedProtectionResultGuarded(projectId: String, circuitId: Int, expectedRevision: Long): ProtectionResult? {
+        val entry = protectionCache[ProjectCircuitKey(projectId, circuitId)] ?: return null
+        if (entry.projectRevision != expectedRevision) return null
+        val liveRev = getProjectRevision(projectId)
+        if (liveRev != expectedRevision) return null
+        return entry.result
+    }
+
+    fun getCachedCoordinationResultGuarded(projectId: String, circuitId: Int, expectedRevision: Long): CoordinationResult? {
+        val entry = coordinationCache[ProjectCircuitKey(projectId, circuitId)] ?: return null
+        if (entry.projectRevision != expectedRevision) return null
+        val liveRev = getProjectRevision(projectId)
+        if (liveRev != expectedRevision) return null
+        return entry.result
+    }
+
     fun getVersionedSizingEntry(projectId: String, circuitId: Int): VersionedCacheEntry<SizingResult>? =
         sizingCache[ProjectCircuitKey(projectId, circuitId)]
+
+    fun getVersionedTransformerEntry(projectId: String, transformerId: String): VersionedCacheEntry<TransformerResult>? =
+        transformerCache[ProjectTransformerKey(projectId, transformerId)]
+
+    fun getVersionedShortCircuitEntry(projectId: String, circuitId: Int): VersionedCacheEntry<ShortCircuitResult>? =
+        shortCircuitCache[ProjectCircuitKey(projectId, circuitId)]
+
+    fun getVersionedAdsEntry(projectId: String, circuitId: Int): VersionedCacheEntry<AdsResult>? =
+        adsCache[ProjectCircuitKey(projectId, circuitId)]
+
+    fun getVersionedProtectionEntry(projectId: String, circuitId: Int): VersionedCacheEntry<ProtectionResult>? =
+        protectionCache[ProjectCircuitKey(projectId, circuitId)]
+
+    fun getVersionedCoordinationEntry(projectId: String, circuitId: Int): VersionedCacheEntry<CoordinationResult>? =
+        coordinationCache[ProjectCircuitKey(projectId, circuitId)]
+
+    fun <T> getCoherentSnapshot(
+        projectId: String,
+        domain: CalculationDomain,
+        entityId: String,
+        expectedRevision: Long? = null
+    ): CoherentCalculationSnapshot<T>? {
+        val liveRev = getProjectRevision(projectId)
+        if (expectedRevision != null && liveRev != expectedRevision) return null
+
+        val entry = when (domain) {
+            CalculationDomain.CABLE_SIZING -> {
+                val id = entityId.toIntOrNull() ?: return null
+                sizingCache[ProjectCircuitKey(projectId, id)]
+            }
+            CalculationDomain.TRANSFORMER -> {
+                transformerCache[ProjectTransformerKey(projectId, entityId)]
+            }
+            CalculationDomain.SHORT_CIRCUIT -> {
+                val id = entityId.toIntOrNull() ?: return null
+                shortCircuitCache[ProjectCircuitKey(projectId, id)]
+            }
+            CalculationDomain.PROTECTION_ADS -> {
+                val id = entityId.toIntOrNull() ?: return null
+                protectionCache[ProjectCircuitKey(projectId, id)]
+            }
+            CalculationDomain.COORDINATION -> {
+                val id = entityId.toIntOrNull() ?: return null
+                coordinationCache[ProjectCircuitKey(projectId, id)]
+            }
+        } ?: return null
+
+        if (entry.projectRevision != liveRev) return null
+        if (expectedRevision != null && entry.projectRevision != expectedRevision) return null
+
+        @Suppress("UNCHECKED_CAST")
+        return CoherentCalculationSnapshot(
+            payload = entry.result as T,
+            projectRevision = entry.projectRevision,
+            isPublishedCurrent = true,
+            publishedAt = entry.publishedAt
+        )
+    }
 
     /**
      * Invalidates cache for a specific project and circuit ID across all circuit domain caches.
@@ -1393,11 +1505,6 @@ object EngineeringCalculationCoordinator {
     // Revision-Guarded Targeted Calculation Entrypoints (Phase 7D)
     // -------------------------------------------------------------------------
 
-    private val publicationFences = ConcurrentHashMap<String, Any>()
-
-    fun getPublicationFence(projectId: String): Any =
-        publicationFences.computeIfAbsent(projectId) { Any() }
-
     fun calculateCableSizingGuarded(
         circuit: CircuitEntity,
         allCircuits: List<CircuitEntity>,
@@ -1439,32 +1546,36 @@ object EngineeringCalculationCoordinator {
         )
 
         val status = if (freshResult.status.contains("FAIL")) "FAIL" else if (freshResult.status.contains("WARN")) "WARNING" else "PASS"
+        val scope = CalculationScope(targetPid, CalculationEntityType.CIRCUIT, circuit.id.toString(), CalculationDomain.CABLE_SIZING)
 
-        synchronized(getPublicationFence(targetPid)) {
-            val liveRev = getProjectRevision(targetPid)
-            if (liveRev != expectedRevision) {
-                return GuardedCalculationResult.Superseded(expectedRevision, liveRev)
-            }
-
-            // Step 1: Record freshness metadata FIRST (failure aborts before cache write)
-            try {
-                runBlocking {
-                    getRecorder(allCircuits, transformers).recordCableSizing(targetPid, circuit.id, status, liveRev)
+        return runBlocking {
+            getPublicationMutex(targetPid).withLock {
+                val liveRev = getProjectRevision(targetPid)
+                if (liveRev != expectedRevision) {
+                    return@withLock GuardedCalculationResult.Superseded(expectedRevision, liveRev)
                 }
-            } catch (ex: Exception) {
-                return GuardedCalculationResult.Failed("Freshness recorder failed: ${ex.message}")
+
+                // Step 1: Record freshness metadata FIRST (failure aborts before cache write)
+                try {
+                    getRecorder(allCircuits, transformers).recordCableSizing(targetPid, circuit.id, status, liveRev)
+                } catch (ex: Exception) {
+                    if (ex is CancellationException) throw ex
+                    freshnessRegistry.removeRecord(scope)
+                    return@withLock GuardedCalculationResult.Failed("Freshness recorder failed: ${ex.message}")
+                }
+
+                // Step 2: Verify revision post-recording
+                val postRev = getProjectRevision(targetPid)
+                if (postRev != expectedRevision) {
+                    freshnessRegistry.removeRecord(scope)
+                    return@withLock GuardedCalculationResult.Superseded(expectedRevision, postRev)
+                }
+
+                // Step 3: Atomically write versioned cache entry
+                sizingCache[targetKey] = VersionedCacheEntry(targetSig, freshResult, liveRev)
+
+                GuardedCalculationResult.Published(freshResult, liveRev)
             }
-
-            // Step 2: Verify revision post-recording
-            val postRev = getProjectRevision(targetPid)
-            if (postRev != expectedRevision) {
-                return GuardedCalculationResult.Superseded(expectedRevision, postRev)
-            }
-
-            // Step 3: Atomically write versioned cache entry
-            sizingCache[targetKey] = VersionedCacheEntry(targetSig, freshResult, liveRev)
-
-            return GuardedCalculationResult.Published(freshResult, liveRev)
         }
     }
 
@@ -1534,29 +1645,33 @@ object EngineeringCalculationCoordinator {
         val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
         val scKey = ProjectCircuitKey(pid, circuit.id)
         val status = if (fresh.status.contains("FAIL") || fresh.status.contains("MISSING")) "FAIL" else "PASS"
+        val scope = CalculationScope(pid, CalculationEntityType.CIRCUIT, circuitId.toString(), CalculationDomain.SHORT_CIRCUIT)
 
-        synchronized(getPublicationFence(pid)) {
-            val liveRev = getProjectRevision(pid)
-            if (liveRev != expectedRevision) {
-                return GuardedCalculationResult.Superseded(expectedRevision, liveRev)
-            }
-
-            try {
-                runBlocking {
-                    getRecorder(allCircuits, allTransformers).recordShortCircuit(pid, circuitId, status, liveRev)
+        return runBlocking {
+            getPublicationMutex(pid).withLock {
+                val liveRev = getProjectRevision(pid)
+                if (liveRev != expectedRevision) {
+                    return@withLock GuardedCalculationResult.Superseded(expectedRevision, liveRev)
                 }
-            } catch (ex: Exception) {
-                return GuardedCalculationResult.Failed("Freshness recorder failed: ${ex.message}")
+
+                try {
+                    getRecorder(allCircuits, allTransformers).recordShortCircuit(pid, circuitId, status, liveRev)
+                } catch (ex: Exception) {
+                    if (ex is CancellationException) throw ex
+                    freshnessRegistry.removeRecord(scope)
+                    return@withLock GuardedCalculationResult.Failed("Freshness recorder failed: ${ex.message}")
+                }
+
+                val postRev = getProjectRevision(pid)
+                if (postRev != expectedRevision) {
+                    freshnessRegistry.removeRecord(scope)
+                    return@withLock GuardedCalculationResult.Superseded(expectedRevision, postRev)
+                }
+
+                shortCircuitCache[scKey] = VersionedCacheEntry(sig, fresh, liveRev)
+
+                GuardedCalculationResult.Published(fresh, liveRev)
             }
-
-            val postRev = getProjectRevision(pid)
-            if (postRev != expectedRevision) {
-                return GuardedCalculationResult.Superseded(expectedRevision, postRev)
-            }
-
-            shortCircuitCache[scKey] = VersionedCacheEntry(sig, fresh, liveRev)
-
-            return GuardedCalculationResult.Published(fresh, liveRev)
         }
     }
 
@@ -1605,30 +1720,34 @@ object EngineeringCalculationCoordinator {
         val protPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
         val protKey = ProjectCircuitKey(protPid, circuit.id)
         val adsKey = ProjectCircuitKey(protPid, circuit.id)
+        val scope = CalculationScope(protPid, CalculationEntityType.CIRCUIT, circuitId.toString(), CalculationDomain.PROTECTION_ADS)
 
-        synchronized(getPublicationFence(protPid)) {
-            val liveRev = getProjectRevision(protPid)
-            if (liveRev != expectedRevision) {
-                return GuardedCalculationResult.Superseded(expectedRevision, liveRev)
-            }
-
-            try {
-                runBlocking {
-                    getRecorder(allCircuits, allTransformers).recordProtectionAds(protPid, circuitId, freshProt.finalStatus, liveRev)
+        return runBlocking {
+            getPublicationMutex(protPid).withLock {
+                val liveRev = getProjectRevision(protPid)
+                if (liveRev != expectedRevision) {
+                    return@withLock GuardedCalculationResult.Superseded(expectedRevision, liveRev)
                 }
-            } catch (ex: Exception) {
-                return GuardedCalculationResult.Failed("Freshness recorder failed: ${ex.message}")
+
+                try {
+                    getRecorder(allCircuits, allTransformers).recordProtectionAds(protPid, circuitId, freshProt.finalStatus, liveRev)
+                } catch (ex: Exception) {
+                    if (ex is CancellationException) throw ex
+                    freshnessRegistry.removeRecord(scope)
+                    return@withLock GuardedCalculationResult.Failed("Freshness recorder failed: ${ex.message}")
+                }
+
+                val postRev = getProjectRevision(protPid)
+                if (postRev != expectedRevision) {
+                    freshnessRegistry.removeRecord(scope)
+                    return@withLock GuardedCalculationResult.Superseded(expectedRevision, postRev)
+                }
+
+                adsCache[adsKey] = VersionedCacheEntry(sigAds, freshAds, liveRev)
+                protectionCache[protKey] = VersionedCacheEntry(sigProt, freshProt, liveRev)
+
+                GuardedCalculationResult.Published(freshProt, liveRev)
             }
-
-            val postRev = getProjectRevision(protPid)
-            if (postRev != expectedRevision) {
-                return GuardedCalculationResult.Superseded(expectedRevision, postRev)
-            }
-
-            adsCache[adsKey] = VersionedCacheEntry(sigAds, freshAds, liveRev)
-            protectionCache[protKey] = VersionedCacheEntry(sigProt, freshProt, liveRev)
-
-            return GuardedCalculationResult.Published(freshProt, liveRev)
         }
     }
 
@@ -1678,29 +1797,33 @@ object EngineeringCalculationCoordinator {
         val sig = computeCoordinationSignature(circuit, sizingResult, upstreamName, upstreamRating)
         val coordPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
         val coordKey = ProjectCircuitKey(coordPid, circuit.id)
+        val scope = CalculationScope(coordPid, CalculationEntityType.CIRCUIT, circuitId.toString(), CalculationDomain.COORDINATION)
 
-        synchronized(getPublicationFence(coordPid)) {
-            val liveRev = getProjectRevision(coordPid)
-            if (liveRev != expectedRevision) {
-                return GuardedCalculationResult.Superseded(expectedRevision, liveRev)
-            }
-
-            try {
-                runBlocking {
-                    getRecorder(allCircuits, allTransformers).recordCoordination(coordPid, circuitId, fresh.status, liveRev)
+        return runBlocking {
+            getPublicationMutex(coordPid).withLock {
+                val liveRev = getProjectRevision(coordPid)
+                if (liveRev != expectedRevision) {
+                    return@withLock GuardedCalculationResult.Superseded(expectedRevision, liveRev)
                 }
-            } catch (ex: Exception) {
-                return GuardedCalculationResult.Failed("Freshness recorder failed: ${ex.message}")
+
+                try {
+                    getRecorder(allCircuits, allTransformers).recordCoordination(coordPid, circuitId, fresh.status, liveRev)
+                } catch (ex: Exception) {
+                    if (ex is CancellationException) throw ex
+                    freshnessRegistry.removeRecord(scope)
+                    return@withLock GuardedCalculationResult.Failed("Freshness recorder failed: ${ex.message}")
+                }
+
+                val postRev = getProjectRevision(coordPid)
+                if (postRev != expectedRevision) {
+                    freshnessRegistry.removeRecord(scope)
+                    return@withLock GuardedCalculationResult.Superseded(expectedRevision, postRev)
+                }
+
+                coordinationCache[coordKey] = VersionedCacheEntry(sig, fresh, liveRev)
+
+                GuardedCalculationResult.Published(fresh, liveRev)
             }
-
-            val postRev = getProjectRevision(coordPid)
-            if (postRev != expectedRevision) {
-                return GuardedCalculationResult.Superseded(expectedRevision, postRev)
-            }
-
-            coordinationCache[coordKey] = VersionedCacheEntry(sig, fresh, liveRev)
-
-            return GuardedCalculationResult.Published(fresh, liveRev)
         }
     }
 }
@@ -1713,6 +1836,16 @@ data class VersionedCacheEntry<T>(
     val result: T,
     val projectRevision: Long,
     val publishedAt: Long = System.currentTimeMillis()
+)
+
+/**
+ * Immutable snapshot describing a coherent calculation payload and its publication generation.
+ */
+data class CoherentCalculationSnapshot<T>(
+    val payload: T?,
+    val projectRevision: Long,
+    val isPublishedCurrent: Boolean,
+    val publishedAt: Long
 )
 
 sealed class GuardedCalculationResult<out T> {

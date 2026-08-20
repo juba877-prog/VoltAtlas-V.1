@@ -6,13 +6,16 @@ import com.example.data.CircuitDao
 import com.example.data.CircuitEntity
 import com.example.data.ProjectDao
 import com.example.data.catalog.CatalogRepository
+import com.example.engine.coordinator.EngineeringCalculationCoordinator
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Internal, disabled mutation engine for applying revision-guarded cable circuit proposals.
  *
  * Invariants:
  * - Internal visibility: Unreachable from public ViewModels, tool registries, and orchestrators.
+ * - Shared Publication Fence: Transaction and revision CAS acquire [EngineeringCalculationCoordinator.getPublicationMutex].
  * - Atomic CAS: Revision increment is the FIRST database write inside [androidx.room.withTransaction].
  * - Rollback Guarantee: Every failure path inside the transaction throws an [InternalRollbackException].
  * - Cancellation Safety: [CancellationException] is strictly rethrown and never swallowed.
@@ -56,9 +59,10 @@ internal class EngineeringMutationEngine(
             return MutationOutcome.InvalidPatch(catalogValidationResult)
         }
 
-        // 2. Inside Transaction: Atomic Guarded Mutation with Proven Rollback
-        return try {
-            val internalSuccess = db.withTransaction {
+        // 2. Inside Transaction with Shared Project Publication Fence: Atomic Guarded Mutation with Proven Rollback
+        return EngineeringCalculationCoordinator.getPublicationMutex(intent.projectId).withLock {
+            try {
+                val internalSuccess = db.withTransaction {
                 // 2.1. Atomic Compare-And-Swap Revision Claim (FIRST DB WRITE)
                 val rowsUpdated = projectDao.incrementRevisionGuarded(
                     id = intent.projectId,
@@ -173,6 +177,7 @@ internal class EngineeringMutationEngine(
             )
         }
     }
+}
 
     private fun preValidateNumericBounds(instructions: CablePatchInstructions): String? {
         instructions.parallelRuns?.let {
