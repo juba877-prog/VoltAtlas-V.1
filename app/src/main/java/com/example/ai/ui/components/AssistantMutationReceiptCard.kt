@@ -1,0 +1,132 @@
+package com.example.ai.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.example.ai.ui.ProposalFieldChangeUiModel
+
+/**
+ * MD3 Mutation Receipt Card displaying post-commit durable truth.
+ */
+@Composable
+fun AssistantMutationReceiptCard(
+    receiptId: String,
+    revisionBefore: Long,
+    revisionAfter: Long,
+    appliedChanges: List<ProposalFieldChangeUiModel>,
+    revalidationStatus: String,
+    isPartialOrFailed: Boolean = false,
+    isAlreadyApplied: Boolean = false,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .testTag("assistant_mutation_receipt_card_$receiptId"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (isAlreadyApplied) "Already Applied" else "Change Applied",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                val badgeText = when {
+                    isAlreadyApplied -> "ALREADY APPLIED"
+                    isPartialOrFailed -> "APPLIED (REVAL PARTIAL)"
+                    else -> "CHANGE APPLIED"
+                }
+                val badgeColor = when {
+                    isAlreadyApplied -> MaterialTheme.colorScheme.secondaryContainer
+                    isPartialOrFailed -> MaterialTheme.colorScheme.tertiaryContainer
+                    else -> MaterialTheme.colorScheme.primaryContainer
+                }
+                val textColor = when {
+                    isAlreadyApplied -> MaterialTheme.colorScheme.onSecondaryContainer
+                    isPartialOrFailed -> MaterialTheme.colorScheme.onTertiaryContainer
+                    else -> MaterialTheme.colorScheme.onPrimaryContainer
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(badgeColor)
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .semantics { contentDescription = "Receipt Status: $badgeText" }
+                        .testTag("receipt_status_badge")
+                ) {
+                    Text(
+                        text = badgeText,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = textColor
+                    )
+                }
+            }
+
+            Text(
+                text = "Project Revision: Rev $revisionBefore → Rev $revisionAfter",
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            if (appliedChanges.isNotEmpty()) {
+                Text(
+                    text = "Committed Changes:",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    appliedChanges.forEach { change ->
+                        ProposalFieldChangeRow(change = change)
+                    }
+                }
+            }
+
+            Text(
+                text = "Revalidation: $revalidationStatus\nReceipt ID: $receiptId",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+                    .testTag("action_dismiss_receipt")
+            ) {
+                Text("Done")
+            }
+        }
+    }
+}

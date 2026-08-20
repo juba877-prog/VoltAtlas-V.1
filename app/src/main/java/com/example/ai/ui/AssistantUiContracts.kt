@@ -161,6 +161,23 @@ sealed interface AssistantCardUiModel {
         override val cardId: String,
         val model: ProposalReviewUiModel
     ) : AssistantCardUiModel
+
+    data class ApprovalConfirmationCard(
+        override val cardId: String,
+        val model: ProposalReviewUiModel,
+        val isSubmitting: Boolean = false
+    ) : AssistantCardUiModel
+
+    data class MutationReceiptCard(
+        override val cardId: String,
+        val receiptId: String,
+        val revisionBefore: Long,
+        val revisionAfter: Long,
+        val appliedChanges: List<ProposalFieldChangeUiModel>,
+        val revalidationStatus: String,
+        val isPartialOrFailed: Boolean = false,
+        val isAlreadyApplied: Boolean = false
+    ) : AssistantCardUiModel
 }
 
 /**

@@ -237,7 +237,27 @@ fun EngineeringAssistantSheet(
                             is AssistantCardUiModel.ProposalReviewCard -> {
                                 AssistantProposalReviewCard(
                                     model = card.model,
-                                    onActionClick = { /* Non-executing UI action in 7F-4 */ }
+                                    onActionClick = { /* Action handling */ }
+                                )
+                            }
+                            is AssistantCardUiModel.ApprovalConfirmationCard -> {
+                                AssistantApprovalConfirmationCard(
+                                    reviewModel = card.model,
+                                    isSubmitting = card.isSubmitting,
+                                    onConfirmApprove = { /* Trusted confirmation */ },
+                                    onCancel = { /* Cancel confirmation */ }
+                                )
+                            }
+                            is AssistantCardUiModel.MutationReceiptCard -> {
+                                AssistantMutationReceiptCard(
+                                    receiptId = card.receiptId,
+                                    revisionBefore = card.revisionBefore,
+                                    revisionAfter = card.revisionAfter,
+                                    appliedChanges = card.appliedChanges,
+                                    revalidationStatus = card.revalidationStatus,
+                                    isPartialOrFailed = card.isPartialOrFailed,
+                                    isAlreadyApplied = card.isAlreadyApplied,
+                                    onDismiss = { viewModel.close() }
                                 )
                             }
                             else -> {
