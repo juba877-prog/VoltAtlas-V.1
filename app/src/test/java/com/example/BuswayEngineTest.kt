@@ -289,4 +289,44 @@ class BuswayEngineTest {
         assertNotNull(result)
         assertEquals("Fail reason: ${result.failReason}", "✓ PASS", result.status)
     }
+
+    @Test
+    fun buswayTypedPass_ignoresMisleadingDisplayStrings() {
+        val result = com.example.engine.BuswaySizingResult(
+            Ib_A = 10.0, iRequired_A = 10.0, selectedBusway = com.example.data.catalog.BuswayCatalogEntry(mfg="test", model="test", conductor="Cu", ratingA=100.0, icwKA=50.0, ipkKA=100.0, rMOhmPerM=0.1, xMOhmPerM=0.1, weightKgPerM=1.0),
+            ratingA = 100.0, icwKA = 50.0, ipkKA = 100.0, voltDrop_V = 1.0, vdPct = 0.5, cumulativeVDpct = 0.5,
+            rMOhmPerM = 0.1, xMOhmPerM = 0.1, weightKgPerM = 1.0, status = "FAIL MISLEADING STRING", failReason = "Some misleading reason", warningMessage = null,
+            networkIscKA = 0.0, icwCheckStatus = "FAIL", resultStatus = com.example.engine.SizingResultStatus.PASS, primaryFailureCode = null,
+            isIcwOk = true, isVoltageDropOk = true, isAmpacityOk = true
+        )
+        val mapped = com.example.engine.BuswayEngine.toSizingResult(result)
+        org.junit.Assert.assertEquals(com.example.engine.SizingResultStatus.PASS, mapped.resultStatus)
+    }
+
+    @Test
+    fun buswayBlankFailReason_doesNotCreatePass() {
+        val result = com.example.engine.BuswaySizingResult(
+            Ib_A = 10.0, iRequired_A = 10.0, selectedBusway = null,
+            ratingA = 0.0, icwKA = 0.0, ipkKA = 0.0, voltDrop_V = 0.0, vdPct = 0.0, cumulativeVDpct = 0.0,
+            rMOhmPerM = 0.0, xMOhmPerM = 0.0, weightKgPerM = 0.0, status = "PASS MISLEADING", failReason = "", warningMessage = null,
+            networkIscKA = 0.0, icwCheckStatus = "PASS", resultStatus = com.example.engine.SizingResultStatus.FAIL, primaryFailureCode = com.example.engine.CableFailureCode.AMPACITY_FAIL,
+            isIcwOk = false, isVoltageDropOk = false, isAmpacityOk = false
+        )
+        val mapped = com.example.engine.BuswayEngine.toSizingResult(result)
+        org.junit.Assert.assertEquals(com.example.engine.SizingResultStatus.FAIL, mapped.resultStatus)
+        org.junit.Assert.assertEquals(com.example.engine.CableFailureCode.AMPACITY_FAIL, mapped.primaryFailureCode)
+    }
+
+    @Test
+    fun buswayCatalogMissing_mapsTypedCatalogFailure() {
+        val result = com.example.engine.BuswayEngine.sizeBusway(
+            com.example.data.CircuitEntity(circuitName = "T", loadKVA = 100.0, pf = 1.0, phases = "3P", voltageV = 400, safetyFactor = 1.0, length_m = 10.0, installation = "Busway"),
+            catalog = emptyList()
+        )
+        org.junit.Assert.assertEquals(com.example.engine.SizingResultStatus.FAIL, result.resultStatus)
+        org.junit.Assert.assertEquals(com.example.engine.CableFailureCode.CATALOG_MISSING, result.primaryFailureCode)
+        val mapped = com.example.engine.BuswayEngine.toSizingResult(result)
+        org.junit.Assert.assertEquals(com.example.engine.SizingResultStatus.FAIL, mapped.resultStatus)
+        org.junit.Assert.assertEquals(com.example.engine.CableFailureCode.CATALOG_MISSING, mapped.primaryFailureCode)
+    }
 }

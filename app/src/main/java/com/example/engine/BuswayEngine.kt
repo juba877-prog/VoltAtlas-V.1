@@ -22,7 +22,12 @@ data class BuswaySizingResult(
     val failReason: String = "",
     val warningMessage: String? = null,
     val networkIscKA: Double = 0.0,
-    val icwCheckStatus: String = "PASS"
+    val icwCheckStatus: String = "PASS",
+    val resultStatus: SizingResultStatus,
+    val primaryFailureCode: CableFailureCode?,
+    val isIcwOk: Boolean,
+    val isVoltageDropOk: Boolean,
+    val isAmpacityOk: Boolean
 )
 
 object BuswayEngine {
@@ -61,7 +66,12 @@ object BuswayEngine {
                 xMOhmPerM = 0.0,
                 weightKgPerM = 0.0,
                 status = "✗ FAIL",
-                failReason = "Busway catalog is empty or unavailable."
+                failReason = "Busway catalog is empty or unavailable.",
+                resultStatus = SizingResultStatus.FAIL,
+                primaryFailureCode = CableFailureCode.CATALOG_MISSING,
+                isIcwOk = false,
+                isVoltageDropOk = false,
+                isAmpacityOk = false
             )
         }
 
@@ -104,7 +114,12 @@ object BuswayEngine {
                 xMOhmPerM = 0.0,
                 weightKgPerM = 0.0,
                 status = "✗ FAIL",
-                failReason = "Required current (${String.format("%.1f", iReq)} A) exceeds maximum catalog busway rating (${maxAvailable.toInt()} A)."
+                failReason = "Required current (${String.format("%.1f", iReq)} A) exceeds maximum catalog busway rating (${maxAvailable.toInt()} A).",
+                resultStatus = SizingResultStatus.FAIL,
+                primaryFailureCode = CableFailureCode.AMPACITY_FAIL,
+                isIcwOk = false,
+                isVoltageDropOk = false,
+                isAmpacityOk = false
             )
         }
 
@@ -130,13 +145,19 @@ object BuswayEngine {
         var status = "✓ PASS"
         var failReason = ""
         var warningMsg: String? = null
+        var resultStatus = SizingResultStatus.PASS
+        var primaryFailureCode: CableFailureCode? = null
 
         if (!vdOk) {
             status = "✗ FAIL"
             failReason = "Cumulative voltage drop (${String.format("%.2f", cumVDpct)}%) exceeds maximum limit (${String.format("%.1f", limitPct)}%)."
+            resultStatus = SizingResultStatus.FAIL
+            primaryFailureCode = CableFailureCode.VOLTAGE_DROP_FAIL
         } else if (!icwOk) {
             status = "✗ FAIL"
             failReason = "Busway rated Icw (${selected.icwKA} kA) is lower than network short circuit level (${String.format("%.1f", networkIscKA)} kA)."
+            resultStatus = SizingResultStatus.FAIL
+            primaryFailureCode = CableFailureCode.INDETERMINATE
         }
 
         return BuswaySizingResult(
@@ -156,7 +177,12 @@ object BuswayEngine {
             failReason = failReason,
             warningMessage = warningMsg,
             networkIscKA = networkIscKA,
-            icwCheckStatus = icwStatusStr
+            icwCheckStatus = icwStatusStr,
+            resultStatus = resultStatus,
+            primaryFailureCode = primaryFailureCode,
+            isIcwOk = icwOk,
+            isVoltageDropOk = vdOk,
+            isAmpacityOk = true
         )
     }
 
@@ -194,10 +220,10 @@ object BuswayEngine {
             clearingTime_s = 1.0,
             odSourceMfg = selected?.mfg ?: "Elsewedy",
             isODApproximated = false,
-            resultStatus = if (selected != null && buswayRes.icwCheckStatus == "PASS" && buswayRes.failReason.isEmpty()) SizingResultStatus.PASS else SizingResultStatus.FAIL,
-            isAmpacityOk = selected != null,
-            isVoltageDropOk = buswayRes.failReason.isEmpty(),
-            primaryFailureCode = if (selected != null && buswayRes.icwCheckStatus == "PASS" && buswayRes.failReason.isEmpty()) null else if (selected == null) CableFailureCode.CATALOG_MISSING else CableFailureCode.VOLTAGE_DROP_FAIL
+            resultStatus = buswayRes.resultStatus,
+            isAmpacityOk = buswayRes.isAmpacityOk,
+            isVoltageDropOk = buswayRes.isVoltageDropOk,
+            primaryFailureCode = buswayRes.primaryFailureCode
         )
     }
 

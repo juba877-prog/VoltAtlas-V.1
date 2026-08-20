@@ -53,10 +53,10 @@ data class SizingResult(
     val clearingTime_s: Double = 0.1,
     val odSourceMfg: String = "Elsewedy",
     val isODApproximated: Boolean = false,
-    val resultStatus: SizingResultStatus = SizingResultStatus.PASS,
-    val isAmpacityOk: Boolean = true,
-    val isVoltageDropOk: Boolean = true,
-    val primaryFailureCode: CableFailureCode? = null
+    val resultStatus: SizingResultStatus,
+    val isAmpacityOk: Boolean,
+    val isVoltageDropOk: Boolean,
+    val primaryFailureCode: CableFailureCode?
 )
 
 object CableSizingEngine {
