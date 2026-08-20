@@ -549,28 +549,28 @@ class QaTestSuite {
                 ratedI_table_A = 100.0, capacity_derated_Iz_A = 100.0, utilizationPct = 72.1,
                 neutral_mm2 = "16 mm\u00B2", earthCPC_mm2 = "16 mm\u00B2", voltDrop_V = 2.0,
                 vdPct = 0.005, cumulativeVDpct = 0.005, status = "OK"
-            ),
+            , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
             2 to SizingResult(
                 Ib_A = 144.3, deviceSize_A = 160.0, deviceType = "MCCB", cTotalDerating = 1.0,
                 iRequired_perCable_A = 144.3, productCode = "PC-70", cableSize_mm2 = "70 mm\u00B2",
                 ratedI_table_A = 200.0, capacity_derated_Iz_A = 200.0, utilizationPct = 72.1,
                 neutral_mm2 = "35 mm\u00B2", earthCPC_mm2 = "35 mm\u00B2", voltDrop_V = 3.0,
                 vdPct = 0.0075, cumulativeVDpct = 0.0075, status = "OK"
-            ),
+            , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
             3 to SizingResult(
                 Ib_A = 433.0, deviceSize_A = 500.0, deviceType = "MCCB", cTotalDerating = 1.0,
                 iRequired_perCable_A = 144.3, productCode = "PC-240", cableSize_mm2 = "240 mm\u00B2",
                 ratedI_table_A = 500.0, capacity_derated_Iz_A = 500.0, utilizationPct = 86.6,
                 neutral_mm2 = "120 mm\u00B2", earthCPC_mm2 = "120 mm\u00B2", voltDrop_V = 4.0,
                 vdPct = 0.01, cumulativeVDpct = 0.01, status = "OK"
-            ),
+            , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
             4 to SizingResult(
                 Ib_A = 14.4, deviceSize_A = 20.0, deviceType = "MCB", cTotalDerating = 1.0,
                 iRequired_perCable_A = 14.4, productCode = "PC-MISSING", cableSize_mm2 = "16 mm\u00B2",
                 ratedI_table_A = 30.0, capacity_derated_Iz_A = 30.0, utilizationPct = 48.0,
                 neutral_mm2 = "10 mm\u00B2", earthCPC_mm2 = "10 mm\u00B2", voltDrop_V = 0.5,
                 vdPct = 0.001, cumulativeVDpct = 0.001, status = "OK"
-            )
+            , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         )
 
         val circuits = listOf(c1, c2, c3, c4)
@@ -668,7 +668,7 @@ class QaTestSuite {
             neutral_mm2 = "16 mm\u00B2", earthCPC_mm2 = "16 mm\u00B2", voltDrop_V = 2.0,
             vdPct = 0.005, cumulativeVDpct = 0.005, status = "OK",
             cableMaterial = "Cu", insulation = "XLPE", cableOD_mm = 21.5
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
 
         // Generate with explicit termination ends so we can get APPROVED status
         val resA = ProcurementEngine.generateProcurement(
@@ -809,7 +809,7 @@ class QaTestSuite {
             ratedI_table_A = 500.0, capacity_derated_Iz_A = 500.0, utilizationPct = 68.0,
             neutral_mm2 = "120 mm²", earthCPC_mm2 = "120 mm²", voltDrop_V = 3.2, vdPct = 0.8,
             cumulativeVDpct = 0.8, status = "✓ PASS", cableOD_mm = 54.3
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         val resB = ProcurementEngine.generateProcurement(listOf(circB), mapOf(201 to sizingB)).first()
         assertTrue("glandModel must contain 63A21RA, got ${resB.glandModel}", resB.glandModel.contains("63A21RA"))
 
@@ -920,7 +920,7 @@ class QaTestSuite {
             cumulativeVDpct = 0.3,
             status = "✓ PASS",
             cableOD_mm = 95.0
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         val procList = ProcurementEngine.generateProcurement(listOf(circ630), mapOf(777 to sizing630))
         val item = procList.first()
         assertTrue("100CW1RA gland model must be resolved, got ${item.glandModel}", item.glandModel.contains("100CW1RA"))

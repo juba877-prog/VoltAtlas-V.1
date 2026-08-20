@@ -43,7 +43,7 @@ class ProtectionEngineTest {
             clearingTime_s = clearingTime,
             rUsed = 0.3,
             xUsed = 0.08
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
     }
 
     private fun createDummyShortCircuit(

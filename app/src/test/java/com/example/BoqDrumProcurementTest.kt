@@ -30,7 +30,7 @@ class BoqDrumProcurementTest {
             cumulativeVDpct = 1.0,
             status = "PASS",
             cableOD_mm = cableOD
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
     }
 
     @Test

@@ -16,7 +16,7 @@ class PdfReportMappingTest {
             ratedI_table_A = 300.0, capacity_derated_Iz_A = 300.0, utilizationPct = 83.3,
             neutral_mm2 = "95 mm²", earthCPC_mm2 = "95 mm²", voltDrop_V = 2.0, vdPct = 0.5,
             cumulativeVDpct = 0.5, status = "PASS"
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
 
         val devType = sizingResult.deviceType.takeIf { it.isNotBlank() } ?: "CB"
         val devSize = "%.0f".format(sizingResult.deviceSize_A)

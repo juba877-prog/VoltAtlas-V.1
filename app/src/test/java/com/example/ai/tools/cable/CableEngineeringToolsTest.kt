@@ -1405,7 +1405,7 @@ class CableEngineeringToolsTest {
             isGoverning = true
         )
         val eval = CableEngineeringEvaluation(
-            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "10 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✗ FAIL", failReason = "Thermal withstand exceeded"),
+            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "10 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✗ FAIL", failReason = "Thermal withstand exceeded", resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
             overallStatus = CableCheckStatus.FAIL,
             checks = listOf(check),
             governingCheckCode = CableCheckCode.SHORT_CIRCUIT_WITHSTAND,
@@ -1430,7 +1430,7 @@ class CableEngineeringToolsTest {
             isGoverning = true
         )
         val eval = CableEngineeringEvaluation(
-            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "25 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✗ FAIL", failReason = "Device rating exceeds frame capacity"),
+            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "25 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✗ FAIL", failReason = "Device rating exceeds frame capacity", resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
             overallStatus = CableCheckStatus.FAIL,
             checks = listOf(check),
             governingCheckCode = CableCheckCode.DEVICE_COMPATIBILITY,
@@ -1524,7 +1524,7 @@ class CableEngineeringToolsTest {
             vdPct = 0.75,
             cumulativeVDpct = 0.75,
             status = "✓ PASS"
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         val circuit = CircuitEntity(id = 1, maxVDpct = 0.03)
 
         val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
@@ -1547,7 +1547,7 @@ class CableEngineeringToolsTest {
             message = "High utilization warning"
         )
         val eval = CableEngineeringEvaluation(
-            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "70 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✓ PASS"),
+            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "70 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✓ PASS", resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
             overallStatus = CableCheckStatus.WARNING,
             checks = listOf(check),
             governingCheckCode = null,
@@ -1576,7 +1576,7 @@ class CableEngineeringToolsTest {
             vdPct = 0.5,
             cumulativeVDpct = 0.5,
             status = "✓ PASS"
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         val circuit = CircuitEntity(id = 1, maxVDpct = 0.03, overrideCableSize = "120 mm²")
 
         val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
@@ -1589,7 +1589,7 @@ class CableEngineeringToolsTest {
     @Test
     fun governingCriterion_unsupportedEvidence_isNotFabricated() {
         val eval = CableEngineeringEvaluation(
-            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "240 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✓ PASS"),
+            sizingResult = SizingResult(0.0, 0.0, "", 1.0, 0.0, "", "240 mm²", 0.0, 0.0, 0.0, "", "", 0.0, 0.0, 0.0, "✓ PASS", resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
             overallStatus = CableCheckStatus.PASS,
             checks = emptyList(),
             governingCheckCode = null,
@@ -1603,7 +1603,7 @@ class CableEngineeringToolsTest {
     @Test
     fun governingCriterion_adversarialPass_persistsEvenWithUnusualValues() {
         val eval = CableEngineeringEvaluation(
-            sizingResult = SizingResult(1000.0, 100.0, "MCCB", 1.0, 100.0, "X", "1.5 mm²", 10.0, 10.0, 1000.0, "", "", 100.0, 50.0, 50.0, "✓ PASS"),
+            sizingResult = SizingResult(1000.0, 100.0, "MCCB", 1.0, 100.0, "X", "1.5 mm²", 10.0, 10.0, 1000.0, "", "", 100.0, 50.0, 50.0, "✓ PASS", resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
             overallStatus = CableCheckStatus.PASS,
             checks = listOf(
                 CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.PASS, EngineeringValue.ofDecimal(10.0), EngineeringValue.ofDecimal(100.0), "10A", "100A", "A", "Pass")
@@ -1618,7 +1618,7 @@ class CableEngineeringToolsTest {
     @Test
     fun governingCriterion_adversarialFail_persistsEvenWhenRecomputationWouldPass() {
         val eval = CableEngineeringEvaluation(
-            sizingResult = SizingResult(10.0, 20.0, "MCB", 1.0, 20.0, "X", "240 mm²", 500.0, 500.0, 4.0, "", "", 0.1, 0.02, 0.02, "✗ FAIL", failReason = "Coordination constraint"),
+            sizingResult = SizingResult(10.0, 20.0, "MCB", 1.0, 20.0, "X", "240 mm²", 500.0, 500.0, 4.0, "", "", 0.1, 0.02, 0.02, "✗ FAIL", failReason = "Coordination constraint", resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
             overallStatus = CableCheckStatus.FAIL,
             checks = listOf(
                 CableStructuredCheck(CableCheckCode.AMPACITY, "Ampacity", CableCheckStatus.FAIL, EngineeringValue.ofDecimal(500.0), EngineeringValue.ofDecimal(20.0), "500A", "20A", "A", "Failed by upstream policy")
@@ -1661,7 +1661,7 @@ class CableEngineeringToolsTest {
             ratedI_table_A = 25.0, capacity_derated_Iz_A = 25.0, utilizationPct = 40.0,
             neutral_mm2 = "2.5 mm²", earthCPC_mm2 = "2.5 mm²", voltDrop_V = 12.0,
             vdPct = 3.0, cumulativeVDpct = 3.0, status = "✓ PASS"
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
         assertEquals(CableCheckStatus.PASS, eval.overallStatus)
     }
@@ -1765,7 +1765,7 @@ class CableEngineeringToolsTest {
             ratedI_table_A = 150.0, capacity_derated_Iz_A = 150.0, utilizationPct = 66.7,
             neutral_mm2 = "25 mm²", earthCPC_mm2 = "25 mm²", voltDrop_V = 2.0,
             vdPct = 0.5, cumulativeVDpct = 0.5, status = "✓ PASS"
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         val circuit = CircuitEntity(id = 1, cableType = "Cu/XLPE/PVC - 4C", maxVDpct = 0.03, fedFrom = "Main")
         val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
         val ampacityCheck = eval.checks.first { it.checkCode == CableCheckCode.AMPACITY }
@@ -1784,7 +1784,7 @@ class CableEngineeringToolsTest {
             ratedI_table_A = 150.0, capacity_derated_Iz_A = 150.0, utilizationPct = 66.7,
             neutral_mm2 = "25 mm²", earthCPC_mm2 = "25 mm²", voltDrop_V = 2.0,
             vdPct = 0.5, cumulativeVDpct = 0.5, status = "✓ PASS"
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         val eval = CableCalculationService.evaluateEngineeringChecks(dummyResult, circuit)
         val vdCheck = eval.checks.first { it.checkCode == CableCheckCode.VOLTAGE_DROP }
 
@@ -2786,7 +2786,7 @@ class CableEngineeringToolsTest {
             ratedI_table_A = 25.0, capacity_derated_Iz_A = 25.0, utilizationPct = 40.0,
             neutral_mm2 = "", earthCPC_mm2 = "", voltDrop_V = 1.0, vdPct = 0.5,
             cumulativeVDpct = 0.5, status = "✗ FAIL"
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         assertEquals(SizingResultStatus.PASS, res.resultStatus)
     }
 

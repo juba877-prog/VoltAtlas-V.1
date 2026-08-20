@@ -101,7 +101,7 @@ class EngineFixesTest {
             cableMaterial = "Cu",
             rUsed = 0.268,
             xUsed = 0.072
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
 
         // Run Zs calculation
         val adsResult = ProtectionEngine.calculateAds(circuit, sizingResult, ze_ohm = 0.0)

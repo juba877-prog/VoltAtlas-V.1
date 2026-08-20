@@ -78,7 +78,7 @@ class ShortCircuitEngineTest {
                 clearingTime_s = 0.1,
                 rUsed = 0.149,
                 xUsed = 0.075
-            )
+            , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         )
 
         val circuitParents = mapOf(101 to 0)
@@ -135,14 +135,14 @@ class ShortCircuitEngineTest {
                 utilizationPct = 91.7, neutral_mm2 = "150 mm²", earthCPC_mm2 = "150 mm²", voltDrop_V = 0.5, vdPct = 0.1,
                 cumulativeVDpct = 0.1, status = "✓ PASS", failReason = "", cableMaterial = "Cu", cableOD_mm = 62.1,
                 deviceBreakingKA = 50.0, kFactor = 143.0, clearingTime_s = 0.1, rUsed = 0.076, xUsed = 0.073
-            ),
+            , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
             2 to SizingResult(
                 Ib_A = 72.0, deviceSize_A = 80.0, deviceType = "MCCB", cTotalDerating = 1.0, iRequired_perCable_A = 72.0,
                 productCode = "CX1-T104-G12", cableSize_mm2 = "25 mm²", ratedI_table_A = 131.0, capacity_derated_Iz_A = 131.0,
                 utilizationPct = 55.0, neutral_mm2 = "25 mm²", earthCPC_mm2 = "25 mm²", voltDrop_V = 2.0, vdPct = 0.5,
                 cumulativeVDpct = 0.6, status = "✓ PASS", failReason = "", cableMaterial = "Cu", cableOD_mm = 24.3,
                 deviceBreakingKA = 25.0, kFactor = 143.0, clearingTime_s = 0.1, rUsed = 0.927, xUsed = 0.082
-            )
+            , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         )
 
         val circuitParents = mapOf(1 to 0, 2 to 1)

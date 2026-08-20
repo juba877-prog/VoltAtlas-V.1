@@ -264,7 +264,7 @@ class EngineStressTest {
             utilizationPct = 62.5, neutral_mm2 = "35 mm²", earthCPC_mm2 = "16 mm²", voltDrop_V = 1.5, vdPct = 0.375,
             cumulativeVDpct = 0.375, status = "✓ PASS", failReason = "", cableMaterial = "Cu", cableOD_mm = 24.3,
             deviceBreakingKA = 36.0, kFactor = 143.0, clearingTime_s = 0.1, rUsed = 0.6, xUsed = 0.08
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         val dummySc = ShortCircuitResult(
             circuitId = 1, sourceName = "Transformer", cableMm2 = "35 mm²", iscKA = 10.0,
             iwKA = 30.0, deviceKA = 36.0, deviceCheck = "PASS", cableCheck = "PASS",
@@ -615,7 +615,7 @@ class EngineStressTest {
                                 cableOD_mm = 22.0,
                                 rUsed = 0.524,
                                 xUsed = 0.078
-                            )
+                            , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
                             val scRes = com.example.engine.ShortCircuitResult(
                                 circuitId = 1,
                                 sourceName = "Transformer",

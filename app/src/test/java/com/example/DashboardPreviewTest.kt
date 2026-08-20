@@ -51,14 +51,14 @@ class DashboardPreviewTest {
                 ratedI_table_A = 380.0, capacity_derated_Iz_A = 380.0, utilizationPct = 67.0,
                 neutral_mm2 = "95 mm²", earthCPC_mm2 = "95 mm²", voltDrop_V = 2.4, vdPct = 0.6,
                 cumulativeVDpct = 0.6, status = "✓ PASS", cableOD_mm = 52.0
-            ),
+            , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
             2 to SizingResult(
                 Ib_A = 120.0, deviceSize_A = 125.0, deviceType = "MCB", cTotalDerating = 1.0,
                 iRequired_perCable_A = 120.0, productCode = "CU/XLPE/PVC-35", cableSize_mm2 = "35 mm²",
                 ratedI_table_A = 150.0, capacity_derated_Iz_A = 150.0, utilizationPct = 80.0,
                 neutral_mm2 = "35 mm²", earthCPC_mm2 = "16 mm²", voltDrop_V = 1.8, vdPct = 0.78,
                 cumulativeVDpct = 1.38, status = "✓ PASS", cableOD_mm = 22.0
-            )
+            , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         )
 
         val dummyState = UiState.Success(

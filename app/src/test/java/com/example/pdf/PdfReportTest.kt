@@ -46,7 +46,7 @@ class PdfReportTest {
                 cumulativeVDpct = 1.2,
                 status = if (i % 5 == 0) "FAIL" else if (i % 3 == 0) "WARNING" else "PASS",
                 failReason = if (i % 5 == 0) "Voltage drop exceeds limit" else ""
-            )
+            , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         }
         
         val moduleSnapshot = ProjectReportSnapshot(

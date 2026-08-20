@@ -40,8 +40,8 @@ class ViewModelAndStateStressTest {
             CircuitEntity(id = 2, circuitName = "LIGHTING-1", loadKVA = 10.0, fedFrom = "FEEDER-1", transformerId = "TX-1", length_m = 30.0)
         )
         val sizingResults = mapOf(
-            1 to SizingResult(144.0, 160.0, "MCCB", 1.0, 144.0, "M-70", "70 mm²", 194.0, 194.0, 74.0, "70 mm²", "70 mm²", 0.8, 0.2, 0.2, "PASS"),
-            2 to SizingResult(14.4, 16.0, "MCB", 1.0, 14.4, "M-4", "4 mm²", 34.0, 34.0, 42.0, "4 mm²", "4 mm²", 0.5, 0.1, 0.3, "PASS")
+            1 to SizingResult(144.0, 160.0, "MCCB", 1.0, 144.0, "M-70", "70 mm²", 194.0, 194.0, 74.0, "70 mm²", "70 mm²", 0.8, 0.2, 0.2, "PASS", resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
+            2 to SizingResult(14.4, 16.0, "MCB", 1.0, 14.4, "M-4", "4 mm²", 34.0, 34.0, 42.0, "4 mm²", "4 mm²", 0.5, 0.1, 0.3, "PASS", resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         )
 
         val boq = BoqEngine.generateBoq(circuits, sizingResults)

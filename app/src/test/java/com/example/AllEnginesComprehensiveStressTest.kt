@@ -63,9 +63,9 @@ class AllEnginesComprehensiveStressTest {
         )
 
         val sizingResults = mapOf(
-            1 to SizingResult(1154.0, 1250.0, "ACB", 1.0, 1154.0, "M-630", "630 mm²", 1500.0, 1500.0, 76.0, "300 mm²", "300 mm²", 1.0, 0.25, 0.25, "PASS", "", "Cu", cableOD_mm = 50.0, rUsed = 0.034, xUsed = 0.072),
-            2 to SizingResult(288.0, 315.0, "MCCB", 1.0, 288.0, "M-185", "185 mm²", 370.0, 370.0, 77.0, "95 mm²", "95 mm²", 1.5, 0.375, 0.625, "PASS", "", "Cu", cableOD_mm = 30.0, rUsed = 0.119, xUsed = 0.074),
-            3 to SizingResult(28.8, 32.0, "MCB", 1.0, 28.8, "M-16", "16 mm²", 80.0, 80.0, 36.0, "16 mm²", "16 mm² (Cu)", 2.0, 0.50, 1.125, "PASS", "", "Cu", cableOD_mm = 16.0, rUsed = 1.38, xUsed = 0.082)
+            1 to SizingResult(1154.0, 1250.0, "ACB", 1.0, 1154.0, "M-630", "630 mm²", 1500.0, 1500.0, 76.0, "300 mm²", "300 mm²", 1.0, 0.25, 0.25, "PASS", "", "Cu", cableOD_mm = 50.0, rUsed = 0.034, xUsed = 0.072, resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
+            2 to SizingResult(288.0, 315.0, "MCCB", 1.0, 288.0, "M-185", "185 mm²", 370.0, 370.0, 77.0, "95 mm²", "95 mm²", 1.5, 0.375, 0.625, "PASS", "", "Cu", cableOD_mm = 30.0, rUsed = 0.119, xUsed = 0.074, resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null),
+            3 to SizingResult(28.8, 32.0, "MCB", 1.0, 28.8, "M-16", "16 mm²", 80.0, 80.0, 36.0, "16 mm²", "16 mm² (Cu)", 2.0, 0.50, 1.125, "PASS", "", "Cu", cableOD_mm = 16.0, rUsed = 1.38, xUsed = 0.082, resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         )
 
         val circuitParents: Map<Int, Int> = mapOf(1 to 0, 2 to 1, 3 to 2)
@@ -107,7 +107,7 @@ class AllEnginesComprehensiveStressTest {
             cableMaterial = "Cu",
             rUsed = 1.38,
             xUsed = 0.082
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
 
         val adsRes = ProtectionEngine.calculateAds(circuit, sizingResult, ze_ohm = 0.05)
         assertNotNull(adsRes)

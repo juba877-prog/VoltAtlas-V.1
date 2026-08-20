@@ -198,7 +198,7 @@ class FuzzStressTest {
                     utilizationPct = 66.7, neutral_mm2 = "25 mm²", earthCPC_mm2 = "25 mm²", voltDrop_V = 1.0, vdPct = 0.25,
                     cumulativeVDpct = 0.25, status = "✓ PASS", failReason = "", cableMaterial = "Cu", cableOD_mm = 24.3,
                     deviceBreakingKA = 25.0, kFactor = 143.0, clearingTime_s = 0.1, rUsed = 0.927, xUsed = 0.082
-                )
+                , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
                 val scResults = ShortCircuitEngine.calculate(
                     resolvedCircuits = listOf(circ),
                     circuitParents = mapOf(i to 0),

@@ -475,7 +475,7 @@ class EngineeringCalculationCoordinatorTest {
                 kFactor = 143.0,
                 clearingTime_s = 0.1,
                 deviceBreakingKA = 50.0
-            )
+            , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         )
         val txResults = mapOf(
             "TX-01" to TransformerResult(
@@ -753,7 +753,7 @@ class EngineeringCalculationCoordinatorTest {
             clearingTime_s = 0.1,
             deviceBreakingKA = 36.0,
             cableMaterial = "Cu"
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
         val scResult = ShortCircuitResult(
             circuitId = 1001,
             sourceName = "TX-01",
@@ -1056,7 +1056,7 @@ class EngineeringCalculationCoordinatorTest {
             vdPct = 0.5,
             cumulativeVDpct = 0.5,
             status = "PASS"
-        )
+        , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
 
         // Case 1: Selectivity OK (250A / 100A = 2.5 >= 2.0)
         val directRes1 = CoordinationEngine.checkCoordination(circuit, sizingResult, "MDB", 250.0)
