@@ -412,6 +412,9 @@ interface ProjectDao {
 
     @Query("UPDATE projects SET revision = revision + 1, updatedAt = :updatedAt WHERE projectId = :id AND revision < 9223372036854775807")
     suspend fun incrementRevision(id: String, updatedAt: Long = System.currentTimeMillis()): Int
+
+    @Query("UPDATE projects SET revision = revision + 1, updatedAt = :updatedAt WHERE projectId = :id AND revision = :expectedRevision")
+    suspend fun incrementRevisionGuarded(id: String, expectedRevision: Long, updatedAt: Long = System.currentTimeMillis()): Int
 }
 
 
@@ -453,6 +456,9 @@ interface CircuitDao {
     @Query("SELECT * FROM circuits WHERE id = :id")
     suspend fun getCircuitById(id: Int): CircuitEntity?
 
+    @Query("SELECT * FROM circuits WHERE projectId = :projectId AND id = :id LIMIT 1")
+    suspend fun getCircuitByIdAndProject(projectId: String, id: Int): CircuitEntity?
+
     @Query("SELECT * FROM circuits WHERE circuitName = :name LIMIT 1")
     suspend fun getCircuitByName(name: String): CircuitEntity?
 
@@ -463,7 +469,7 @@ interface CircuitDao {
     suspend fun insertCircuit(circuit: CircuitEntity): Long
 
     @Update
-    suspend fun updateCircuit(circuit: CircuitEntity)
+    suspend fun updateCircuit(circuit: CircuitEntity): Int
 
     @Query("UPDATE circuits SET parentId = NULL, sourceType = 'TRANSFORMER', fedFrom = 'Transformer' WHERE parentId = :deletedId AND projectId = :projectId")
     suspend fun nullifyChildrenParentId(deletedId: Int, projectId: String)
