@@ -52,6 +52,7 @@ data class AssistantUiState(
     val entryPoint: AssistantEntryPoint = AssistantEntryPoint.TOP_BAR_ICON,
     val context: EngineeringContext = EngineeringContext(),
     val messages: List<AssistantMessage> = emptyList(),
+    val typedCards: List<AssistantCardUiModel> = emptyList(),
     val inputText: String = "",
     val isThinking: Boolean = false,
     val errorMessage: String? = null

@@ -21,11 +21,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ai.service.AssistantMessage
 import com.example.ai.service.MessageRole
+import com.example.ai.ui.AssistantCardUiModel
+import com.example.ai.ui.components.*
 import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -44,16 +48,17 @@ fun EngineeringAssistantSheet(
     )
     val listState = rememberLazyListState()
 
-    LaunchedEffect(uiState.messages.size) {
-        if (uiState.messages.isNotEmpty()) {
-            listState.animateScrollToItem(uiState.messages.size - 1)
+    val totalItemsCount = uiState.messages.size + uiState.typedCards.size
+    LaunchedEffect(totalItemsCount) {
+        if (totalItemsCount > 0) {
+            listState.animateScrollToItem(totalItemsCount - 1)
         }
     }
 
     ModalBottomSheet(
         onDismissRequest = { viewModel.close() },
         sheetState = sheetState,
-        containerColor = ThemeSurface,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         scrimColor = Color.Black.copy(alpha = 0.5f),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         dragHandle = null,
@@ -66,7 +71,7 @@ fun EngineeringAssistantSheet(
         ) {
             // --- TOP HEADER ROW ---
             Surface(
-                color = ThemeSurface,
+                color = MaterialTheme.colorScheme.surfaceContainer,
                 border = BorderStroke(1.dp, ThemeBorderSubtle),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -95,23 +100,47 @@ fun EngineeringAssistantSheet(
                             )
                         }
                         Column {
-                            Text(
-                                text = "VoltAtlas Assistant",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 15.sp
-                                ),
-                                color = ThemeTextPrimary
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "VoltAtlas Assistant",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 15.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+
+                                // Entity Pill Badge
+                                val entityName = uiState.context.activeEntityName ?: uiState.context.activeEntityId
+                                if (entityName != null && uiState.context.activeEntityType != null) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(MaterialTheme.colorScheme.primaryContainer)
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            .semantics { contentDescription = "Context entity: ${uiState.context.activeEntityType} $entityName" }
+                                            .testTag("context_entity_badge")
+                                    ) {
+                                        Text(
+                                            text = "${uiState.context.activeEntityType?.uppercase()} · $entityName",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                            }
+
                             val subtitle = when {
-                                uiState.context.activeEntityName != null -> "Context: ${uiState.context.activeEntityName}"
-                                uiState.context.activeEntityType != null -> "Context: ${uiState.context.activeEntityType}"
-                                else -> uiState.context.projectName
+                                uiState.context.projectName.isNotBlank() -> uiState.context.projectName
+                                else -> "Electrical Design Assistant"
                             }
                             Text(
                                 text = subtitle,
                                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                                color = ThemeTextSecondary
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -146,12 +175,12 @@ fun EngineeringAssistantSheet(
                 }
             }
 
-            // --- CONVERSATION STREAM / MESSAGES ---
+            // --- CONVERSATION STREAM / MESSAGES / TYPED CARDS ---
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .background(ThemeBackground)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
             ) {
                 LazyColumn(
                     state = listState,
@@ -159,6 +188,59 @@ fun EngineeringAssistantSheet(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
+                    // Render Typed Cards
+                    items(uiState.typedCards, key = { it.cardId }) { card ->
+                        when (card) {
+                            is AssistantCardUiModel.ResultSummaryCard -> {
+                                AssistantResultCard(
+                                    card = card,
+                                    onActionClick = { /* Non-executing UI action in 7F-3 */ }
+                                )
+                            }
+                            is AssistantCardUiModel.BlockingQuestionCard -> {
+                                AssistantBlockingQuestionCard(
+                                    card = card,
+                                    onChipClick = { chipText -> viewModel.setInputText(chipText) },
+                                    onActionClick = { /* Non-executing UI action */ }
+                                )
+                            }
+                            is AssistantCardUiModel.WhatIfResultCard -> {
+                                AssistantWhatIfCard(
+                                    card = card,
+                                    onActionClick = { /* Non-executing UI action */ }
+                                )
+                            }
+                            is AssistantCardUiModel.SafeErrorCard -> {
+                                AssistantSafeErrorCard(
+                                    card = card,
+                                    onActionClick = { /* Non-executing UI action */ }
+                                )
+                            }
+                            is AssistantCardUiModel.DirectAnswerCard -> {
+                                AssistantDirectAnswerCard(
+                                    card = card,
+                                    onActionClick = { /* Non-executing UI action */ }
+                                )
+                            }
+                            is AssistantCardUiModel.ComparisonCard -> {
+                                AssistantComparisonCard(
+                                    card = card,
+                                    onActionClick = { /* Non-executing UI action */ }
+                                )
+                            }
+                            is AssistantCardUiModel.ApprovalRequiredNonExecutableCard -> {
+                                AssistantApprovalRequiredCard(
+                                    card = card,
+                                    onActionClick = { /* Non-executing UI action */ }
+                                )
+                            }
+                            else -> {
+                                // Default fallback card
+                            }
+                        }
+                    }
+
+                    // Render Bubble Messages
                     items(uiState.messages, key = { it.id }) { message ->
                         AssistantMessageBubbleItem(message = message)
                     }
