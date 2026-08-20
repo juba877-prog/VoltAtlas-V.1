@@ -19,24 +19,23 @@ import kotlin.coroutines.coroutineContext
  */
 internal object AuthoritativeFreshnessDependencyResolver {
 
-    private val CABLE_AFFECTING_FIELDS = setOf(
+    val ALLOWLISTED_MUTATION_FIELDS = setOf(
         "overrideCableSize",
         "cableType",
         "manufacturer",
         "installation",
         "parallelRuns",
-        "lengthM"
-    )
-
-    private val DEVICE_ONLY_FIELDS = setOf(
+        "lengthM",
         "overrideDeviceSize",
         "overrideDeviceType"
     )
 
-    val ALLOWLISTED_MUTATION_FIELDS = CABLE_AFFECTING_FIELDS + DEVICE_ONLY_FIELDS
-
     /**
      * Resolves the exact downstream circuits and calculation domains requiring invalidation and revalidation.
+     * Aligned with the authoritative domain freshness fingerprint manifests:
+     * - All 8 allowlisted fields are direct inputs to Cable Sizing.
+     * - Changes to target circuit propagate to downstream subtree circuits whose upstream
+     *   dependencies (parent VD, short circuit impedance, upstream breaker rating) depend on the target.
      */
     fun resolveAffectedPlan(
         projectId: String,
@@ -54,87 +53,50 @@ internal object AuthoritativeFreshnessDependencyResolver {
                 scopesToInvalidate = emptyList()
             )
 
-        val hasCableChanges = mutatedFields.any { it in CABLE_AFFECTING_FIELDS }
+        val subtree = resolveDownstreamSubtree(targetCircuit, allCircuits)
+        val allAffected = listOf(targetCircuit) + subtree
+
         val affectedCircuitIds = mutableListOf<Int>()
         val affectedDomainsByCircuit = mutableMapOf<Int, Set<CalculationDomain>>()
         val executionOrder = mutableListOf<RevalidationStep>()
         val cacheKeysToEvict = mutableListOf<ProjectCircuitKey>()
         val scopesToInvalidate = mutableListOf<CalculationScope>()
 
-        if (hasCableChanges) {
-            // Cable changes affect voltage drop & short-circuit impedance throughout downstream subtree
-            val subtree = resolveDownstreamSubtree(targetCircuit, allCircuits)
-            val allAffected = listOf(targetCircuit) + subtree
+        for (circ in allAffected) {
+            affectedCircuitIds.add(circ.id)
+            cacheKeysToEvict.add(ProjectCircuitKey(projectId, circ.id))
 
-            for (circ in allAffected) {
-                affectedCircuitIds.add(circ.id)
-                cacheKeysToEvict.add(ProjectCircuitKey(projectId, circ.id))
+            val domains = setOf(
+                CalculationDomain.CABLE_SIZING,
+                CalculationDomain.SHORT_CIRCUIT,
+                CalculationDomain.PROTECTION_ADS,
+                CalculationDomain.COORDINATION
+            )
+            affectedDomainsByCircuit[circ.id] = domains
 
-                val domains = setOf(
-                    CalculationDomain.CABLE_SIZING,
-                    CalculationDomain.SHORT_CIRCUIT,
-                    CalculationDomain.PROTECTION_ADS,
-                    CalculationDomain.COORDINATION
-                )
-                affectedDomainsByCircuit[circ.id] = domains
-
-                for (domain in domains) {
-                    scopesToInvalidate.add(
-                        CalculationScope(projectId, CalculationEntityType.CIRCUIT, circ.id.toString(), domain)
-                    )
-                }
-            }
-
-            // Topological revalidation order:
-            // 1. All cable sizing (upstream first)
-            for (circ in allAffected) {
-                executionOrder.add(RevalidationStep(circ.id, CalculationDomain.CABLE_SIZING))
-            }
-            // 2. All short circuit
-            for (circ in allAffected) {
-                executionOrder.add(RevalidationStep(circ.id, CalculationDomain.SHORT_CIRCUIT))
-            }
-            // 3. All protection / ADS
-            for (circ in allAffected) {
-                executionOrder.add(RevalidationStep(circ.id, CalculationDomain.PROTECTION_ADS))
-            }
-            // 4. All coordination
-            for (circ in allAffected) {
-                executionOrder.add(RevalidationStep(circ.id, CalculationDomain.COORDINATION))
-            }
-        } else {
-            // Device-only changes affect Protection/ADS on target circuit, and Coordination on target + immediate children
-            affectedCircuitIds.add(targetCircuit.id)
-            cacheKeysToEvict.add(ProjectCircuitKey(projectId, targetCircuit.id))
-
-            val targetDomains = setOf(CalculationDomain.PROTECTION_ADS, CalculationDomain.COORDINATION)
-            affectedDomainsByCircuit[targetCircuit.id] = targetDomains
-            for (domain in targetDomains) {
+            for (domain in domains) {
                 scopesToInvalidate.add(
-                    CalculationScope(projectId, CalculationEntityType.CIRCUIT, targetCircuit.id.toString(), domain)
+                    CalculationScope(projectId, CalculationEntityType.CIRCUIT, circ.id.toString(), domain)
                 )
             }
+        }
 
-            executionOrder.add(RevalidationStep(targetCircuit.id, CalculationDomain.PROTECTION_ADS))
-            executionOrder.add(RevalidationStep(targetCircuit.id, CalculationDomain.COORDINATION))
-
-            // Immediate children whose upstream coordination rating changed
-            val immediateChildren = allCircuits.filter {
-                (it.parentId != null && it.parentId == targetCircuit.id) ||
-                    it.fedFrom.trim().equals(targetCircuit.circuitName.trim(), ignoreCase = true)
-            }
-
-            for (child in immediateChildren) {
-                if (child.id != targetCircuit.id) {
-                    affectedCircuitIds.add(child.id)
-                    cacheKeysToEvict.add(ProjectCircuitKey(projectId, child.id))
-                    affectedDomainsByCircuit[child.id] = setOf(CalculationDomain.COORDINATION)
-                    scopesToInvalidate.add(
-                        CalculationScope(projectId, CalculationEntityType.CIRCUIT, child.id.toString(), CalculationDomain.COORDINATION)
-                    )
-                    executionOrder.add(RevalidationStep(child.id, CalculationDomain.COORDINATION))
-                }
-            }
+        // Topological revalidation order (parent before child):
+        // 1. All cable sizing (upstream first)
+        for (circ in allAffected) {
+            executionOrder.add(RevalidationStep(circ.id, CalculationDomain.CABLE_SIZING))
+        }
+        // 2. All short circuit
+        for (circ in allAffected) {
+            executionOrder.add(RevalidationStep(circ.id, CalculationDomain.SHORT_CIRCUIT))
+        }
+        // 3. All protection / ADS
+        for (circ in allAffected) {
+            executionOrder.add(RevalidationStep(circ.id, CalculationDomain.PROTECTION_ADS))
+        }
+        // 4. All coordination
+        for (circ in allAffected) {
+            executionOrder.add(RevalidationStep(circ.id, CalculationDomain.COORDINATION))
         }
 
         return AffectedRevalidationPlan(
@@ -148,7 +110,7 @@ internal object AuthoritativeFreshnessDependencyResolver {
     }
 
     /**
-     * Resolves all downstream circuits that depend on the given circuit.
+     * Resolves all downstream circuits that depend on the given circuit in topological order (parent before child).
      */
     private fun resolveDownstreamSubtree(
         root: CircuitEntity,

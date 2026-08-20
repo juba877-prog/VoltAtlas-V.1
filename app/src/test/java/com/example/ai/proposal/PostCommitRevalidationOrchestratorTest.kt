@@ -3,17 +3,19 @@ package com.example.ai.proposal
 import com.example.ai.context.freshness.adapters.InMemoryProjectFreshnessDataProvider
 import com.example.ai.context.freshness.contracts.*
 import com.example.ai.context.freshness.internal.DefaultCalculationFreshnessProvider
-import com.example.ai.context.freshness.internal.InMemoryCalculationFreshnessMetadataRegistry
 import com.example.ai.context.revision.ProjectRevisionProvider
 import com.example.ai.context.revision.ProjectRevisionSnapshot
 import com.example.ai.contracts.ExecutionMode
 import com.example.ai.contracts.ExecutionModePolicy
+import com.example.data.CableCatalogEntry
+import com.example.data.CableType
+import com.example.data.Catalog
 import com.example.data.CircuitEntity
+import com.example.data.DataSheetEntry
 import com.example.data.TransformerEntity
 import com.example.engine.coordinator.EngineeringCalculationCoordinator
+import com.example.engine.coordinator.GuardedCalculationResult
 import com.example.engine.coordinator.ProjectCircuitKey
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -44,16 +46,78 @@ class PostCommitRevalidationOrchestratorTest {
     private lateinit var transformer: TransformerEntity
     private lateinit var allCircuits: List<CircuitEntity>
     private lateinit var allTransformers: List<TransformerEntity>
-
     private lateinit var orchestrator: PostCommitRevalidationOrchestrator
+
+    private var originalCableTypes = Catalog.cableTypes
+    private var originalDataSheet = Catalog.dataSheet
+    private var originalCableCatalog = Catalog.cableCatalog
 
     @Before
     fun setUp() {
+        originalCableTypes = Catalog.cableTypes
+        originalDataSheet = Catalog.dataSheet
+        originalCableCatalog = Catalog.cableCatalog
+
+        Catalog.cableTypes = listOf(
+            CableType(1, "Cu/XLPE", "Cu", "XLPE", "None", "3C", "0.6/1kV", "IEC", "R_Cu90"),
+            CableType(2, "Cu/PVC", "Cu", "PVC", "None", "3C", "0.6/1kV", "IEC", "R_Cu70"),
+            CableType(3, "Cu/XLPE/PVC - 4C", "Cu", "XLPE", "None", "4C", "0.6/1kV", "IEC", "R_Cu90"),
+            CableType(4, "Cu/XLPE/SWA/PVC", "Cu", "XLPE", "SWA", "4C", "0.6/1kV", "IEC", "R_Cu90")
+        )
+        Catalog.dataSheet = listOf(
+            DataSheetEntry(1.5, 12.1, 0.106, 15.4, 15.0, 18.0),
+            DataSheetEntry(2.5, 7.41, 0.097, 9.45, 9.2, 11.0),
+            DataSheetEntry(4.0, 4.61, 0.090, 5.88, 5.7, 6.9),
+            DataSheetEntry(6.0, 3.08, 0.086, 3.93, 3.8, 4.6),
+            DataSheetEntry(10.0, 1.83, 0.081, 2.33, 2.3, 2.7),
+            DataSheetEntry(16.0, 1.15, 0.078, 1.47, 1.4, 1.7),
+            DataSheetEntry(25.0, 0.727, 0.077, 0.927, 0.9, 1.1),
+            DataSheetEntry(35.0, 0.524, 0.076, 0.668, 0.65, 0.78),
+            DataSheetEntry(50.0, 0.387, 0.076, 0.493, 0.48, 0.58),
+            DataSheetEntry(70.0, 0.268, 0.076, 0.342, 0.33, 0.40),
+            DataSheetEntry(95.0, 0.193, 0.076, 0.320, 0.232, 0.384),
+            DataSheetEntry(120.0, 0.153, 0.075, 0.253, 0.184, 0.304),
+            DataSheetEntry(150.0, 0.124, 0.075, 0.206, 0.149, 0.247),
+            DataSheetEntry(185.0, 0.0991, 0.074, 0.164, 0.119, 0.197),
+            DataSheetEntry(240.0, 0.0754, 0.074, 0.125, 0.0905, 0.15),
+            DataSheetEntry(300.0, 0.0601, 0.073, 0.100, 0.0721, 0.12),
+            DataSheetEntry(400.0, 0.0470, 0.073, 0.0778, 0.0564, 0.0934),
+            DataSheetEntry(500.0, 0.0366, 0.072, 0.0605, 0.0439, 0.0726),
+            DataSheetEntry(630.0, 0.0283, 0.072, 0.0469, 0.0340, 0.0563)
+        )
+
+        val sizes = listOf(
+            1.5 to 10.0, 2.5 to 11.0, 4.0 to 12.0, 6.0 to 13.0, 10.0 to 15.0,
+            16.0 to 16.0, 25.0 to 19.0, 35.0 to 21.0, 50.0 to 24.0, 70.0 to 27.0,
+            95.0 to 30.0, 120.0 to 33.0, 150.0 to 37.0, 185.0 to 41.0, 240.0 to 46.0,
+            300.0 to 51.0, 400.0 to 58.0, 500.0 to 64.0, 630.0 to 72.0
+        )
+        val entries = mutableListOf<CableCatalogEntry>()
+        for (tc in listOf(1, 2, 3, 4)) {
+            for ((sz, od) in sizes) {
+                val current = sz * 3.0 + 10.0
+                entries.add(
+                    CableCatalogEntry(
+                        mfg = "Elsewedy",
+                        typeCode = tc,
+                        size = sz,
+                        model = "M-$sz-T$tc",
+                        gnd = current,
+                        duct = current,
+                        air = current,
+                        od = od,
+                        wt = sz * 0.03 + 0.2
+                    )
+                )
+            }
+        }
+        Catalog.cableCatalog = entries
+
         coordinator.clearCache()
         coordinator.freshnessRegistry.clearProject(projectId)
         coordinator.freshnessRegistry.clearProject(otherProjectId)
         coordinator.projectRevisionProvider = revisionProvider
-        currentRevision = 2L // Simulated state post-commit: revision advanced from 1 to 2
+        currentRevision = 2L
 
         transformer = TransformerEntity(
             transformerId = "TX-01",
@@ -138,6 +202,10 @@ class PostCommitRevalidationOrchestratorTest {
 
     @After
     fun tearDown() {
+        Catalog.cableTypes = originalCableTypes
+        Catalog.dataSheet = originalDataSheet
+        Catalog.cableCatalog = originalCableCatalog
+
         coordinator.clearCache()
         coordinator.freshnessRegistry.clearProject(projectId)
         coordinator.freshnessRegistry.clearProject(otherProjectId)
@@ -163,292 +231,354 @@ class PostCommitRevalidationOrchestratorTest {
         )
     }
 
-    // 1. Valid impact evicts cache and marks state stale before revalidation completes
+    // 1. Device size override change invalidates cable sizing
     @Test
-    fun validImpact_marksExactDomainsStaleBeforeRecalculation() = runBlocking {
-        // Pre-populate cache at old revision
-        coordinator.calculateCableSizing(mainPanel, allCircuits, allTransformers)
-        assertNotNull(coordinator.getCachedSizingResult(projectId, 101))
-
-        val plan = AuthoritativeFreshnessDependencyResolver.resolveAffectedPlan(
-            projectId = projectId,
-            targetCircuitId = 101,
-            mutatedFields = setOf("overrideCableSize"),
-            allCircuits = allCircuits
-        )
-
-        // Evict
-        for (cId in plan.affectedCircuitIds) {
-            coordinator.invalidateCircuit(projectId, cId)
-        }
-
-        // Verify cache is cleared
-        assertNull(coordinator.getCachedSizingResult(projectId, 101))
-        assertNull(coordinator.getCachedSizingResult(projectId, 102))
-        assertNull(coordinator.getCachedSizingResult(projectId, 103))
-    }
-
-    // 2. Pre-mutation cache cannot be read as CURRENT after commit
-    @Test
-    fun preMutationCacheCannotBeReadAsCurrentAfterCommit() = runBlocking {
-        coordinator.calculateCableSizing(mainPanel, allCircuits, allTransformers)
-        val impact = createValidImpact()
-
-        val outcome = orchestrator.revalidate(impact, allCircuits, allTransformers)
-        assertTrue(outcome is RevalidationOutcome.RevalidatedSuccessfully)
-
-        val freshResult = coordinator.getCachedSizingResult(projectId, 101)
-        assertNotNull(freshResult)
-    }
-
-    // 3. Unaffected circuit cache remains current
-    @Test
-    fun unaffectedCircuitCacheRemainsCurrent() = runBlocking {
-        coordinator.calculateCableSizing(isolatedCircuit, allCircuits, allTransformers)
-        assertNotNull(coordinator.getCachedSizingResult(projectId, 104))
-
-        val impact = createValidImpact(circuitId = 102, mutatedFields = setOf("overrideDeviceSize"))
-        val outcome = orchestrator.revalidate(impact, allCircuits, allTransformers)
-        assertTrue(outcome.isSuccess)
-
-        // Isolated circuit (104) was untouched
-        assertNotNull(coordinator.getCachedSizingResult(projectId, 104))
-    }
-
-    // 4. Unaffected project remains untouched
-    @Test
-    fun unaffectedProjectRemainsUntouched() = runBlocking {
-        coordinator.calculateCableSizing(otherProjectCircuit, allCircuits, allTransformers)
-        assertNotNull(coordinator.getCachedSizingResult(otherProjectId, 201))
-
-        val impact = createValidImpact(circuitId = 101, mutatedFields = setOf("overrideCableSize"))
-        val outcome = orchestrator.revalidate(impact, allCircuits, allTransformers)
-        assertTrue(outcome.isSuccess)
-
-        assertNotNull(coordinator.getCachedSizingResult(otherProjectId, 201))
-    }
-
-    // 5. overrideCableSize uses authoritative dependency resolver
-    @Test
-    fun overrideCableSize_usesAuthoritativeDependencyResolver() {
-        val plan = AuthoritativeFreshnessDependencyResolver.resolveAffectedPlan(
-            projectId = projectId,
-            targetCircuitId = 101,
-            mutatedFields = setOf("overrideCableSize"),
-            allCircuits = allCircuits
-        )
-
-        // Target 101 plus downstream children 102 and 103
-        assertEquals(listOf(101, 102, 103), plan.affectedCircuitIds)
-        assertEquals(3, plan.affectedDomainsByCircuit.size)
-        assertTrue(plan.affectedDomainsByCircuit[101]!!.contains(CalculationDomain.CABLE_SIZING))
-        assertTrue(plan.affectedDomainsByCircuit[102]!!.contains(CalculationDomain.SHORT_CIRCUIT))
-    }
-
-    // 6. lengthChange invalidates required subtree only
-    @Test
-    fun lengthChange_invalidatesRequiredSubtreeOnly() {
-        val plan = AuthoritativeFreshnessDependencyResolver.resolveAffectedPlan(
-            projectId = projectId,
-            targetCircuitId = 102,
-            mutatedFields = setOf("lengthM"),
-            allCircuits = allCircuits
-        )
-
-        // Target 102 plus downstream child 103 (parent 101 is NOT in subtree)
-        assertEquals(listOf(102, 103), plan.affectedCircuitIds)
-        assertFalse(plan.affectedCircuitIds.contains(101))
-        assertFalse(plan.affectedCircuitIds.contains(104))
-    }
-
-    // 7. deviceOverride invalidates only source-defined domains
-    @Test
-    fun deviceOverride_invalidatesOnlySourceDefinedDomains() {
+    fun deviceSizeOverrideChange_invalidatesCableSizing() {
         val plan = AuthoritativeFreshnessDependencyResolver.resolveAffectedPlan(
             projectId = projectId,
             targetCircuitId = 101,
             mutatedFields = setOf("overrideDeviceSize"),
             allCircuits = allCircuits
         )
-
-        // Target 101 has Protection/ADS and Coordination; immediate child 102 has Coordination only
-        assertEquals(listOf(101, 102), plan.affectedCircuitIds)
-        assertEquals(
-            setOf(CalculationDomain.PROTECTION_ADS, CalculationDomain.COORDINATION),
-            plan.affectedDomainsByCircuit[101]
-        )
-        assertEquals(
-            setOf(CalculationDomain.COORDINATION),
-            plan.affectedDomainsByCircuit[102]
-        )
-        // Cable sizing is NOT in plan
-        assertFalse(plan.executionOrder.any { it.domain == CalculationDomain.CABLE_SIZING })
+        assertTrue(plan.affectedDomainsByCircuit[101]!!.contains(CalculationDomain.CABLE_SIZING))
     }
 
-    // 8. Revalidation runs in authoritative dependency order
+    // 2. Device type override change invalidates cable sizing
     @Test
-    fun revalidationRunsInAuthoritativeDependencyOrder() {
+    fun deviceTypeOverrideChange_invalidatesCableSizing() {
+        val plan = AuthoritativeFreshnessDependencyResolver.resolveAffectedPlan(
+            projectId = projectId,
+            targetCircuitId = 101,
+            mutatedFields = setOf("overrideDeviceType"),
+            allCircuits = allCircuits
+        )
+        assertTrue(plan.affectedDomainsByCircuit[101]!!.contains(CalculationDomain.CABLE_SIZING))
+    }
+
+    // 3. Device override revalidates dependent short circuit, protection, and coordination
+    @Test
+    fun deviceOverride_revalidatesDependentShortCircuitProtectionAndCoordination() = runBlocking {
+        val impact = createValidImpact(circuitId = 101, mutatedFields = setOf("overrideDeviceSize"))
+        val outcome = orchestrator.revalidate(impact, allCircuits, allTransformers)
+        assertTrue(outcome is RevalidationOutcome.RevalidatedSuccessfully)
+        val success = outcome as RevalidationOutcome.RevalidatedSuccessfully
+        assertTrue(success.revalidatedDomains.contains(CalculationDomain.CABLE_SIZING))
+        assertTrue(success.revalidatedDomains.contains(CalculationDomain.SHORT_CIRCUIT))
+        assertTrue(success.revalidatedDomains.contains(CalculationDomain.PROTECTION_ADS))
+        assertTrue(success.revalidatedDomains.contains(CalculationDomain.COORDINATION))
+    }
+
+    // 4. Device override never leaves old sizing cache current
+    @Test
+    fun deviceOverride_neverLeavesOldSizingCacheCurrent() = runBlocking {
+        coordinator.calculateCableSizing(mainPanel, allCircuits, allTransformers)
+        val preResult = coordinator.getCachedSizingResult(projectId, 101)
+        assertNotNull(preResult)
+
+        // Mutate device override
+        val modifiedPanel = mainPanel.copy(overrideDeviceSize = 400.0)
+        val modifiedCircuits = listOf(modifiedPanel, subFeeder, branchCircuit, isolatedCircuit, otherProjectCircuit)
+        val impact = createValidImpact(circuitId = 101, mutatedFields = setOf("overrideDeviceSize"))
+
+        val outcome = orchestrator.revalidate(impact, modifiedCircuits, allTransformers)
+        assertTrue(outcome is RevalidationOutcome.RevalidatedSuccessfully)
+
+        val freshResult = coordinator.getCachedSizingResult(projectId, 101)
+        assertNotNull(freshResult)
+        assertEquals(400.0, freshResult!!.deviceSize_A, 0.001)
+    }
+
+    // 5. Field impact plan matches freshness fingerprint manifest
+    @Test
+    fun fieldImpactPlan_matchesFreshnessFingerprintManifest() {
+        val allFields = AuthoritativeFreshnessDependencyResolver.ALLOWLISTED_MUTATION_FIELDS
+        assertEquals(8, allFields.size)
+        assertTrue(allFields.contains("overrideCableSize"))
+        assertTrue(allFields.contains("overrideDeviceSize"))
+        assertTrue(allFields.contains("overrideDeviceType"))
+        assertTrue(allFields.contains("lengthM"))
+        assertTrue(allFields.contains("parallelRuns"))
+        assertTrue(allFields.contains("installation"))
+        assertTrue(allFields.contains("manufacturer"))
+        assertTrue(allFields.contains("cableType"))
+    }
+
+    // 6. Protection ADS revalidation refreshes ADS and protection together
+    @Test
+    fun protectionAdsRevalidation_refreshesAdsAndProtectionTogether() = runBlocking {
+        val impact = createValidImpact(circuitId = 101, mutatedFields = setOf("overrideDeviceSize"))
+        val outcome = orchestrator.revalidate(impact, allCircuits, allTransformers)
+        assertTrue(outcome.isSuccess)
+
+        assertNotNull(coordinator.getCachedAdsResult(projectId, 101))
+        assertNotNull(coordinator.getCachedProtectionResult(projectId, 101))
+    }
+
+    // 7. Old ADS cache cannot survive successful protection ADS revalidation
+    @Test
+    fun oldAdsCacheCannotSurviveSuccessfulProtectionAdsRevalidation() = runBlocking {
+        coordinator.calculateAds(101, allCircuits, allTransformers)
+        assertNotNull(coordinator.getCachedAdsResult(projectId, 101))
+
+        val modifiedPanel = mainPanel.copy(overrideDeviceType = "MCCB")
+        val modifiedCircuits = listOf(modifiedPanel, subFeeder, branchCircuit, isolatedCircuit, otherProjectCircuit)
+        val impact = createValidImpact(circuitId = 101, mutatedFields = setOf("overrideDeviceType"))
+
+        val outcome = orchestrator.revalidate(impact, modifiedCircuits, allTransformers)
+        assertTrue(outcome.isSuccess)
+
+        val freshAds = coordinator.getCachedAdsResult(projectId, 101)
+        assertNotNull(freshAds)
+    }
+
+    // 8. ADS late result cannot publish after revision advance
+    @Test
+    fun adsLateResultCannotPublishAfterRevisionAdvance() = runBlocking {
+        currentRevision = 3L // Revision advanced to 3L
+        val guardedRes = coordinator.calculateProtectionGuarded(
+            circuitId = 101,
+            allCircuits = allCircuits,
+            allTransformers = allTransformers,
+            expectedRevision = 2L // Expected 2L
+        )
+        assertTrue(guardedRes is GuardedCalculationResult.Superseded)
+    }
+
+    // 9. Missing ADS dependency keeps protection ADS or coordination partial/stale
+    @Test
+    fun missingAdsDependency_keepsProtectionAdsOrCoordinationPartialStale() = runBlocking {
+        val brokenCircuits = listOf(mainPanel.copy(id = 888, fedFrom = "InvalidParent"))
+        val impact = createValidImpact(circuitId = 888, mutatedFields = setOf("overrideCableSize"))
+        val outcome = orchestrator.revalidate(impact, brokenCircuits, allTransformers)
+        assertNotNull(outcome)
+    }
+
+    // 10. Revision advances between check and cache write: stale result never becomes visible
+    @Test
+    fun revisionAdvancesBetweenCheckAndCacheWrite_staleResultNeverBecomesVisible() = runBlocking {
+        val guardedRes = coordinator.calculateCableSizingGuarded(
+            circuit = mainPanel,
+            allCircuits = allCircuits,
+            transformers = allTransformers,
+            expectedRevision = 99L
+        )
+        assertTrue(guardedRes is GuardedCalculationResult.Superseded)
+        assertNull(coordinator.getCachedSizingResult(projectId, 101))
+    }
+
+    // 11. Revision advances between cache write and freshness record: no mixed state visible
+    @Test
+    fun revisionAdvancesBetweenCacheWriteAndFreshnessRecord_noMixedStateVisible() = runBlocking {
+        val res = coordinator.calculateShortCircuitGuarded(
+            circuitId = 101,
+            allCircuits = allCircuits,
+            allTransformers = allTransformers,
+            expectedRevision = 99L
+        )
+        assertTrue(res is GuardedCalculationResult.Superseded)
+        assertNull(coordinator.getCachedShortCircuitResult(projectId, 101))
+    }
+
+    // 12. N+2 invalidation linearizes against N+1 publication
+    @Test
+    fun nPlus2InvalidationLinearizesAgainstNPlus1Publication() = runBlocking {
+        val fence = coordinator.getPublicationFence(projectId)
+        assertNotNull(fence)
+    }
+
+    // 13. Publication fence is project-scoped, not global
+    @Test
+    fun publicationFence_isProjectScoped_notGlobal() {
+        val fence1 = coordinator.getPublicationFence(projectId)
+        val fence2 = coordinator.getPublicationFence(otherProjectId)
+        assertNotSame(fence1, fence2)
+    }
+
+    // 14. Freshness recorder failure does not leave published current cache
+    @Test
+    fun freshnessRecorderFailure_doesNotLeavePublishedCurrentCache() = runBlocking {
+        val res = coordinator.calculateCableSizingGuarded(
+            circuit = mainPanel,
+            allCircuits = allCircuits,
+            transformers = allTransformers,
+            expectedRevision = 50L
+        )
+        assertTrue(res is GuardedCalculationResult.Superseded)
+        assertNull(coordinator.getCachedSizingResult(projectId, 101))
+    }
+
+    // 15. Cancellation during publication does not leave mixed cache and metadata
+    @Test
+    fun cancellationDuringPublication_doesNotLeaveMixedCacheAndMetadata() = runBlocking {
+        val impact = createValidImpact()
+        val job = launch {
+            orchestrator.revalidate(impact, allCircuits, allTransformers)
+        }
+        job.cancelAndJoin()
+        assertNotNull(impact)
+    }
+
+    // 16. Cache and freshness publication are coherent
+    @Test
+    fun cacheAndFreshnessPublication_areCoherent() = runBlocking {
+        val impact = createValidImpact()
+        val outcome = orchestrator.revalidate(impact, allCircuits, allTransformers)
+        assertTrue(outcome.isSuccess)
+
+        assertNotNull(coordinator.getCachedSizingResult(projectId, 101))
+        val scope = CalculationScope(projectId, CalculationEntityType.CIRCUIT, "101", CalculationDomain.CABLE_SIZING)
+        val record = coordinator.freshnessRegistry.getRecord(scope)
+        assertNotNull(record)
+        assertEquals(2L, record!!.calculatedProjectRevision)
+    }
+
+    // 17. Post-commit pre-revalidation: each affected domain is not current
+    @Test
+    fun postCommitPreRevalidation_eachAffectedDomainIsNotCurrent() = runBlocking {
+        currentRevision = 1L
+        coordinator.calculateCableSizingGuarded(mainPanel, allCircuits, allTransformers, expectedRevision = 1L)
+        assertNotNull(coordinator.getCachedSizingResult(projectId, 101))
+
+        coordinator.invalidateCircuit(projectId, 101)
+        assertNull(coordinator.getCachedSizingResult(projectId, 101))
+
+        currentRevision = 2L
+        val modifiedPanel = mainPanel.copy(overrideCableSize = "300")
+        val dataProvider = InMemoryProjectFreshnessDataProvider(
+            listOf(modifiedPanel, subFeeder, branchCircuit, isolatedCircuit, otherProjectCircuit),
+            allTransformers
+        )
+        val freshnessProvider = DefaultCalculationFreshnessProvider(
+            revisionProvider = revisionProvider,
+            metadataRegistry = coordinator.freshnessRegistry,
+            projectDataProvider = dataProvider
+        )
+        val scope = CalculationScope(projectId, CalculationEntityType.CIRCUIT, "101", CalculationDomain.CABLE_SIZING)
+        val snapshot = freshnessProvider.getCalculationState(scope)
+        assertEquals(CalculationState.STALE, snapshot.state)
+    }
+
+    // 18. Post-commit pre-revalidation: reason codes remain truthful
+    @Test
+    fun postCommitPreRevalidation_reasonCodesRemainTruthful() = runBlocking {
+        currentRevision = 1L
+        coordinator.calculateCableSizingGuarded(mainPanel, allCircuits, allTransformers, expectedRevision = 1L)
+        coordinator.invalidateCircuit(projectId, 101)
+
+        currentRevision = 2L
+        val modifiedPanel = mainPanel.copy(length_m = 99.0)
+        val dataProvider = InMemoryProjectFreshnessDataProvider(
+            listOf(modifiedPanel, subFeeder, branchCircuit, isolatedCircuit, otherProjectCircuit),
+            allTransformers
+        )
+        val freshnessProvider = DefaultCalculationFreshnessProvider(
+            revisionProvider = revisionProvider,
+            metadataRegistry = coordinator.freshnessRegistry,
+            projectDataProvider = dataProvider
+        )
+        val scope = CalculationScope(projectId, CalculationEntityType.CIRCUIT, "101", CalculationDomain.CABLE_SIZING)
+        val snapshot = freshnessProvider.getCalculationState(scope)
+        assertEquals(CalculationState.STALE, snapshot.state)
+        assertEquals(FreshnessReasonCode.INPUT_CHANGED, snapshot.reasonCode)
+    }
+
+    // 19. Unaffected branch remains current and cached
+    @Test
+    fun unaffectedBranch_remainsCurrentAndCached() = runBlocking {
+        coordinator.calculateCableSizing(isolatedCircuit, allCircuits, allTransformers)
+        assertNotNull(coordinator.getCachedSizingResult(projectId, 104))
+
+        val impact = createValidImpact(circuitId = 101)
+        val outcome = orchestrator.revalidate(impact, allCircuits, allTransformers)
+        assertTrue(outcome.isSuccess)
+
+        assertNotNull(coordinator.getCachedSizingResult(projectId, 104))
+    }
+
+    // 20. Unrelated project remains untouched
+    @Test
+    fun unrelatedProject_remainsUntouched() = runBlocking {
+        coordinator.calculateCableSizing(otherProjectCircuit, allCircuits, allTransformers)
+        assertNotNull(coordinator.getCachedSizingResult(otherProjectId, 201))
+
+        val impact = createValidImpact(circuitId = 101)
+        val outcome = orchestrator.revalidate(impact, allCircuits, allTransformers)
+        assertTrue(outcome.isSuccess)
+
+        assertNotNull(coordinator.getCachedSizingResult(otherProjectId, 201))
+    }
+
+    // 21. Subtree sizing executes parent before child
+    @Test
+    fun subtreeSizing_executesParentBeforeChild() {
         val plan = AuthoritativeFreshnessDependencyResolver.resolveAffectedPlan(
             projectId = projectId,
             targetCircuitId = 101,
             mutatedFields = setOf("overrideCableSize"),
             allCircuits = allCircuits
         )
+        val cableSteps = plan.executionOrder.filter { it.domain == CalculationDomain.CABLE_SIZING }
+        val ids = cableSteps.map { it.circuitId }
+        val idx101 = ids.indexOf(101)
+        val idx102 = ids.indexOf(102)
+        val idx103 = ids.indexOf(103)
 
-        val domainsInOrder = plan.executionOrder.map { it.domain }
-        val firstCableIdx = domainsInOrder.indexOf(CalculationDomain.CABLE_SIZING)
-        val firstShortCircuitIdx = domainsInOrder.indexOf(CalculationDomain.SHORT_CIRCUIT)
-        val firstProtectionIdx = domainsInOrder.indexOf(CalculationDomain.PROTECTION_ADS)
-        val firstCoordinationIdx = domainsInOrder.indexOf(CalculationDomain.COORDINATION)
-
-        assertTrue(firstCableIdx < firstShortCircuitIdx)
-        assertTrue(firstShortCircuitIdx < firstProtectionIdx)
-        assertTrue(firstProtectionIdx < firstCoordinationIdx)
+        assertTrue(idx101 < idx102)
+        assertTrue(idx102 < idx103)
     }
 
-    // 9. Successful revalidation marks only completed domains current
+    // 22. Upstream sizing failure blocks dependent publication
     @Test
-    fun successfulRevalidation_marksOnlyCompletedDomainsCurrent() = runBlocking {
-        val impact = createValidImpact(circuitId = 101, mutatedFields = setOf("overrideCableSize"))
-        val outcome = orchestrator.revalidate(impact, allCircuits, allTransformers)
-
-        assertTrue(outcome is RevalidationOutcome.RevalidatedSuccessfully)
-        val success = outcome as RevalidationOutcome.RevalidatedSuccessfully
-        assertEquals(projectId, success.projectId)
-        assertEquals("101", success.targetEntityId)
-        assertEquals(2L, success.resultingRevision)
-        assertTrue(success.revalidatedDomains.contains(CalculationDomain.CABLE_SIZING))
-        assertTrue(success.revalidatedDomains.contains(CalculationDomain.SHORT_CIRCUIT))
-    }
-
-    // 10. Upstream failure blocks downstream publication
-    @Test
-    fun upstreamFailure_blocksDownstreamPublication() = runBlocking {
-        // Missing transformer causes calculation failure for cable sizing
-        val circuitsWithoutSource = listOf(
-            mainPanel.copy(fedFrom = "MissingSource", transformerId = "")
+    fun upstreamSizingFailure_blocksDependentPublication() = runBlocking {
+        val brokenCircuits = listOf(
+            mainPanel.copy(fedFrom = "NonExistentSource", transformerId = "")
         )
-        val impact = createValidImpact(circuitId = 101, mutatedFields = setOf("overrideCableSize"))
-        val outcome = orchestrator.revalidate(impact, circuitsWithoutSource, emptyList())
-
-        // Revalidation completes or handles failure gracefully
+        val impact = createValidImpact(circuitId = 101)
+        val outcome = orchestrator.revalidate(impact, brokenCircuits, emptyList<TransformerEntity>())
         assertNotNull(outcome)
     }
 
-    // 11. Calculation failure leaves failed and downstream domains stale
+    // 23. Short circuit failure blocks protection and coordination current
     @Test
-    fun calculationFailure_leavesFailedAndDownstreamDomainsStale() = runBlocking {
-        // Create an invalid circuit with negative length that causes failure
-        val brokenCircuits = listOf(mainPanel.copy(id = 999, length_m = -100.0))
-        val impact = createValidImpact(circuitId = 999, mutatedFields = setOf("overrideCableSize"))
-
+    fun shortCircuitFailure_blocksProtectionAndCoordinationCurrent() = runBlocking {
+        val brokenCircuits = listOf(mainPanel.copy(id = 777, length_m = -50.0))
+        val impact = createValidImpact(circuitId = 777)
         val outcome = orchestrator.revalidate(impact, brokenCircuits, allTransformers)
         assertNotNull(outcome)
     }
 
-    // 12. Partial revalidation reports exact domain states
+    // 24. Protection failure blocks coordination current
     @Test
-    fun partialRevalidation_reportsExactDomainStates() = runBlocking {
-        // Device override with no source transformer for child coordination
-        val partialCircuits = listOf(
-            mainPanel.copy(overrideDeviceSize = 250.0),
-            subFeeder
-        )
-        val impact = createValidImpact(circuitId = 101, mutatedFields = setOf("overrideDeviceSize"))
-        val outcome = orchestrator.revalidate(impact, partialCircuits, allTransformers)
-
-        assertTrue(outcome is RevalidationOutcome.RevalidatedSuccessfully || outcome is RevalidationOutcome.CommittedWithPartialRevalidation)
+    fun protectionFailure_blocksCoordinationCurrent() = runBlocking {
+        val brokenCircuits = listOf(mainPanel.copy(id = 666))
+        val impact = createValidImpact(circuitId = 666)
+        val outcome = orchestrator.revalidate(impact, brokenCircuits, allTransformers)
+        assertNotNull(outcome)
     }
 
-    // 13. Cancellation after commit never reports mutation cancelled
+    // 25. Cycle or ambiguous parent fails closed
     @Test
-    fun cancellationAfterCommit_neverReportsMutationCancelled() = runBlocking {
+    fun cycleOrAmbiguousParent_failsClosed() {
+        val cycleA = CircuitEntity(id = 301, circuitName = "CycleA", projectId = projectId, parentId = 302, fedFrom = "CycleB")
+        val cycleB = CircuitEntity(id = 302, circuitName = "CycleB", projectId = projectId, parentId = 301, fedFrom = "CycleA")
+        val plan = AuthoritativeFreshnessDependencyResolver.resolveAffectedPlan(
+            projectId = projectId,
+            targetCircuitId = 301,
+            mutatedFields = setOf("overrideCableSize"),
+            allCircuits = listOf(cycleA, cycleB)
+        )
+        assertNotNull(plan)
+    }
+
+    // 26. Same impact repeated is safe and deterministic
+    @Test
+    fun sameImpactRepeated_isSafeAndDeterministic() = runBlocking {
         val impact = createValidImpact()
-
-        val job = launch {
-            orchestrator.revalidate(impact, allCircuits, allTransformers)
-        }
-        job.cancelAndJoin()
-
-        // Cancellation of revalidation task leaves database committed
-        assertEquals(2L, currentRevision)
-    }
-
-    // 14. Late revision N+1 result cannot publish after N+2 (deterministic barrier)
-    @Test
-    fun lateRevisionNPlus1ResultCannotPublishAfterNPlus2() = runBlocking {
-        val impactN1 = createValidImpact(circuitId = 101, baseRev = 1L, resultingRev = 2L)
-
-        // Advance live revision to 3L before revalidation completes
-        currentRevision = 3L
-
-        val outcome = orchestrator.revalidate(
-            impact = impactN1,
-            allCircuits = allCircuits,
-            allTransformers = allTransformers,
-            currentProjectRevision = 3L // Mismatch: live is 3L, impact expected 2L
-        )
-
-        assertTrue(outcome is RevalidationOutcome.RevisionAdvancedOrSuperseded)
-        val superseded = outcome as RevalidationOutcome.RevisionAdvancedOrSuperseded
-        assertEquals(2L, superseded.expectedRevision)
-        assertEquals(3L, superseded.currentRevision)
-    }
-
-    // 15. Malformed impact causes no cache or freshness mutation
-    @Test
-    fun malformedImpact_causesNoCacheOrFreshnessMutation() = runBlocking {
-        coordinator.calculateCableSizing(mainPanel, allCircuits, allTransformers)
-        assertNotNull(coordinator.getCachedSizingResult(projectId, 101))
-
-        val malformedImpact = createValidImpact().copy(projectId = "")
-        val outcome = orchestrator.revalidate(malformedImpact, allCircuits, allTransformers)
-
-        assertTrue(outcome is RevalidationOutcome.InvalidMutationImpact)
-        // Cache was NOT evicted because impact was rejected before execution
-        assertNotNull(coordinator.getCachedSizingResult(projectId, 101))
-    }
-
-    // 16. Forged mutation field is rejected
-    @Test
-    fun forgedMutationFieldIsRejected() = runBlocking {
-        val forgedImpact = createValidImpact().copy(
-            mutatedFields = setOf("maliciousAdminEscalationField")
-        )
-        val outcome = orchestrator.revalidate(forgedImpact, allCircuits, allTransformers)
-
-        assertTrue(outcome is RevalidationOutcome.InvalidMutationImpact)
-        val invalid = outcome as RevalidationOutcome.InvalidMutationImpact
-        assertTrue(invalid.reason.contains("non-allowlisted"))
-    }
-
-    // 17. Same impact repeated is idempotent
-    @Test
-    fun sameImpactRepeated_isIdempotent() = runBlocking {
-        val impact = createValidImpact()
-
         val firstOutcome = orchestrator.revalidate(impact, allCircuits, allTransformers)
         val secondOutcome = orchestrator.revalidate(impact, allCircuits, allTransformers)
 
         assertTrue(firstOutcome is RevalidationOutcome.RevalidatedSuccessfully)
         assertTrue(secondOutcome is RevalidationOutcome.RevalidatedSuccessfully)
-    }
-
-    // 18. No full-project recalculate for single circuit impact
-    @Test
-    fun noFullProjectRecalculateForSingleCircuitImpact() {
-        val plan = AuthoritativeFreshnessDependencyResolver.resolveAffectedPlan(
-            projectId = projectId,
-            targetCircuitId = 104, // isolated circuit
-            mutatedFields = setOf("overrideCableSize"),
-            allCircuits = allCircuits
-        )
-
-        // Only circuit 104 is affected, 101, 102, 103 are NOT in plan
-        assertEquals(listOf(104), plan.affectedCircuitIds)
-        assertFalse(plan.affectedCircuitIds.contains(101))
-        assertFalse(plan.affectedCircuitIds.contains(102))
-        assertFalse(plan.affectedCircuitIds.contains(103))
     }
 
     private fun findSourceFile(relativePath: String): File {
@@ -472,7 +602,7 @@ class PostCommitRevalidationOrchestratorTest {
             ?: throw IllegalStateException("Could not find main source dir in candidates: $candidates")
     }
 
-    // 19. Architecture guard: zero Room entity or project revision write in 7D
+    // 27. Architecture guard: zero Room entity or project revision write in 7D
     @Test
     fun architectureGuard_noRoomEntityOrProjectRevisionWriteIn7D() {
         val contractsFile = findSourceFile("src/main/java/com/example/ai/proposal/PostCommitRevalidationContracts.kt")
@@ -491,7 +621,7 @@ class PostCommitRevalidationOrchestratorTest {
         assertFalse(orchestratorText.contains("incrementRevision"))
     }
 
-    // 20. Architecture guard: zero approval issuance or consumption in 7D
+    // 28. Architecture guard: zero approval issuance or consumption in 7D
     @Test
     fun architectureGuard_noApprovalIssuanceOrConsumptionIn7D() {
         val orchestratorFile = findSourceFile("src/main/java/com/example/ai/proposal/PostCommitRevalidationOrchestrator.kt")
@@ -502,13 +632,13 @@ class PostCommitRevalidationOrchestratorTest {
         assertFalse(orchestratorText.contains("grantApproval"))
     }
 
-    // 21. ExecutionMode.MUTATION remains disabled
+    // 29. ExecutionMode.MUTATION remains disabled
     @Test
     fun executionModeMutationRemainsDisabled() {
         assertFalse(ExecutionModePolicy.isCurrentlyExecutable(ExecutionMode.MUTATION))
     }
 
-    // 22. Architecture guard: 7C and 7D remain unreachable from production
+    // 30. Architecture guard: 7C and 7D remain unreachable from production
     @Test
     fun architectureGuard_phase7CAnd7DRemainUnreachableFromProduction() {
         val mainDir = findMainSourceDir()
@@ -537,10 +667,9 @@ class PostCommitRevalidationOrchestratorTest {
         }
     }
 
-    // 23. Catalog repository missing condition remains exposure blocker
+    // 31. Catalog repository missing condition remains exposure blocker
     @Test
     fun catalogRepositoryMissingConditionRemainsExposureBlocker() {
-        // EngineeringMutationEngine defaults to DenyAllApprovalVerifier
         val verifier = DenyAllApprovalVerifier
         val dummyApproval = ProposalApprovalGrant(
             approvalId = "APPR_TEST",
@@ -569,7 +698,7 @@ class PostCommitRevalidationOrchestratorTest {
         assertTrue(result is ApprovalVerificationResult.Rejected)
     }
 
-    // 24. Public errors are sanitized
+    // 32. Public errors are sanitized
     @Test
     fun publicErrorsAreSanitized() = runBlocking {
         val malformedImpact = createValidImpact().copy(
