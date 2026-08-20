@@ -216,4 +216,23 @@ class EngineeringAssistantViewModelHybridTest {
             )
         }
     }
+
+    // 7. Eager construction safety: Provider never constructs real CloudLlmConversationEngine or SDK client when gate is disabled
+    @Test
+    fun provideConversationEngine_withGateDisabledAndNoApiKey_neverConstructsRealSdkClient() {
+        CloudLlmFeatureGate.configureForTesting(enabled = false, apiKey = null)
+
+        var factoryInvoked = false
+        val customFactory = {
+            factoryInvoked = true
+            CloudLlmConversationEngine()
+        }
+
+        val router = ConversationEngineProvider.provideConversationEngine(
+            cloudEngineFactory = customFactory
+        )
+
+        assertNotNull(router)
+        assertFalse("Real cloud engine factory must never be invoked when gate is disabled", factoryInvoked)
+    }
 }
