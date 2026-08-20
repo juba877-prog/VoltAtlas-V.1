@@ -1,9 +1,28 @@
 package com.example.engine
 
-import com.example.data.CableCatalogEntry
 import com.example.data.Catalog
+import com.example.data.CableCatalogEntry
 import com.example.data.CircuitEntity
 import kotlin.math.sqrt
+
+enum class SizingResultStatus {
+    PASS,
+    WARNING,
+    FAIL,
+    INCOMPLETE,
+    ERROR
+}
+
+enum class CableFailureCode {
+    AMPACITY_FAIL,
+    VOLTAGE_DROP_FAIL,
+    CUMULATIVE_VOLTAGE_DROP_FAIL,
+    CATALOG_MISSING,
+    INCOMPLETE_INPUT,
+    DERATING_INVALID,
+    MULTIPLE_CONSTRAINTS,
+    INDETERMINATE
+}
 
 data class SizingResult(
     val Ib_A: Double,
@@ -32,11 +51,12 @@ data class SizingResult(
     val rUsed: Double = 0.0,
     val xUsed: Double = 0.0,
     val clearingTime_s: Double = 0.1,
-    val odSourceMfg: String = "",
+    val odSourceMfg: String = "Elsewedy",
     val isODApproximated: Boolean = false,
-    val isAmpacityOk: Boolean = status.contains("PASS"),
-    val isVoltageDropOk: Boolean = status.contains("PASS"),
-    val primaryFailureCode: String? = null
+    val resultStatus: SizingResultStatus = if (status.contains("PASS")) SizingResultStatus.PASS else SizingResultStatus.FAIL,
+    val isAmpacityOk: Boolean = resultStatus == SizingResultStatus.PASS,
+    val isVoltageDropOk: Boolean = resultStatus == SizingResultStatus.PASS,
+    val primaryFailureCode: CableFailureCode? = null
 )
 
 object CableSizingEngine {
@@ -78,10 +98,9 @@ object CableSizingEngine {
     }
 
     /**
-     * CPC / protective conductor sizing per IEC 60364-5-54 Table 54.7
-     * simplified relationship for conductors of the same material:
-     * S <= 16      -> S
-     * 16 < S <= 35 -> 16
+     * IEC 60364-5-54 Table 54.7:
+     * S <= 16       -> Sp = S
+     * 16 < S <= 35  -> Sp = 16
      * S > 35       -> S/2, rounded UP to the next standard size.
      *
      * The displayed CPC is Cu. Final verification by the adiabatic equation
@@ -104,14 +123,7 @@ object CableSizingEngine {
         630.0 -> 300.0
         800.0 -> 400.0
         1000.0 -> 500.0
-        else -> {
-            val raw = when {
-                phaseSize <= 16.0 -> phaseSize
-                phaseSize <= 35.0 -> 16.0
-                else -> phaseSize / 2.0
-            }
-            STANDARD_SIZES.firstOrNull { it >= raw } ?: STANDARD_SIZES.last()
-        }
+        else -> nextStandardSize(phaseSize / 2.0)
     }
 
     private fun nextStandardSize(required: Double): Double =
@@ -217,11 +229,11 @@ object CableSizingEngine {
 
         val normalizedInstallation = installation.trim().lowercase()
         val prefix = when {
-            normalizedInstallation.contains("duct") -> "Duct"
-            normalizedInstallation.contains("ground") ||
-                normalizedInstallation.contains("buried") -> "Buried"
-            normalizedInstallation.contains("air") ||
-                normalizedInstallation.contains("tray") -> "Air"
+            isDirectBuried(installation) -> "direct_buried"
+            normalizedInstallation.contains("duct") -> "buried_ducts"
+            normalizedInstallation.contains("free air") ||
+                normalizedInstallation.contains("tray") ||
+                normalizedInstallation == "air" -> "air_tray"
             else -> return 1.0
         }
 
@@ -303,7 +315,15 @@ object CableSizingEngine {
             ?.toDoubleOrNull()
     }
 
-    private fun failedResult(reason: String, primaryFailureCode: String? = null): SizingResult = SizingResult(
+    fun failedResult(
+        reason: String,
+        primaryFailureCode: CableFailureCode? = null,
+        resultStatus: SizingResultStatus = when (primaryFailureCode) {
+            CableFailureCode.INCOMPLETE_INPUT -> SizingResultStatus.INCOMPLETE
+            null -> SizingResultStatus.FAIL
+            else -> SizingResultStatus.FAIL
+        }
+    ): SizingResult = SizingResult(
         Ib_A = 0.0,
         deviceSize_A = 0.0,
         deviceType = "N/A",
@@ -321,6 +341,7 @@ object CableSizingEngine {
         cumulativeVDpct = 0.0,
         status = "✗ FAIL",
         failReason = reason,
+        resultStatus = resultStatus,
         isAmpacityOk = false,
         isVoltageDropOk = false,
         primaryFailureCode = primaryFailureCode
@@ -360,29 +381,29 @@ object CableSizingEngine {
         val cat = catalog
         val isLegacy = cat == null
         if (isLegacy && (Catalog.cableCatalog.isEmpty() || Catalog.cableTypes.isEmpty() || Catalog.dataSheet.isEmpty())) {
-            return failedResult("Catalog is not loaded.", "CATALOG_MISSING")
+            return failedResult("Catalog is not loaded.", CableFailureCode.CATALOG_MISSING)
         } else if (cat != null && (cat.cableProducts.isEmpty() || cat.cableTypesData.isEmpty() || cat.deratingRows.isEmpty())) {
-            return failedResult("Catalog is not loaded.", "CATALOG_MISSING")
+            return failedResult("Catalog is not loaded.", CableFailureCode.CATALOG_MISSING)
         }
 
         if (circuit.voltageV <= 0) {
-            return failedResult("Voltage must be greater than zero.", "INCOMPLETE_INPUT")
+            return failedResult("Voltage must be greater than zero.", CableFailureCode.INCOMPLETE_INPUT)
         }
         if (circuit.loadKVA < 0.0) {
-            return failedResult("Load kVA cannot be negative.", "INCOMPLETE_INPUT")
+            return failedResult("Load kVA cannot be negative.", CableFailureCode.INCOMPLETE_INPUT)
         }
         if (circuit.parallelRuns <= 0) {
-            return failedResult("Parallel runs must be at least 1.", "INCOMPLETE_INPUT")
+            return failedResult("Parallel runs must be at least 1.", CableFailureCode.INCOMPLETE_INPUT)
         }
         if (circuit.pf <= 0.0 || circuit.pf > 1.0) {
-            return failedResult("Power factor must be greater than 0 and not more than 1.0.", "INCOMPLETE_INPUT")
+            return failedResult("Power factor must be greater than 0 and not more than 1.0.", CableFailureCode.INCOMPLETE_INPUT)
         }
         if (circuit.maxVDpct <= 0.0) {
-            return failedResult("Maximum voltage-drop limit must be greater than zero.", "INCOMPLETE_INPUT")
+            return failedResult("Maximum voltage-drop limit must be greater than zero.", CableFailureCode.INCOMPLETE_INPUT)
         }
 
         if (circuit.length_m <= 0.0) {
-            return failedResult("Cable length must be greater than zero.", "INCOMPLETE_INPUT")
+            return failedResult("Cable length must be greater than zero.", CableFailureCode.INCOMPLETE_INPUT)
         }
 
         val isThreePhase = circuit.phases.trim().uppercase().contains("3P")
@@ -447,7 +468,7 @@ object CableSizingEngine {
 
         val cTotalDerating = cTemp * cDepth * cSoil * cGroup
         if (cTotalDerating <= 0.0) {
-            return failedResult("Total derating factor is zero or invalid.", "DERATING_INVALID")
+            return failedResult("Total derating factor is zero or invalid.", CableFailureCode.DERATING_INVALID)
         }
 
         val iRequiredPerCableA =
@@ -460,13 +481,13 @@ object CableSizingEngine {
         if (isLegacy) {
             val selectedType = Catalog.cableTypes.firstOrNull {
                 it.cableType.trim().equals(circuit.cableType.trim(), ignoreCase = true)
-            } ?: return failedResult("Cable type '${circuit.cableType}' was not found in cable_types.json.", "CATALOG_MISSING")
+            } ?: return failedResult("Cable type '${circuit.cableType}' was not found in cable_types.json.", CableFailureCode.CATALOG_MISSING)
             rColumn = selectedType.rColumn
             selectedTypeCode = selectedType.code
             
             val hasNoCatalogEntries = Catalog.cableCatalog.none { it.typeCode == selectedTypeCode }
             if (hasNoCatalogEntries) {
-                return failedResult("Catalog data is not available for this cable family.", "CATALOG_MISSING")
+                return failedResult("Catalog data is not available for this cable family.", CableFailureCode.CATALOG_MISSING)
             }
         } else {
             val selectedTypeRepo = catalog?.cableTypesData?.firstOrNull {
@@ -479,18 +500,26 @@ object CableSizingEngine {
             } else null
 
             if (selectedTypeRepo != null) {
-                rColumn = "R_" + (if (selectedTypeRepo.conductor.contains("Al", true) || selectedTypeRepo.cableType.contains("Al", true)) "Al" else "Cu") + (if (selectedTypeRepo.insulation.contains("XLPE", true) || selectedTypeRepo.cableType.contains("XLPE", true)) "90" else "70")
+                val isCu = circuit.cableType.contains("Cu", ignoreCase = true)
+                val isAl = circuit.cableType.contains("Al", ignoreCase = true)
+                val cableMaterial = if (isAl && !isCu) "Al" else "Cu"
+                val insulation = if (isXLPE) "XLPE" else "PVC"
+                rColumn = if (cableMaterial == "Cu") {
+                    if (insulation == "XLPE") "R_Cu90" else "R_Cu70"
+                } else {
+                    if (insulation == "XLPE") "R_Al90" else "R_Al70"
+                }
                 selectedTypeCode = selectedTypeRepo.typeCode
             } else if (selectedTypeLegacy != null) {
                 rColumn = selectedTypeLegacy.rColumn
                 selectedTypeCode = selectedTypeLegacy.code
             } else {
-                return failedResult("Cable type '${circuit.cableType}' was not found in catalog.", "CATALOG_MISSING")
+                return failedResult("Cable type '${circuit.cableType}' was not found in catalog.", CableFailureCode.CATALOG_MISSING)
             }
             
             val hasNoCatalogEntries = catalog?.cableProducts?.none { it.typeCode == selectedTypeCode } == true
             if (hasNoCatalogEntries) {
-                return failedResult("Catalog data is not available for this cable family.", "CATALOG_MISSING")
+                return failedResult("Catalog data is not available for this cable family.", CableFailureCode.CATALOG_MISSING)
             }
         }
 
@@ -514,7 +543,7 @@ object CableSizingEngine {
         if (allManufacturerFamilyEntries.isEmpty()) {
             return failedResult(
                 "Catalog data is not available for this cable family.",
-                "CATALOG_MISSING"
+                CableFailureCode.CATALOG_MISSING
             )
         }
 
@@ -610,7 +639,7 @@ object CableSizingEngine {
             val overrideSize = parseCableSize(overrideText)
                 ?: return failedResult(
                     "Manual cable size '$overrideText' is invalid.",
-                    "INCOMPLETE_INPUT"
+                    CableFailureCode.INCOMPLETE_INPUT
                 )
 
             val overrideEntry = allManufacturerFamilyEntries.firstOrNull {
@@ -618,14 +647,14 @@ object CableSizingEngine {
             } ?: return failedResult(
                 "Manual cable size ${formatSize(overrideSize)} does not exist " +
                     "for the selected manufacturer and cable type.",
-                "CATALOG_MISSING"
+                CableFailureCode.CATALOG_MISSING
             )
 
             selectedCheck = checkCandidate(overrideEntry)
                 ?: return failedResult(
                     "R/X data is missing for manual cable size " +
                         formatSize(overrideSize) + ".",
-                    "CATALOG_MISSING"
+                    CableFailureCode.CATALOG_MISSING
                 )
 
             failReason = buildFailureReason(
@@ -638,7 +667,7 @@ object CableSizingEngine {
             if (checks.isEmpty()) {
                 return failedResult(
                     "No cable candidate has valid R/X data in data_sheet.json.",
-                    "CATALOG_MISSING"
+                    CableFailureCode.CATALOG_MISSING
                 )
             }
 
@@ -673,12 +702,23 @@ object CableSizingEngine {
             0.0
         }
 
-        val status = if (
-            selectedCheck.ampacityOk && selectedCheck.voltageDropOk
-        ) {
+        val isAmpacityPass = selectedCheck.ampacityOk
+        val isVdPass = selectedCheck.voltageDropOk
+        val isPass = isAmpacityPass && isVdPass
+
+        val status = if (isPass) {
             "✓ PASS"
         } else {
             "✗ FAIL"
+        }
+
+        val resStatus = if (isPass) SizingResultStatus.PASS else SizingResultStatus.FAIL
+        val failureCode = when {
+            isPass -> null
+            !isAmpacityPass && !isVdPass -> CableFailureCode.MULTIPLE_CONSTRAINTS
+            !isAmpacityPass -> CableFailureCode.AMPACITY_FAIL
+            !isVdPass -> if (parentCumulativeVD > 0.0) CableFailureCode.CUMULATIVE_VOLTAGE_DROP_FAIL else CableFailureCode.VOLTAGE_DROP_FAIL
+            else -> CableFailureCode.INDETERMINATE
         }
 
         val cableMaterial = if (circuit.cableType.contains("Al", ignoreCase = true)) "Al" else "Cu"
@@ -759,16 +799,6 @@ object CableSizingEngine {
             ).od_mm
         }
 
-        val isAmpacityPass = selectedCheck.ampacityOk
-        val isVdPass = selectedCheck.voltageDropOk
-        val failureCode = when {
-            isAmpacityPass && isVdPass -> null
-            !isAmpacityPass && !isVdPass -> "MULTIPLE_CONSTRAINTS"
-            !isAmpacityPass -> "AMPACITY_FAIL"
-            !isVdPass -> if (parentCumulativeVD > 0.0) "CUMULATIVE_VOLTAGE_DROP_FAIL" else "VOLTAGE_DROP_FAIL"
-            else -> null
-        }
-
         return SizingResult(
             Ib_A = round(ibA, 2),
             deviceSize_A = deviceSizeA,
@@ -801,6 +831,7 @@ object CableSizingEngine {
             clearingTime_s = clearingTime_s,
             odSourceMfg = dimInfo.sourceMfg,
             isODApproximated = dimInfo.isApproximated,
+            resultStatus = resStatus,
             isAmpacityOk = isAmpacityPass,
             isVoltageDropOk = isVdPass,
             primaryFailureCode = failureCode

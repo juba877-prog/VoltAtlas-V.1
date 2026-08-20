@@ -77,7 +77,7 @@ object GoverningCriterionInterpreter {
         val failingChecks = eval.checks.filter { it.status == CableCheckStatus.FAIL }
 
         val criterion = when {
-            overallStatus == CheckStatus.PASS -> GoverningCriterion.NONE
+            overallStatus == CheckStatus.PASS || overallStatus == CheckStatus.WARNING -> GoverningCriterion.NONE
             eval.governingCheckCode != null -> mapCode(eval.governingCheckCode)
             failingChecks.size > 1 -> GoverningCriterion.MULTIPLE_CONSTRAINTS
             failingChecks.size == 1 -> mapCode(failingChecks.first().checkCode)
