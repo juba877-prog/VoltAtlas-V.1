@@ -11,6 +11,12 @@ import com.example.ai.proposal.DurableMutationOutcome
 import com.example.ai.proposal.RevalidationOutcome
 import com.example.ai.proposal.RevalidationStatus
 import com.example.ai.runtime.BoundedProjectContext
+import com.example.ai.conversation.ConversationTaskState
+import com.example.ai.conversation.ConversationTurnInput
+import com.example.ai.hybrid.ConversationEngine
+import com.example.ai.hybrid.ConversationEngineProvider
+import com.example.ai.hybrid.ConversationEngineSource
+import com.example.ai.hybrid.HybridEngineResult
 import com.example.ai.service.AssistantMessage
 import com.example.ai.service.AssistantResponse
 import com.example.ai.service.EngineeringAiService
@@ -62,6 +68,7 @@ data class AssistantUiState(
     val context: EngineeringContext = EngineeringContext(),
     val messages: List<AssistantMessage> = emptyList(),
     val typedCards: List<AssistantCardUiModel> = emptyList(),
+    val header: ContextHeaderUiModel = ContextHeaderUiModel(),
     val approvalExecutionState: ApprovalExecutionUiState = ApprovalExecutionUiState.Idle,
     val inputText: String = "",
     val isThinking: Boolean = false,
@@ -80,10 +87,13 @@ data class AssistantUiState(
  * ViewModel managing Assistant container state, conversations, trusted approval execution, and back-gesture consumption.
  */
 class EngineeringAssistantViewModel(
+    private val conversationEngine: ConversationEngine = ConversationEngineProvider.provideConversationEngine(),
     private val aiService: EngineeringAiService = FirebaseAiServiceImpl()
 ) : ViewModel() {
 
     internal var approvalGateway: TrustedProposalApprovalGateway? = null
+    private var currentTurnId: Long = 0L
+    private var activeConversationState: ConversationTaskState? = null
 
     private val _uiState = MutableStateFlow(AssistantUiState())
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
@@ -132,9 +142,18 @@ class EngineeringAssistantViewModel(
     }
 
     fun sendMessage(text: String) {
-        val trimmed = text.trim()
+        onUserSubmit(text)
+    }
+
+    /**
+     * Authoritative entry point evaluating a user turn through [HybridConversationRouter].
+     * Protects against stale/late responses and updates UI state deterministically.
+     */
+    fun onUserSubmit(utterance: String) {
+        val trimmed = utterance.trim()
         if (trimmed.isBlank()) return
 
+        val turnId = ++currentTurnId
         val userMsg = AssistantMessage(role = MessageRole.USER, text = trimmed)
         _uiState.update { current ->
             current.copy(
@@ -145,32 +164,72 @@ class EngineeringAssistantViewModel(
             )
         }
 
+        val currentCtx = _uiState.value.context
+        val boundedContext = BoundedProjectContext(
+            projectId = currentCtx.projectId ?: "DEFAULT_PROJ",
+            projectName = currentCtx.projectName,
+            liveRevision = activeConversationState?.baseProjectRevision ?: 1L,
+            activeScreen = currentCtx.currentScreen,
+            activeEntityType = currentCtx.activeEntityType,
+            activeEntityId = currentCtx.activeEntityId,
+            activeEntityName = currentCtx.activeEntityName
+        )
+
         viewModelScope.launch {
-            val response = aiService.sendUserMessage(
-                context = _uiState.value.context,
-                conversationHistory = _uiState.value.messages,
-                userText = trimmed
+            val input = ConversationTurnInput(
+                userUtterance = trimmed,
+                projectContext = boundedContext,
+                priorState = activeConversationState
             )
 
-            when (response) {
-                is AssistantResponse.Text -> {
-                    val reply = AssistantMessage(role = MessageRole.ASSISTANT, text = response.content)
-                    _uiState.update { current ->
-                        current.copy(
-                            messages = current.messages + reply,
-                            isThinking = false
-                        )
-                    }
-                }
-                is AssistantResponse.Error -> {
-                    _uiState.update { current ->
-                        current.copy(
-                            isThinking = false,
-                            errorMessage = response.message
-                        )
-                    }
-                }
+            val result = conversationEngine.evaluateTurn(input)
+
+            // Stale/late result protection: ensure user hasn't submitted a newer turn
+            if (turnId != currentTurnId) {
+                return@launch
             }
+
+            applyHybridResult(result, boundedContext)
+        }
+    }
+
+    private fun applyHybridResult(
+        result: HybridEngineResult,
+        projectContext: BoundedProjectContext
+    ) {
+        val decision = result.decision
+        activeConversationState = decision.updatedState
+
+        val sheetUiState = AssistantResponseMapper.mapDecisionToUiState(
+            decision = decision,
+            state = decision.updatedState,
+            projectContext = projectContext,
+            existingState = AssistantSheetUiState(
+                allCards = _uiState.value.typedCards
+            )
+        )
+
+        val isOfflineWithDegradation = result.source == ConversationEngineSource.LOCAL_RULE_ENGINE &&
+                result.cloudDegradationReason != null
+
+        val updatedHeader = sheetUiState.header.copy(
+            engineeringSource = result.source,
+            offlineBadgeVisible = isOfflineWithDegradation
+        )
+
+        val replyText = decision.explanationSummary
+            ?: (sheetUiState.activeCard as? AssistantCardUiModel.ResultSummaryCard)?.summaryText
+            ?: (sheetUiState.activeCard as? AssistantCardUiModel.DirectAnswerCard)?.text
+            ?: "Turn processed."
+        val replyMsg = AssistantMessage(role = MessageRole.ASSISTANT, text = replyText)
+
+        _uiState.update { current ->
+            current.copy(
+                messages = current.messages + replyMsg,
+                typedCards = sheetUiState.allCards,
+                header = updatedHeader,
+                isThinking = false
+            )
         }
     }
 

@@ -49,7 +49,9 @@ data class ContextHeaderUiModel(
     val entityId: String? = null,
     val freshnessLabel: String? = null,
     val isStale: Boolean = false,
-    val baseRevision: Long? = null
+    val baseRevision: Long? = null,
+    val engineeringSource: com.example.ai.hybrid.ConversationEngineSource? = null,
+    val offlineBadgeVisible: Boolean = false
 ) {
     val hasResolvedEntity: Boolean
         get() = !entityType.isNullOrBlank() && (!entityName.isNullOrBlank() || !entityId.isNullOrBlank())

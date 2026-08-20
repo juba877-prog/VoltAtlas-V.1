@@ -131,6 +131,24 @@ fun EngineeringAssistantSheet(
                                         )
                                     }
                                 }
+
+                                // Offline Indicator Badge
+                                if (uiState.header.offlineBadgeVisible) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(MaterialTheme.colorScheme.errorContainer)
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            .semantics { contentDescription = "Assistant is running offline" }
+                                            .testTag("offline_indicator_badge")
+                                    ) {
+                                        Text(
+                                            text = "OFFLINE",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                    }
+                                }
                             }
 
                             val subtitle = when {
