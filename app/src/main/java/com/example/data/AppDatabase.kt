@@ -11,8 +11,14 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Update
+import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.data.ai.AiDatabaseConverters
+import com.example.data.ai.ApprovalGrantDao
+import com.example.data.ai.ApprovalGrantEntity
+import com.example.data.ai.MutationExecutionReceiptDao
+import com.example.data.ai.MutationExecutionReceiptEntity
 import kotlinx.coroutines.flow.Flow
 
 
@@ -876,6 +882,72 @@ val MIGRATION_21_22 = object : Migration(21, 22) {
     }
 }
 
+val MIGRATION_22_23 = object : Migration(22, 23) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `approval_grants` (
+                `approvalId` TEXT NOT NULL,
+                `proposalId` TEXT NOT NULL,
+                `proposalDigest` TEXT NOT NULL,
+                `proposalSemanticKey` TEXT NOT NULL,
+                `activeProposalSemanticKey` TEXT,
+                `projectId` TEXT NOT NULL,
+                `targetEntityType` TEXT NOT NULL,
+                `targetEntityId` TEXT NOT NULL,
+                `baseProjectRevision` INTEGER NOT NULL,
+                `status` TEXT NOT NULL,
+                `issuerType` TEXT NOT NULL,
+                `approvedBy` TEXT NOT NULL,
+                `userActionId` TEXT NOT NULL,
+                `issuedAt` INTEGER NOT NULL,
+                `expiresAt` INTEGER NOT NULL,
+                `consumedAt` INTEGER,
+                `consumedByExecutionId` TEXT,
+                PRIMARY KEY(`approvalId`),
+                FOREIGN KEY(`projectId`) REFERENCES `projects`(`projectId`) ON DELETE CASCADE
+            )
+        """.trimIndent())
+
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_approval_grants_approvalId` ON `approval_grants`(`approvalId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_approval_grants_projectId` ON `approval_grants`(`projectId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_approval_grants_proposalDigest` ON `approval_grants`(`proposalDigest`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_approval_grants_proposalSemanticKey` ON `approval_grants`(`proposalSemanticKey`)")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_approval_grants_activeProposalSemanticKey` ON `approval_grants`(`activeProposalSemanticKey`)")
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `mutation_execution_receipts` (
+                `executionId` TEXT NOT NULL,
+                `approvalId` TEXT NOT NULL,
+                `proposalId` TEXT NOT NULL,
+                `proposalDigest` TEXT NOT NULL,
+                `proposalSemanticKey` TEXT NOT NULL,
+                `projectId` TEXT NOT NULL,
+                `targetEntityType` TEXT NOT NULL,
+                `targetEntityId` TEXT NOT NULL,
+                `revisionBefore` INTEGER NOT NULL,
+                `revisionAfter` INTEGER NOT NULL,
+                `revalidationStatus` TEXT NOT NULL,
+                `appliedChangesJson` TEXT NOT NULL,
+                `createdAt` INTEGER NOT NULL,
+                `committedAt` INTEGER NOT NULL,
+                `attemptCount` INTEGER NOT NULL DEFAULT 0,
+                `lastAttemptAt` INTEGER,
+                `workflowCompletedAt` INTEGER,
+                `errorCode` TEXT,
+                `messageKey` TEXT,
+                `isRecoverable` INTEGER NOT NULL DEFAULT 0,
+                `diagnosticRef` TEXT,
+                PRIMARY KEY(`executionId`),
+                FOREIGN KEY(`approvalId`) REFERENCES `approval_grants`(`approvalId`) ON DELETE CASCADE
+            )
+        """.trimIndent())
+
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_mutation_execution_receipts_executionId` ON `mutation_execution_receipts`(`executionId`)")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_mutation_execution_receipts_approvalId` ON `mutation_execution_receipts`(`approvalId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_mutation_execution_receipts_projectId` ON `mutation_execution_receipts`(`projectId`)")
+    }
+}
+
 @Dao
 interface SldNodePositionDao {
     @Query("SELECT * FROM sld_node_positions WHERE projectId = :projectId")
@@ -907,11 +979,14 @@ interface SldNodePositionDao {
         AppStateEntity::class,
         ConduitSettingsEntity::class,
         EarthingEntity::class,
-        SldNodePositionEntity::class
+        SldNodePositionEntity::class,
+        ApprovalGrantEntity::class,
+        MutationExecutionReceiptEntity::class
     ],
-    version = 22,
+    version = 23,
     exportSchema = false
 )
+@TypeConverters(AiDatabaseConverters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun circuitDao(): CircuitDao
     abstract fun transformerDao(): TransformerDao
@@ -920,6 +995,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appStateDao(): AppStateDao
     abstract fun conduitDao(): ConduitDao
     abstract fun sldNodePositionDao(): SldNodePositionDao
+    abstract fun approvalGrantDao(): ApprovalGrantDao
+    abstract fun mutationExecutionReceiptDao(): MutationExecutionReceiptDao
 
     companion object {
         @Volatile
@@ -939,7 +1016,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                     MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-                    MIGRATION_21_22
+                    MIGRATION_21_22, MIGRATION_22_23
                 )
 
 
