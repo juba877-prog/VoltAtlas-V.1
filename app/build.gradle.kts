@@ -24,6 +24,8 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    buildConfigField("String", "GEMINI_API_KEY", "\"\"")
+    buildConfigField("boolean", "ENABLE_CLOUD_LLM", "false")
   }
 
   signingConfigs {
@@ -145,6 +147,7 @@ dependencies {
   // implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
+  implementation(libs.google.genai)
   // Uncomment to use Firestore:
   // implementation(libs.firebase.firestore)
 
