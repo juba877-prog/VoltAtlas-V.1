@@ -408,6 +408,7 @@ fun MainLayout(
                         modifier = Modifier
                             .padding(vertical = 12.dp)
                             .size(48.dp)
+                            .testTag("rail_back_btn")
                     ) {
                         Box(
                             modifier = Modifier
@@ -447,6 +448,7 @@ fun MainLayout(
                             onClick = {
                                 currentTab = targetTab
                             },
+                            modifier = Modifier.testTag("rail_dest_$targetTab"),
                             icon = {
                                 Icon(
                                     icon,
@@ -491,7 +493,7 @@ fun MainLayout(
                         if (!useNavRail) {
                             IconButton(
                                 onClick = { viewModel.closeProject() },
-                                modifier = Modifier.size(48.dp)
+                                modifier = Modifier.size(48.dp).testTag("phone_back_btn")
                             ) {
                                 Box(
                                     modifier = Modifier
@@ -769,6 +771,7 @@ fun MainLayout(
                                 onClick = {
                                     currentTab = targetTab
                                 },
+                                modifier = Modifier.testTag("bottom_dest_$targetTab"),
                                 icon = {
                                     Icon(
                                         icon,
