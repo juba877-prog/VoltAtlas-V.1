@@ -26,19 +26,17 @@ class CoordinationFreshnessAdapter : DomainFreshnessAdapter {
 
     override val supportedDomain: CalculationDomain = CalculationDomain.COORDINATION
 
-    override suspend fun resolveFingerprint(
+    override fun resolveFingerprintFromEntities(
         scope: CalculationScope,
-        projectDataProvider: ProjectFreshnessDataProvider,
+        circuits: List<com.example.data.CircuitEntity>,
+        transformers: List<com.example.data.TransformerEntity>,
         upstreamFingerprintProvider: UpstreamFingerprintProvider?
     ): FingerprintResolution {
         val circuitId = scope.entityId.toIntOrNull()
             ?: return FingerprintResolution.Invalid("Invalid circuit entityId '${scope.entityId}', must be integer.")
 
-        val circuits = projectDataProvider.getCircuits(scope.projectId)
         val circuit = circuits.firstOrNull { it.id == circuitId }
             ?: return FingerprintResolution.Invalid("Circuit $circuitId not found in project ${scope.projectId}")
-
-        val transformers = projectDataProvider.getTransformers(scope.projectId)
 
         // 1. Direct Inputs
         val inputEncoder = CanonicalFingerprintEncoder()

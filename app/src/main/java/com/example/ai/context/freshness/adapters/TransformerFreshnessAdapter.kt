@@ -35,17 +35,15 @@ class TransformerFreshnessAdapter : DomainFreshnessAdapter {
 
     override val supportedDomain: CalculationDomain = CalculationDomain.TRANSFORMER
 
-    override suspend fun resolveFingerprint(
+    override fun resolveFingerprintFromEntities(
         scope: CalculationScope,
-        projectDataProvider: ProjectFreshnessDataProvider,
+        circuits: List<com.example.data.CircuitEntity>,
+        transformers: List<com.example.data.TransformerEntity>,
         upstreamFingerprintProvider: UpstreamFingerprintProvider?
     ): FingerprintResolution {
         val txId = scope.entityId.trim()
-        val transformers = projectDataProvider.getTransformers(scope.projectId)
         val transformer = transformers.firstOrNull { it.transformerId.equals(txId, ignoreCase = true) }
             ?: return FingerprintResolution.Invalid("Transformer '$txId' not found in project ${scope.projectId}")
-
-        val circuits = projectDataProvider.getCircuits(scope.projectId)
 
         // 1. Direct Inputs — all 18 TransformerEntity fields consumed by engine
         val inputEncoder = CanonicalFingerprintEncoder()

@@ -2,23 +2,38 @@ package com.example.ai.context.freshness.internal
 
 import com.example.ai.context.freshness.adapters.*
 import com.example.ai.context.freshness.contracts.*
+import com.example.data.CircuitEntity
+import com.example.data.TransformerEntity
+import kotlinx.coroutines.runBlocking
 
 /**
  * Lifecycle integration hook that records freshness metadata after Coordinator calculations.
  *
  * Design:
  * - Stateless adapter: receives calculation inputs and results status, computes fingerprints,
- *   and records metadata into [InMemoryCalculationFreshnessMetadataRegistry].
- * - Synchronous calculations: RUNNING/REVALIDATING markers are NOT observable in production
- *   because the Coordinator executes synchronously. These states are internal state-machine
- *   capabilities only, not production-observable.
+ *   and records metadata synchronously into [InMemoryCalculationFreshnessMetadataRegistry].
+ * - In production: uses pre-resolved [circuits] and [transformers] entities for 100% synchronous,
+ *   zero-coroutine-overhead in-memory recording.
+ * - In testing / legacy contexts: supports [ProjectFreshnessDataProvider] fallback.
  * - Does not alter any engineering inputs, outputs, or PASS/FAIL/WARNING decisions.
  * - Does not store full result payloads.
  */
 class FreshnessLifecycleRecorder(
     private val registry: InMemoryCalculationFreshnessMetadataRegistry,
-    private val projectDataProvider: ProjectFreshnessDataProvider
+    private val circuits: List<CircuitEntity> = emptyList(),
+    private val transformers: List<TransformerEntity> = emptyList(),
+    private val projectDataProvider: ProjectFreshnessDataProvider? = null
 ) {
+
+    constructor(
+        registry: InMemoryCalculationFreshnessMetadataRegistry,
+        projectDataProvider: ProjectFreshnessDataProvider
+    ) : this(
+        registry = registry,
+        circuits = emptyList(),
+        transformers = emptyList(),
+        projectDataProvider = projectDataProvider
+    )
 
     private val cableAdapter = CableSizingFreshnessAdapter()
     private val transformerAdapter = TransformerFreshnessAdapter()
@@ -36,7 +51,7 @@ class FreshnessLifecycleRecorder(
      * Records cable sizing freshness metadata after a successful calculation.
      * [overallStatus] is the engineering status (e.g. "PASS", "FAIL", "WARNING").
      */
-    suspend fun recordCableSizing(
+    fun recordCableSizing(
         projectId: String,
         circuitId: Int,
         overallStatus: String,
@@ -49,7 +64,7 @@ class FreshnessLifecycleRecorder(
     /**
      * Records transformer freshness metadata after a successful calculation.
      */
-    suspend fun recordTransformer(
+    fun recordTransformer(
         projectId: String,
         transformerId: String,
         overallStatus: String,
@@ -62,7 +77,7 @@ class FreshnessLifecycleRecorder(
     /**
      * Records short circuit freshness metadata after a successful calculation.
      */
-    suspend fun recordShortCircuit(
+    fun recordShortCircuit(
         projectId: String,
         circuitId: Int,
         overallStatus: String,
@@ -75,7 +90,7 @@ class FreshnessLifecycleRecorder(
     /**
      * Records protection/ADS freshness metadata after a successful calculation.
      */
-    suspend fun recordProtectionAds(
+    fun recordProtectionAds(
         projectId: String,
         circuitId: Int,
         overallStatus: String,
@@ -88,7 +103,7 @@ class FreshnessLifecycleRecorder(
     /**
      * Records coordination freshness metadata after a successful calculation.
      */
-    suspend fun recordCoordination(
+    fun recordCoordination(
         projectId: String,
         circuitId: Int,
         overallStatus: String,
@@ -123,14 +138,20 @@ class FreshnessLifecycleRecorder(
         )
     }
 
-    private suspend fun recordDomain(
+    private fun recordDomain(
         scope: CalculationScope,
         adapter: DomainFreshnessAdapter,
         overallStatus: String,
         projectRevision: Long
     ) {
         try {
-            val resolution = adapter.resolveFingerprint(scope, projectDataProvider, upstreamProvider)
+            val resolution = if (projectDataProvider != null) {
+                runBlocking {
+                    adapter.resolveFingerprint(scope, projectDataProvider, upstreamProvider)
+                }
+            } else {
+                adapter.resolveFingerprintFromEntities(scope, circuits, transformers, upstreamProvider)
+            }
             if (resolution is FingerprintResolution.Resolved) {
                 registry.recordCalculationCompleted(
                     CalculationRecordMetadata(
@@ -146,8 +167,6 @@ class FreshnessLifecycleRecorder(
                     )
                 )
             }
-            // If resolution is Invalid/Error, we intentionally do NOT record metadata
-            // because the calculation should not have succeeded with invalid inputs
         } catch (_: Exception) {
             // Fingerprint resolution failure during recording is non-fatal
             // The calculation result is already returned to the caller

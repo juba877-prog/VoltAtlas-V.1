@@ -12,11 +12,22 @@ import com.example.ai.context.freshness.contracts.FingerprintResolution
 interface DomainFreshnessAdapter {
     val supportedDomain: CalculationDomain
 
+    fun resolveFingerprintFromEntities(
+        scope: CalculationScope,
+        circuits: List<com.example.data.CircuitEntity>,
+        transformers: List<com.example.data.TransformerEntity>,
+        upstreamFingerprintProvider: UpstreamFingerprintProvider? = null
+    ): FingerprintResolution
+
     suspend fun resolveFingerprint(
         scope: CalculationScope,
         projectDataProvider: ProjectFreshnessDataProvider,
         upstreamFingerprintProvider: UpstreamFingerprintProvider? = null
-    ): FingerprintResolution
+    ): FingerprintResolution {
+        val circuits = projectDataProvider.getCircuits(scope.projectId)
+        val transformers = projectDataProvider.getTransformers(scope.projectId)
+        return resolveFingerprintFromEntities(scope, circuits, transformers, upstreamFingerprintProvider)
+    }
 }
 
 /**
