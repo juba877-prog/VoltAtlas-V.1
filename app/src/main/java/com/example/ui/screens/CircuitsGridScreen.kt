@@ -56,6 +56,10 @@ fun CircuitsGridScreen(
     var circuitToDelete by rememberSaveable { mutableStateOf<CircuitEntity?>(null) }
 
     // Perform queries and filters (memoized to prevent un-remembered re-filtering on every animation frame)
+    val childrenLookup = remember(state.circuits) {
+        CircuitChildLookup.build(state.circuits)
+    }
+
     val filteredCircuits = remember(state.circuits, state.sizingResults, query, statusFilter, parentFilter) {
         state.circuits.filter { circ ->
             val matchesQuery = query.isBlank() ||
@@ -219,8 +223,8 @@ fun CircuitsGridScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    val childCircuits = state.circuits.filter { it.fedFrom.trim().equals(circ.circuitName.trim(), ignoreCase = true) }
-                                    val hasChildren = childCircuits.isNotEmpty()
+                                    val childCircuits = childrenLookup.getChildren(circ.circuitName)
+                                    val hasChildren = childrenLookup.hasChildren(circ.circuitName)
                                     val pType = circ.panelType?.trim()?.uppercase() ?: ""
                                     val isPanelRow = pType in PANEL_TYPES || hasChildren
 
@@ -261,7 +265,7 @@ fun CircuitsGridScreen(
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text("Fed from: ${circ.fedFrom}  •  ${circ.loadKVA} kVA | ${circ.phases}", color = SlateTextSecondary, fontSize = 11.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                     
-                                    val childrenTotalLoad = childCircuits.sumOf { it.loadKVA }
+                                    val childrenTotalLoad = childrenLookup.getChildrenTotalLoad(circ.circuitName)
                                     val childrenDiffers = kotlin.math.abs(circ.loadKVA - childrenTotalLoad) > 0.001
                                     val isUnconfirmedConflict = hasChildren && circ.directLoadConfirmed == null && childrenDiffers
                                 
@@ -350,7 +354,7 @@ fun CircuitsGridScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         val pTypeExp = circ.panelType?.trim()?.uppercase() ?: ""
-                                        val isPanelRowExp = pTypeExp in setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER") || state.circuits.any { it.fedFrom.trim().equals(circ.circuitName.trim(), ignoreCase = true) }
+                                        val isPanelRowExp = pTypeExp in setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER") || childrenLookup.hasChildren(circ.circuitName)
 
                                         Text("Circuit Operations:", color = SlateTextSecondary, fontSize = 11.sp)
                                         Spacer(modifier = Modifier.width(12.dp))

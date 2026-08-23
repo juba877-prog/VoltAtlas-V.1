@@ -43,6 +43,14 @@ fun EngineeringAssistantSheet(
 
     if (!uiState.isOpen) return
 
+    androidx.activity.compose.PredictiveBackHandler(enabled = uiState.isOpen) { progress ->
+        try {
+            progress.collect { /* back progress */ }
+            viewModel.onBackHandled()
+        } catch (_: kotlinx.coroutines.CancellationException) {
+        }
+    }
+
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true
     )

@@ -37,9 +37,6 @@ class MainActivity : ComponentActivity() {
     
     setContent {
       val viewModel: EngineeringViewModel = viewModel()
-      val assistantViewModel: com.example.ai.ui.EngineeringAssistantViewModel = viewModel(
-        factory = remember { com.example.ai.ui.EngineeringAssistantViewModelFactory.production(application) }
-      )
       val bootViewModel: BootViewModel = viewModel()
       val themeMode by viewModel.themeMode.collectAsState()
       val bootState by bootViewModel.state.collectAsState()
@@ -94,7 +91,7 @@ class MainActivity : ComponentActivity() {
                     onFinished = { isBootFinished.value = true }
                 )
             } else {
-                MainLayout(viewModel = viewModel, assistantViewModel = assistantViewModel)
+                MainLayout(viewModel = viewModel)
             }
         }
       }

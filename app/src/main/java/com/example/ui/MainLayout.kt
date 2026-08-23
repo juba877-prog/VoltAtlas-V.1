@@ -67,7 +67,8 @@ fun isMoreTabSelected(currentTab: Int): Boolean {
 @Composable
 fun MainLayout(
     viewModel: EngineeringViewModel,
-    assistantViewModel: com.example.ai.ui.EngineeringAssistantViewModel
+    assistantViewModel: com.example.ai.ui.EngineeringAssistantViewModel? = null,
+    assistantViewModelFactory: androidx.lifecycle.ViewModelProvider.Factory? = null
 ) {
     val state by viewModel.uiState.collectAsState()
 
@@ -77,7 +78,24 @@ fun MainLayout(
     val showGlobalSettings by viewModel.showGlobalSettings.collectAsState()
     val confirmDestructiveActions by viewModel.preferences.confirmDestructiveActions.collectAsState()
 
-    val assistantUiState by assistantViewModel.uiState.collectAsState()
+    val layoutContext = LocalContext.current
+    val viewModelStoreOwner = checkNotNull(androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner.current) {
+        "No ViewModelStoreOwner available"
+    }
+
+    var isAssistantInitialized by remember { mutableStateOf(assistantViewModel != null) }
+
+    val resolveAssistantViewModel: () -> com.example.ai.ui.EngineeringAssistantViewModel = remember(
+        assistantViewModel, assistantViewModelFactory, viewModelStoreOwner, layoutContext
+    ) {
+        {
+            assistantViewModel ?: run {
+                val app = layoutContext.applicationContext as android.app.Application
+                val factory = assistantViewModelFactory ?: com.example.ai.ui.EngineeringAssistantViewModelFactory.production(app)
+                androidx.lifecycle.ViewModelProvider(viewModelStoreOwner, factory)[com.example.ai.ui.EngineeringAssistantViewModel::class.java]
+            }
+        }
+    }
 
     var currentTab by rememberSaveable { mutableStateOf(0) }
 
@@ -266,7 +284,9 @@ fun MainLayout(
             activeEntityName = entityName,
             projectSummary = summary
         )
-        assistantViewModel.open(entryPoint, ctx)
+        isAssistantInitialized = true
+        val assistantVm = resolveAssistantViewModel()
+        assistantVm.open(entryPoint, ctx)
     }
 
     PredictiveBackHandler(enabled = true) { progress: kotlinx.coroutines.flow.Flow<BackEventCompat> ->
@@ -276,10 +296,6 @@ fun MainLayout(
             }
             // Gesture Completed -> Execute exact 6-tier navigation logic
             when {
-                // 0. Assistant sheet open -> consume back gesture and close/collapse assistant first
-                assistantUiState.isOpen -> {
-                    assistantViewModel.onBackHandled()
-                }
                 // 1. Close any open overlay / dialog / fullscreen first
                 showPdfExportDialog -> showPdfExportDialog = false
                 showDiagnosticsDialog -> showDiagnosticsDialog = false
@@ -1196,7 +1212,10 @@ fun MainLayout(
         )
     }
 
-    com.example.ai.ui.EngineeringAssistantSheet(viewModel = assistantViewModel)
+    if (isAssistantInitialized) {
+        val assistantVm = resolveAssistantViewModel()
+        com.example.ai.ui.EngineeringAssistantSheet(viewModel = assistantVm)
+    }
 }
 
 @Composable
