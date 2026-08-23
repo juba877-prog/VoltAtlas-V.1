@@ -492,11 +492,11 @@ object RiserLayoutEngine {
     }
 
     private fun colorHexForStatus(status: SldValidationStatus): String = when (status) {
-        SldValidationStatus.VALID -> "#10B981"
-        SldValidationStatus.WARNING -> "#F59E0B"
-        SldValidationStatus.INVALID -> "#EF4444"
-        SldValidationStatus.DISCONNECTED -> "#9CA3AF"
-        SldValidationStatus.DATA_REQUIRED -> "#3B82F6"
+        SldValidationStatus.VALID -> SldSemanticColors.RISER_VALID
+        SldValidationStatus.WARNING -> SldSemanticColors.RISER_WARNING
+        SldValidationStatus.INVALID -> SldSemanticColors.RISER_INVALID
+        SldValidationStatus.DISCONNECTED -> SldSemanticColors.RISER_NEUTRAL
+        SldValidationStatus.DATA_REQUIRED -> SldSemanticColors.RISER_DATA_REQUIRED
     }
 
     private fun applyDynamicCollisionAvoidance(

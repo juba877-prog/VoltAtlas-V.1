@@ -76,11 +76,11 @@ object ShopDrawingLayoutEngine {
                 panelType = node.type.name,
                 ratingText = node.dataBlock.ratedKva ?: node.dataBlock.deviceTypeAndRating ?: "",
                 statusColorHex = when (node.status) {
-                    SldValidationStatus.VALID -> "#3DD68C"
-                    SldValidationStatus.WARNING -> "#FFC107"
-                    SldValidationStatus.INVALID -> "#F44336"
-                    SldValidationStatus.DISCONNECTED -> "#9E9E9E"
-                    SldValidationStatus.DATA_REQUIRED -> "#3B9EFF"
+                    SldValidationStatus.VALID -> SldSemanticColors.SHOP_VALID
+                    SldValidationStatus.WARNING -> SldSemanticColors.SHOP_WARNING
+                    SldValidationStatus.INVALID -> SldSemanticColors.SHOP_INVALID
+                    SldValidationStatus.DISCONNECTED -> SldSemanticColors.SHOP_NEUTRAL
+                    SldValidationStatus.DATA_REQUIRED -> SldSemanticColors.SHOP_DATA_REQUIRED
                 },
                 x = xCenter - 70f,
                 y = yTop,
@@ -209,7 +209,7 @@ object ShopDrawingLayoutEngine {
                 label = unNode.displayName,
                 panelType = unNode.type.name,
                 ratingText = unNode.dataBlock.ratedKva ?: unNode.dataBlock.deviceTypeAndRating ?: "STANDALONE",
-                statusColorHex = "#9E9E9E",
+                statusColorHex = SldSemanticColors.SHOP_UNCONNECTED,
                 x = unconnX,
                 y = unconnY,
                 width = minUnconnWidth,

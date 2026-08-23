@@ -313,9 +313,9 @@ fun SldCanvas(
                                     ?: childNode.dataBlock.voltageDropPct?.replace("%", "")?.toFloatOrNull() ?: 0f
 
                                 val vdColor = when {
-                                    cumVdVal > 5.0f -> Color(0xFFEF4444) // Red (>5%)
-                                    cumVdVal > 3.0f -> Color(0xFFF59E0B) // Amber (>3%)
-                                    else -> Color(0xFF10B981) // Green (Normal)
+                                    cumVdVal > 5.0f -> palette.invalidStatus // Red (>5%)
+                                    cumVdVal > 3.0f -> palette.warningStatus // Amber (>3%)
+                                    else -> palette.validStatus // Green (Normal)
                                 }
 
                                 if (vdText.isNotBlank()) {
@@ -329,7 +329,7 @@ fun SldCanvas(
                                 // SHORT CIRCUIT: Emphasize fault level Isc (kA) and device Icu rating
                                 val statusTxt = childNode.dataBlock.statusText
                                 val isIscFail = statusTxt.uppercase().contains("FAIL") || statusTxt.uppercase().contains("ICU")
-                                val scColor = if (isIscFail) Color(0xFFEF4444) else palette.textPrimary
+                                val scColor = if (isIscFail) palette.invalidStatus else palette.textPrimary
 
                                 if (ik3Text.isNotBlank()) {
                                     linesToDraw.add(Pair(ik3Text, TextStyle(color = scColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)))
@@ -342,9 +342,9 @@ fun SldCanvas(
                                 // VALIDATION: Show status summary on feeder run
                                 val statusTxt = childNode.dataBlock.statusText
                                 val valColor = when (childNode.status) {
-                                    SldValidationStatus.INVALID, SldValidationStatus.DATA_REQUIRED -> Color(0xFFEF4444)
-                                    SldValidationStatus.WARNING -> Color(0xFFF59E0B)
-                                    else -> Color(0xFF10B981)
+                                    SldValidationStatus.INVALID, SldValidationStatus.DATA_REQUIRED -> palette.invalidStatus
+                                    SldValidationStatus.WARNING -> palette.warningStatus
+                                    else -> palette.validStatus
                                 }
 
                                 if (cableText.isNotBlank()) {
@@ -375,9 +375,9 @@ fun SldCanvas(
                 val isSelected = node.id == selectedNodeId
                 val statusColor = when (displayMode) {
                     DisplayMode.VALIDATION -> when (node.status) {
-                        SldValidationStatus.INVALID, SldValidationStatus.DATA_REQUIRED -> Color(0xFFEF4444)
-                        SldValidationStatus.WARNING -> Color(0xFFF59E0B)
-                        SldValidationStatus.VALID -> Color(0xFF10B981)
+                        SldValidationStatus.INVALID, SldValidationStatus.DATA_REQUIRED -> palette.invalidStatus
+                        SldValidationStatus.WARNING -> palette.warningStatus
+                        SldValidationStatus.VALID -> palette.validStatus
                         else -> palette.validStatus
                     }
                     else -> try {
