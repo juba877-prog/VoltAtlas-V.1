@@ -339,27 +339,44 @@ object RiserLayoutEngine {
                     val siblingIndex = if (isEmergencyEdge) 0
                         else normalAtsIncomerIndex["${edge.fromNodeId}->${edge.toNodeId}"] ?: 0
 
-                    // Tier-0 sources (transformer/generator) sit a full tier above the ATS:
-                    // their below-source channel already approaches the ATS top terminals from
-                    // above (locked behavior). Same-tier sources must instead route ABOVE the
-                    // ATS enclosure so the wire lands on the top-edge terminal from above — a
-                    // below-source channel would pierce the symbol body on the final rise.
-                    val channelY = if (fromNode.y + 50f < toNode.y) {
-                        fromYPort + 95f + siblingIndex * staggerStep
+                    val atsPoints = if (fromNode.y + 50f < toNode.y) {
+                        // Tier-0 sources (transformer/generator) sit a full tier above the
+                        // ATS: their below-source channel already approaches the ATS top
+                        // terminals from above (locked behavior).
+                        val channelY = fromYPort + 95f + siblingIndex * staggerStep
+                        if (Math.abs(fromXPort - toXPort) < 5f) {
+                            listOf(Pair(toXPort, fromYPort), Pair(toXPort, toYPort))
+                        } else {
+                            listOf(
+                                Pair(fromXPort, fromYPort),
+                                Pair(fromXPort, channelY),
+                                Pair(toXPort, channelY),
+                                Pair(toXPort, toYPort)
+                            )
+                        }
                     } else {
-                        toYPort - SldTheme.feederDrop() + siblingIndex * staggerStep
-                    }
-
-                    if (Math.abs(fromXPort - toXPort) < 5f) {
-                        listOf(Pair(toXPort, fromYPort), Pair(toXPort, toYPort))
-                    } else {
+                        // Same-tier (or below) panel sources (e.g. an MDB sharing the ATS
+                        // tier): the incomer must leave the panel's output port DOWNWARD.
+                        // Rising above the panel would run collinear with the upstream
+                        // feeder and pass through the panel body, making the wire visually
+                        // appear to originate from the transformer (Gate 3 regression).
+                        // Instead: drop into the inter-tier channel, cross BELOW the ATS
+                        // enclosure, rise just OUTSIDE its left edge, then approach the top
+                        // terminal from above.
+                        val maxBottom = maxOf(fromNode.y + fromNode.height, toNode.y + toNode.height)
+                        val lowChannelY = maxBottom + staggerStep + siblingIndex * staggerStep
+                        val riseX = toNode.x - staggerStep
+                        val highChannelY = toYPort - staggerStep
                         listOf(
                             Pair(fromXPort, fromYPort),
-                            Pair(fromXPort, channelY),
-                            Pair(toXPort, channelY),
+                            Pair(fromXPort, lowChannelY),
+                            Pair(riseX, lowChannelY),
+                            Pair(riseX, highChannelY),
+                            Pair(toXPort, highChannelY),
                             Pair(toXPort, toYPort)
                         )
                     }
+                    atsPoints
                 } else {
                     val fromX = fromNode.x + fromNode.width / 2f
                     val fromY = fromNode.y + (if (fromNode.isSource) 24f else fromNode.height)
