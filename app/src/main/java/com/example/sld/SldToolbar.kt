@@ -16,12 +16,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -79,7 +81,13 @@ fun SldToolbar(
     )
 
     // Radial configuration
-    val radiusDp = 90.dp
+    // Adjacent centers are 22.5deg apart and each control is an axis-aligned 48dp
+    // touch square. Non-overlap of the actual touch rectangles therefore requires
+    // max(|cos(a)-cos(a+22.5deg)|, |sin(a)-sin(a+22.5deg)|) * R >= 48dp. The
+    // largest projected delta is cos(292.5deg)-cos(315deg) = 0.3244 -> R >= 148dp.
+    // 160dp is chosen for rounding/anti-aliasing margin; the fan still fits any
+    // 360dp-wide screen because the toolbar is anchored BottomStart.
+    val radiusDp = 160.dp
     val radiusPx = with(LocalDensity.current) { radiusDp.toPx() }
 
     // Helper function to calculate exact radial positions
@@ -100,25 +108,31 @@ fun SldToolbar(
         // --- RADIAL NODES (Fanning Up and Right) ---
         // Node 0: Mode Selector (Top - 270 degrees)
         Box(modifier = Modifier.radialOffset(Math.PI * 1.5)) {
-            Surface(
-                onClick = {
-                    isExpanded = true
-                    showModeDropdown = true
-                },
-                shape = CircleShape,
-                color = chipBg,
-                border = BorderStroke(1.dp, borderColor),
+            Box(
                 modifier = Modifier
-                    .size(44.dp)
-                    .testTag("sld_mode_dropdown_trigger")
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button) {
+                        isExpanded = true
+                        showModeDropdown = true
+                    }
+                    .testTag("sld_mode_dropdown_trigger"),
+                contentAlignment = Alignment.Center
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.Layers,
-                        contentDescription = "Modes",
-                        tint = SleekPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
+                Surface(
+                    shape = CircleShape,
+                    color = chipBg,
+                    border = BorderStroke(1.dp, borderColor),
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Layers,
+                            contentDescription = "Modes",
+                            tint = SleekPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
 
@@ -158,57 +172,28 @@ fun SldToolbar(
 
         // Node 1: Search Toggle (Top-Right 292.5 degrees)
         Box(modifier = Modifier.radialOffset(Math.PI * 1.625)) {
-            Surface(
-                onClick = {
-                    onToggleSearch()
-                    isExpanded = false
-                },
-                shape = CircleShape,
-                color = if (isSearchOpen) SleekPrimary.copy(alpha = 0.2f) else chipBg,
-                border = BorderStroke(1.dp, borderColor),
+            Box(
                 modifier = Modifier
-                    .size(44.dp)
-                    .testTag("sld_search_toggle_btn")
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button) {
+                        onToggleSearch()
+                        isExpanded = false
+                    }
+                    .testTag("sld_search_toggle_btn"),
+                contentAlignment = Alignment.Center
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = if (isSearchOpen) SleekPrimary else textColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
-
-        // Node 2: Validation Issues (Up-Right 315 degrees)
-        Box(modifier = Modifier.radialOffset(Math.PI * 1.75)) {
-            Surface(
-                onClick = {
-                    onToggleValidation()
-                    isExpanded = false
-                },
-                shape = CircleShape,
-                color = if (isValidationOpen) SleekWarning.copy(alpha = 0.2f) else chipBg,
-                border = BorderStroke(1.dp, borderColor),
-                modifier = Modifier
-                    .size(44.dp)
-                    .testTag("sld_validation_toggle_btn")
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    BadgedBox(
-                        badge = {
-                            if (issueCount > 0) {
-                                Badge(containerColor = SleekWarning) {
-                                    Text("$issueCount", color = Color.White)
-                                }
-                            }
-                        }
-                    ) {
+                Surface(
+                    shape = CircleShape,
+                    color = if (isSearchOpen) SleekPrimary.copy(alpha = 0.2f) else chipBg,
+                    border = BorderStroke(1.dp, borderColor),
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = "Validation",
-                            tint = if (issueCount > 0) SleekWarning else SleekPass,
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = if (isSearchOpen) SleekPrimary else textColor,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -216,50 +201,105 @@ fun SldToolbar(
             }
         }
 
+        // Node 2: Validation Issues (Up-Right 315 degrees)
+        Box(modifier = Modifier.radialOffset(Math.PI * 1.75)) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button) {
+                        onToggleValidation()
+                        isExpanded = false
+                    }
+                    .testTag("sld_validation_toggle_btn"),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = if (isValidationOpen) SleekWarning.copy(alpha = 0.2f) else chipBg,
+                    border = BorderStroke(1.dp, borderColor),
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        BadgedBox(
+                            badge = {
+                                if (issueCount > 0) {
+                                    Badge(containerColor = SleekWarning) {
+                                        Text("$issueCount", color = Color.White)
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Validation",
+                                tint = if (issueCount > 0) SleekWarning else SleekPass,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Node 3: Fit Project (Right-Up 337.5 degrees)
         Box(modifier = Modifier.radialOffset(Math.PI * 1.875)) {
-            Surface(
-                onClick = {
-                    onFitScreen()
-                    isExpanded = false
-                },
-                shape = CircleShape,
-                color = chipBg,
-                border = BorderStroke(1.dp, borderColor),
+            Box(
                 modifier = Modifier
-                    .size(44.dp)
-                    .testTag("sld_fit_btn")
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button) {
+                        onFitScreen()
+                        isExpanded = false
+                    }
+                    .testTag("sld_fit_btn"),
+                contentAlignment = Alignment.Center
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.AspectRatio,
-                        contentDescription = "Fit Project",
-                        tint = SleekPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
+                Surface(
+                    shape = CircleShape,
+                    color = chipBg,
+                    border = BorderStroke(1.dp, borderColor),
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.AspectRatio,
+                            contentDescription = "Fit Project",
+                            tint = SleekPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
 
         // Node 4: Overflow Actions (Right - 0 degrees)
         Box(modifier = Modifier.radialOffset(0.0)) {
-            Surface(
-                onClick = {
-                    isExpanded = true
-                    showOverflowMenu = true
-                },
-                shape = CircleShape,
-                color = DarkBackground,
-                border = BorderStroke(1.dp, borderColor),
-                modifier = Modifier.size(44.dp)
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button) {
+                        isExpanded = true
+                        showOverflowMenu = true
+                    }
+                    .testTag("sld_overflow_btn"),
+                contentAlignment = Alignment.Center
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "More Options",
-                        tint = ThemeTextColor,
-                        modifier = Modifier.size(20.dp)
-                    )
+                Surface(
+                    shape = CircleShape,
+                    color = DarkBackground,
+                    border = BorderStroke(1.dp, borderColor),
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More Options",
+                            tint = ThemeTextColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
 
