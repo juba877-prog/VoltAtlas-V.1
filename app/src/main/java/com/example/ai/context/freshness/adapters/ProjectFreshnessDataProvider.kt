@@ -15,8 +15,8 @@ interface ProjectFreshnessDataProvider {
  * Lightweight in-memory implementation of [ProjectFreshnessDataProvider] backed by circuit and transformer collections.
  */
 class InMemoryProjectFreshnessDataProvider(
-    private val circuits: List<CircuitEntity> = emptyList(),
-    private val transformers: List<TransformerEntity> = emptyList()
+    val circuits: List<CircuitEntity> = emptyList(),
+    val transformers: List<TransformerEntity> = emptyList()
 ) : ProjectFreshnessDataProvider {
 
     override suspend fun getCircuits(projectId: String): List<CircuitEntity> {

@@ -104,7 +104,7 @@ class ConversionPreferencesTest {
             }
         }
 
-        val completed = latch.await(15, TimeUnit.SECONDS)
+        val completed = latch.await(5, TimeUnit.SECONDS)
         executor.shutdown()
 
         assertTrue("Concurrent writes must complete without deadlocks", completed)

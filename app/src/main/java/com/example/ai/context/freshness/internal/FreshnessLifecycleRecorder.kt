@@ -30,8 +30,8 @@ class FreshnessLifecycleRecorder(
         projectDataProvider: ProjectFreshnessDataProvider
     ) : this(
         registry = registry,
-        circuits = emptyList(),
-        transformers = emptyList(),
+        circuits = (projectDataProvider as? InMemoryProjectFreshnessDataProvider)?.circuits ?: emptyList(),
+        transformers = (projectDataProvider as? InMemoryProjectFreshnessDataProvider)?.transformers ?: emptyList(),
         projectDataProvider = projectDataProvider
     )
 
