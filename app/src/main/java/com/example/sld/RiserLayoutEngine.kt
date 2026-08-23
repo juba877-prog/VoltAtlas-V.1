@@ -305,6 +305,20 @@ object RiserLayoutEngine {
         }
 
         // 4. Orthogonal Edge Routing with Dedicated Source Routing Channel
+        // 4a. Shared-source ATS NORMAL incomers get staggered channels so parallel
+        //     wires and their NORMAL labels never overlap (see SldAtsRoutingTest).
+        val normalAtsIncomerIndex = HashMap<String, Int>()
+        graph.edges
+            .filter { it.type != SldEdgeType.ATS_EMERGENCY_PATH }
+            .filter { edge -> nodeMap[edge.toNodeId]?.type == SldNodeType.ATS || edge.type == SldEdgeType.ATS_NORMAL_PATH }
+            .groupBy { it.fromNodeId }
+            .values.forEach { siblings ->
+                siblings.sortedBy { positionedNodesMap[it.toNodeId]?.x ?: 0f }
+                    .forEachIndexed { index, edge ->
+                        normalAtsIncomerIndex["${edge.fromNodeId}->${edge.toNodeId}"] = index
+                    }
+            }
+
         val positionedEdges = mutableListOf<PositionedSldEdge>()
         graph.edges.forEach { edge ->
             val fromNode = positionedNodesMap[edge.fromNodeId]
@@ -320,7 +334,21 @@ object RiserLayoutEngine {
                     val fromXPort = fromNode.x + fromNode.width / 2f
                     val fromYPort = fromNode.y + (if (fromNode.isSource) 24f else fromNode.height)
 
-                    val channelY = fromNode.y + 95f
+                    val isEmergencyEdge = edge.type == SldEdgeType.ATS_EMERGENCY_PATH
+                    val staggerStep = SldTheme.feederDrop() / 4f
+                    val siblingIndex = if (isEmergencyEdge) 0
+                        else normalAtsIncomerIndex["${edge.fromNodeId}->${edge.toNodeId}"] ?: 0
+
+                    // Tier-0 sources (transformer/generator) sit a full tier above the ATS:
+                    // their below-source channel already approaches the ATS top terminals from
+                    // above (locked behavior). Same-tier sources must instead route ABOVE the
+                    // ATS enclosure so the wire lands on the top-edge terminal from above — a
+                    // below-source channel would pierce the symbol body on the final rise.
+                    val channelY = if (fromNode.y + 50f < toNode.y) {
+                        fromYPort + 95f + siblingIndex * staggerStep
+                    } else {
+                        toYPort - SldTheme.feederDrop() + siblingIndex * staggerStep
+                    }
 
                     if (Math.abs(fromXPort - toXPort) < 5f) {
                         listOf(Pair(toXPort, fromYPort), Pair(toXPort, toYPort))
