@@ -112,7 +112,11 @@ object Catalog {
     var busways: List<com.example.data.catalog.BuswayCatalogEntry> = emptyList()
     var deratingData: org.json.JSONObject? = null
 
+    @Volatile
     private var isLoaded = false
+
+    val isCatalogLoaded: Boolean
+        get() = isLoaded
 
     @Volatile
     private var cachedDiagnostics: CatalogDiagnostics? = null
@@ -235,15 +239,16 @@ object Catalog {
         }
     }
 
+    @Synchronized
     fun loadAll(context: Context) {
         if (isLoaded) return
         try {
             lastError = null
 
             val deratingString = readAsset(context, "derating_data.json")
-            deratingData = org.json.JSONObject(deratingString)
+            val parsedDerating = org.json.JSONObject(deratingString)
 
-            cableTypes = loadJson(context, "cable_types.json") { obj ->
+            val parsedCableTypes = loadJson(context, "cable_types.json") { obj ->
                 CableType(
                     code = obj.getInt("code"),
                     cableType = obj.getString("cableType"),
@@ -257,7 +262,7 @@ object Catalog {
                 )
             }
 
-            dataSheet = loadJson(context, "data_sheet.json") { obj ->
+            val parsedDataSheet = loadJson(context, "data_sheet.json") { obj ->
                 DataSheetEntry(
                     size = obj.getDouble("size"),
                     R_Cu70 = obj.getDouble("R_Cu70"),
@@ -268,7 +273,7 @@ object Catalog {
                 )
             }
 
-            cableCatalog = loadJson(context, "cable_catalog.json") { obj ->
+            val parsedCableCatalog = loadJson(context, "cable_catalog.json") { obj ->
                 CableCatalogEntry(
                     mfg = obj.getString("mfg"),
                     typeCode = obj.getInt("typeCode"),
@@ -282,7 +287,7 @@ object Catalog {
                 )
             }
 
-            breakers = loadJson(context, "breaker_catalog.json") { obj ->
+            val parsedBreakers = loadJson(context, "breaker_catalog.json") { obj ->
                 BreakerEntry(
                     mfg = obj.optString("mfg", obj.optString("Source", "Generic")),
                     type = obj.optString("type", "MCCB"),
@@ -298,7 +303,7 @@ object Catalog {
                 )
             }
 
-            accessories = loadJson(context, "accessory_catalog.json") { obj ->
+            val parsedAccessories = loadJson(context, "accessory_catalog.json") { obj ->
                 AccessoryEntry(
                     mfg = obj.optString("mfg", obj.optString("Manufacturer", "Generic")),
                     category = obj.optString("category", obj.optString("Category", "")),
@@ -317,7 +322,7 @@ object Catalog {
                 )
             }
 
-            conduits = loadJson(context, "conduit_catalog.json") { obj ->
+            val parsedConduits = loadJson(context, "conduit_catalog.json") { obj ->
                 val d = obj.getDouble("internalDiameterMm")
                 val computedArea = Math.PI * d * d / 4.0
                 val totalArea = obj.optDouble("areaTotalMm2", computedArea)
@@ -334,8 +339,8 @@ object Catalog {
                 )
             }
 
-            try {
-                busways = loadJson(context, "busway_catalog.json") { obj ->
+            val parsedBusways = try {
+                loadJson(context, "busway_catalog.json") { obj ->
                     com.example.data.catalog.BuswayCatalogEntry(
                         mfg = obj.optString("mfg", "Elsewedy"),
                         model = obj.optString("model", "Power Link"),
@@ -350,40 +355,60 @@ object Catalog {
                     )
                 }
             } catch (e: Exception) {
-                // Non-fatal if missing
-                busways = emptyList()
+                emptyList()
             }
 
-
-            if (cableTypes.isEmpty()) {
+            if (parsedCableTypes.isEmpty()) {
                 throw IllegalStateException("cable_types.json loaded but contains zero records.")
             }
-            if (dataSheet.isEmpty()) {
+            if (parsedDataSheet.isEmpty()) {
                 throw IllegalStateException("data_sheet.json loaded but contains zero records.")
             }
-            if (cableCatalog.isEmpty()) {
+            if (parsedCableCatalog.isEmpty()) {
                 throw IllegalStateException("cable_catalog.json loaded but contains zero records.")
             }
-            if (breakers.isEmpty()) {
+            if (parsedBreakers.isEmpty()) {
                 throw IllegalStateException("breaker_catalog.json loaded but contains zero records.")
             }
-            if (accessories.isEmpty()) {
+            if (parsedAccessories.isEmpty()) {
                 throw IllegalStateException("accessory_catalog.json loaded but contains zero records.")
             }
-            if (deratingData == null) {
-                throw IllegalStateException("derating_data.json loaded but root object is null.")
-            }
 
-            isLoaded = true
-            _supportedTypeCodes = cableCatalog.map { it.typeCode }.toSet()
-            _cableTypesByName = cableTypes.associateBy { it.cableType.trim().lowercase() }
+            // Atomic publication of parsed catalog collections
+            deratingData = parsedDerating
+            cableTypes = parsedCableTypes
+            dataSheet = parsedDataSheet
+            cableCatalog = parsedCableCatalog
+            breakers = parsedBreakers
+            accessories = parsedAccessories
+            conduits = parsedConduits
+            busways = parsedBusways
+
+            _supportedTypeCodes = parsedCableCatalog.map { it.typeCode }.toSet()
+            _cableTypesByName = parsedCableTypes.associateBy { it.cableType.trim().lowercase() }
             cachedDiagnostics = null
+            isLoaded = true
         } catch (e: Exception) {
             lastError = e
             isLoaded = false
             invalidateIndexes()
             throw RuntimeException("Catalog initialization failed: ${e.message}", e)
         }
+    }
+
+    @Synchronized
+    fun resetForTesting() {
+        cableTypes = emptyList()
+        dataSheet = emptyList()
+        cableCatalog = emptyList()
+        breakers = emptyList()
+        accessories = emptyList()
+        conduits = emptyList()
+        busways = emptyList()
+        deratingData = null
+        isLoaded = false
+        lastError = null
+        invalidateIndexes()
     }
 
     private fun <T> loadJson(context: Context, filename: String, mapper: (org.json.JSONObject) -> T): List<T> {
