@@ -54,6 +54,8 @@ fun SldCanvas(
     modifier: Modifier = Modifier
 ) {
     val palette = SldTheme.palette(isDarkTheme)
+    // Physical legibility scaling for px-based symbol metrics (density-aware).
+    val densityScale = androidx.compose.ui.platform.LocalDensity.current.density
     val textMeasurer = rememberTextMeasurer()
     val defaultTextStyle = androidx.compose.ui.text.TextStyle(color = palette.textSecondary, fontSize = 10.sp)
     val boldTextStyle = defaultTextStyle.copy(fontWeight = FontWeight.Bold, color = palette.textPrimary)
@@ -278,9 +280,8 @@ fun SldCanvas(
                             SldSymbols.drawBreaker(
                                 drawScope = this,
                                 center = Offset(feederX, breakerY),
-                                sizePx = 16f,
-                                color = strokeColor,
-                                isEmergency = edge.isEmergency
+                                sizePx = SldTheme.breakerBoxSize() * densityScale,
+                                color = strokeColor
                             )
                         }
 
@@ -461,28 +462,28 @@ fun SldCanvas(
                             topLeft = Offset(labelX, cy + 6f)
                         )
                     } else if (panelUpper.contains("ATS")) {
-                        val cx = node.x + 24f
-                        val cy = node.y
-                        SldSymbols.drawAts(
+                        // Authoritative geometry: the two input terminals land EXACTLY on
+                        // the layout-provided NORMAL/EMERGENCY ports, and the output terminal
+                        // aligns with the downstream feeder origin. No off-center box.
+                        val geometry = SldSymbols.atsSymbolGeometry(node.x, node.y, node.width)
+                        SldSymbols.drawTransferSwitch(
                             drawScope = this,
-                            center = Offset(cx, cy),
-                            sizePx = 40f,
-                            palette = palette,
-                            ratingText = node.ratingText
+                            geometry = geometry,
+                            palette = palette
                         )
 
-                        val labelX = cx + 42f
+                        val labelX = node.x + node.width + 14f
                         drawSafeText(
                             textMeasurer = textMeasurer,
                             text = node.label,
                             style = TextStyle(color = palette.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold),
-                            topLeft = Offset(labelX, cy - 18f)
+                            topLeft = Offset(labelX, node.y - 20f)
                         )
                         drawSafeText(
                             textMeasurer = textMeasurer,
                             text = node.ratingText,
                             style = TextStyle(color = palette.textSecondary, fontSize = 11.sp),
-                            topLeft = Offset(labelX, cy + 6f)
+                            topLeft = Offset(labelX, node.y + 6f)
                         )
                     } else {
                         drawRect(

@@ -5,6 +5,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -37,6 +38,31 @@ object SldSymbols {
         LOAD_ARROW
     }
 
+    /** Which fixed input terminal of an ATS the movable blade rests on. */
+    enum class AtsConnectedInput { NORMAL, EMERGENCY }
+
+    /**
+     * Exact ATS symbol anchor points derived from the positioned layout node.
+     *
+     * The two input terminals land precisely on the layout-provided source ports
+     * (RiserLayoutEngine routes NORMAL to x+width*0.25 and EMERGENCY to x+width*0.75,
+     * both terminating at y-24f; the downstream feeder departs from x+width*0.5 at
+     * y+24f because the ATS is a source-classified node). Every internal drawing
+     * ratio derives from these anchors, so the symbol scales with node dimensions
+     * and its terminals can never drift from the routed wires.
+     */
+    data class AtsSymbolGeometry(
+        val normalTerminal: Offset,
+        val emergencyTerminal: Offset,
+        val outputTerminal: Offset
+    )
+
+    fun atsSymbolGeometry(nodeX: Float, nodeY: Float, nodeWidth: Float): AtsSymbolGeometry =
+        AtsSymbolGeometry(
+            normalTerminal = Offset(nodeX + nodeWidth * 0.25f, nodeY - 24f),
+            emergencyTerminal = Offset(nodeX + nodeWidth * 0.75f, nodeY - 24f),
+            outputTerminal = Offset(nodeX + nodeWidth * 0.5f, nodeY + 24f)
+        )
     /**
      * Draw standard node symbol given SldNodeType.
      */
@@ -181,7 +207,65 @@ object SldSymbols {
         drawScope.drawLine(color, Offset(center.x + w * 0.4f, center.y), Offset(center.x, center.y), strokeWidth = strokeWidth)
     }
 
-    // 4. ATS (Automatic Transfer Switch)
+    // 4. ATS (Automatic Transfer Switch) — IEC-style two-input transfer contact
+    fun drawTransferSwitch(
+        drawScope: DrawScope,
+        geometry: AtsSymbolGeometry,
+        palette: SldPalette,
+        connectedTo: AtsConnectedInput = AtsConnectedInput.NORMAL
+    ) {
+        val n = geometry.normalTerminal
+        val e = geometry.emergencyTerminal
+        val out = geometry.outputTerminal
+        // Effective span between the two authoritative input ports drives every ratio.
+        val span = (e.x - n.x).coerceAtLeast(1f)
+        val strokeWidth = (span * 0.055f).coerceIn(2f, 6f)
+        val dotRadius = (span * 0.075f).coerceIn(2.5f, 8f)
+        val color = palette.textPrimary
+
+        // Enclosure spanning between (and slightly beyond) the two input ports,
+        // top edge exactly on the wire termini, bottom edge on the output terminal.
+        val pad = span * 0.08f
+        val boxLeft = n.x - pad
+        val boxRight = e.x + pad
+        drawScope.drawRoundRect(
+            color = color,
+            topLeft = Offset(boxLeft, n.y),
+            size = Size(boxRight - boxLeft, out.y - n.y),
+            cornerRadius = CornerRadius(span * 0.06f, span * 0.06f),
+            style = Stroke(width = strokeWidth)
+        )
+
+        // Input terminals land EXACTLY on the routed wire termini (box top edge).
+        drawScope.drawCircle(color = color, radius = dotRadius, center = n)
+        drawScope.drawCircle(color = color, radius = dotRadius, center = e)
+
+        // Common output terminal on the box bottom edge, aligned with the downstream feeder.
+        drawScope.drawCircle(color = color, radius = dotRadius, center = out)
+
+        // Movable blade: solid toward the connected input, dashed toward the alternate.
+        val bladeGap = span * 0.10f
+        val solidTarget = if (connectedTo == AtsConnectedInput.NORMAL) n else e
+        val dashedTarget = if (connectedTo == AtsConnectedInput.NORMAL) e else n
+        drawScope.drawLine(
+            color = color,
+            start = out,
+            end = Offset(solidTarget.x, solidTarget.y + bladeGap),
+            strokeWidth = strokeWidth * 1.2f
+        )
+        drawScope.drawLine(
+            color = color,
+            start = out,
+            end = Offset(dashedTarget.x, dashedTarget.y + bladeGap),
+            strokeWidth = strokeWidth * 0.9f,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(span * 0.08f, span * 0.06f), 0f)
+        )
+    }
+
+    /**
+     * Legacy center-based entry point retained for SldSymbolGallery previews.
+     * Synthesizes a symmetric transfer-switch geometry around [center].
+     */
     fun drawAts(
         drawScope: DrawScope,
         center: Offset,
@@ -189,36 +273,18 @@ object SldSymbols {
         palette: SldPalette,
         ratingText: String = "800 A"
     ) {
-        val boxW = sizePx * 0.9f
-        val boxH = sizePx * 0.7f
-        val strokeWidth = 2.0f
-        val color = palette.textPrimary
-
-        drawScope.drawRoundRect(
-            color = color,
-            topLeft = Offset(center.x - boxW / 2f, center.y - boxH / 2f),
-            size = Size(boxW, boxH),
-            cornerRadius = CornerRadius(6f, 6f),
-            style = Stroke(width = strokeWidth)
-        )
-
-        val leftX = center.x - boxW * 0.25f
-        val rightX = center.x + boxW * 0.25f
-        val topY = center.y - boxH * 0.3f
-        val bottomY = center.y + boxH * 0.3f
-
-        drawScope.drawCircle(color = color, radius = 3f, center = Offset(leftX, topY))
-        drawScope.drawCircle(color = color, radius = 3f, center = Offset(rightX, topY))
-        drawScope.drawCircle(color = color, radius = 3f, center = Offset(center.x, bottomY))
-
-        drawScope.drawLine(
-            color = color,
-            start = Offset(center.x, bottomY),
-            end = Offset(leftX + 2f, topY + 4f),
-            strokeWidth = strokeWidth * 1.2f
+        val span = sizePx * 1.8f
+        val inputY = center.y - sizePx * 0.35f
+        drawTransferSwitch(
+            drawScope = drawScope,
+            geometry = AtsSymbolGeometry(
+                normalTerminal = Offset(center.x - span / 2f, inputY),
+                emergencyTerminal = Offset(center.x + span / 2f, inputY),
+                outputTerminal = Offset(center.x, center.y + sizePx * 0.45f)
+            ),
+            palette = palette
         )
     }
-
     // 5. Capacitor Bank
     fun drawCapacitorBank(
         drawScope: DrawScope,
@@ -289,7 +355,7 @@ object SldSymbols {
         val w = sizePx * 0.8f
         val h = sizePx * 0.8f
         val color = palette.protection
-        val strokeWidth = 2.5f
+        val strokeWidth = (h * 0.16f).coerceIn(2f, 6f)
 
         // ACB box with drawout arrows
         drawScope.drawRect(
@@ -306,8 +372,8 @@ object SldSymbols {
             strokeWidth = strokeWidth * 0.8f
         )
         // Upper and lower terminal contact arcs
-        drawScope.drawCircle(color = color, radius = 3f, center = Offset(center.x, center.y - h / 2f))
-        drawScope.drawCircle(color = color, radius = 3f, center = Offset(center.x, center.y + h / 2f))
+        drawScope.drawCircle(color = color, radius = h * 0.19f, center = Offset(center.x, center.y - h / 2f))
+        drawScope.drawCircle(color = color, radius = h * 0.19f, center = Offset(center.x, center.y + h / 2f))
     }
 
     // 8. Fixed 3-Pole MCCB
@@ -430,11 +496,11 @@ object SldSymbols {
     ) {
         val h = sizePx * 0.8f
         val color = palette.textPrimary
-        val strokeWidth = 2.5f
+        val strokeWidth = (h * 0.16f).coerceIn(2f, 6f)
 
         // Terminal dots
-        drawScope.drawCircle(color = color, radius = 3f, center = Offset(center.x, center.y - h / 2f))
-        drawScope.drawCircle(color = color, radius = 3f, center = Offset(center.x, center.y + h / 2f))
+        drawScope.drawCircle(color = color, radius = h * 0.19f, center = Offset(center.x, center.y - h / 2f))
+        drawScope.drawCircle(color = color, radius = h * 0.19f, center = Offset(center.x, center.y + h / 2f))
 
         // Lever line with cross bar disconnector mark
         drawScope.drawLine(
@@ -518,19 +584,27 @@ object SldSymbols {
         drawScope.drawLine(color, Offset(center.x, center.y + arrowH / 2f), Offset(center.x + sizePx * 0.18f, center.y + arrowH * 0.15f), strokeWidth = strokeWidth)
     }
 
+    /** Terminal dot radius as a ratio of the breaker's sizePx (never a hard-coded px value). */
+    fun breakerDotRadius(sizePx: Float): Float = sizePx * 0.19f
+
+    /** Contact stroke width as a ratio of the breaker's sizePx. */
+    fun breakerStrokeWidth(sizePx: Float): Float = sizePx * 0.17f
+
     /**
      * Draw breaker symbol on feeder paths.
+     *
+     * Emergency-fed breakers are already visually distinguished at the call site via
+     * [color] (palette.feeders vs enclosureBusTaps on emergency edges), so no separate
+     * flag is required; the former dead isEmergency parameter was removed.
      */
     fun drawBreaker(
         drawScope: DrawScope,
         center: Offset,
         sizePx: Float,
-        color: Color,
-        isEmergency: Boolean = false
+        color: Color
     ) {
-        val strokeWidth = 2.5f
-        val radius = 3f
-
+        val strokeWidth = breakerStrokeWidth(sizePx)
+        val radius = breakerDotRadius(sizePx)
         drawScope.drawCircle(color = color, radius = radius, center = Offset(center.x, center.y - sizePx / 2f))
         drawScope.drawCircle(color = color, radius = radius, center = Offset(center.x, center.y + sizePx / 2f))
 
