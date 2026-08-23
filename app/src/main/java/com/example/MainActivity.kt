@@ -13,6 +13,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -36,6 +37,9 @@ class MainActivity : ComponentActivity() {
     
     setContent {
       val viewModel: EngineeringViewModel = viewModel()
+      val assistantViewModel: com.example.ai.ui.EngineeringAssistantViewModel = viewModel(
+        factory = remember { com.example.ai.ui.EngineeringAssistantViewModelFactory.production(application) }
+      )
       val bootViewModel: BootViewModel = viewModel()
       val themeMode by viewModel.themeMode.collectAsState()
       val bootState by bootViewModel.state.collectAsState()
@@ -90,7 +94,7 @@ class MainActivity : ComponentActivity() {
                     onFinished = { isBootFinished.value = true }
                 )
             } else {
-                MainLayout(viewModel = viewModel)
+                MainLayout(viewModel = viewModel, assistantViewModel = assistantViewModel)
             }
         }
       }

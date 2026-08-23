@@ -26,6 +26,9 @@ import androidx.compose.ui.unit.dp
 import com.example.engine.converters.CapacitorConnectionType
 import com.example.engine.converters.ElectricalConverters
 import com.example.ui.theme.SleekPrimary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -79,9 +82,9 @@ fun ConversionDetailScreen(
         )
     }
 
-    // Auto-record calculation history whenever output changes to a valid result
+    // Auto-record calculation history whenever output changes to a valid result (debounced 500ms, executed on Dispatchers.IO)
     LaunchedEffect(outputResult) {
-        when (outputResult) {
+        val payload = when (outputResult) {
             is ConversionOutput.CableResult -> {
                 val inputSummary = when (tool.inputType) {
                     "awg_selector" -> "AWG $selectedAwg"
@@ -89,28 +92,36 @@ fun ConversionDetailScreen(
                     else -> "$inputVal1 kcmil"
                 }
                 val resSummary = "Safe Up: ${formatNominal(outputResult.result.safeUpNominalMm2)} mm² (True: ${String.format(Locale.US, "%.2f", outputResult.result.trueAreaMm2)} mm²)"
-                prefs.addHistoryItem(tool.id, tool.titleEn, inputSummary, resSummary)
+                Triple(tool.id, inputSummary, resSummary)
             }
 
             is ConversionOutput.SingleValueResult -> {
                 val inputSummary = "$inputVal1 ${tool.inputLabelEn}"
                 val resSummary = "${String.format(Locale.US, "%.3f", outputResult.value)} ${outputResult.unitEn}"
-                prefs.addHistoryItem(tool.id, tool.titleEn, inputSummary, resSummary)
+                Triple(tool.id, inputSummary, resSummary)
             }
 
             is ConversionOutput.MultiValueResult -> {
                 val inputSummary = "$inputVal1 / $inputVal2"
                 val resSummary = outputResult.values.joinToString("; ") { "${it.first}: ${it.second}" }
-                prefs.addHistoryItem(tool.id, tool.titleEn, inputSummary, resSummary)
+                Triple(tool.id, inputSummary, resSummary)
             }
 
             is ConversionOutput.TextResult -> {
                 val inputSummary = "$inputVal1 mm²"
                 val resSummary = outputResult.textEn
-                prefs.addHistoryItem(tool.id, tool.titleEn, inputSummary, resSummary)
+                Triple(tool.id, inputSummary, resSummary)
             }
 
-            else -> {}
+            else -> null
+        } ?: return@LaunchedEffect
+
+        // Debounce: Wait 500 ms of inactivity before persisting to disk
+        delay(500L)
+
+        // Persist asynchronously on Dispatchers.IO to guarantee zero Main thread disk / JSON operations
+        withContext(Dispatchers.IO) {
+            prefs.addHistoryItem(payload.first, tool.titleEn, payload.second, payload.third)
         }
     }
 
@@ -1047,7 +1058,7 @@ private fun calculateOutput(
                 ConversionOutput.SingleValueResult(
                     value = kvar,
                     unitEn = "kVAR",
-                    noteEn = if (conn == CapacitorConnectionType.DELTA) "Formula: Q = 2π × f × C × V² × 10⁻⁹ (Delta 3×)" else "Formula: Q = (2π × f × C × V² × 10⁻⁹) / 3 (Star)"
+                    noteEn = if (conn == CapacitorConnectionType.DELTA) "Formula: Q = 3 × 2π × f × C × V² × 10⁻⁹ (Delta 3-Phase Bank)" else "Formula: Q = 2π × f × C × V² × 10⁻⁹ (Star 3-Phase Bank / 1-Phase)"
                 )
             }
         }
@@ -1063,7 +1074,7 @@ private fun calculateOutput(
                 ConversionOutput.SingleValueResult(
                     value = uf,
                     unitEn = "µF",
-                    noteEn = if (conn == CapacitorConnectionType.DELTA) "Formula: C = (Q × 10⁹) / (2π × f × V²)" else "Formula: C = (Q × 3 × 10⁹) / (2π × f × V²)"
+                    noteEn = if (conn == CapacitorConnectionType.DELTA) "Formula: C = (Q × 10⁹) / (3 × 2π × f × V²) (Per Branch)" else "Formula: C = (Q × 10⁹) / (2π × f × V²) (Per Phase)"
                 )
             }
         }

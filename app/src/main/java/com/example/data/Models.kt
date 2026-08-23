@@ -115,9 +115,66 @@ object Catalog {
     private var isLoaded = false
 
     @Volatile
+    private var cachedDiagnostics: CatalogDiagnostics? = null
+
+    @Volatile
+    private var _supportedTypeCodes: Set<Int>? = null
+
+    val supportedTypeCodes: Set<Int>
+        get() {
+            _supportedTypeCodes?.let { return it }
+            val set = cableCatalog.map { it.typeCode }.toSet()
+            if (isLoaded) {
+                _supportedTypeCodes = set
+            }
+            return set
+        }
+
+    @Volatile
+    private var _cableTypesByName: Map<String, CableType>? = null
+
+    val cableTypesByName: Map<String, CableType>
+        get() {
+            _cableTypesByName?.let { return it }
+            val map = cableTypes.associateBy { it.cableType.trim().lowercase() }
+            if (isLoaded) {
+                _cableTypesByName = map
+            }
+            return map
+        }
+
+    @Volatile
     var lastError: Throwable? = null
 
+    fun invalidateIndexes() {
+        cachedDiagnostics = null
+        _supportedTypeCodes = null
+        _cableTypesByName = null
+    }
+
+    fun invalidateDiagnostics() {
+        invalidateIndexes()
+    }
+
+    fun findCableType(name: String?): CableType? {
+        if (name.isNullOrBlank()) return null
+        val normalized = name.trim().lowercase()
+        return cableTypesByName[normalized]
+            ?: cableTypes.firstOrNull { it.cableType.trim().equals(name.trim(), ignoreCase = true) }
+    }
+
+    fun isTypeCodeSupported(typeCode: Int): Boolean {
+        return supportedTypeCodes.contains(typeCode)
+    }
+
+    fun isCableTypeUnsupported(cableTypeName: String?): Boolean {
+        val type = findCableType(cableTypeName) ?: return false
+        return !isTypeCodeSupported(type.code)
+    }
+
     fun getDiagnostics(): CatalogDiagnostics {
+        cachedDiagnostics?.let { return it }
+
         val defined = cableTypes.size
         val typeCodesInCatalog = cableCatalog.map { it.typeCode }.toSet()
         val supported = cableTypes.count { it.code in typeCodesInCatalog }
@@ -139,7 +196,7 @@ object Catalog {
             else -> "COMPLETE"
         }
         
-        return CatalogDiagnostics(
+        val result = CatalogDiagnostics(
             isCableCatalogLoaded = cableCatalog.isNotEmpty(),
             isBreakerCatalogLoaded = breakers.isNotEmpty(),
             isAccessoryCatalogLoaded = accessories.isNotEmpty(),
@@ -156,6 +213,10 @@ object Catalog {
             duplicateKeys = duplicateKeysVal,
             orphanTypeCodes = orphanTypeCodesVal
         )
+        if (isLoaded || lastError != null) {
+            cachedDiagnostics = result
+        }
+        return result
     }
 
     fun readAsset(context: Context, filename: String): String {
@@ -314,9 +375,13 @@ object Catalog {
             }
 
             isLoaded = true
+            _supportedTypeCodes = cableCatalog.map { it.typeCode }.toSet()
+            _cableTypesByName = cableTypes.associateBy { it.cableType.trim().lowercase() }
+            cachedDiagnostics = null
         } catch (e: Exception) {
             lastError = e
             isLoaded = false
+            invalidateIndexes()
             throw RuntimeException("Catalog initialization failed: ${e.message}", e)
         }
     }

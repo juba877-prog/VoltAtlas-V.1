@@ -53,10 +53,12 @@ fun GlobalSettingsScreen(
     val drumDefaultCapacity by preferences.drumDefaultCapacity.collectAsState()
     val cableSafetyMargin by preferences.cableSafetyMargin.collectAsState()
     val cableCutOverhead by preferences.cableCutOverhead.collectAsState()
+    val trustedEngineerIdentity by preferences.trustedEngineerIdentity.collectAsState()
 
     var drumCapacityText by remember(drumDefaultCapacity) { mutableStateOf(drumDefaultCapacity.toString()) }
     var safetyMarginText by remember(cableSafetyMargin) { mutableStateOf((cableSafetyMargin * 100.0).toString()) }
     var cutOverheadText by remember(cableCutOverhead) { mutableStateOf(cableCutOverhead.toString()) }
+    var trustedEngineerIdentityText by remember(trustedEngineerIdentity) { mutableStateOf(trustedEngineerIdentity) }
 
     val projects by viewModel.projects.collectAsState()
     var showDiagnosticsDialog by remember { mutableStateOf(false) }
@@ -195,6 +197,33 @@ fun GlobalSettingsScreen(
                                     uncheckedTrackColor = BorderColor
                                 ),
                                 modifier = Modifier.testTag("confirm_destructive_switch")
+                            )
+                        }
+
+                        HorizontalDivider(color = BorderColor)
+
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "Engineer Identity for Proposal Approval",
+                                color = ThemeTextColor,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Required only for explicit Assistant proposal approvals. Leave blank to keep mutations unavailable.",
+                                color = SlateTextSecondary,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = trustedEngineerIdentityText,
+                                onValueChange = {
+                                    trustedEngineerIdentityText = it
+                                    preferences.setTrustedEngineerIdentity(it)
+                                },
+                                modifier = Modifier.fillMaxWidth().testTag("trusted_engineer_identity_input"),
+                                label = { Text("Engineer identity") },
+                                singleLine = true
                             )
                         }
 
@@ -1115,4 +1144,3 @@ private fun DiagnosticRow(label: String, loaded: Boolean, count: Int? = null) {
         }
     }
 }
-

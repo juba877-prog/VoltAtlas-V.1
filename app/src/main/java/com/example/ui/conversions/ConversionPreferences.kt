@@ -17,17 +17,18 @@ data class ConversionHistoryItem(
 class ConversionPreferences(context: Context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences("volt_atlas_conversions_prefs", Context.MODE_PRIVATE)
+    private val lock = Any()
 
     // FAVORITES
-    fun getFavorites(): Set<String> {
-        return prefs.getStringSet("favorite_tool_ids", emptySet()) ?: emptySet()
+    fun getFavorites(): Set<String> = synchronized(lock) {
+        prefs.getStringSet("favorite_tool_ids", emptySet()) ?: emptySet()
     }
 
-    fun isFavorite(toolId: String): Boolean {
-        return getFavorites().contains(toolId)
+    fun isFavorite(toolId: String): Boolean = synchronized(lock) {
+        getFavorites().contains(toolId)
     }
 
-    fun toggleFavorite(toolId: String): Boolean {
+    fun toggleFavorite(toolId: String): Boolean = synchronized(lock) {
         val current = getFavorites().toMutableSet()
         val isFav = if (current.contains(toolId)) {
             current.remove(toolId)
@@ -37,11 +38,11 @@ class ConversionPreferences(context: Context) {
             true
         }
         prefs.edit().putStringSet("favorite_tool_ids", current).apply()
-        return isFav
+        isFav
     }
 
     // HISTORY
-    fun getHistory(): List<ConversionHistoryItem> {
+    fun getHistory(): List<ConversionHistoryItem> = synchronized(lock) {
         val jsonStr = prefs.getString("conversion_history_json", null) ?: return emptyList()
         val list = mutableListOf<ConversionHistoryItem>()
         try {
@@ -62,10 +63,10 @@ class ConversionPreferences(context: Context) {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return list
+        list
     }
 
-    fun addHistoryItem(toolId: String, toolTitle: String, inputSummary: String, resultSummary: String) {
+    fun addHistoryItem(toolId: String, toolTitle: String, inputSummary: String, resultSummary: String) = synchronized(lock) {
         if (inputSummary.isBlank() || resultSummary.isBlank()) return
         val current = getHistory().toMutableList()
         
@@ -99,7 +100,7 @@ class ConversionPreferences(context: Context) {
         prefs.edit().putString("conversion_history_json", array.toString()).apply()
     }
 
-    fun clearHistory() {
+    fun clearHistory() = synchronized(lock) {
         prefs.edit().remove("conversion_history_json").apply()
     }
 }

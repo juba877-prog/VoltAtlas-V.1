@@ -309,4 +309,53 @@ class CatalogLoaderTest {
         println("Cables with NO MATCHING GLAND: $noGlandCount / ${cables.size}")
         missingBreakdown.forEach { println("  - $it") }
     }
+
+    @Test
+    fun testCatalogDiagnosticsCachingAndInvalidation() {
+        val d1 = com.example.data.Catalog.getDiagnostics()
+        val d2 = com.example.data.Catalog.getDiagnostics()
+        // If loaded, subsequent calls should return identical cached instance
+        org.junit.Assert.assertEquals(d1.status, d2.status)
+        com.example.data.Catalog.invalidateDiagnostics()
+        val d3 = com.example.data.Catalog.getDiagnostics()
+        org.junit.Assert.assertEquals(d1.status, d3.status)
+    }
+
+    @Test
+    fun testIndexedCatalogLookupFunctionalParity() {
+        val savedTypes = com.example.data.Catalog.cableTypes
+        val savedCatalog = com.example.data.Catalog.cableCatalog
+        try {
+            com.example.data.Catalog.cableTypes = listOf(
+                com.example.data.CableType(code = 1, cableType = "Cu/XLPE/PVC", conductor = "Cu", insulation = "XLPE", armour = "Unarmoured", cores = "Multi", voltage = "0.6/1kV", standard = "IEC", rColumn = "R_Cu90"),
+                com.example.data.CableType(code = 99, cableType = "Special/Unsupported", conductor = "Al", insulation = "PVC", armour = "Armoured", cores = "Single", voltage = "0.6/1kV", standard = "IEC", rColumn = "R_Al70")
+            )
+            com.example.data.Catalog.cableCatalog = listOf(
+                com.example.data.CableCatalogEntry(mfg = "Elsewedy", typeCode = 1, size = 4.0, model = "Model1", gnd = 0.0, duct = 0.0, air = 0.0, od = 10.0, wt = 100.0)
+            )
+            com.example.data.Catalog.invalidateIndexes()
+
+            // 1. Supported cable type (code 1 exists in catalog) -> isCableTypeUnsupported must be false
+            org.junit.Assert.assertFalse(com.example.data.Catalog.isCableTypeUnsupported("Cu/XLPE/PVC"))
+            org.junit.Assert.assertFalse(com.example.data.Catalog.isCableTypeUnsupported("  cu/xlpe/pvc  "))
+
+            // 2. Defined but unsupported cable type (code 99 has no entries in catalog) -> isCableTypeUnsupported must be true
+            org.junit.Assert.assertTrue(com.example.data.Catalog.isCableTypeUnsupported("Special/Unsupported"))
+
+            // 3. Unknown cable type (not in cableTypes) -> isCableTypeUnsupported must be false (matches legacy behavior)
+            org.junit.Assert.assertFalse(com.example.data.Catalog.isCableTypeUnsupported("NonExistentType"))
+            org.junit.Assert.assertFalse(com.example.data.Catalog.isCableTypeUnsupported(""))
+            org.junit.Assert.assertFalse(com.example.data.Catalog.isCableTypeUnsupported(null))
+
+            // 4. Empty catalog behavior
+            com.example.data.Catalog.cableCatalog = emptyList()
+            com.example.data.Catalog.invalidateIndexes()
+            org.junit.Assert.assertTrue("With empty catalog, defined types are unsupported", com.example.data.Catalog.isCableTypeUnsupported("Cu/XLPE/PVC"))
+            org.junit.Assert.assertFalse("Unknown types remain false with empty catalog", com.example.data.Catalog.isCableTypeUnsupported("Unknown"))
+        } finally {
+            com.example.data.Catalog.cableTypes = savedTypes
+            com.example.data.Catalog.cableCatalog = savedCatalog
+            com.example.data.Catalog.invalidateIndexes()
+        }
+    }
 }

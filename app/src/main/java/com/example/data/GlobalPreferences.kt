@@ -8,6 +8,21 @@ import kotlinx.coroutines.flow.asStateFlow
 class GlobalPreferences(context: Context) {
     private val sharedPrefs = context.applicationContext.getSharedPreferences("VoltAtlas_Globals", Context.MODE_PRIVATE)
 
+    /**
+     * Explicit, device-local engineer identity used only as the trusted principal for
+     * a separately confirmed proposal mutation. It is intentionally blank by default.
+     */
+    private val _trustedEngineerIdentity = MutableStateFlow(
+        sharedPrefs.getString("trusted_engineer_identity", "") ?: ""
+    )
+    val trustedEngineerIdentity: StateFlow<String> = _trustedEngineerIdentity.asStateFlow()
+
+    fun setTrustedEngineerIdentity(value: String) {
+        val normalized = value.trim()
+        sharedPrefs.edit().putString("trusted_engineer_identity", normalized).apply()
+        _trustedEngineerIdentity.value = normalized
+    }
+
     private val _confirmDestructiveActions = MutableStateFlow(
         sharedPrefs.getBoolean("confirm_destructive_actions", true)
     )
@@ -190,6 +205,7 @@ class GlobalPreferences(context: Context) {
 
     fun resetToDefaults() {
         sharedPrefs.edit().clear().apply()
+        _trustedEngineerIdentity.value = ""
         _confirmDestructiveActions.value = true
         _startupBehavior.value = "ALWAYS_SHOW_PICKER"
         _themeMode.value = "DARK"
@@ -249,4 +265,3 @@ class GlobalPreferences(context: Context) {
         sharedPrefs.edit().putString("report_revision_$projectId", value).apply()
     }
 }
-

@@ -12,6 +12,7 @@ import com.example.ai.proposal.RevalidationOutcome
 import com.example.ai.proposal.RevalidationStatus
 import com.example.ai.runtime.BoundedProjectContext
 import com.example.ai.conversation.ConversationTaskState
+import com.example.ai.conversation.ConversationActionType
 import com.example.ai.conversation.ConversationTurnInput
 import com.example.ai.hybrid.ConversationEngine
 import com.example.ai.hybrid.ConversationEngineProvider
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -88,12 +90,22 @@ data class AssistantUiState(
  */
 class EngineeringAssistantViewModel(
     private val conversationEngine: ConversationEngine = ConversationEngineProvider.provideConversationEngine(),
+    /** Supplied by the production factory; nullable only to preserve isolated legacy UI tests. */
+    approvalGateway: TrustedProposalApprovalGateway? = null,
+    private val approvalGatewayProvider: (() -> TrustedProposalApprovalGateway?)? = null,
+    private val proposalPreparationCoordinator: CableProposalPreparationCoordinator? = null,
     private val aiService: EngineeringAiService = FirebaseAiServiceImpl()
 ) : ViewModel() {
 
-    internal var approvalGateway: TrustedProposalApprovalGateway? = null
+    private var _approvalGateway: TrustedProposalApprovalGateway? = approvalGateway
+    internal var approvalGateway: TrustedProposalApprovalGateway?
+        get() = _approvalGateway ?: approvalGatewayProvider?.invoke()?.also { _approvalGateway = it }
+        set(value) { _approvalGateway = value }
+
     private var currentTurnId: Long = 0L
+    private var activeTurnJob: Job? = null
     private var activeConversationState: ConversationTaskState? = null
+    private var activeProposalReview: Pair<CableEngineeringProposal, ProposalReviewUiModel>? = null
 
     private val _uiState = MutableStateFlow(AssistantUiState())
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
@@ -124,6 +136,9 @@ class EngineeringAssistantViewModel(
     }
 
     fun close() {
+        currentTurnId++
+        activeTurnJob?.cancel()
+        activeTurnJob = null
         _uiState.update { it.copy(state = AssistantState.CLOSED) }
     }
 
@@ -175,7 +190,8 @@ class EngineeringAssistantViewModel(
             activeEntityName = currentCtx.activeEntityName
         )
 
-        viewModelScope.launch {
+        activeTurnJob?.cancel()
+        activeTurnJob = viewModelScope.launch {
             val input = ConversationTurnInput(
                 userUtterance = trimmed,
                 projectContext = boundedContext,
@@ -193,12 +209,31 @@ class EngineeringAssistantViewModel(
         }
     }
 
-    private fun applyHybridResult(
+    private suspend fun applyHybridResult(
         result: HybridEngineResult,
         projectContext: BoundedProjectContext
     ) {
         val decision = result.decision
         activeConversationState = decision.updatedState
+
+        if (decision.action.actionType == ConversationActionType.CREATE_PROPOSAL) {
+            when (val preparation = proposalPreparationCoordinator?.prepare(decision.action, projectContext, decision.decisionId)) {
+                is CableProposalPreparationCoordinator.Result.Ready -> {
+                    activeProposalReview = preparation.proposal to preparation.review
+                    _uiState.update { current ->
+                        current.copy(
+                            state = AssistantState.PROPOSAL_REVIEW,
+                            typedCards = current.typedCards.filterNot { it is AssistantCardUiModel.ProposalReviewCard } +
+                                AssistantCardUiModel.ProposalReviewCard("REVIEW-" + preparation.proposal.proposalId, preparation.review),
+                            isThinking = false
+                        )
+                    }
+                }
+                is CableProposalPreparationCoordinator.Result.SafeError -> appendProposalPreparationError(preparation.message)
+                null -> appendProposalPreparationError("Proposal review is unavailable in this composition.")
+            }
+            return
+        }
 
         val sheetUiState = AssistantResponseMapper.mapDecisionToUiState(
             decision = decision,
@@ -230,6 +265,32 @@ class EngineeringAssistantViewModel(
                 header = updatedHeader,
                 isThinking = false
             )
+        }
+    }
+
+    private fun appendProposalPreparationError(message: String) {
+        _uiState.update { current ->
+            current.copy(
+                typedCards = current.typedCards + AssistantCardUiModel.SafeErrorCard(
+                    cardId = "PROPOSAL-PREPARATION-ERROR-" + UUID.randomUUID(),
+                    userFacingMessage = message
+                ),
+                isThinking = false
+            )
+        }
+    }
+
+    fun onProposalReviewAction(action: ProposalReviewActionType) {
+        val review = activeProposalReview ?: return
+        when (action) {
+            ProposalReviewActionType.CONTINUE_TO_APPROVAL_NON_EXECUTABLE -> onContinueToApproval(review.first, review.second)
+            ProposalReviewActionType.CANCEL_PROPOSAL_REVIEW -> {
+                activeProposalReview = null
+                _uiState.update { current ->
+                    current.copy(typedCards = current.typedCards.filterNot { it is AssistantCardUiModel.ProposalReviewCard })
+                }
+            }
+            else -> Unit
         }
     }
 
@@ -422,7 +483,15 @@ class EngineeringAssistantViewModel(
                         )
                     }
                 }
-                is TrustedApprovalGateResult.PrincipalMissing,
+                is TrustedApprovalGateResult.PrincipalMissing -> {
+                    _uiState.update { state ->
+                        state.copy(
+                            approvalExecutionState = ApprovalExecutionUiState.FailedPreCommit(
+                                "Approval unavailable because engineer identity is not configured. Configure it in Global Settings."
+                            )
+                        )
+                    }
+                }
                 is TrustedApprovalGateResult.ValidationFailed,
                 is TrustedApprovalGateResult.Failure -> {
                     _uiState.update { state ->

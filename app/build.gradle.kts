@@ -147,7 +147,6 @@ dependencies {
   // implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
-  implementation(libs.google.genai)
   // Uncomment to use Firestore:
   // implementation(libs.firebase.firestore)
 
@@ -187,4 +186,55 @@ dependencies {
   debugImplementation(libs.androidx.compose.ui.tooling)
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
+}
+
+// =============================================================================
+// TEST EXECUTION PROFILES (AI FREEZE / FAST DEV LOOP)
+// =============================================================================
+tasks.withType<Test>().configureEach {
+  val rawProfile = (project.findProperty("profile") ?: project.findProperty("testProfile") ?: "fast").toString().trim().lowercase()
+
+  when (rawProfile) {
+    "fast", "dev" -> {
+      // Default Fast Profile: Core engineering & product tests only.
+      // Excludes AI subsystem, heavy screenshot/preview, and stress/scale/fuzz suites.
+      filter {
+        excludeTestsMatching("com.example.ai.*")
+        excludeTestsMatching("com.example.DashboardPreviewTest")
+        excludeTestsMatching("com.example.sld.SldScreenScreenshotTest")
+        excludeTestsMatching("com.example.ui.DashboardScreenshotTest")
+        excludeTestsMatching("com.example.GreetingScreenshotTest")
+        excludeTestsMatching("com.example.AllEnginesComprehensiveStressTest")
+        excludeTestsMatching("com.example.MasterEngineeringStressTest")
+        excludeTestsMatching("com.example.StressTestSuite")
+        excludeTestsMatching("com.example.stress.*")
+        excludeTestsMatching("com.example.ViewModelAndStateStressTest")
+      }
+    }
+    "ai" -> {
+      // AI-Only Profile: Run only AI subsystem tests under com.example.ai.*
+      filter {
+        includeTestsMatching("com.example.ai.*")
+      }
+    }
+    "stress" -> {
+      // Stress Profile: Run explicitly identified stress, scale, and fuzz suites
+      filter {
+        includeTestsMatching("com.example.AllEnginesComprehensiveStressTest")
+        includeTestsMatching("com.example.MasterEngineeringStressTest")
+        includeTestsMatching("com.example.StressTestSuite")
+        includeTestsMatching("com.example.stress.*")
+        includeTestsMatching("com.example.ViewModelAndStateStressTest")
+      }
+    }
+    "full", "all" -> {
+      // Full Profile: Execute all tests across the repository without exclusions
+    }
+    else -> {
+      throw GradleException(
+        "Unknown test execution profile: '$rawProfile'. " +
+        "Supported profiles are: 'fast' (default), 'dev', 'ai', 'full', 'all', 'stress'."
+      )
+    }
+  }
 }

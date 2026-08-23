@@ -255,7 +255,7 @@ fun EngineeringAssistantSheet(
                             is AssistantCardUiModel.ProposalReviewCard -> {
                                 AssistantProposalReviewCard(
                                     model = card.model,
-                                    onActionClick = { /* Action handling */ }
+                                    onActionClick = { action -> viewModel.onProposalReviewAction(action.actionType) }
                                 )
                             }
                             is AssistantCardUiModel.ApprovalConfirmationCard -> {

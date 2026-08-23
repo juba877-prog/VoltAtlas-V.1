@@ -48,7 +48,7 @@ class ElectricalConvertersTest {
             uf = 100.0,
             voltageV = 400.0,
             freqHz = 50.0,
-            connection = CapacitorConnectionType.SINGLE_OR_STAR
+            connection = CapacitorConnectionType.STAR
         )
         val deltaKvar = ElectricalConverters.microFaradToKvar(
             uf = 100.0,
@@ -57,6 +57,11 @@ class ElectricalConvertersTest {
             connection = CapacitorConnectionType.DELTA
         )
 
+        // Absolute physical values:
+        // Star: Q = 2π * 50 * 100 * 400² * 1e-9 = 5.0265 kVAR
+        // Delta: Q = 3 * Star = 15.0796 kVAR
+        assertEquals(5.0265, starKvar, 1e-3)
+        assertEquals(15.0796, deltaKvar, 1e-3)
         assertEquals(deltaKvar, 3.0 * starKvar, 1e-4)
     }
 
@@ -70,6 +75,12 @@ class ElectricalConvertersTest {
         val calculatedUf = ElectricalConverters.kvarToMicroFarad(kvar, voltage, freq, CapacitorConnectionType.DELTA)
 
         assertEquals(originalUf, calculatedUf, 1e-4)
+
+        // Semantic API test
+        val semanticUf = ElectricalConverters.totalBankKvarToPerBranchMicroFarad(kvar, voltage, freq, CapacitorConnectionType.DELTA)
+        val semanticKvar = ElectricalConverters.perBranchMicroFaradToTotalBankKvar(semanticUf, voltage, freq, CapacitorConnectionType.DELTA)
+        assertEquals(originalUf, semanticUf, 1e-4)
+        assertEquals(kvar, semanticKvar, 1e-4)
     }
 
     @Test

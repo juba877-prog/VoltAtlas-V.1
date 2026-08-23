@@ -656,6 +656,24 @@ internal class DurableMutationWorkflow(
             }
         }
     }
+
+    companion object {
+        fun createGateway(
+            database: AppDatabase,
+            catalogRepository: CatalogRepository,
+            principalProvider: com.example.ai.approval.TrustedPrincipalProvider
+        ): com.example.ai.approval.TrustedProposalApprovalGateway {
+            val workflow = DurableMutationWorkflow(
+                db = database,
+                catalogRepository = catalogRepository
+            )
+            return com.example.ai.approval.TrustedProposalApprovalGateway(
+                approvalGrantDao = database.approvalGrantDao(),
+                durableWorkflow = workflow,
+                principalProvider = principalProvider
+            )
+        }
+    }
 }
 
 private fun CablePatchInstructions.toCableCircuitPatch(): CableCircuitPatch {

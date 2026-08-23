@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -351,7 +352,7 @@ fun ProjectPickerScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Quick Cable Sizing Scratchpad Action Button
+                    // Quick Engineering Standalone Scratchpad Action Button
                     OutlinedButton(
                         onClick = onOpenQuickCalc,
                         modifier = Modifier
@@ -368,17 +369,17 @@ fun ProjectPickerScreen(
                             horizontalArrangement = Arrangement.Center
                         ) {
                             Icon(
-                                imageVector = ElectricalIcons.Circuits,
-                                contentDescription = "Quick Cable Sizing",
+                                imageVector = Icons.Default.Bolt,
+                                contentDescription = "Quick Engineering",
                                 tint = BrandGreen,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Quick Cable Sizing",
+                                text = "Quick Engineering",
                                 color = BrandGreen,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
+                                fontSize = 14.sp
                             )
                         }
                     }

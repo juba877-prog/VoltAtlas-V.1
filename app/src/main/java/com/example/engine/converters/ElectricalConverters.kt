@@ -8,8 +8,9 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 enum class CapacitorConnectionType {
-    SINGLE_OR_STAR,
-    DELTA
+    DELTA,
+    STAR,
+    SINGLE_OR_STAR
 }
 
 data class CableConversionResult(
@@ -169,28 +170,78 @@ object ElectricalConverters {
         return (torqueNm * rpm) / 9549.29658
     }
 
-    // Capacitor uF <-> kVAR
+    // =========================================================================
+    // CAPACITOR BANK CONVERSIONS (Total Bank kVAR <-> Per-Branch/Phase µF)
+    // =========================================================================
+
+    /**
+     * Converts capacitance (µF per branch or per phase) to total capacitor bank reactive power (kVAR).
+     *
+     * Physical Derivation:
+     * - Single branch reactive power: Q_branch = 2π * f * C * V_branch² * 1e-9 (kVAR)
+     * - 3-Phase Star (Y) or 1-Phase: V_branch = V_LL / √3 -> Q_total = 3 * Q_branch = 2π * f * C_uF * V_LL² * 1e-9 (kVAR)
+     * - 3-Phase Delta (Δ):          V_branch = V_LL      -> Q_total = 3 * Q_branch = 3 * 2π * f * C_uF * V_LL² * 1e-9 (kVAR)
+     *
+     * @param uf Capacitance in µF per branch (Delta) or per phase (Star/1-Phase)
+     * @param voltageV Line-to-line voltage for 3-Phase, or system voltage for 1-Phase
+     * @param freqHz Power frequency in Hz (default: 50.0)
+     * @param connection Capacitor bank connection topology (DELTA or STAR/SINGLE_OR_STAR)
+     * @return Total capacitor bank reactive power in kVAR
+     */
     fun microFaradToKvar(
         uf: Double,
         voltageV: Double,
         freqHz: Double = 50.0,
-        connection: CapacitorConnectionType = CapacitorConnectionType.SINGLE_OR_STAR
+        connection: CapacitorConnectionType = CapacitorConnectionType.DELTA
     ): Double {
-        if (voltageV <= 0 || freqHz <= 0 || uf <= 0) return 0.0
-        val baseStar = (2.0 * Math.PI * freqHz * uf * voltageV * voltageV * 1e-9) / 3.0
-        return if (connection == CapacitorConnectionType.DELTA) baseStar * 3.0 else baseStar
+        if (voltageV <= 0.0 || freqHz <= 0.0 || uf <= 0.0) return 0.0
+        val baseStarKvar = 2.0 * Math.PI * freqHz * uf * voltageV * voltageV * 1e-9
+        return if (connection == CapacitorConnectionType.DELTA) baseStarKvar * 3.0 else baseStarKvar
     }
 
+    /**
+     * Converts total capacitor bank reactive power (kVAR) to capacitance (µF per branch or per phase).
+     *
+     * Physical Derivation:
+     * - 3-Phase Star (Y) or 1-Phase: C_uF (per phase)  = (Q_total * 1e9) / (2π * f * V_LL²)
+     * - 3-Phase Delta (Δ):          C_uF (per branch) = (Q_total * 1e9) / (3 * 2π * f * V_LL²) = C_Star / 3
+     *
+     * @param kvar Total reactive power of the capacitor bank in kVAR
+     * @param voltageV Line-to-line voltage for 3-Phase, or system voltage for 1-Phase
+     * @param freqHz Power frequency in Hz (default: 50.0)
+     * @param connection Capacitor bank connection topology (DELTA or STAR/SINGLE_OR_STAR)
+     * @return Capacitance in µF per branch (Delta) or per phase (Star/1-Phase)
+     */
     fun kvarToMicroFarad(
         kvar: Double,
         voltageV: Double,
         freqHz: Double = 50.0,
-        connection: CapacitorConnectionType = CapacitorConnectionType.SINGLE_OR_STAR
+        connection: CapacitorConnectionType = CapacitorConnectionType.DELTA
     ): Double {
-        if (voltageV <= 0 || freqHz <= 0 || kvar <= 0) return 0.0
-        val baseUf = (kvar * 3.0 * 1e9) / (2.0 * Math.PI * freqHz * voltageV * voltageV)
-        return if (connection == CapacitorConnectionType.DELTA) baseUf / 3.0 else baseUf
+        if (voltageV <= 0.0 || freqHz <= 0.0 || kvar <= 0.0) return 0.0
+        val starUf = (kvar * 1e9) / (2.0 * Math.PI * freqHz * voltageV * voltageV)
+        return if (connection == CapacitorConnectionType.DELTA) starUf / 3.0 else starUf
     }
+
+    /**
+     * Explicit semantic API: Converts total capacitor bank reactive power (kVAR) to per-branch/phase capacitance (µF).
+     */
+    fun totalBankKvarToPerBranchMicroFarad(
+        totalKvar: Double,
+        voltageV: Double,
+        freqHz: Double = 50.0,
+        connection: CapacitorConnectionType = CapacitorConnectionType.DELTA
+    ): Double = kvarToMicroFarad(totalKvar, voltageV, freqHz, connection)
+
+    /**
+     * Explicit semantic API: Converts per-branch/phase capacitance (µF) to total capacitor bank reactive power (kVAR).
+     */
+    fun perBranchMicroFaradToTotalBankKvar(
+        ufPerBranch: Double,
+        voltageV: Double,
+        freqHz: Double = 50.0,
+        connection: CapacitorConnectionType = CapacitorConnectionType.DELTA
+    ): Double = microFaradToKvar(ufPerBranch, voltageV, freqHz, connection)
 
     // =========================================================================
     // NEW CONVERTERS (1 to 6)
@@ -231,6 +282,38 @@ object ElectricalConverters {
         val amps = (pKw * 1000.0) / (factor * voltageV * clampedCos)
         val sKva = (factor * voltageV * amps) / 1000.0
         return CurrentPowerResult(pKw, sKva, amps)
+    }
+
+    // Direct Apparent Power (kVA) <-> Current (Amps) Conversion (Independent of PF)
+    fun apparentPowerToCurrent(sKva: Double, voltageV: Double = 400.0, isThreePhase: Boolean = true): Double {
+        if (sKva <= 0.0 || voltageV <= 0.0) return 0.0
+        val factor = if (isThreePhase) sqrt(3.0) else 1.0
+        return (sKva * 1000.0) / (factor * voltageV)
+    }
+
+    fun currentToApparentPower(amps: Double, voltageV: Double = 400.0, isThreePhase: Boolean = true): Double {
+        if (amps <= 0.0 || voltageV <= 0.0) return 0.0
+        val factor = if (isThreePhase) sqrt(3.0) else 1.0
+        return (factor * voltageV * amps) / 1000.0
+    }
+
+    fun apparentToActivePower(sKva: Double, cosPhi: Double): Double {
+        if (sKva <= 0.0) return 0.0
+        val clampedCos = cosPhi.coerceIn(0.0, 1.0)
+        return sKva * clampedCos
+    }
+
+    fun activeToApparentPower(pKw: Double, cosPhi: Double): Double {
+        if (pKw <= 0.0) return 0.0
+        val clampedCos = cosPhi.coerceIn(0.01, 1.0)
+        return pKw / clampedCos
+    }
+
+    fun reactivePowerFromSAndCosPhi(sKva: Double, cosPhi: Double): Double {
+        if (sKva <= 0.0) return 0.0
+        val clampedCos = cosPhi.coerceIn(0.0, 1.0)
+        val sinPhi = sqrt((1.0 - clampedCos * clampedCos).coerceAtLeast(0.0))
+        return sKva * sinPhi
     }
 
     // 3. Power Factor Correction (kVAR Needed)

@@ -15,7 +15,7 @@ import java.util.UUID
  * - Pre-Issuance Revalidation: Verifies proposal policy, digests, semantic keys, and optimistic revision CAS.
  * - Single-Use: Inserts a single durable [ApprovalGrantEntity] before invoking [DurableMutationWorkflow].
  */
-internal class TrustedProposalApprovalGateway(
+class TrustedProposalApprovalGateway internal constructor(
     private val approvalGrantDao: ApprovalGrantDao,
     private val durableWorkflow: DurableMutationWorkflow,
     private val policyValidator: ProposalPolicyValidator = DefaultProposalPolicyValidator(),

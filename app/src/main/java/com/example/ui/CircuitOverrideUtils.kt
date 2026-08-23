@@ -18,9 +18,6 @@ fun normalizeCableOverride(value: String?): String? {
     }
 }
 
-fun cableOverrideForDisplay(value: String?): String =
-    value?.takeIf { it.isNotBlank() } ?: "AUTO"
-
 fun normalizeDeviceSizeOverride(value: String?): Double? {
     val cleaned = value?.trim().orEmpty()
     if (cleaned.isBlank() || cleaned.equals("AUTO", ignoreCase = true)) {
@@ -31,11 +28,6 @@ fun normalizeDeviceSizeOverride(value: String?): Double? {
         .trim()
         .toDoubleOrNull()
 }
-
-fun deviceSizeOverrideForDisplay(value: Double?): String =
-    value?.let {
-        if (it % 1.0 == 0.0) "${it.toInt()} A" else "$it A"
-    } ?: "AUTO"
 
 fun normalizeDeviceTypeOverride(value: String?): String? {
     val cleaned = value?.trim().orEmpty()

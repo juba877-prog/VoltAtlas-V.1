@@ -108,6 +108,26 @@ class QuickCableCalcTest {
             }
             Catalog.dataSheet = dsList
             Catalog.deratingData = JSONObject(deratingDataJson)
+
+            val ccArray = JSONArray(cableCatalogJson)
+            val ccList = mutableListOf<CableCatalogEntry>()
+            for (i in 0 until ccArray.length()) {
+                val obj = ccArray.getJSONObject(i)
+                ccList.add(
+                    CableCatalogEntry(
+                        mfg = obj.getString("mfg"),
+                        typeCode = obj.getInt("typeCode"),
+                        size = obj.getDouble("size"),
+                        model = obj.optString("model", "IEC-Generic-${obj.optDouble("size")}"),
+                        gnd = obj.getDouble("gnd"),
+                        duct = obj.getDouble("duct"),
+                        air = obj.getDouble("air"),
+                        od = obj.optDouble("od", 0.0),
+                        wt = obj.optDouble("wt", 0.0)
+                    )
+                )
+            }
+            Catalog.cableCatalog = ccList
         }
     }
 

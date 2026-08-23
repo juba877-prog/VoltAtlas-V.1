@@ -65,7 +65,10 @@ fun isMoreTabSelected(currentTab: Int): Boolean {
 }
 
 @Composable
-fun MainLayout(viewModel: EngineeringViewModel) {
+fun MainLayout(
+    viewModel: EngineeringViewModel,
+    assistantViewModel: com.example.ai.ui.EngineeringAssistantViewModel
+) {
     val state by viewModel.uiState.collectAsState()
 
     val activeId by viewModel.activeProjectId.collectAsState()
@@ -74,7 +77,6 @@ fun MainLayout(viewModel: EngineeringViewModel) {
     val showGlobalSettings by viewModel.showGlobalSettings.collectAsState()
     val confirmDestructiveActions by viewModel.preferences.confirmDestructiveActions.collectAsState()
 
-    val assistantViewModel: com.example.ai.ui.EngineeringAssistantViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val assistantUiState by assistantViewModel.uiState.collectAsState()
 
     var currentTab by rememberSaveable { mutableStateOf(0) }
@@ -107,7 +109,8 @@ fun MainLayout(viewModel: EngineeringViewModel) {
     val pdfScope = rememberCoroutineScope()
     var currentReportOptions by remember { mutableStateOf(com.example.pdf.ReportOptions()) }
 
-    var showQuickCalc by rememberSaveable { mutableStateOf(false) }
+    var showQuickEngineering by rememberSaveable { mutableStateOf(false) }
+    var selectedQuickToolId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val createPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) {
@@ -126,10 +129,29 @@ fun MainLayout(viewModel: EngineeringViewModel) {
         return
     }
 
-    if (showQuickCalc) {
-        QuickCableCalcScreen(
-            onBack = { showQuickCalc = false }
-        )
+    if (showQuickEngineering) {
+        val activeToolId = selectedQuickToolId
+        if (activeToolId == null) {
+            QuickEngineeringHubScreen(
+                onSelectTool = { selectedQuickToolId = it },
+                onBack = { 
+                    showQuickEngineering = false 
+                    selectedQuickToolId = null
+                }
+            )
+        } else {
+            when (activeToolId) {
+                "cable_sizing" -> QuickCableCalcScreen(onBack = { selectedQuickToolId = null })
+                "voltage_drop" -> com.example.ui.screens.quick.QuickVoltageDropScreenV2(onBack = { selectedQuickToolId = null })
+                "load_current" -> com.example.ui.screens.quick.QuickLoadCurrentScreenV2(onBack = { selectedQuickToolId = null })
+                "power_triangle" -> QuickPowerTriangleScreen(onBack = { selectedQuickToolId = null })
+                "pfc" -> com.example.ui.screens.quick.QuickPfcScreenV2(onBack = { selectedQuickToolId = null })
+                "transformer_quick" -> QuickTransformerScreen(onBack = { selectedQuickToolId = null })
+                "transformer_sc" -> QuickTransformerScScreen(onBack = { selectedQuickToolId = null })
+                "lighting" -> QuickLightingScreen(onBack = { selectedQuickToolId = null })
+                else -> QuickCableCalcScreen(onBack = { selectedQuickToolId = null })
+            }
+        }
         return
     }
 
@@ -143,7 +165,10 @@ fun MainLayout(viewModel: EngineeringViewModel) {
             onExportProjectJson = { id -> viewModel.exportProjectJson(id) },
             onImportProjectJson = { jsonStr, callback -> viewModel.importProjectJson(jsonStr, callback) },
             onOpenSettings = { viewModel.openGlobalSettings() },
-            onOpenQuickCalc = { showQuickCalc = true },
+            onOpenQuickCalc = { 
+                showQuickEngineering = true
+                selectedQuickToolId = null
+            },
             confirmDestructiveActions = confirmDestructiveActions
         )
 
@@ -186,8 +211,6 @@ fun MainLayout(viewModel: EngineeringViewModel) {
         exportActiveProjectLauncher.launch(defaultFileName)
     }
     val projectName = activeProject?.projectName ?: "VoltAtlas"
-
-    
     var panelScheduleReturnTab by rememberSaveable { mutableStateOf(9) }
     var isSldFullscreen by rememberSaveable { mutableStateOf(false) }
     val sldManualPositions = remember(activeProject?.projectId) { androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.geometry.Offset>() }

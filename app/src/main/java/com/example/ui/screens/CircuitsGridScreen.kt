@@ -36,6 +36,8 @@ import com.example.ui.dialogs.CircuitEditDialog
 import com.example.ui.catalogCableSizeOptions
 import com.example.ui.theme.*
 
+private val PANEL_TYPES = setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER")
+
 @OptIn(ExperimentalAnimationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun CircuitsGridScreen(
@@ -217,6 +219,11 @@ fun CircuitsGridScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
+                                    val childCircuits = state.circuits.filter { it.fedFrom.trim().equals(circ.circuitName.trim(), ignoreCase = true) }
+                                    val hasChildren = childCircuits.isNotEmpty()
+                                    val pType = circ.panelType?.trim()?.uppercase() ?: ""
+                                    val isPanelRow = pType in PANEL_TYPES || hasChildren
+
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             circ.circuitName,
@@ -227,9 +234,6 @@ fun CircuitsGridScreen(
                                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f, fill = false)
                                         )
-
-                                        val pType = circ.panelType?.trim()?.uppercase() ?: ""
-                                        val isPanelRow = pType in setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER") || state.circuits.any { it.fedFrom.trim().equals(circ.circuitName.trim(), ignoreCase = true) }
 
                                         if (isPanelRow) {
                                             Spacer(modifier = Modifier.width(6.dp))
@@ -257,63 +261,58 @@ fun CircuitsGridScreen(
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text("Fed from: ${circ.fedFrom}  •  ${circ.loadKVA} kVA | ${circ.phases}", color = SlateTextSecondary, fontSize = 11.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                     
-                                    val childCircuits = state.circuits.filter { it.fedFrom.trim().equals(circ.circuitName.trim(), ignoreCase = true) }
-                                    val hasChildren = childCircuits.isNotEmpty()
                                     val childrenTotalLoad = childCircuits.sumOf { it.loadKVA }
-                                    val childrenDiffers = Math.abs(circ.loadKVA - childrenTotalLoad) > 0.001
+                                    val childrenDiffers = kotlin.math.abs(circ.loadKVA - childrenTotalLoad) > 0.001
                                     val isUnconfirmedConflict = hasChildren && circ.directLoadConfirmed == null && childrenDiffers
-                                    
-                                    if (isUnconfirmedConflict) {
-                                        Surface(
-                                            onClick = {
-                                                viewModel.selectedCircuitId.value = circ.id
-                                                onNavigateToPanelSchedule?.invoke(circ.id)
-                                            },
-                                            color = StatusWarning.copy(alpha = 0.15f),
-                                            shape = RoundedCornerShape(6.dp),
-                                            border = BorderStroke(1.dp, StatusWarning.copy(alpha = 0.5f)),
-                                            modifier = Modifier
-                                                .padding(top = 4.dp)
-                                                .testTag("unconfirmed_conflict_badge_${circ.circuitName}")
+                                
+                                if (isUnconfirmedConflict) {
+                                    Surface(
+                                        onClick = {
+                                            viewModel.selectedCircuitId.value = circ.id
+                                            onNavigateToPanelSchedule?.invoke(circ.id)
+                                        },
+                                        color = StatusWarning.copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(6.dp),
+                                        border = BorderStroke(1.dp, StatusWarning.copy(alpha = 0.5f)),
+                                        modifier = Modifier
+                                            .padding(top = 4.dp)
+                                            .testTag("unconfirmed_conflict_badge_${circ.circuitName}")
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Warning,
-                                                    contentDescription = "Load conflict warning",
-                                                    tint = StatusWarning,
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = "Superseded by ${Math.round(childrenTotalLoad * 10.0) / 10.0} kVA from children — tap to review in Panel Schedule",
-                                                    color = StatusWarning,
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    maxLines = 1,
-                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                                )
-                                            }
+                                            Icon(
+                                                imageVector = Icons.Default.Warning,
+                                                contentDescription = "Load conflict warning",
+                                                tint = StatusWarning,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "Superseded by ${Math.round(childrenTotalLoad * 10.0) / 10.0} kVA from children — tap to review in Panel Schedule",
+                                                color = StatusWarning,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
                                         }
                                     }
-                                    
-                                    val selectedType = Catalog.cableTypes.firstOrNull {
-                                        it.cableType.trim().equals(circ.cableType.trim(), ignoreCase = true)
-                                    }
-                                    val isUnsupported = selectedType != null && Catalog.cableCatalog.none { it.typeCode == selectedType.code }
-                                    if (isUnsupported) {
-                                        Text(
-                                            text = "Catalog data is not available for this cable family.",
-                                            color = SleekWarning,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 2,
-                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                            modifier = Modifier.padding(top = 4.dp).testTag("unsupported_warning_${circ.circuitName}")
-                                        )
-                                    }
+                                }
+                                
+                                val isUnsupported = Catalog.isCableTypeUnsupported(circ.cableType)
+                                if (isUnsupported) {
+                                    Text(
+                                        text = "Catalog data is not available for this cable family.",
+                                        color = SleekWarning,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = 4.dp).testTag("unsupported_warning_${circ.circuitName}")
+                                    )
+                                }
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                                 if (result != null) {

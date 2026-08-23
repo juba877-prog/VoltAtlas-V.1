@@ -254,7 +254,7 @@ class MultiInstancePowerSystemsTest {
         }
 
         val emissions = mutableListOf<com.example.ui.UiState.Success>()
-        val job = launch {
+        val job = launch(kotlinx.coroutines.Dispatchers.Unconfined) {
             uiStateFlow.collect { state ->
                 (state as? com.example.ui.UiState.Success)?.let { emissions.add(it) }
             }
