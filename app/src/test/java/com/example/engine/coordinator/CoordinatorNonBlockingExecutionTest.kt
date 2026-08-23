@@ -256,4 +256,45 @@ class CoordinatorNonBlockingExecutionTest {
         jobs.joinAll()
         assertEquals(10, completedCount.get())
     }
+
+    @Test
+    fun testProductionStandaloneCalculation_executesSynchronouslyWithNullProvider() {
+        EngineeringCalculationCoordinator.projectRevisionProvider = null
+
+        val pid = "PRJ_DIRECT_SYNC"
+        val circuit = CircuitEntity(
+            id = 901,
+            circuitName = "Direct-Sync-Circuit",
+            projectId = pid,
+            loadKVA = 15.0,
+            voltageV = 400,
+            pf = 0.85,
+            length_m = 25.0,
+            cableType = "Cu/XLPE",
+            installation = "In air",
+            fedFrom = "Transformer",
+            transformerId = "TX-01"
+        )
+        val transformers = listOf(
+            TransformerEntity(
+                projectId = pid,
+                transformerId = "TX-01",
+                transformerName = "Main Tx",
+                kVA = 1000.0,
+                voltage = 400,
+                percentZ = 5.0,
+                xr = 5.0
+            )
+        )
+
+        // In production UI, projectRevisionProvider is null.
+        // Standard synchronous calculation must complete immediately on current thread without entering runBlocking.
+        val res = EngineeringCalculationCoordinator.calculateCableSizing(circuit, listOf(circuit), transformers)
+        assertNotNull(res)
+
+        val scope = CalculationScope(pid, CalculationEntityType.CIRCUIT, "901", CalculationDomain.CABLE_SIZING)
+        val record = EngineeringCalculationCoordinator.freshnessRegistry.getRecord(scope)
+        assertNotNull(record)
+        assertEquals(1L, record!!.calculatedProjectRevision)
+    }
 }

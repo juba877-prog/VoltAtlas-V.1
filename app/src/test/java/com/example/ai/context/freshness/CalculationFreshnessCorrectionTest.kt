@@ -938,18 +938,21 @@ class CalculationFreshnessCorrectionTest {
         }
     }
 
-    private class FakeDataProvider : ProjectFreshnessDataProvider {
-        private val circuits = mutableListOf<CircuitEntity>()
-        private val transformers = mutableListOf<TransformerEntity>()
+    private class FakeDataProvider : InMemoryProjectFreshnessDataProvider() {
+        private val mutableCircuits = mutableListOf<CircuitEntity>()
+        private val mutableTransformers = mutableListOf<TransformerEntity>()
+        override val circuits: List<CircuitEntity> get() = mutableCircuits
+        override val transformers: List<TransformerEntity> get() = mutableTransformers
+
         fun addCircuit(c: CircuitEntity) {
-            circuits.removeAll { it.id == c.id && it.projectId == c.projectId }
-            circuits.add(c)
+            mutableCircuits.removeAll { it.id == c.id && it.projectId == c.projectId }
+            mutableCircuits.add(c)
         }
         fun addTransformer(t: TransformerEntity) {
-            transformers.removeAll { it.transformerId.equals(t.transformerId, ignoreCase = true) && it.projectId == t.projectId }
-            transformers.add(t)
+            mutableTransformers.removeAll { it.transformerId.equals(t.transformerId, ignoreCase = true) && it.projectId == t.projectId }
+            mutableTransformers.add(t)
         }
-        override suspend fun getCircuits(projectId: String) = circuits.filter { it.projectId == projectId }
-        override suspend fun getTransformers(projectId: String) = transformers.filter { it.projectId == projectId }
+        override suspend fun getCircuits(projectId: String) = mutableCircuits.filter { it.projectId == projectId }
+        override suspend fun getTransformers(projectId: String) = mutableTransformers.filter { it.projectId == projectId }
     }
 }
