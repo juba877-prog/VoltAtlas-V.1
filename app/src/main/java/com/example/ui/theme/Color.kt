@@ -10,7 +10,6 @@ val SurfaceElevated = Color(0xFF1E2530)
 val BorderColor = Color(0xFF2A3341)
 
 val SleekPrimary = Color(0xFF3B9EFF)
-val OnPrimary = Color(0xFF0D1117)
 
 val SleekPass = Color(0xFF3DD68C)
 val SleekWarning = Color(0xFFF5A623)

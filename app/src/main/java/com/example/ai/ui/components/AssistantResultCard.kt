@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import com.example.ai.ui.AssistantCardUiModel
 import com.example.ai.ui.EngineeringStatusUiModel
 import com.example.ai.ui.SuggestedActionUiModel
+import com.example.ui.theme.EngineeringStatusPalette
 
 /**
  * MD3 Result Summary Card rendering authoritative VoltAtlas sizing metrics.
@@ -59,14 +60,14 @@ fun AssistantResultCard(
                 val badgeColor = when (card.status) {
                     EngineeringStatusUiModel.PASS -> MaterialTheme.colorScheme.primaryContainer
                     EngineeringStatusUiModel.FAIL -> MaterialTheme.colorScheme.errorContainer
-                    EngineeringStatusUiModel.WARNING -> MaterialTheme.colorScheme.tertiaryContainer
+                    EngineeringStatusUiModel.WARNING -> EngineeringStatusPalette.ScenarioContainer
                     EngineeringStatusUiModel.STALE -> MaterialTheme.colorScheme.surfaceVariant
                     EngineeringStatusUiModel.INFO -> MaterialTheme.colorScheme.surfaceContainerHigh
                 }
                 val badgeTextColor = when (card.status) {
                     EngineeringStatusUiModel.PASS -> MaterialTheme.colorScheme.onPrimaryContainer
                     EngineeringStatusUiModel.FAIL -> MaterialTheme.colorScheme.onErrorContainer
-                    EngineeringStatusUiModel.WARNING -> MaterialTheme.colorScheme.onTertiaryContainer
+                    EngineeringStatusUiModel.WARNING -> EngineeringStatusPalette.OnScenarioContainer
                     EngineeringStatusUiModel.STALE -> MaterialTheme.colorScheme.onSurfaceVariant
                     EngineeringStatusUiModel.INFO -> MaterialTheme.colorScheme.onSurface
                 }

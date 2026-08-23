@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.ai.ui.AssistantCardUiModel
 import com.example.ai.ui.SuggestedActionUiModel
+import com.example.ui.theme.EngineeringStatusPalette
 
 /**
  * MD3 What-If Exploration Card visually distinguished and marked as non-applied scenario.
@@ -56,7 +57,7 @@ fun AssistantWhatIfCard(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.tertiaryContainer)
+                        .background(EngineeringStatusPalette.ScenarioContainer)
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                         .semantics { contentDescription = "Scenario Mode: What-If not applied" }
                         .testTag("what_if_badge")
@@ -64,7 +65,7 @@ fun AssistantWhatIfCard(
                     Text(
                         text = "WHAT-IF · Not Applied",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                        color = EngineeringStatusPalette.OnScenarioContainer
                     )
                 }
             }

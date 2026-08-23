@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.ai.ui.ProposalChangeActionUi
 import com.example.ai.ui.ProposalFieldChangeUiModel
+import com.example.ui.theme.EngineeringStatusPalette
 
 /**
  * MD3 Before/After row displaying a single proposed field modification.
@@ -46,12 +47,13 @@ fun ProposalFieldChangeRow(
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            val actionBadgeColor = if (change.action == ProposalChangeActionUi.CLEAR_TO_AUTOMATIC) {
-                MaterialTheme.colorScheme.tertiaryContainer
+            val isClearAction = change.action == ProposalChangeActionUi.CLEAR_TO_AUTOMATIC
+            val actionBadgeColor = if (isClearAction) {
+                EngineeringStatusPalette.ScenarioContainer
             } else {
                 MaterialTheme.colorScheme.secondaryContainer
             }
-            val actionBadgeText = if (change.action == ProposalChangeActionUi.CLEAR_TO_AUTOMATIC) "CLEAR" else "SET"
+            val actionBadgeText = if (isClearAction) "CLEAR" else "SET"
 
             Box(
                 modifier = Modifier
@@ -62,7 +64,10 @@ fun ProposalFieldChangeRow(
                 Text(
                     text = actionBadgeText,
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                    // CLEAR badge sits on the scenario container: use its contrast-safe
+                    // foreground. SET badge keeps the legacy onSecondaryContainer pixel.
+                    color = if (isClearAction) EngineeringStatusPalette.OnScenarioContainer
+                            else MaterialTheme.colorScheme.onSecondaryContainer
                 )
             }
         }
