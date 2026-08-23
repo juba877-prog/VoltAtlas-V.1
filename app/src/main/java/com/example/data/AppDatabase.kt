@@ -23,354 +23,336 @@ import kotlinx.coroutines.flow.Flow
 
 
 
+
+/**
+ * Explicit schema inspection for migrations that must support multiple legitimate
+ * pre-states (e.g. a database that stopped at an intermediate version whose column
+ * was already added by an overlapping historical hop). Never swallows failures:
+ * a PRAGMA error propagates and aborts the migration transaction.
+ */
+internal fun migrationColumnExists(db: SupportSQLiteDatabase, table: String, column: String): Boolean {
+    val cursor = db.query("PRAGMA table_info(`$table`)")
+    try {
+        val nameIndex = cursor.getColumnIndexOrThrow("name")
+        while (cursor.moveToNext()) {
+            if (cursor.getString(nameIndex) == column) {
+                return true
+            }
+        }
+        return false
+    } finally {
+        cursor.close()
+    }
+}
+
+/**
+ * Mandatory guard for ALTER TABLE ADD COLUMN steps: executes the DDL only when the exact
+ * column is absent, so both legitimate pre-states converge to one valid post-state.
+ * Every other SQL failure propagates and rolls back the migration transaction.
+ */
+internal fun migrationEnsureColumn(db: SupportSQLiteDatabase, alterStatement: String) {
+    val parsed = Regex("^ALTER TABLE [`]?([A-Za-z0-9_]+)[`]? ADD COLUMN [`]?([A-Za-z0-9_]+)[`]?", RegexOption.IGNORE_CASE)
+        .find(alterStatement.trim())
+        ?: throw IllegalArgumentException("migrationEnsureColumn cannot parse statement: $alterStatement")
+    if (!migrationColumnExists(db, parsed.groupValues[1], parsed.groupValues[2])) {
+        db.execSQL(alterStatement)
+    }
+}
+
+/**
+ * Mandatory copy-integrity verification for table-rebuild migrations: the old table may
+ * only be dropped after the rebuilt table provably holds exactly as many rows as the
+ * source. Any mismatch aborts the migration before source data can be destroyed.
+ */
+internal fun verifyMigrationRowCount(db: SupportSQLiteDatabase, sourceTable: String, rebuiltTable: String) {
+    val cursor = db.query("SELECT (SELECT COUNT(*) FROM $sourceTable), (SELECT COUNT(*) FROM $rebuiltTable)")
+    try {
+        if (!cursor.moveToFirst()) {
+            throw IllegalStateException(
+                "Migration copy verification failed: no count result for $sourceTable -> $rebuiltTable"
+            )
+        }
+        val sourceRows = cursor.getLong(0)
+        val rebuiltRows = cursor.getLong(1)
+        if (sourceRows != rebuiltRows) {
+            throw IllegalStateException(
+                "Migration copy verification failed: $sourceTable holds $sourceRows rows " +
+                    "but $rebuiltTable holds $rebuiltRows rows; refusing to drop $sourceTable"
+            )
+        }
+    } finally {
+        cursor.close()
+    }
+}
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        try {
-            db.execSQL("ALTER TABLE `circuits` ADD COLUMN `upsBacked` INTEGER NOT NULL DEFAULT 0")
-        } catch (e: Exception) {
-            // Column may already exist
-            Log.e("AppDatabase", "Migration error: ${e.message}", e)
-        }
+        // Schema-aware idempotent guard: a database that executed an overlapping
+        // historical upgrade may already carry this column. Other failures abort.
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `upsBacked` INTEGER NOT NULL DEFAULT 0")
     }
 }
 
 val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
+        // Fully fail-fast rebuild sequence: create -> copy -> verify row parity -> drop ->
+        // rename. Every step is mandatory; any failure aborts the Room migration
+        // transaction so the original tables survive untouched. A valid-schema but
+        // data-empty replacement table can never silently replace a populated source.
+
         // 1) Rebuild transformers table for composite primary key (projectId, transformerId)
-        try {
-            db.execSQL("""
-                CREATE TABLE IF NOT EXISTS `transformers_new` (
-                    `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
-                    `transformerId` TEXT NOT NULL,
-                    `transformerName` TEXT NOT NULL,
-                    `kVA` REAL NOT NULL,
-                    `voltage` INTEGER NOT NULL,
-                    `percentZ` REAL NOT NULL,
-                    `xr` REAL NOT NULL,
-                    `txType` TEXT NOT NULL,
-                    `sourceType` TEXT NOT NULL,
-                    `status` TEXT NOT NULL,
-                    `sizeMode` TEXT NOT NULL,
-                    `manualKVA` REAL NOT NULL,
-                    `demandFactor` REAL NOT NULL,
-                    `diversity` REAL NOT NULL,
-                    `growth` REAL NOT NULL,
-                    `safety` REAL NOT NULL,
-                    `vectorGroup` TEXT NOT NULL DEFAULT 'Dyn11',
-                    `z0OverZ1` REAL NOT NULL DEFAULT 1.0,
-                    `pf` REAL NOT NULL DEFAULT 0.8,
-                    PRIMARY KEY(`projectId`, `transformerId`)
-                )
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
-        try {
-            db.execSQL("""
-                INSERT OR REPLACE INTO `transformers_new` (
-                    `projectId`, `transformerId`, `transformerName`, `kVA`, `voltage`, `percentZ`, `xr`, `txType`, `sourceType`, `status`, `sizeMode`, `manualKVA`, `demandFactor`, `diversity`, `growth`, `safety`, `vectorGroup`, `z0OverZ1`, `pf`
-                )
-                SELECT 
-                    `projectId`, `transformerId`, `transformerName`, `kVA`, `voltage`, `percentZ`, `xr`, `txType`, `sourceType`, `status`, `sizeMode`, `manualKVA`, `demandFactor`, `diversity`, `growth`, `safety`, `vectorGroup`, `z0OverZ1`, `pf`
-                FROM `transformers`
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
-        try {
-            db.execSQL("DROP TABLE `transformers`")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try {
-            db.execSQL("ALTER TABLE `transformers_new` RENAME TO `transformers`")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try {
-            db.execSQL("CREATE INDEX IF NOT EXISTS `index_transformers_projectId` ON `transformers`(`projectId`)")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try {
-            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_transformers_projectId_transformerId` ON `transformers`(`projectId`, `transformerId`)")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `transformers_new` (
+                `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
+                `transformerId` TEXT NOT NULL,
+                `transformerName` TEXT NOT NULL,
+                `kVA` REAL NOT NULL,
+                `voltage` INTEGER NOT NULL,
+                `percentZ` REAL NOT NULL,
+                `xr` REAL NOT NULL,
+                `txType` TEXT NOT NULL,
+                `sourceType` TEXT NOT NULL,
+                `status` TEXT NOT NULL,
+                `sizeMode` TEXT NOT NULL,
+                `manualKVA` REAL NOT NULL,
+                `demandFactor` REAL NOT NULL,
+                `diversity` REAL NOT NULL,
+                `growth` REAL NOT NULL,
+                `safety` REAL NOT NULL,
+                `vectorGroup` TEXT NOT NULL DEFAULT 'Dyn11',
+                `z0OverZ1` REAL NOT NULL DEFAULT 1.0,
+                `pf` REAL NOT NULL DEFAULT 0.8,
+                PRIMARY KEY(`projectId`, `transformerId`)
+            )
+        """.trimIndent())
+        db.execSQL("""
+            INSERT INTO `transformers_new` (
+                `projectId`, `transformerId`, `transformerName`, `kVA`, `voltage`, `percentZ`, `xr`, `txType`, `sourceType`, `status`, `sizeMode`, `manualKVA`, `demandFactor`, `diversity`, `growth`, `safety`, `vectorGroup`, `z0OverZ1`, `pf`
+            )
+            SELECT
+                `projectId`, `transformerId`, `transformerName`, `kVA`, `voltage`, `percentZ`, `xr`, `txType`, `sourceType`, `status`, `sizeMode`, `manualKVA`, `demandFactor`, `diversity`, `growth`, `safety`, `vectorGroup`, `z0OverZ1`, `pf`
+            FROM `transformers`
+        """.trimIndent())
+        verifyMigrationRowCount(db, "`transformers`", "`transformers_new`")
+        db.execSQL("DROP TABLE `transformers`")
+        db.execSQL("ALTER TABLE `transformers_new` RENAME TO `transformers`")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_transformers_projectId` ON `transformers`(`projectId`)")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_transformers_projectId_transformerId` ON `transformers`(`projectId`, `transformerId`)")
         // 2) Rebuild generator_settings table
-        try {
-            db.execSQL("""
-                CREATE TABLE IF NOT EXISTS `generator_settings_new` (
-                    `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
-                    `id` INTEGER NOT NULL,
-                    `additionalEssentialLoadKW` REAL NOT NULL,
-                    `largestMotorKW` REAL NOT NULL,
-                    `motorStartMethod` TEXT NOT NULL,
-                    `motorPf` REAL NOT NULL,
-                    `generatorPf` REAL NOT NULL,
-                    `demandFactor` REAL NOT NULL,
-                    `diversityFactor` REAL NOT NULL,
-                    `stepLoadPct` REAL NOT NULL,
-                    `oversizingFactor` REAL NOT NULL,
-                    `enableManualOverride` INTEGER NOT NULL,
-                    `manualSizeKVA` REAL,
-                    PRIMARY KEY(`projectId`, `id`)
-                )
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
-        try {
-            db.execSQL("""
-                INSERT OR REPLACE INTO `generator_settings_new` (
-                    `projectId`, `id`, `additionalEssentialLoadKW`, `largestMotorKW`, `motorStartMethod`, `motorPf`, `generatorPf`, `demandFactor`, `diversityFactor`, `stepLoadPct`, `oversizingFactor`, `enableManualOverride`, `manualSizeKVA`
-                )
-                SELECT 
-                    'DEFAULT_PROJECT', `id`, `additionalEssentialLoadKW`, `largestMotorKW`, `motorStartMethod`, `motorPf`, `generatorPf`, `demandFactor`, `diversityFactor`, `stepLoadPct`, `oversizingFactor`, `enableManualOverride`, `manualSizeKVA`
-                FROM `generator_settings`
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
-        try {
-            db.execSQL("DROP TABLE `generator_settings`")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try {
-            db.execSQL("ALTER TABLE `generator_settings_new` RENAME TO `generator_settings`")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `generator_settings_new` (
+                `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
+                `id` INTEGER NOT NULL,
+                `additionalEssentialLoadKW` REAL NOT NULL,
+                `largestMotorKW` REAL NOT NULL,
+                `motorStartMethod` TEXT NOT NULL,
+                `motorPf` REAL NOT NULL,
+                `generatorPf` REAL NOT NULL,
+                `demandFactor` REAL NOT NULL,
+                `diversityFactor` REAL NOT NULL,
+                `stepLoadPct` REAL NOT NULL,
+                `oversizingFactor` REAL NOT NULL,
+                `enableManualOverride` INTEGER NOT NULL,
+                `manualSizeKVA` REAL,
+                PRIMARY KEY(`projectId`, `id`)
+            )
+        """.trimIndent())
+        db.execSQL("""
+            INSERT INTO `generator_settings_new` (
+                `projectId`, `id`, `additionalEssentialLoadKW`, `largestMotorKW`, `motorStartMethod`, `motorPf`, `generatorPf`, `demandFactor`, `diversityFactor`, `stepLoadPct`, `oversizingFactor`, `enableManualOverride`, `manualSizeKVA`
+            )
+            SELECT
+                'DEFAULT_PROJECT', `id`, `additionalEssentialLoadKW`, `largestMotorKW`, `motorStartMethod`, `motorPf`, `generatorPf`, `demandFactor`, `diversityFactor`, `stepLoadPct`, `oversizingFactor`, `enableManualOverride`, `manualSizeKVA`
+            FROM `generator_settings`
+        """.trimIndent())
+        verifyMigrationRowCount(db, "`generator_settings`", "`generator_settings_new`")
+        db.execSQL("DROP TABLE `generator_settings`")
+        db.execSQL("ALTER TABLE `generator_settings_new` RENAME TO `generator_settings`")
         // 3) Rebuild ats_settings table
-        try {
-            db.execSQL("""
-                CREATE TABLE IF NOT EXISTS `ats_settings_new` (
-                    `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
-                    `id` INTEGER NOT NULL,
-                    `systemVoltage` INTEGER NOT NULL,
-                    `systemFrequency` INTEGER NOT NULL,
-                    `numberOfSources` INTEGER NOT NULL,
-                    `atsLocation` TEXT NOT NULL,
-                    `transferType` TEXT NOT NULL,
-                    `utilizationCategory` TEXT NOT NULL,
-                    `atsClass` TEXT NOT NULL,
-                    `loadCoverage` TEXT NOT NULL,
-                    `ambientTemp` INTEGER NOT NULL,
-                    `designSafetyFactor` REAL NOT NULL,
-                    `futureGrowthFactor` REAL NOT NULL,
-                    `approvedManufacturer` TEXT NOT NULL,
-                    `mainsFailureDetectionDelay` INTEGER NOT NULL,
-                    `generatorStartSignalDelay` INTEGER NOT NULL,
-                    `generatorWarmUp` INTEGER NOT NULL,
-                    `mainsReturnDetectionDelay` INTEGER NOT NULL,
-                    `reTransferDelay` INTEGER NOT NULL,
-                    `generatorCooldown` INTEGER NOT NULL,
-                    `enclosureIpRating` TEXT NOT NULL,
-                    PRIMARY KEY(`projectId`, `id`)
-                )
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
-        try {
-            db.execSQL("""
-                INSERT OR REPLACE INTO `ats_settings_new` (
-                    `projectId`, `id`, `systemVoltage`, `systemFrequency`, `numberOfSources`, `atsLocation`, `transferType`, `utilizationCategory`, `atsClass`, `loadCoverage`, `ambientTemp`, `designSafetyFactor`, `futureGrowthFactor`, `approvedManufacturer`, `mainsFailureDetectionDelay`, `generatorStartSignalDelay`, `generatorWarmUp`, `mainsReturnDetectionDelay`, `reTransferDelay`, `generatorCooldown`, `enclosureIpRating`
-                )
-                SELECT 
-                    'DEFAULT_PROJECT', `id`, `systemVoltage`, `systemFrequency`, `numberOfSources`, `atsLocation`, `transferType`, `utilizationCategory`, `atsClass`, `loadCoverage`, `ambientTemp`, `designSafetyFactor`, `futureGrowthFactor`, `approvedManufacturer`, `mainsFailureDetectionDelay`, `generatorStartSignalDelay`, `generatorWarmUp`, `mainsReturnDetectionDelay`, `reTransferDelay`, `generatorCooldown`, `enclosureIpRating`
-                FROM `ats_settings`
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
-        try {
-            db.execSQL("DROP TABLE `ats_settings`")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try {
-            db.execSQL("ALTER TABLE `ats_settings_new` RENAME TO `ats_settings`")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `ats_settings_new` (
+                `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
+                `id` INTEGER NOT NULL,
+                `systemVoltage` INTEGER NOT NULL,
+                `systemFrequency` INTEGER NOT NULL,
+                `numberOfSources` INTEGER NOT NULL,
+                `atsLocation` TEXT NOT NULL,
+                `transferType` TEXT NOT NULL,
+                `utilizationCategory` TEXT NOT NULL,
+                `atsClass` TEXT NOT NULL,
+                `loadCoverage` TEXT NOT NULL,
+                `ambientTemp` INTEGER NOT NULL,
+                `designSafetyFactor` REAL NOT NULL,
+                `futureGrowthFactor` REAL NOT NULL,
+                `approvedManufacturer` TEXT NOT NULL,
+                `mainsFailureDetectionDelay` INTEGER NOT NULL,
+                `generatorStartSignalDelay` INTEGER NOT NULL,
+                `generatorWarmUp` INTEGER NOT NULL,
+                `mainsReturnDetectionDelay` INTEGER NOT NULL,
+                `reTransferDelay` INTEGER NOT NULL,
+                `generatorCooldown` INTEGER NOT NULL,
+                `enclosureIpRating` TEXT NOT NULL,
+                PRIMARY KEY(`projectId`, `id`)
+            )
+        """.trimIndent())
+        db.execSQL("""
+            INSERT INTO `ats_settings_new` (
+                `projectId`, `id`, `systemVoltage`, `systemFrequency`, `numberOfSources`, `atsLocation`, `transferType`, `utilizationCategory`, `atsClass`, `loadCoverage`, `ambientTemp`, `designSafetyFactor`, `futureGrowthFactor`, `approvedManufacturer`, `mainsFailureDetectionDelay`, `generatorStartSignalDelay`, `generatorWarmUp`, `mainsReturnDetectionDelay`, `reTransferDelay`, `generatorCooldown`, `enclosureIpRating`
+            )
+            SELECT
+                'DEFAULT_PROJECT', `id`, `systemVoltage`, `systemFrequency`, `numberOfSources`, `atsLocation`, `transferType`, `utilizationCategory`, `atsClass`, `loadCoverage`, `ambientTemp`, `designSafetyFactor`, `futureGrowthFactor`, `approvedManufacturer`, `mainsFailureDetectionDelay`, `generatorStartSignalDelay`, `generatorWarmUp`, `mainsReturnDetectionDelay`, `reTransferDelay`, `generatorCooldown`, `enclosureIpRating`
+            FROM `ats_settings`
+        """.trimIndent())
+        verifyMigrationRowCount(db, "`ats_settings`", "`ats_settings_new`")
+        db.execSQL("DROP TABLE `ats_settings`")
+        db.execSQL("ALTER TABLE `ats_settings_new` RENAME TO `ats_settings`")
 
         // 4) Rebuild ups_settings table
-        try {
-            db.execSQL("""
-                CREATE TABLE IF NOT EXISTS `ups_settings_new` (
-                    `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
-                    `id` INTEGER NOT NULL,
-                    `systemVoltage` INTEGER NOT NULL,
-                    `systemFrequency` INTEGER NOT NULL,
-                    `upsPf` REAL NOT NULL,
-                    `upsEfficiency` REAL NOT NULL,
-                    `batteryType` TEXT NOT NULL,
-                    `autonomyMinutes` INTEGER NOT NULL,
-                    `batteryEodVoltage` REAL NOT NULL,
-                    `ambientTemp` INTEGER NOT NULL,
-                    `tempDeratingFactor` REAL NOT NULL,
-                    `agingFactor` REAL NOT NULL,
-                    `designMarginPct` REAL NOT NULL,
-                    PRIMARY KEY(`projectId`, `id`)
-                )
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
-        try {
-            db.execSQL("""
-                INSERT OR REPLACE INTO `ups_settings_new` (
-                    `projectId`, `id`, `systemVoltage`, `systemFrequency`, `upsPf`, `upsEfficiency`, `batteryType`, `autonomyMinutes`, `batteryEodVoltage`, `ambientTemp`, `tempDeratingFactor`, `agingFactor`, `designMarginPct`
-                )
-                SELECT 
-                    'DEFAULT_PROJECT', `id`, `systemVoltage`, `systemFrequency`, `upsPf`, `upsEfficiency`, `batteryType`, `autonomyMinutes`, `batteryEodVoltage`, `ambientTemp`, `tempDeratingFactor`, `agingFactor`, `designMarginPct`
-                FROM `ups_settings`
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
-        try {
-            db.execSQL("DROP TABLE `ups_settings`")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try {
-            db.execSQL("ALTER TABLE `ups_settings_new` RENAME TO `ups_settings`")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `ups_settings_new` (
+                `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
+                `id` INTEGER NOT NULL,
+                `systemVoltage` INTEGER NOT NULL,
+                `systemFrequency` INTEGER NOT NULL,
+                `upsPf` REAL NOT NULL,
+                `upsEfficiency` REAL NOT NULL,
+                `batteryType` TEXT NOT NULL,
+                `autonomyMinutes` INTEGER NOT NULL,
+                `batteryEodVoltage` REAL NOT NULL,
+                `ambientTemp` INTEGER NOT NULL,
+                `tempDeratingFactor` REAL NOT NULL,
+                `agingFactor` REAL NOT NULL,
+                `designMarginPct` REAL NOT NULL,
+                PRIMARY KEY(`projectId`, `id`)
+            )
+        """.trimIndent())
+        db.execSQL("""
+            INSERT INTO `ups_settings_new` (
+                `projectId`, `id`, `systemVoltage`, `systemFrequency`, `upsPf`, `upsEfficiency`, `batteryType`, `autonomyMinutes`, `batteryEodVoltage`, `ambientTemp`, `tempDeratingFactor`, `agingFactor`, `designMarginPct`
+            )
+            SELECT
+                'DEFAULT_PROJECT', `id`, `systemVoltage`, `systemFrequency`, `upsPf`, `upsEfficiency`, `batteryType`, `autonomyMinutes`, `batteryEodVoltage`, `ambientTemp`, `tempDeratingFactor`, `agingFactor`, `designMarginPct`
+            FROM `ups_settings`
+        """.trimIndent())
+        verifyMigrationRowCount(db, "`ups_settings`", "`ups_settings_new`")
+        db.execSQL("DROP TABLE `ups_settings`")
+        db.execSQL("ALTER TABLE `ups_settings_new` RENAME TO `ups_settings`")
         // 5) Rebuild pf_global_settings table
-        try {
-            db.execSQL("""
-                CREATE TABLE IF NOT EXISTS `pf_global_settings_new` (
-                    `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
-                    `id` INTEGER NOT NULL,
-                    `targetPf` REAL NOT NULL,
-                    `kvarStepSize` REAL NOT NULL,
-                    `systemVoltage` INTEGER NOT NULL,
-                    `annualOperatingHours` INTEGER NOT NULL,
-                    `energyCost` REAL NOT NULL,
-                    `lossReductionPct` REAL NOT NULL,
-                    `unityToleranceKvar` REAL NOT NULL,
-                    PRIMARY KEY(`projectId`, `id`)
-                )
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
-        try {
-            db.execSQL("""
-                INSERT OR REPLACE INTO `pf_global_settings_new` (
-                    `projectId`, `id`, `targetPf`, `kvarStepSize`, `systemVoltage`, `annualOperatingHours`, `energyCost`, `lossReductionPct`, `unityToleranceKvar`
-                )
-                SELECT 
-                    'DEFAULT_PROJECT', `id`, `targetPf`, `kvarStepSize`, `systemVoltage`, `annualOperatingHours`, `energyCost`, `lossReductionPct`, `unityToleranceKvar`
-                FROM `pf_global_settings`
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
-        try {
-            db.execSQL("DROP TABLE `pf_global_settings`")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try {
-            db.execSQL("ALTER TABLE `pf_global_settings_new` RENAME TO `pf_global_settings`")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `pf_global_settings_new` (
+                `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
+                `id` INTEGER NOT NULL,
+                `targetPf` REAL NOT NULL,
+                `kvarStepSize` REAL NOT NULL,
+                `systemVoltage` INTEGER NOT NULL,
+                `annualOperatingHours` INTEGER NOT NULL,
+                `energyCost` REAL NOT NULL,
+                `lossReductionPct` REAL NOT NULL,
+                `unityToleranceKvar` REAL NOT NULL,
+                PRIMARY KEY(`projectId`, `id`)
+            )
+        """.trimIndent())
+        db.execSQL("""
+            INSERT INTO `pf_global_settings_new` (
+                `projectId`, `id`, `targetPf`, `kvarStepSize`, `systemVoltage`, `annualOperatingHours`, `energyCost`, `lossReductionPct`, `unityToleranceKvar`
+            )
+            SELECT
+                'DEFAULT_PROJECT', `id`, `targetPf`, `kvarStepSize`, `systemVoltage`, `annualOperatingHours`, `energyCost`, `lossReductionPct`, `unityToleranceKvar`
+            FROM `pf_global_settings`
+        """.trimIndent())
+        verifyMigrationRowCount(db, "`pf_global_settings`", "`pf_global_settings_new`")
+        db.execSQL("DROP TABLE `pf_global_settings`")
+        db.execSQL("ALTER TABLE `pf_global_settings_new` RENAME TO `pf_global_settings`")
 
         // 6) Rebuild pf_transformer_settings table
-        try {
-            db.execSQL("""
-                CREATE TABLE IF NOT EXISTS `pf_transformer_settings_new` (
-                    `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
-                    `transformerId` TEXT NOT NULL,
-                    `harmonicFilter` TEXT NOT NULL,
-                    `detuningReactor` TEXT NOT NULL,
-                    PRIMARY KEY(`projectId`, `transformerId`)
-                )
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
-        try {
-            db.execSQL("""
-                INSERT OR REPLACE INTO `pf_transformer_settings_new` (
-                    `projectId`, `transformerId`, `harmonicFilter`, `detuningReactor`
-                )
-                SELECT 
-                    'DEFAULT_PROJECT', `transformerId`, `harmonicFilter`, `detuningReactor`
-                FROM `pf_transformer_settings`
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
-        try {
-            db.execSQL("DROP TABLE `pf_transformer_settings`")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try {
-            db.execSQL("ALTER TABLE `pf_transformer_settings_new` RENAME TO `pf_transformer_settings`")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `pf_transformer_settings_new` (
+                `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
+                `transformerId` TEXT NOT NULL,
+                `harmonicFilter` TEXT NOT NULL,
+                `detuningReactor` TEXT NOT NULL,
+                PRIMARY KEY(`projectId`, `transformerId`)
+            )
+        """.trimIndent())
+        db.execSQL("""
+            INSERT INTO `pf_transformer_settings_new` (
+                `projectId`, `transformerId`, `harmonicFilter`, `detuningReactor`
+            )
+            SELECT
+                'DEFAULT_PROJECT', `transformerId`, `harmonicFilter`, `detuningReactor`
+            FROM `pf_transformer_settings`
+        """.trimIndent())
+        verifyMigrationRowCount(db, "`pf_transformer_settings`", "`pf_transformer_settings_new`")
+        db.execSQL("DROP TABLE `pf_transformer_settings`")
+        db.execSQL("ALTER TABLE `pf_transformer_settings_new` RENAME TO `pf_transformer_settings`")
     }
 }
 
 val MIGRATION_3_4 = object : Migration(3, 4) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        // 1) projects table + default project
-        try {
-            db.execSQL("""
-                CREATE TABLE IF NOT EXISTS `projects` (
-                    `projectId` TEXT NOT NULL,
-                    `projectName` TEXT NOT NULL,
-                    `projectCode` TEXT,
-                    `clientName` TEXT,
-                    `createdAt` INTEGER NOT NULL,
-                    `updatedAt` INTEGER NOT NULL,
-                    PRIMARY KEY(`projectId`)
-                )
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
+        // 1) projects table + default project (mandatory: fail-fast)
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `projects` (
+                `projectId` TEXT NOT NULL,
+                `projectName` TEXT NOT NULL,
+                `projectCode` TEXT,
+                `clientName` TEXT,
+                `createdAt` INTEGER NOT NULL,
+                `updatedAt` INTEGER NOT NULL,
+                PRIMARY KEY(`projectId`)
+            )
+        """.trimIndent())
+        // OR IGNORE is the intended idempotency for the legacy default-project seed.
+        db.execSQL("""
+            INSERT OR IGNORE INTO `projects`
+                (`projectId`,`projectName`,`projectCode`,`clientName`,`createdAt`,`updatedAt`)
+            VALUES
+                ('DEFAULT_PROJECT','Imported (El Rehab)','LEGACY','',
+                 ${System.currentTimeMillis()}, ${System.currentTimeMillis()})
+        """.trimIndent())
 
-        try {
-            db.execSQL("""
-                INSERT OR IGNORE INTO `projects`
-                    (`projectId`,`projectName`,`projectCode`,`clientName`,`createdAt`,`updatedAt`)
-                VALUES
-                    ('DEFAULT_PROJECT','Imported (El Rehab)','LEGACY','',
-                     ${System.currentTimeMillis()}, ${System.currentTimeMillis()})
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
+        // 2) app_state table (mandatory: fail-fast)
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `app_state` (
+                `id` INTEGER NOT NULL,
+                `activeProjectId` TEXT,
+                PRIMARY KEY(`id`)
+            )
+        """.trimIndent())
+        db.execSQL("INSERT OR REPLACE INTO `app_state` (`id`,`activeProjectId`) VALUES (0, NULL)")
 
-        // 2) app_state table
-        try {
-            db.execSQL("""
-                CREATE TABLE IF NOT EXISTS `app_state` (
-                    `id` INTEGER NOT NULL,
-                    `activeProjectId` TEXT,
-                    PRIMARY KEY(`id`)
-                )
-            """.trimIndent())
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try {
-            db.execSQL("INSERT OR REPLACE INTO `app_state` (`id`,`activeProjectId`) VALUES (0, NULL)")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-
-        // 3) new circuits columns
-        try { db.execSQL("ALTER TABLE `circuits` ADD COLUMN `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT'") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try { db.execSQL("ALTER TABLE `circuits` ADD COLUMN `demandFactor` REAL NOT NULL DEFAULT 1.0") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try { db.execSQL("ALTER TABLE `circuits` ADD COLUMN `diversityGroup` TEXT") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try { db.execSQL("ALTER TABLE `circuits` ADD COLUMN `generatorIncluded` INTEGER NOT NULL DEFAULT 0") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try { db.execSQL("ALTER TABLE `circuits` ADD COLUMN `atsIncluded` INTEGER NOT NULL DEFAULT 0") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try { db.execSQL("ALTER TABLE `circuits` ADD COLUMN `loadNature` TEXT NOT NULL DEFAULT 'Static'") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try { db.execSQL("ALTER TABLE `circuits` ADD COLUMN `startingMethod` TEXT") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try { db.execSQL("ALTER TABLE `circuits` ADD COLUMN `startingCurrentMultiplier` REAL") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try { db.execSQL("ALTER TABLE `circuits` ADD COLUMN `active` INTEGER NOT NULL DEFAULT 1") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
+        // 3) new circuits columns (schema-aware guards; genuine failures propagate)
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT'")
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `demandFactor` REAL NOT NULL DEFAULT 1.0")
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `diversityGroup` TEXT")
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `generatorIncluded` INTEGER NOT NULL DEFAULT 0")
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `atsIncluded` INTEGER NOT NULL DEFAULT 0")
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `loadNature` TEXT NOT NULL DEFAULT 'Static'")
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `startingMethod` TEXT")
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `startingCurrentMultiplier` REAL")
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `active` INTEGER NOT NULL DEFAULT 1")
 
         // 4) transformers
-        try { db.execSQL("ALTER TABLE `transformers` ADD COLUMN `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT'") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
+        migrationEnsureColumn(db, "ALTER TABLE `transformers` ADD COLUMN `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT'")
 
-        // 5) indexes
-        try { db.execSQL("CREATE INDEX IF NOT EXISTS `index_circuits_projectId` ON `circuits`(`projectId`)") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try { db.execSQL("CREATE INDEX IF NOT EXISTS `index_transformers_projectId` ON `transformers`(`projectId`)") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
+        // 5) indexes (mandatory; IF NOT EXISTS preserves intended idempotency)
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_circuits_projectId` ON `circuits`(`projectId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_transformers_projectId` ON `transformers`(`projectId`)")
     }
 }
 
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        try {
-            db.execSQL("ALTER TABLE circuits ADD COLUMN upsBacked INTEGER NOT NULL DEFAULT 0")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        
-        try {
-            db.execSQL("CREATE TABLE IF NOT EXISTS `generator_settings` (`id` INTEGER NOT NULL, `additionalEssentialLoadKW` REAL NOT NULL, `largestMotorKW` REAL NOT NULL, `motorStartMethod` TEXT NOT NULL, `motorPf` REAL NOT NULL, `generatorPf` REAL NOT NULL, `demandFactor` REAL NOT NULL, `diversityFactor` REAL NOT NULL, `stepLoadPct` REAL NOT NULL, `oversizingFactor` REAL NOT NULL, `enableManualOverride` INTEGER NOT NULL, `manualSizeKVA` REAL, PRIMARY KEY(`id`))")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        
-        try {
-            db.execSQL("CREATE TABLE IF NOT EXISTS `ats_settings` (`id` INTEGER NOT NULL, `systemVoltage` INTEGER NOT NULL, `systemFrequency` INTEGER NOT NULL, `numberOfSources` INTEGER NOT NULL, `atsLocation` TEXT NOT NULL, `transferType` TEXT NOT NULL, `utilizationCategory` TEXT NOT NULL, `atsClass` TEXT NOT NULL, `loadCoverage` TEXT NOT NULL, `ambientTemp` INTEGER NOT NULL, `designSafetyFactor` REAL NOT NULL, `futureGrowthFactor` REAL NOT NULL, `approvedManufacturer` TEXT NOT NULL, `mainsFailureDetectionDelay` INTEGER NOT NULL, `generatorStartSignalDelay` INTEGER NOT NULL, `generatorWarmUp` INTEGER NOT NULL, `mainsReturnDetectionDelay` INTEGER NOT NULL, `reTransferDelay` INTEGER NOT NULL, `generatorCooldown` INTEGER NOT NULL, `enclosureIpRating` TEXT NOT NULL, PRIMARY KEY(`id`))")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        
-        try {
-            db.execSQL("CREATE TABLE IF NOT EXISTS `ups_settings` (`id` INTEGER NOT NULL, `systemVoltage` INTEGER NOT NULL, `systemFrequency` INTEGER NOT NULL, `upsPf` REAL NOT NULL, `upsEfficiency` REAL NOT NULL, `batteryType` TEXT NOT NULL, `autonomyMinutes` INTEGER NOT NULL, `batteryEodVoltage` REAL NOT NULL, `ambientTemp` INTEGER NOT NULL, `tempDeratingFactor` REAL NOT NULL, `agingFactor` REAL NOT NULL, `designMarginPct` REAL NOT NULL, PRIMARY KEY(`id`))")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        
-        try {
-            db.execSQL("CREATE TABLE IF NOT EXISTS `pf_global_settings` (`id` INTEGER NOT NULL, `targetPf` REAL NOT NULL, `kvarStepSize` REAL NOT NULL, `systemVoltage` INTEGER NOT NULL, `annualOperatingHours` INTEGER NOT NULL, `energyCost` REAL NOT NULL, `lossReductionPct` REAL NOT NULL, `unityToleranceKvar` REAL NOT NULL, PRIMARY KEY(`id`))")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        
-        try {
-            db.execSQL("CREATE TABLE IF NOT EXISTS `pf_transformer_settings` (`transformerId` TEXT NOT NULL, `harmonicFilter` TEXT NOT NULL, `detuningReactor` TEXT NOT NULL, PRIMARY KEY(`transformerId`))")
-        } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
+        // Schema-aware guard: a database that executed 1->2 and stopped exactly at v2
+        // already carries upsBacked. Every other failure propagates.
+        migrationEnsureColumn(db, "ALTER TABLE circuits ADD COLUMN upsBacked INTEGER NOT NULL DEFAULT 0")
+
+        // Mandatory power-system settings tables: IF NOT EXISTS preserves intended
+        // idempotency; genuine SQL failures propagate and roll back the migration.
+        db.execSQL("CREATE TABLE IF NOT EXISTS `generator_settings` (`id` INTEGER NOT NULL, `additionalEssentialLoadKW` REAL NOT NULL, `largestMotorKW` REAL NOT NULL, `motorStartMethod` TEXT NOT NULL, `motorPf` REAL NOT NULL, `generatorPf` REAL NOT NULL, `demandFactor` REAL NOT NULL, `diversityFactor` REAL NOT NULL, `stepLoadPct` REAL NOT NULL, `oversizingFactor` REAL NOT NULL, `enableManualOverride` INTEGER NOT NULL, `manualSizeKVA` REAL, PRIMARY KEY(`id`))")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `ats_settings` (`id` INTEGER NOT NULL, `systemVoltage` INTEGER NOT NULL, `systemFrequency` INTEGER NOT NULL, `numberOfSources` INTEGER NOT NULL, `atsLocation` TEXT NOT NULL, `transferType` TEXT NOT NULL, `utilizationCategory` TEXT NOT NULL, `atsClass` TEXT NOT NULL, `loadCoverage` TEXT NOT NULL, `ambientTemp` INTEGER NOT NULL, `designSafetyFactor` REAL NOT NULL, `futureGrowthFactor` REAL NOT NULL, `approvedManufacturer` TEXT NOT NULL, `mainsFailureDetectionDelay` INTEGER NOT NULL, `generatorStartSignalDelay` INTEGER NOT NULL, `generatorWarmUp` INTEGER NOT NULL, `mainsReturnDetectionDelay` INTEGER NOT NULL, `reTransferDelay` INTEGER NOT NULL, `generatorCooldown` INTEGER NOT NULL, `enclosureIpRating` TEXT NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `ups_settings` (`id` INTEGER NOT NULL, `systemVoltage` INTEGER NOT NULL, `systemFrequency` INTEGER NOT NULL, `upsPf` REAL NOT NULL, `upsEfficiency` REAL NOT NULL, `batteryType` TEXT NOT NULL, `autonomyMinutes` INTEGER NOT NULL, `batteryEodVoltage` REAL NOT NULL, `ambientTemp` INTEGER NOT NULL, `tempDeratingFactor` REAL NOT NULL, `agingFactor` REAL NOT NULL, `designMarginPct` REAL NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `pf_global_settings` (`id` INTEGER NOT NULL, `targetPf` REAL NOT NULL, `kvarStepSize` REAL NOT NULL, `systemVoltage` INTEGER NOT NULL, `annualOperatingHours` INTEGER NOT NULL, `energyCost` REAL NOT NULL, `lossReductionPct` REAL NOT NULL, `unityToleranceKvar` REAL NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `pf_transformer_settings` (`transformerId` TEXT NOT NULL, `harmonicFilter` TEXT NOT NULL, `detuningReactor` TEXT NOT NULL, PRIMARY KEY(`transformerId`))")
     }
 }
 
@@ -664,23 +646,23 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
 
 val MIGRATION_6_7 = object : Migration(6, 7) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        try { db.execSQL("ALTER TABLE `circuits` ADD COLUMN `panelType` TEXT") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try { db.execSQL("ALTER TABLE `circuits` ADD COLUMN `parentId` INTEGER") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try { db.execSQL("ALTER TABLE `circuits` ADD COLUMN `level` INTEGER") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try { db.execSQL("ALTER TABLE `circuits` ADD COLUMN `sourceType` TEXT") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `panelType` TEXT")
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `parentId` INTEGER")
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `level` INTEGER")
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `sourceType` TEXT")
     }
 }
 
 val MIGRATION_7_8 = object : Migration(7, 8) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        try { db.execSQL("ALTER TABLE `ats_settings` ADD COLUMN `normalSourceId` TEXT") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
-        try { db.execSQL("ALTER TABLE `ats_settings` ADD COLUMN `emergencySourceId` TEXT") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
+        migrationEnsureColumn(db, "ALTER TABLE `ats_settings` ADD COLUMN `normalSourceId` TEXT")
+        migrationEnsureColumn(db, "ALTER TABLE `ats_settings` ADD COLUMN `emergencySourceId` TEXT")
     }
 }
 
 val MIGRATION_8_9 = object : Migration(8, 9) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        try { db.execSQL("ALTER TABLE `ats_settings` ADD COLUMN `outputBoardId` INTEGER") } catch (e: Exception) { Log.e("AppDatabase", "Migration error: ${e.message}", e) }
+        migrationEnsureColumn(db, "ALTER TABLE `ats_settings` ADD COLUMN `outputBoardId` INTEGER")
     }
 }
 
@@ -713,55 +695,36 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
 
 val MIGRATION_11_12 = object : Migration(11, 12) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        try {
-            db.execSQL("""
-                CREATE TABLE IF NOT EXISTS `sld_node_positions` (
-                    `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
-                    `nodeId` TEXT NOT NULL,
-                    `x` REAL NOT NULL,
-                    `y` REAL NOT NULL,
-                    PRIMARY KEY(`projectId`, `nodeId`)
-                )
-            """.trimIndent())
-            db.execSQL("CREATE INDEX IF NOT EXISTS `index_sld_node_positions_projectId` ON `sld_node_positions`(`projectId`)")
-        } catch (e: Exception) {
-            Log.e("AppDatabase", "Migration error: ${e.message}", e)
-        }
+        // Mandatory SLD layout table: failures must abort the migration transaction.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `sld_node_positions` (
+                `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
+                `nodeId` TEXT NOT NULL,
+                `x` REAL NOT NULL,
+                `y` REAL NOT NULL,
+                PRIMARY KEY(`projectId`, `nodeId`)
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_sld_node_positions_projectId` ON `sld_node_positions`(`projectId`)")
     }
 }
 
 val MIGRATION_12_13 = object : Migration(12, 13) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        try {
-            db.execSQL("ALTER TABLE `circuits` ADD COLUMN `directLoadConfirmed` INTEGER DEFAULT NULL")
-        } catch (e: Exception) {
-            Log.e("AppDatabase", "Migration error: ${e.message}", e)
-        }
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `directLoadConfirmed` INTEGER DEFAULT NULL")
     }
 }
 
 val MIGRATION_13_14 = object : Migration(13, 14) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        try {
-            db.execSQL("ALTER TABLE `projects` ADD COLUMN `defaultPhaseImbalanceLimitPct` REAL NOT NULL DEFAULT 20.0")
-        } catch (e: Exception) {
-            Log.e("AppDatabase", "Migration error: ${e.message}", e)
-        }
-        try {
-            db.execSQL("ALTER TABLE `circuits` ADD COLUMN `phaseImbalanceLimitOverridePct` REAL DEFAULT NULL")
-        } catch (e: Exception) {
-            Log.e("AppDatabase", "Migration error: ${e.message}", e)
-        }
+        migrationEnsureColumn(db, "ALTER TABLE `projects` ADD COLUMN `defaultPhaseImbalanceLimitPct` REAL NOT NULL DEFAULT 20.0")
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `phaseImbalanceLimitOverridePct` REAL DEFAULT NULL")
     }
 }
 
 val MIGRATION_14_15 = object : Migration(14, 15) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        try {
-            db.execSQL("ALTER TABLE `circuits` ADD COLUMN `loadCategory` TEXT DEFAULT NULL")
-        } catch (e: Exception) {
-            Log.e("AppDatabase", "Migration error: ${e.message}", e)
-        }
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `loadCategory` TEXT DEFAULT NULL")
     }
 }
 
@@ -779,11 +742,7 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
             "ALTER TABLE `circuits` ADD COLUMN `numberOfWays` INTEGER DEFAULT NULL"
         )
         for (sql in statements) {
-            try {
-                db.execSQL(sql)
-            } catch (e: Exception) {
-                Log.e("AppDatabase", "Migration error: ${e.message}", e)
-            }
+            migrationEnsureColumn(db, sql)
         }
     }
 }
@@ -796,11 +755,7 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
             "ALTER TABLE `circuits` ADD COLUMN `buswayModel` TEXT DEFAULT NULL"
         )
         for (sql in statements) {
-            try {
-                db.execSQL(sql)
-            } catch (e: Exception) {
-                Log.e("AppDatabase", "Migration error: ${e.message}", e)
-            }
+            migrationEnsureColumn(db, sql)
         }
     }
 }
@@ -817,11 +772,7 @@ val MIGRATION_17_18 = object : Migration(17, 18) {
             "ALTER TABLE `earthing_settings` ADD COLUMN `autoDesignAppliedConfigId` TEXT DEFAULT NULL"
         )
         for (sql in statements) {
-            try {
-                db.execSQL(sql)
-            } catch (e: Exception) {
-                Log.e("AppDatabase", "Migration error: ${e.message}", e)
-            }
+            migrationEnsureColumn(db, sql)
         }
     }
 }
@@ -841,11 +792,7 @@ val MIGRATION_18_19 = object : Migration(18, 19) {
             "ALTER TABLE `ups_settings` ADD COLUMN `manualSizeKVA` REAL DEFAULT NULL"
         )
         for (sql in statements) {
-            try {
-                db.execSQL(sql)
-            } catch (e: Exception) {
-                Log.e("AppDatabase", "Migration 18->19 statement error: ${e.message}", e)
-            }
+            migrationEnsureColumn(db, sql)
         }
     }
 }
@@ -857,22 +804,14 @@ val MIGRATION_19_20 = object : Migration(19, 20) {
             "ALTER TABLE `circuits` ADD COLUMN `assignedAtsId` TEXT DEFAULT NULL"
         )
         for (sql in statements) {
-            try {
-                db.execSQL(sql)
-            } catch (e: Exception) {
-                Log.e("AppDatabase", "Migration 19->20 statement error: ${e.message}", e)
-            }
+            migrationEnsureColumn(db, sql)
         }
     }
 }
 
 val MIGRATION_20_21 = object : Migration(20, 21) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        try {
-            db.execSQL("ALTER TABLE `circuits` ADD COLUMN `assignedUpsId` TEXT DEFAULT NULL")
-        } catch (e: Exception) {
-            Log.e("AppDatabase", "Migration 20->21 statement error: ${e.message}", e)
-        }
+        migrationEnsureColumn(db, "ALTER TABLE `circuits` ADD COLUMN `assignedUpsId` TEXT DEFAULT NULL")
     }
 }
 
