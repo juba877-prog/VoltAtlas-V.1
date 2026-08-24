@@ -75,7 +75,7 @@ fun MoreModulesGrid(onNavigate: (Int) -> Unit) {
 
         VoltAtlasFullWidthModuleRow(
             title = "Electrical & Cable Conversions",
-            description = "AWG/SWG/kcmil to mmÂ² (True, Nearest, Safe Up-Size), ÂµF â†” kVAR, HP â†” kW, Freq â†” RPM",
+            description = "AWG/SWG/kcmil to mm² (True, Nearest, Safe Up-Size), µF ↔ kVAR, HP ↔ kW, Freq ↔ RPM",
             icon = Icons.Default.SwapHoriz,
             iconTint = Color(0xFF38BDF8),
             onClick = { onNavigate(10) }

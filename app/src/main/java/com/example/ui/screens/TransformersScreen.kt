@@ -203,8 +203,8 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                                 Text("${String.format("%.0f", result.selectedSize)} kVA", color = ThemeTextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
                             }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Impedance Zt (%Z / mÎ©)", color = ThemeTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                                Text("${String.format("%.2f", activeTx.percentZ)}% (${String.format("%.2f", result.zt)} mÎ©)", color = ThemeTextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                                Text("Impedance Zt (%Z / mΩ)", color = ThemeTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                                Text("${String.format("%.2f", activeTx.percentZ)}% (${String.format("%.2f", result.zt)} mΩ)", color = ThemeTextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
                             }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("Isc 3-Phase", color = ThemeTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))

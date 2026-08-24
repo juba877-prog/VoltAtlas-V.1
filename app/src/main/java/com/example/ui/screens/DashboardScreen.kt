@@ -200,7 +200,7 @@ fun DashboardScreen(
                             statusColor = if (state.sizingResults.isEmpty()) null else if (maxVdPct > 5.0) ThemeStatusFail else if (maxVdPct > 0.0) ThemeStatusNeutral else null
                         ),
                         MetricDisplayItem(
-                            label = "Max Isc (3Ï†)",
+                            label = "Max Isc (3φ)",
                             value = if (state.shortCircuitResults.isNotEmpty()) String.format(Locale.US, "%.2f", maxIscKa) else "N/A",
                             unit = if (state.shortCircuitResults.isNotEmpty()) "kA" else "",
                             statusText = if (state.shortCircuitResults.isNotEmpty() && maxIscKa > 0.0) "CALCULATED" else null,

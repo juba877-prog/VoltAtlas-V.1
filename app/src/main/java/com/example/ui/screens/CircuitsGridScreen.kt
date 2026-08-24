@@ -257,13 +257,13 @@ fun CircuitsGridScreen(
                                                 ) {
                                                     Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Open Panel Schedule", tint = ThemePrimary, modifier = Modifier.size(12.dp))
                                                     Spacer(modifier = Modifier.width(3.dp))
-                                                    Text("Schedule âž”", color = ThemePrimary, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                    Text("Schedule →", color = ThemePrimary, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                                                 }
                                             }
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(2.dp))
-                                    Text("Fed from: ${circ.fedFrom}  â€¢  ${circ.loadKVA} kVA | ${circ.phases}", color = ThemeTextSecondary, fontSize = 11.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    Text("Fed from: ${circ.fedFrom}  •  ${circ.loadKVA} kVA | ${circ.phases}", color = ThemeTextSecondary, fontSize = 11.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                     
                                     val childrenTotalLoad = childrenLookup.getChildrenTotalLoad(circ.circuitName)
                                     val childrenDiffers = kotlin.math.abs(circ.loadKVA - childrenTotalLoad) > 0.001
@@ -294,7 +294,7 @@ fun CircuitsGridScreen(
                                             )
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Text(
-                                                text = "Superseded by ${Math.round(childrenTotalLoad * 10.0) / 10.0} kVA from children â€” tap to review in Panel Schedule",
+                                                text = "Superseded by ${Math.round(childrenTotalLoad * 10.0) / 10.0} kVA from children — tap to review in Panel Schedule",
                                                 color = ThemeStatusWarning,
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
