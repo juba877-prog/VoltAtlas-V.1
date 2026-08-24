@@ -1,6 +1,9 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -280,19 +283,54 @@ fun VoltAtlasStatusBadge(
     color: Color,
     modifier: Modifier = Modifier
 ) {
+    // SLICE 8C: engineering truth publishes IMMEDIATELY — the badge text and
+    // its semantics are never delayed or interpolated. Only decorative
+    // container emphasis follows the centralized StatusFeedbackPolicy
+    // timeline (once per real change; never on identical recomposition;
+    // empty timeline under reduced motion).
+    val reduceMotion = LocalReduceMotion.current
+    var previousText by remember { mutableStateOf<String?>(null) }
+    val borderPulse = remember { Animatable(0f) }
+
+    LaunchedEffect(text) {
+        val pulse = StatusFeedbackPolicy.shouldPulse(previousText, text)
+        previousText = text
+        for (step in StatusFeedbackPolicy.emphasisTimeline(pulse, reduceMotion)) {
+            when (step) {
+                is StatusFeedbackPolicy.EmphasisStep.Snap -> borderPulse.snapTo(step.value)
+                is StatusFeedbackPolicy.EmphasisStep.Tween -> borderPulse.animateTo(
+                    targetValue = step.toValue,
+                    animationSpec = tween(
+                        durationMillis = step.durationMillis,
+                        easing = step.easing
+                    )
+                )
+            }
+        }
+    }
+
+    // Effects-only color transition (FastEffects pacing): the animated value
+    // always settles exactly on the approved EngineeringStatusPalette-derived
+    // target — no intermediate engineering meaning is fabricated.
+    val animatedColor by animateColorAsState(
+        targetValue = color,
+        animationSpec = tween(durationMillis = com.example.ui.theme.VoltAtlasMotion.FastEffects.DurationMillis),
+        label = "status_badge_color"
+    )
+
     Box(
         modifier = modifier
             .height(26.dp)
             .clip(CircleShape)
-            .background(color.copy(alpha = 0.15f))
-            .border(VoltAtlasBorders.subtle, color.copy(alpha = 0.4f), CircleShape)
+            .background(animatedColor.copy(alpha = 0.15f + 0.10f * borderPulse.value))
+            .border(VoltAtlasBorders.subtle, animatedColor.copy(alpha = 0.4f + 0.35f * borderPulse.value), CircleShape)
             .padding(horizontal = 10.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
             style = StatusText,
-            color = color,
+            color = animatedColor,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
