@@ -159,6 +159,17 @@ fun QuickEngineeringHubScreen(
         filteredTools.map { it.category }.distinct()
     }
 
+    // SLICE 8D: capped first-entry stagger for the small tile group (8 tiles).
+    // Pre-computed ONCE per filter change — no per-item list scans.
+    val categoryBaseOffsets = remember(filteredTools, categories) {
+        var acc = 0
+        categories.map { c ->
+            val base = acc
+            acc += filteredTools.count { it.category == c }
+            c to base
+        }.toMap()
+    }
+
     Box(modifier = Modifier.fillMaxSize().background(DarkBackground)) {
         // Faint decorative electrical schematic grid lines
         Canvas(modifier = Modifier.fillMaxSize().alpha(0.04f)) {
@@ -314,10 +325,17 @@ fun QuickEngineeringHubScreen(
 
                         // Tool Cards in Category
                         items(toolsInCategory, key = { it.id }) { tool ->
-                            QuickToolCard(
-                                tool = tool,
-                                onClick = { onSelectTool(tool.id) }
-                            )
+                            // SLICE 8D: capped stagger plays ONLY on the hub's
+                            // first entry; returns from tools and ordinary
+                            // recomposition publish tiles immediately.
+                            com.example.ui.theme.FirstEntryStagger(
+                                index = (categoryBaseOffsets[tool.category] ?: 0) + toolsInCategory.indexOf(tool)
+                            ) {
+                                QuickToolCard(
+                                    tool = tool,
+                                    onClick = { onSelectTool(tool.id) }
+                                )
+                            }
                         }
                     }
                 }

@@ -4,7 +4,10 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -73,4 +76,74 @@ fun SharedAxisEnter(
 @Composable
 private fun Box2D(modifier: Modifier, content: @Composable () -> Unit) {
     androidx.compose.foundation.layout.Box(modifier = modifier) { content() }
+}
+
+/**
+ * Phase 8 Slice 8D — capped first-entry stagger POLICY (pure, testable).
+ *
+ * Allowed ONLY for small first-entry card/tile groups (e.g. the 8 Quick
+ * Engineering Hub tiles). NEVER applied to circuit / BOQ / panel schedule /
+ * catalog lists. Reduced motion removes all stagger (immediate).
+ */
+object StaggerPolicy {
+    /** Per-item delay small enough that no item feels withheld. */
+    const val PerItemDelayMillis = 40
+
+    /**
+     * Hard cap on the LAST item's delay: with the cap below one standard
+     * duration, even the final tile begins almost immediately.
+     */
+    const val MaxTotalStaggerMillis = 240
+
+    fun delayForIndex(index: Int, reduceMotion: Boolean = false): Int =
+        if (reduceMotion || index <= 0) {
+            0
+        } else {
+            minOf(index * PerItemDelayMillis, MaxTotalStaggerMillis)
+        }
+}
+
+/**
+ * Phase 8 Slice 8D — one-shot entrance choreography for SMALL tile groups.
+ *
+ * Each tile manages its OWN saveable once-flag: the entrance plays exactly
+ * once per group lifetime. Ordinary recomposition never replays it, and
+ * returning from a child screen restores the flag (tiles publish instantly).
+ * Reduced motion publishes the final frame immediately.
+ */
+@Composable
+fun FirstEntryStagger(
+    index: Int,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val reduceMotion = LocalReduceMotion.current
+    var hasPlayed by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+
+    val progress = remember { Animatable(if (hasPlayed || reduceMotion) 1f else 0f) }
+
+    LaunchedEffect(Unit) {
+        if (!hasPlayed && !reduceMotion) {
+            kotlinx.coroutines.delay(
+                StaggerPolicy.delayForIndex(index, reduceMotion).toLong()
+            )
+            progress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(
+                    durationMillis = VoltAtlasMotion.FastSpatial.DurationMillis,
+                    easing = VoltAtlasMotion.StandardSpatial.easing
+                )
+            )
+        }
+        if (progress.value < 1f) progress.snapTo(1f)
+        hasPlayed = true
+    }
+
+    androidx.compose.foundation.layout.Box(modifier = modifier.graphicsLayer {
+        val p = progress.value
+        alpha = p
+        translationY = (1f - p) * 16f // subtle rise-in; no scale bounce
+    }) {
+        content()
+    }
 }
