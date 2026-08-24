@@ -130,6 +130,11 @@ fun MainLayout(
     var showQuickEngineering by rememberSaveable { mutableStateOf(false) }
     var selectedQuickToolId by rememberSaveable { mutableStateOf<String?>(null) }
 
+    // SLICE 8B: direction memory for the Project Picker <-> Workspace entry.
+    var previousHadActiveProject by rememberSaveable { mutableStateOf(false) }
+
+    val reduceMotion = com.example.ui.theme.LocalReduceMotion.current
+
     val createPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) {
             pdfScope.launch {
@@ -149,49 +154,85 @@ fun MainLayout(
 
     if (showQuickEngineering) {
         val activeToolId = selectedQuickToolId
-        if (activeToolId == null) {
-            QuickEngineeringHubScreen(
-                onSelectTool = { selectedQuickToolId = it },
-                onBack = { 
-                    showQuickEngineering = false 
-                    selectedQuickToolId = null
+        // SLICE 8B: directional shared-axis transition Hub <-> individual tool.
+        // AnimatedContent keeps per-target saved state (scroll position,
+        // entered inputs) so switching does not recreate screen state.
+        androidx.compose.animation.AnimatedContent(
+            targetState = activeToolId,
+            transitionSpec = {
+                val direction = if (targetState == null) {
+                    VoltAtlasMotion.NavigationDirection.Backward
+                } else {
+                    VoltAtlasMotion.NavigationDirection.Forward
                 }
-            )
-        } else {
-            when (activeToolId) {
-                "cable_sizing" -> QuickCableCalcScreen(onBack = { selectedQuickToolId = null })
-                "voltage_drop" -> com.example.ui.screens.quick.QuickVoltageDropScreenV2(onBack = { selectedQuickToolId = null })
-                "load_current" -> com.example.ui.screens.quick.QuickLoadCurrentScreenV2(onBack = { selectedQuickToolId = null })
-                "power_triangle" -> QuickPowerTriangleScreen(onBack = { selectedQuickToolId = null })
-                "pfc" -> com.example.ui.screens.quick.QuickPfcScreenV2(onBack = { selectedQuickToolId = null })
-                "transformer_quick" -> QuickTransformerScreen(onBack = { selectedQuickToolId = null })
-                "transformer_sc" -> QuickTransformerScScreen(onBack = { selectedQuickToolId = null })
-                "lighting" -> QuickLightingScreen(onBack = { selectedQuickToolId = null })
-                else -> QuickCableCalcScreen(onBack = { selectedQuickToolId = null })
+                VoltAtlasMotion.tabContentTransform(
+                    direction = direction,
+                    reduceMotion = reduceMotion
+                )
+            },
+            label = "QuickToolSwitchAnimation"
+        ) { toolId ->
+            if (toolId == null) {
+                QuickEngineeringHubScreen(
+                    onSelectTool = { selectedQuickToolId = it },
+                    onBack = {
+                        showQuickEngineering = false
+                        selectedQuickToolId = null
+                    }
+                )
+            } else {
+                when (toolId) {
+                    "cable_sizing" -> QuickCableCalcScreen(onBack = { selectedQuickToolId = null })
+                    "voltage_drop" -> com.example.ui.screens.quick.QuickVoltageDropScreenV2(onBack = { selectedQuickToolId = null })
+                    "load_current" -> com.example.ui.screens.quick.QuickLoadCurrentScreenV2(onBack = { selectedQuickToolId = null })
+                    "power_triangle" -> QuickPowerTriangleScreen(onBack = { selectedQuickToolId = null })
+                    "pfc" -> com.example.ui.screens.quick.QuickPfcScreenV2(onBack = { selectedQuickToolId = null })
+                    "transformer_quick" -> QuickTransformerScreen(onBack = { selectedQuickToolId = null })
+                    "transformer_sc" -> QuickTransformerScScreen(onBack = { selectedQuickToolId = null })
+                    "lighting" -> QuickLightingScreen(onBack = { selectedQuickToolId = null })
+                    else -> QuickCableCalcScreen(onBack = { selectedQuickToolId = null })
+                }
             }
         }
         return
     }
 
     if (activeId == null) {
-        ProjectPickerScreen(
-            projects = projects,
-            onCreateProject = { name -> viewModel.createAndOpenProject(name) },
-            onOpenProject = { id -> viewModel.openProject(id) },
-            onRenameProject = { id, newName -> viewModel.renameProject(id, newName) },
-            onDeleteProject = { id -> viewModel.deleteProject(id) },
-            onExportProjectJson = { id -> viewModel.exportProjectJson(id) },
-            onImportProjectJson = { jsonStr, callback -> viewModel.importProjectJson(jsonStr, callback) },
-            onOpenSettings = { viewModel.openGlobalSettings() },
-            onOpenQuickCalc = { 
-                showQuickEngineering = true
-                selectedQuickToolId = null
-            },
-            confirmDestructiveActions = confirmDestructiveActions
-        )
+        // SLICE 8B: Project Picker re-entry after closing a workspace reads as
+        // Backward (mirrors Forward workspace entry). Cold launch plays NO
+        // entrance animation (performance guardrail: no motion on cold start).
+        val pickerContent: @Composable () -> Unit = {
+            ProjectPickerScreen(
+                projects = projects,
+                onCreateProject = { name -> viewModel.createAndOpenProject(name) },
+                onOpenProject = { id -> viewModel.openProject(id) },
+                onRenameProject = { id, newName -> viewModel.renameProject(id, newName) },
+                onDeleteProject = { id -> viewModel.deleteProject(id) },
+                onExportProjectJson = { id -> viewModel.exportProjectJson(id) },
+                onImportProjectJson = { jsonStr, callback -> viewModel.importProjectJson(jsonStr, callback) },
+                onOpenSettings = { viewModel.openGlobalSettings() },
+                onOpenQuickCalc = {
+                    showQuickEngineering = true
+                    selectedQuickToolId = null
+                },
+                confirmDestructiveActions = confirmDestructiveActions
+            )
+        }
+        if (previousHadActiveProject) {
+            com.example.ui.theme.SharedAxisEnter(
+                direction = com.example.ui.theme.VoltAtlasMotion.NavigationDirection.Backward
+            ) { pickerContent() }
+        } else {
+            pickerContent()
+        }
 
+        LaunchedEffect(Unit) { previousHadActiveProject = false }
         return
     }
+
+    // SLICE 8B: remember that a workspace was open so the Picker's next entry
+    // can be direction-aware (Backward) without replaying during recomposition.
+    LaunchedEffect(activeId) { previousHadActiveProject = true }
 
     val activeProject = projects.find { it.projectId == activeId }
     val context = LocalContext.current
@@ -334,8 +375,6 @@ fun MainLayout(
         }
     }
 
-    val reduceMotion = com.example.ui.theme.LocalReduceMotion.current
-
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val useNavRail = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE ||
             configuration.screenWidthDp >= 600
@@ -398,6 +437,13 @@ fun MainLayout(
         }
     }
 
+    // SLICE 8B: workspace entry is an approved EMPHASIZED moment — restrained
+    // shared-axis enter (short travel + subtle scale + alpha), played once per
+    // project open. Draw-phase only: input is never blocked.
+    com.example.ui.theme.SharedAxisEnter(
+        direction = com.example.ui.theme.VoltAtlasMotion.NavigationDirection.Forward,
+        modifier = Modifier.fillMaxSize()
+    ) {
     Row(modifier = Modifier.fillMaxSize()) {
         if (useNavRail) {
             NavigationRail(
@@ -904,14 +950,13 @@ fun MainLayout(
                                     transitionSpec = {
                                         if (isPredictiveBackNav) {
                                             EnterTransition.None togetherWith ExitTransition.None
-                                        } else if (reduceMotion) {
-                                            VoltAtlasMotion.tabReducedMotionTransition
                                         } else {
-                                            if (targetState > initialState) {
-                                                VoltAtlasMotion.tabForwardTransition
-                                            } else {
-                                                VoltAtlasMotion.tabBackwardTransition
-                                            }
+                                            // SLICE 8B: restrained shared-axis composition —
+                                            // directional short slide + subtle scale + alpha.
+                                            VoltAtlasMotion.tabContentTransform(
+                                                direction = VoltAtlasMotion.navigationDirection(initialState, targetState),
+                                                reduceMotion = reduceMotion
+                                            )
                                         }
                                     },
                                     label = "MainTabSwitchAnimation"
@@ -939,6 +984,7 @@ fun MainLayout(
         }
     }
     }
+    } // SLICE 8B: close SharedAxisEnter workspace wrapper
 
     if (showNewProjectConfirmation) {
         AlertDialog(

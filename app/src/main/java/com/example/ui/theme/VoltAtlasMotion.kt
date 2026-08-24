@@ -157,6 +157,90 @@ object VoltAtlasMotion {
     @Deprecated("Use StandardSpatial / ReducedMotion contracts directly", ReplaceWith("VoltAtlasMotion.ReducedMotion"))
     val SpringDampingNoBouncy = Spring.DampingRatioNoBouncy
 
+    // ── DIRECTIONAL SHARED-AXIS TRANSITION CONTRACT (Slice 8B) ─────────────
+
+    /**
+     * Horizontal navigation direction. In RTL layouts the composables apply
+     * the sign through [LocalLayoutDirection]-aware offsets at the call site;
+     * the token layer only owns magnitude and timing.
+     */
+    enum class NavigationDirection { Forward, Backward }
+
+    /**
+     * Pure, deterministic direction policy for index-based destinations.
+     * Higher destination index == deeper in hierarchy == Forward.
+     */
+    fun navigationDirection(fromIndex: Int, toIndex: Int): NavigationDirection =
+        if (toIndex >= fromIndex) NavigationDirection.Forward else NavigationDirection.Backward
+
+    /**
+     * Restrained shared-axis-inspired composition for PRIMARY WORKSPACE
+     * DESTINATION CHANGES (MainLayout tabs): directional translation limited
+     * to 1/6 of the width (no carousel feel), subtle scale (0.98 -> 1.0,
+     * engineering screens must not zoom wildly), plus alpha.
+     *
+     * Deterministic [StandardSpatial] tweens only — routine navigation never
+     * uses the expressive spring. Exit mirrors enter so back navigation is
+     * visually symmetric. Reduced motion degrades to the minimal fade pair.
+     */
+    fun tabContentTransform(
+        direction: NavigationDirection,
+        reduceMotion: Boolean
+    ): ContentTransform {
+        if (reduceMotion) return tabReducedMotionTransition
+        val sign = if (direction == NavigationDirection.Forward) 1 else -1
+        val enter = androidx.compose.animation.fadeIn(animationSpec = StandardSpatial.floatSpec) +
+            androidx.compose.animation.slideInHorizontally(
+                animationSpec = StandardSpatial.offsetSpec,
+                initialOffsetX = { sign * it / 6 }
+            ) +
+            androidx.compose.animation.scaleIn(
+                animationSpec = StandardSpatial.floatSpec,
+                initialScale = 0.98f
+            )
+        val exit = androidx.compose.animation.fadeOut(animationSpec = FastEffects.floatSpec) +
+            androidx.compose.animation.slideOutHorizontally(
+                animationSpec = StandardSpatial.offsetSpec,
+                targetOffsetX = { -sign * it / 6 }
+            ) +
+            androidx.compose.animation.scaleOut(
+                animationSpec = FastEffects.floatSpec,
+                targetScale = 0.98f
+            )
+        return enter togetherWith exit
+    }
+
+    /**
+     * EMPHASIZED workspace-entry composition (Project Picker -> Project
+     * Workspace and back): slightly deeper travel (1/4 width) and scale range
+     * than routine tabs because workspace entry is an approved high-value
+     * moment, while remaining deterministic (tween-paced, no bounce).
+     * Reduced motion degrades to the minimal fade pair.
+     */
+    const val WorkspaceEntryDurationMillis = DurationEmphasized
+    fun workspaceEntryTransform(
+        direction: NavigationDirection,
+        reduceMotion: Boolean
+    ): ContentTransform {
+        if (reduceMotion) return tabReducedMotionTransition
+        val sign = if (direction == NavigationDirection.Forward) 1 else -1
+        val enter = androidx.compose.animation.fadeIn(animationSpec = DefaultEffects.floatSpec) +
+            androidx.compose.animation.slideInHorizontally(
+                animationSpec = StandardSpatial.offsetSpec,
+                initialOffsetX = { sign * it / 4 }
+            ) +
+            androidx.compose.animation.scaleIn(
+                animationSpec = StandardSpatial.floatSpec,
+                initialScale = 0.97f
+            )
+        val exit = androidx.compose.animation.fadeOut(animationSpec = FastEffects.floatSpec) +
+            androidx.compose.animation.slideOutHorizontally(
+                animationSpec = FastSpatial.offsetSpec,
+                targetOffsetX = { -sign * it / 4 }
+            )
+        return enter togetherWith exit
+    }
+
     // ── LEGACY TRANSITIONS (existing MainLayout call sites) ────────────────
     // Slice 8B replaces these with directional shared-axis builders; kept so
     // current call sites compile unchanged until migrated.
