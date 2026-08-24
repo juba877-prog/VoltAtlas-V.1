@@ -73,10 +73,17 @@ fun SldToolbar(
     val borderColor = if (isDarkTheme) Color(0xFF30363D) else Color(0xFFCBD5E1)
     val textColor = palette.textPrimary
 
-    // Animation progress for radial items popping out
+    // Animation progress for radial items popping out — approved EMPHASIZED
+    // moment (SLD radial tool fan), using the centralized expressive token.
+    // Reduced motion publishes the final state immediately (no spring travel).
+    val reduceMotion = com.example.ui.theme.LocalReduceMotion.current
     val animationProgress by animateFloatAsState(
         targetValue = if (isExpanded) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.7f, stiffness = 400f),
+        animationSpec = if (reduceMotion) {
+            androidx.compose.animation.core.snap()
+        } else {
+            com.example.ui.theme.VoltAtlasMotion.EmphasizedSpatial.floatSpec
+        },
         label = "radial_expansion"
     )
 
@@ -442,9 +449,15 @@ fun SldToolbar(
                 }
         ) {
             Box(contentAlignment = Alignment.Center) {
-                // Rotating + icon morphing visually into an X when opened
+                // Rotating + icon morphing visually into an X when opened.
+                // FastSpatial token; snaps immediately under reduced motion.
                 val rotation by animateFloatAsState(
                     targetValue = if (isExpanded) 45f else 0f,
+                    animationSpec = if (reduceMotion) {
+                        androidx.compose.animation.core.snap()
+                    } else {
+                        com.example.ui.theme.VoltAtlasMotion.FastSpatial.floatSpec
+                    },
                     label = "fab_rotation"
                 )
                 Icon(
