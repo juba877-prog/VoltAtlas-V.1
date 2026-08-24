@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -63,6 +64,23 @@ fun EngineeringAssistantSheet(
         }
     }
 
+    // SLICE 8E: EMPHASIZED content entrance for this approved high-value
+    // moment (opening the assistant). The native ModalBottomSheet slide/drag/
+    // predictive-back behavior is intentionally UNTOUCHED below — only the
+    // inner content performs a brief calm rise-and-fade through the
+    // centralized EmphasizedSpatial token. Reduced motion publishes instantly.
+    val contentEntrance = remember { androidx.compose.animation.core.Animatable(if (reduceMotion) 1f else 0f) }
+    LaunchedEffect(Unit) {
+        if (!reduceMotion) {
+            contentEntrance.animateTo(
+                targetValue = 1f,
+                animationSpec = com.example.ui.theme.VoltAtlasMotion.EmphasizedSpatial.floatSpec
+            )
+        } else {
+            contentEntrance.snapTo(1f)
+        }
+    }
+
     ModalBottomSheet(
         onDismissRequest = { viewModel.close() },
         sheetState = sheetState,
@@ -76,6 +94,10 @@ fun EngineeringAssistantSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(if (uiState.isExpanded) 0.95f else 0.80f)
+                .graphicsLayer {
+                    alpha = contentEntrance.value
+                    translationY = (1f - contentEntrance.value) * 24.dp.toPx() // subtle rise-in
+                }
         ) {
             // --- TOP HEADER ROW ---
             Surface(
