@@ -52,8 +52,12 @@ import kotlinx.coroutines.launch
 
 val BrandCyan: Color
     @Composable get() = SleekPrimary
+// Step 7 logo correction: the home/project VA monogram bridge stroke was bound
+// to StatusNeutral (grey #94A3B8). It must resolve to the authoritative
+// VoltAtlas green token (BrandMarkGreen == VoltAtlasLogo.GREEN == #19C979),
+// identical in Light and Dark themes. V geometry and blue strokes unchanged.
 val BrandGreen: Color
-    @Composable get() = StatusNeutral
+    @Composable get() = BrandMarkGreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -231,29 +235,40 @@ fun ProjectPickerScreen(
                         
                         val strokePx = 6.dp.toPx()
                         
-                        // Draw V (Cyan)
+                        // Authoritative brand identity (single source:
+                        // com.example.boot.VoltAtlasLogo). BOTH V strokes use
+                        // the approved VoltAtlas blue; the horizontal
+                        // crossing/bridge stroke uses the approved VoltAtlas
+                        // green. Direct token references - deliberately NOT
+                        // routed through BrandCyan/legacy aliases, which are
+                        // theme-aware UI accents.
+                        val vStrokeColor = BrandMarkBlue
+                        val bridgeColor = BrandMarkGreen
+                        
+                        // Draw LEFT V stroke (approved VoltAtlas blue)
                         drawLine(
-                            color = brandCyan,
+                            color = vStrokeColor,
                             start = Offset(vLeftX, vLeftY),
                             end = Offset(vBottomX, vBottomY),
                             strokeWidth = strokePx,
                             cap = StrokeCap.Round
                         )
+                        // Draw RIGHT V stroke (approved VoltAtlas blue)
                         drawLine(
-                            color = brandCyan,
+                            color = vStrokeColor,
                             start = Offset(vBottomX, vBottomY),
                             end = Offset(vRightX, vRightY),
                             strokeWidth = strokePx,
                             cap = StrokeCap.Round
                         )
                         
-                        // Draw Crossbar representing A (Green)
+                        // Draw horizontal bridge/crossbar (approved VoltAtlas green)
                         val barY = h * 0.53f
                         val barStartX = w * 0.41f
                         val barEndX = w * 0.59f
                         
                         drawLine(
-                            color = brandGreen,
+                            color = bridgeColor,
                             start = Offset(barStartX, barY),
                             end = Offset(barEndX, barY),
                             strokeWidth = strokePx,

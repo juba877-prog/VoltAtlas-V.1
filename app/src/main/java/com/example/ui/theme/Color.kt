@@ -54,6 +54,15 @@ val SlateBorderLight = Color(0xFF94A3B8)
 val SelectedTabContainerDark = Color(0xFF1E204A)
 val SelectedTabContainerLight = Color(0xFFE0E7FF)
 
+// Authoritative VoltAtlas brand-mark tokens (single colour source:
+// com.example.boot.VoltAtlasLogo, which mirrors the official
+// voltatlas_va_logo.xml vector drawable).
+//   V left/right strokes      -> BrandMarkBlue  (#08B7E8)
+//   horizontal bridge stroke  -> BrandMarkGreen (#19C979)
+// Theme-independent: the mark keeps its identity in Light and Dark modes.
+val BrandMarkBlue = Color(com.example.boot.VoltAtlasLogo.BLUE)
+val BrandMarkGreen = Color(com.example.boot.VoltAtlasLogo.GREEN)
+
 // Light Theme Palette (Daytime Workspace/Printing)
 val LightBackgroundDeep = Color(0xFFF1F5F9)
 val LightBackground = Color(0xFFF8FAFC)
