@@ -1,4 +1,4 @@
-package com.example.ui.screens
+﻿package com.example.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -75,7 +75,7 @@ fun MoreModulesGrid(onNavigate: (Int) -> Unit) {
 
         VoltAtlasFullWidthModuleRow(
             title = "Electrical & Cable Conversions",
-            description = "AWG/SWG/kcmil to mm² (True, Nearest, Safe Up-Size), µF ↔ kVAR, HP ↔ kW, Freq ↔ RPM",
+            description = "AWG/SWG/kcmil to mmÂ² (True, Nearest, Safe Up-Size), ÂµF â†” kVAR, HP â†” kW, Freq â†” RPM",
             icon = Icons.Default.SwapHoriz,
             iconTint = Color(0xFF38BDF8),
             onClick = { onNavigate(10) }
@@ -137,7 +137,7 @@ fun VoltAtlasFullWidthModuleRow(
                     .size(48.dp)
                     .background(
                         if (iconTint != Color.Unspecified) iconTint.copy(alpha = 0.12f)
-                        else SleekPrimary.copy(alpha = 0.12f),
+                        else ThemePrimary.copy(alpha = 0.12f),
                         shape = RoundedCornerShape(8.dp)
                     ),
                 contentAlignment = Alignment.Center
@@ -154,7 +154,7 @@ fun VoltAtlasFullWidthModuleRow(
                 Text(
                     text = title,
                     style = CardTitle.copy(fontSize = 15.sp),
-                    color = ThemeTextColor,
+                    color = ThemeTextPrimary,
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
@@ -162,7 +162,7 @@ fun VoltAtlasFullWidthModuleRow(
                 Text(
                     text = description,
                     style = Caption.copy(fontSize = 12.sp),
-                    color = SlateTextSecondary,
+                    color = ThemeTextSecondary,
                     maxLines = 2,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
@@ -171,7 +171,7 @@ fun VoltAtlasFullWidthModuleRow(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                 contentDescription = "Open",
-                tint = SlateTextSecondary,
+                tint = ThemeTextSecondary,
                 modifier = Modifier.size(20.dp)
             )
         }

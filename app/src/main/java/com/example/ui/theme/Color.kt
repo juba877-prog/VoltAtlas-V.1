@@ -61,8 +61,11 @@ val LightSurface = Color(0xFFFFFFFF)
 val LightSurfaceHigh = Color(0xFFE2E8F0)
 val LightSurfaceSelected = Color(0xFFE0F2FE)
 
-val LightPrimaryBlue = Color(0xFF0284C7)
-val LightPrimaryCyan = Color(0xFF0EA5E9)
+// Step 7 (Light-Mode Correction): brand blue deepened from #0284C7 to #0369A1
+// (WCAG on white: ~4.0:1 -> ~5.5:1) and cyan deepened from #0EA5E9 to #0277BD
+// (~2.8:1 -> ~4.8:1). Surfaces stay light; only foreground/semantic roles darken.
+val LightPrimaryBlue = Color(0xFF0369A1)
+val LightPrimaryCyan = Color(0xFF0277BD)
 val LightPrimaryContainer = Color(0xFFE0F2FE)
 
 val LightTextPrimary = Color(0xFF0F172A)
@@ -109,6 +112,24 @@ val ThemeStatusNeutral: Color
     @Composable get() = if (LocalThemeIsDark.current) StatusNeutral else StatusNeutralLight
 
 // VoltAtlas Engineering & Brand Semantic Tokens
+// Step 7 (Light-Mode Correction): status colors are dark-tuned in Dark Mode but
+// were reused verbatim in Light Mode, where Pass (#3DD68C ≈ 1.9:1), Warning
+// (#F5A623 ≈ 1.9:1) and Fail (#F0554C ≈ 3.0:1) fail WCAG AA on white surfaces.
+// Light Mode therefore uses darker saturated variants (≥ 4.5:1 on white AND on
+// the 15%-alpha tinted badge/chip backgrounds rendered by VoltAtlasStatusBadge).
+val StatusPassLight = Color(0xFF166534)
+val StatusWarningLight = Color(0xFF92400E)
+val StatusFailLight = Color(0xFFB91C1C)
+
+val ThemeStatusPass: Color
+    @Composable get() = if (LocalThemeIsDark.current) StatusPass else StatusPassLight
+
+val ThemeStatusWarning: Color
+    @Composable get() = if (LocalThemeIsDark.current) StatusWarning else StatusWarningLight
+
+val ThemeStatusFail: Color
+    @Composable get() = if (LocalThemeIsDark.current) StatusFail else StatusFailLight
+
 val BrandPrimary: Color
     @Composable get() = ThemePrimary
 

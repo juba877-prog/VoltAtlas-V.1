@@ -222,6 +222,24 @@ fun statusColor(status: String): Color {
     }
 }
 
+/**
+ * Step 7 (Light-Mode Correction): theme-aware variant of [statusColor].
+ * Dark Mode resolves to the exact legacy pixels of [statusColor]; Light Mode
+ * swaps in the darker saturated PASS/WARNING/FAIL variants that meet WCAG AA
+ * on light surfaces.
+ */
+@Composable
+fun themeStatusColor(status: String): Color {
+    val upper = status.uppercase()
+    return when {
+        upper.contains("WARN") || upper.contains("REVIEW") -> ThemeStatusWarning
+        upper.contains("FAIL") || upper.contains("INVALID") || upper.contains("ERROR") -> ThemeStatusFail
+        upper.contains("PASS") || upper.contains("COMPLIANT") -> ThemeStatusPass
+        upper.contains("OK") || upper.contains("NORMAL") || upper.contains("CALCULATED") -> ThemeStatusNeutral
+        else -> ThemeTextSecondary
+    }
+}
+
 fun statusSymbol(status: String): String {
     val upper = status.uppercase()
     return when {
@@ -239,7 +257,7 @@ fun StatusBadge(
 ) {
     VoltAtlasStatusBadge(
         text = status,
-        color = statusColor(status),
+        color = themeStatusColor(status),
         modifier = modifier
     )
 }
@@ -251,7 +269,7 @@ fun VoltAtlasStatusBadge(
 ) {
     VoltAtlasStatusBadge(
         text = status,
-        color = statusColor(status),
+        color = themeStatusColor(status),
         modifier = modifier
     )
 }
@@ -288,11 +306,12 @@ fun VoltAtlasStatusStrip(
     modifier: Modifier = Modifier
 ) {
     val color = when (status) {
-        SldValidationStatus.VALID -> StatusPass
-        SldValidationStatus.WARNING -> StatusWarning
-        SldValidationStatus.INVALID -> StatusFail
-        SldValidationStatus.DISCONNECTED -> StatusMissing
-        SldValidationStatus.DATA_REQUIRED -> StatusInfo
+        SldValidationStatus.VALID -> ThemeStatusPass
+        SldValidationStatus.WARNING -> ThemeStatusWarning
+        SldValidationStatus.INVALID -> ThemeStatusFail
+        SldValidationStatus.DISCONNECTED -> EngineeringNeutral
+        // Dark keeps the legacy StatusInfo pixel; Light uses the deep brand blue.
+        SldValidationStatus.DATA_REQUIRED -> if (LocalThemeIsDark.current) StatusInfo else ThemePrimary
     }
     Box(
         modifier = modifier
@@ -684,7 +703,7 @@ fun VoltAtlasModuleCard(
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .background(SurfaceElevated, shape = RoundedCornerShape(12.dp)),
+                    .background(ThemeSurfaceHigh, shape = RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -699,7 +718,7 @@ fun VoltAtlasModuleCard(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(text = description, style = Caption, color = ThemeTextSecondary)
             }
-            Text(text = "→", color = TextLow, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(text = "→", color = ThemeTextTertiary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -733,7 +752,7 @@ fun VoltAtlasModuleCardCompact(
                 Box(
                     modifier = Modifier
                         .size(36.dp)
-                        .background(SurfaceElevated, shape = RoundedCornerShape(10.dp)),
+                        .background(ThemeSurfaceHigh, shape = RoundedCornerShape(10.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -746,7 +765,7 @@ fun VoltAtlasModuleCardCompact(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = "Go to $title",
-                    tint = TextLow,
+                    tint = ThemeTextTertiary,
                     modifier = Modifier.size(16.dp)
                 )
             }

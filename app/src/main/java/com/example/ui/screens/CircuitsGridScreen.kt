@@ -1,4 +1,4 @@
-package com.example.ui.screens
+﻿package com.example.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Spring
@@ -30,7 +30,7 @@ import com.example.data.CircuitEntity
 import com.example.engine.CableSizingEngine
 import com.example.ui.EngineeringViewModel
 import com.example.ui.UiState
-import com.example.ui.components.statusColor
+import com.example.ui.components.themeStatusColor
 import com.example.ui.components.statusSymbol
 import com.example.ui.dialogs.CircuitEditDialog
 import com.example.ui.catalogCableSizeOptions
@@ -102,10 +102,10 @@ fun CircuitsGridScreen(
                     .fillMaxWidth()
                     .testTag("search_circuits_input"),
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = DarkCardBg,
-                    unfocusedContainerColor = DarkCardBg,
-                    focusedTextColor = ThemeTextColor,
-                    unfocusedTextColor = ThemeTextColor
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    focusedTextColor = ThemeTextPrimary,
+                    unfocusedTextColor = ThemeTextPrimary
                 )
             )
 
@@ -128,15 +128,15 @@ fun CircuitsGridScreen(
                     label = {
                         Text(
                             text = "Tier: $parentFilter",
-                            color = ThemeTextColor,
+                            color = ThemeTextPrimary,
                             fontSize = 12.sp,
                             maxLines = 1,
                             softWrap = false
                         )
                     },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = SleekPrimary,
-                        containerColor = DarkCardBg
+                        selectedContainerColor = ThemePrimary,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
                     ),
                     modifier = Modifier.weight(1f)
                 )
@@ -144,10 +144,10 @@ fun CircuitsGridScreen(
                 // Status filter chip (All -> PASS -> WARNING -> FAIL)
                 val isStatusFiltered = statusFilter != "All"
                 val statusChipBg = when (statusFilter) {
-                    "PASS" -> SleekPass
-                    "FAIL" -> SleekFail
-                    "WARNING" -> SleekWarning
-                    else -> DarkCardBg
+                    "PASS" -> ThemeStatusPass
+                    "FAIL" -> ThemeStatusFail
+                    "WARNING" -> ThemeStatusWarning
+                    else -> MaterialTheme.colorScheme.surfaceContainer
                 }
                 FilterChip(
                     selected = isStatusFiltered,
@@ -162,7 +162,7 @@ fun CircuitsGridScreen(
                     label = {
                         Text(
                             text = "Status: $statusFilter",
-                            color = if (isStatusFiltered) MaterialTheme.colorScheme.onPrimary else ThemeTextColor,
+                            color = if (isStatusFiltered) MaterialTheme.colorScheme.onPrimary else ThemeTextPrimary,
                             fontSize = 12.sp,
                             maxLines = 1,
                             softWrap = false
@@ -170,7 +170,7 @@ fun CircuitsGridScreen(
                     },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = statusChipBg,
-                        containerColor = DarkCardBg
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
                     ),
                     modifier = Modifier.weight(1f)
                 )
@@ -195,7 +195,7 @@ fun CircuitsGridScreen(
                         ) {
                             Text(
                                 text = "No circuits found. Click '+' to add your first circuit.",
-                                color = SlateTextSecondary,
+                                color = ThemeTextSecondary,
                                 fontSize = 14.sp,
                                 textAlign = TextAlign.Center
                             )
@@ -212,9 +212,9 @@ fun CircuitsGridScreen(
                             .clickable { viewModel.selectedCircuitId.value = if (isSelected) null else circ.id }
                             .testTag("circuit_card_${circ.circuitName}"),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (isSelected) if (LocalThemeIsDark.current) SelectedTabContainerDark else SelectedTabContainerLight else DarkCardBg
+                            containerColor = if (isSelected) if (LocalThemeIsDark.current) SelectedTabContainerDark else SelectedTabContainerLight else MaterialTheme.colorScheme.surfaceContainer
                         ),
-                        border = BorderStroke(1.dp, if (isSelected) SleekPrimary else BorderColor)
+                        border = BorderStroke(1.dp, if (isSelected) ThemePrimary else ThemeBorderSubtle)
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Row(
@@ -231,7 +231,7 @@ fun CircuitsGridScreen(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             circ.circuitName,
-                                            color = ThemeTextColor,
+                                            color = ThemeTextPrimary,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 15.sp,
                                             maxLines = 1,
@@ -246,24 +246,24 @@ fun CircuitsGridScreen(
                                                     viewModel.selectedCircuitId.value = circ.id
                                                     onNavigateToPanelSchedule?.invoke(circ.id)
                                                 },
-                                                color = SleekPrimary.copy(alpha = 0.12f),
+                                                color = ThemePrimary.copy(alpha = 0.12f),
                                                 shape = RoundedCornerShape(6.dp),
-                                                border = BorderStroke(1.dp, SleekPrimary.copy(alpha = 0.4f)),
+                                                border = BorderStroke(1.dp, ThemePrimary.copy(alpha = 0.4f)),
                                                 modifier = Modifier.testTag("open_panel_schedule_chip_${circ.circuitName}")
                                             ) {
                                                 Row(
                                                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Open Panel Schedule", tint = SleekPrimary, modifier = Modifier.size(12.dp))
+                                                    Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Open Panel Schedule", tint = ThemePrimary, modifier = Modifier.size(12.dp))
                                                     Spacer(modifier = Modifier.width(3.dp))
-                                                    Text("Schedule ➔", color = SleekPrimary, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                    Text("Schedule âž”", color = ThemePrimary, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                                                 }
                                             }
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(2.dp))
-                                    Text("Fed from: ${circ.fedFrom}  •  ${circ.loadKVA} kVA | ${circ.phases}", color = SlateTextSecondary, fontSize = 11.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    Text("Fed from: ${circ.fedFrom}  â€¢  ${circ.loadKVA} kVA | ${circ.phases}", color = ThemeTextSecondary, fontSize = 11.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                     
                                     val childrenTotalLoad = childrenLookup.getChildrenTotalLoad(circ.circuitName)
                                     val childrenDiffers = kotlin.math.abs(circ.loadKVA - childrenTotalLoad) > 0.001
@@ -275,9 +275,9 @@ fun CircuitsGridScreen(
                                             viewModel.selectedCircuitId.value = circ.id
                                             onNavigateToPanelSchedule?.invoke(circ.id)
                                         },
-                                        color = StatusWarning.copy(alpha = 0.15f),
+                                        color = ThemeStatusWarning.copy(alpha = 0.15f),
                                         shape = RoundedCornerShape(6.dp),
-                                        border = BorderStroke(1.dp, StatusWarning.copy(alpha = 0.5f)),
+                                        border = BorderStroke(1.dp, ThemeStatusWarning.copy(alpha = 0.5f)),
                                         modifier = Modifier
                                             .padding(top = 4.dp)
                                             .testTag("unconfirmed_conflict_badge_${circ.circuitName}")
@@ -289,13 +289,13 @@ fun CircuitsGridScreen(
                                             Icon(
                                                 imageVector = Icons.Default.Warning,
                                                 contentDescription = "Load conflict warning",
-                                                tint = StatusWarning,
+                                                tint = ThemeStatusWarning,
                                                 modifier = Modifier.size(14.dp)
                                             )
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Text(
-                                                text = "Superseded by ${Math.round(childrenTotalLoad * 10.0) / 10.0} kVA from children — tap to review in Panel Schedule",
-                                                color = StatusWarning,
+                                                text = "Superseded by ${Math.round(childrenTotalLoad * 10.0) / 10.0} kVA from children â€” tap to review in Panel Schedule",
+                                                color = ThemeStatusWarning,
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 maxLines = 1,
@@ -309,7 +309,7 @@ fun CircuitsGridScreen(
                                 if (isUnsupported) {
                                     Text(
                                         text = "Catalog data is not available for this cable family.",
-                                        color = SleekWarning,
+                                        color = ThemeStatusWarning,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 2,
@@ -323,14 +323,14 @@ fun CircuitsGridScreen(
                                     Column(horizontalAlignment = Alignment.End) {
                                         Text(
                                             text = result.cableSize_mm2,
-                                            color = SleekPrimary,
+                                            color = ThemePrimary,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 13.sp,
                                             maxLines = 1
                                         )
                                         Text(
                                             text = statusSymbol(result.status),
-                                            color = statusColor(result.status),
+                                            color = themeStatusColor(result.status),
                                             fontSize = 18.sp,
                                             fontWeight = FontWeight.Black
                                         )
@@ -344,7 +344,7 @@ fun CircuitsGridScreen(
                                 exit = fadeOut(tween(150)) + shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow))
                             ) {
                                 Column(modifier = Modifier.padding(top = 12.dp)) {
-                                    HorizontalDivider(color = BorderColor)
+                                    HorizontalDivider(color = ThemeBorderSubtle)
                                     Spacer(modifier = Modifier.height(12.dp))
                                     
                                     // CRUD Quick Control Panel
@@ -356,7 +356,7 @@ fun CircuitsGridScreen(
                                         val pTypeExp = circ.panelType?.trim()?.uppercase() ?: ""
                                         val isPanelRowExp = pTypeExp in setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER") || childrenLookup.hasChildren(circ.circuitName)
 
-                                        Text("Circuit Operations:", color = SlateTextSecondary, fontSize = 11.sp)
+                                        Text("Circuit Operations:", color = ThemeTextSecondary, fontSize = 11.sp)
                                         Spacer(modifier = Modifier.width(12.dp))
                                         if (isPanelRowExp) {
                                             IconButton(
@@ -366,7 +366,7 @@ fun CircuitsGridScreen(
                                                 },
                                                 modifier = Modifier.testTag("open_panel_schedule_btn_${circ.circuitName}")
                                             ) {
-                                                Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Open Panel Schedule", tint = SleekPrimary)
+                                                Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Open Panel Schedule", tint = ThemePrimary)
                                             }
                                             Spacer(modifier = Modifier.width(4.dp))
                                         }
@@ -377,7 +377,7 @@ fun CircuitsGridScreen(
                                             },
                                             modifier = Modifier.testTag("edit_circuit_btn_${circ.circuitName}")
                                         ) {
-                                            Icon(Icons.Default.Edit, contentDescription = "Edit Circuit", tint = SleekPrimary)
+                                            Icon(Icons.Default.Edit, contentDescription = "Edit Circuit", tint = ThemePrimary)
                                         }
                                         Spacer(modifier = Modifier.width(4.dp))
                                         IconButton(
@@ -386,7 +386,7 @@ fun CircuitsGridScreen(
                                             },
                                             modifier = Modifier.testTag("delete_circuit_btn_${circ.circuitName}")
                                         ) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete Circuit", tint = SleekFail)
+                                            Icon(Icons.Default.Delete, contentDescription = "Delete Circuit", tint = ThemeStatusFail)
                                         }
                                     }
 
@@ -394,30 +394,30 @@ fun CircuitsGridScreen(
                                     
                                     if (result != null) {
                                         // Sizing Details
-                                        Text("Sizing Specifications", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Text("Sizing Specifications", color = ThemePrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                         Spacer(modifier = Modifier.height(6.dp))
                                         
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text("Design Current (Ib)", color = SlateTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                                            Text("${String.format("%.2f", result.Ib_A)} A", color = ThemeTextColor, fontSize = 11.sp, maxLines = 1)
+                                            Text("Design Current (Ib)", color = ThemeTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                                            Text("${String.format("%.2f", result.Ib_A)} A", color = ThemeTextPrimary, fontSize = 11.sp, maxLines = 1)
                                         }
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text("Derating Factor", color = SlateTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                                            Text("${String.format("%.3f", result.cTotalDerating)}", color = ThemeTextColor, fontSize = 11.sp, maxLines = 1)
+                                            Text("Derating Factor", color = ThemeTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                                            Text("${String.format("%.3f", result.cTotalDerating)}", color = ThemeTextPrimary, fontSize = 11.sp, maxLines = 1)
                                         }
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text("Device & Type", color = SlateTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                                            Text("${result.deviceSize_A.toInt()} A (${result.deviceType})", color = ThemeTextColor, fontSize = 11.sp, maxLines = 1)
+                                            Text("Device & Type", color = ThemeTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                                            Text("${result.deviceSize_A.toInt()} A (${result.deviceType})", color = ThemeTextPrimary, fontSize = 11.sp, maxLines = 1)
                                         }
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text("Voltage Drop (V / %)", color = SlateTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                                            Text("${String.format("%.2f", result.voltDrop_V)} V (${String.format("%.2f", result.vdPct)}%)", color = ThemeTextColor, fontSize = 11.sp, maxLines = 1)
+                                            Text("Voltage Drop (V / %)", color = ThemeTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                                            Text("${String.format("%.2f", result.voltDrop_V)} V (${String.format("%.2f", result.vdPct)}%)", color = ThemeTextPrimary, fontSize = 11.sp, maxLines = 1)
                                         }
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text("Cumulative VD %", color = SlateTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                                            Text("Cumulative VD %", color = ThemeTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
                                             Text(
                                                 text = "${String.format("%.2f", result.cumulativeVDpct)}% / ${circ.maxVDpct * 100}%",
-                                                color = statusColor(result.status),
+                                                color = themeStatusColor(result.status),
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 11.sp,
                                                 maxLines = 1
@@ -429,24 +429,24 @@ fun CircuitsGridScreen(
 
                                              Text(
                                                 text = "Failure reason:",
-                                                color = SleekFail,
+                                                color = ThemeStatusFail,
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
 
                                             Text(
                                                 text = result.failReason,
-                                                color = ThemeTextColor,
+                                                color = ThemeTextPrimary,
                                                 fontSize = 11.sp
                                             )
                                         }
 
                                         Spacer(modifier = Modifier.height(12.dp))
-                                        HorizontalDivider(color = BorderColor)
+                                        HorizontalDivider(color = ThemeBorderSubtle)
                                         Spacer(modifier = Modifier.height(12.dp))
 
                                         // Interactive Manual Overrides Panel
-                                        Text("MANUAL OVERRIDES PANEL", color = SleekWarning, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Text("MANUAL OVERRIDES PANEL", color = ThemeStatusWarning, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                         Spacer(modifier = Modifier.height(8.dp))
 
                                         // Mode Indicator & Reset to Auto Row
@@ -458,7 +458,7 @@ fun CircuitsGridScreen(
                                             val isOverrideActive = circ.overrideDeviceSize != null || circ.overrideCableSize != null || circ.overrideDeviceType != null
                                             Text(
                                                 text = if (isOverrideActive) "MODE: OVERRIDE ACTIVE" else "MODE: AUTOMATIC SIZING",
-                                                color = if (isOverrideActive) SleekWarning else SleekPass,
+                                                color = if (isOverrideActive) ThemeStatusWarning else ThemeStatusPass,
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -474,10 +474,10 @@ fun CircuitsGridScreen(
                                                     )
                                                 },
                                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                                border = BorderStroke(1.dp, BorderColor),
+                                                border = BorderStroke(1.dp, ThemeBorderSubtle),
                                                 modifier = Modifier.testTag("reset_to_auto_btn_${circ.circuitName}")
                                             ) {
-                                                Text("Reset to Auto", color = ThemeTextColor, fontSize = 11.sp)
+                                                Text("Reset to Auto", color = ThemeTextPrimary, fontSize = 11.sp)
                                             }
                                         }
 
@@ -486,7 +486,7 @@ fun CircuitsGridScreen(
                                             OutlinedButton(
                                                 onClick = { onOpenAssistant(AssistantEntryPoint.CONTEXTUAL_CIRCUIT, circ) },
                                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                                border = BorderStroke(1.dp, SleekPrimary.copy(alpha = 0.4f)),
+                                                border = BorderStroke(1.dp, ThemePrimary.copy(alpha = 0.4f)),
                                                 shape = RoundedCornerShape(VoltAtlasShapes.chip),
                                                 modifier = Modifier.fillMaxWidth().testTag("ask_assistant_circuit_btn_${circ.circuitName}")
                                             ) {
@@ -497,11 +497,11 @@ fun CircuitsGridScreen(
                                                     Icon(
                                                         imageVector = Icons.Default.AutoAwesome,
                                                         contentDescription = "Ask Assistant",
-                                                        tint = SleekPrimary,
+                                                        tint = ThemePrimary,
                                                         modifier = Modifier.size(14.dp)
                                                     )
                                                     Spacer(modifier = Modifier.width(6.dp))
-                                                    Text("Ask Assistant about this circuit", color = SleekPrimary, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                                    Text("Ask Assistant about this circuit", color = ThemePrimary, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
                                                 }
                                             }
                                         }
@@ -521,27 +521,27 @@ fun CircuitsGridScreen(
                                                 value = selectedDeviceTypeStr,
                                                 onValueChange = {},
                                                 readOnly = true,
-                                                label = { Text("Protection Device Type Override", color = SlateTextSecondary, fontSize = 11.sp) },
+                                                label = { Text("Protection Device Type Override", color = ThemeTextSecondary, fontSize = 11.sp) },
                                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = deviceTypeDropdownExpanded) },
                                                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
                                                     focusedContainerColor = DarkBackground,
                                                     unfocusedContainerColor = DarkBackground,
-                                                    focusedBorderColor = SleekPrimary,
-                                                    unfocusedBorderColor = BorderColor,
-                                                    focusedLabelColor = SleekPrimary,
-                                                    unfocusedLabelColor = SlateTextSecondary,
-                                                    focusedTextColor = ThemeTextColor,
-                                                    unfocusedTextColor = ThemeTextColor
+                                                    focusedBorderColor = ThemePrimary,
+                                                    unfocusedBorderColor = ThemeBorderSubtle,
+                                                    focusedLabelColor = ThemePrimary,
+                                                    unfocusedLabelColor = ThemeTextSecondary,
+                                                    focusedTextColor = ThemeTextPrimary,
+                                                    unfocusedTextColor = ThemeTextPrimary
                                                 ),
                                                 modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable).testTag("override_device_type_btn")
                                             )
                                             ExposedDropdownMenu(
                                                 expanded = deviceTypeDropdownExpanded,
                                                 onDismissRequest = { deviceTypeDropdownExpanded = false },
-                                                modifier = Modifier.background(DarkCardBg).heightIn(max = 280.dp)
+                                                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer).heightIn(max = 280.dp)
                                             ) {
                                                 DropdownMenuItem(
-                                                    text = { Text("Auto (Recommended ${result.deviceType})", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                                                    text = { Text("Auto (Recommended ${result.deviceType})", color = ThemePrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                                                     onClick = {
                                                         viewModel.updateCircuit(circ.copy(overrideDeviceType = null))
                                                         deviceTypeDropdownExpanded = false
@@ -549,7 +549,7 @@ fun CircuitsGridScreen(
                                                 )
                                                 listOf("MCB", "MCCB", "ACB", "Switch-Disconnector").forEach { typeOption ->
                                                     DropdownMenuItem(
-                                                        text = { Text(typeOption, color = ThemeTextColor, fontSize = 12.sp) },
+                                                        text = { Text(typeOption, color = ThemeTextPrimary, fontSize = 12.sp) },
                                                         onClick = {
                                                             viewModel.updateCircuit(circ.copy(overrideDeviceType = typeOption))
                                                             deviceTypeDropdownExpanded = false
@@ -575,27 +575,27 @@ fun CircuitsGridScreen(
                                                 value = selectedDeviceRatingStr,
                                                 onValueChange = {},
                                                 readOnly = true,
-                                                label = { Text("Protection Device Rating Override", color = SlateTextSecondary, fontSize = 11.sp) },
+                                                label = { Text("Protection Device Rating Override", color = ThemeTextSecondary, fontSize = 11.sp) },
                                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = deviceDropdownExpanded) },
                                                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
                                                     focusedContainerColor = DarkBackground,
                                                     unfocusedContainerColor = DarkBackground,
-                                                    focusedBorderColor = SleekPrimary,
-                                                    unfocusedBorderColor = BorderColor,
-                                                    focusedLabelColor = SleekPrimary,
-                                                    unfocusedLabelColor = SlateTextSecondary,
-                                                    focusedTextColor = ThemeTextColor,
-                                                    unfocusedTextColor = ThemeTextColor
+                                                    focusedBorderColor = ThemePrimary,
+                                                    unfocusedBorderColor = ThemeBorderSubtle,
+                                                    focusedLabelColor = ThemePrimary,
+                                                    unfocusedLabelColor = ThemeTextSecondary,
+                                                    focusedTextColor = ThemeTextPrimary,
+                                                    unfocusedTextColor = ThemeTextPrimary
                                                 ),
                                                 modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable).testTag("override_breaker_btn")
                                             )
                                             ExposedDropdownMenu(
                                                 expanded = deviceDropdownExpanded,
                                                 onDismissRequest = { deviceDropdownExpanded = false },
-                                                modifier = Modifier.background(DarkCardBg).heightIn(max = 280.dp)
+                                                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer).heightIn(max = 280.dp)
                                             ) {
                                                 DropdownMenuItem(
-                                                    text = { Text("Auto (Recommended ${result.deviceSize_A.toInt()} A)", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                                                    text = { Text("Auto (Recommended ${result.deviceSize_A.toInt()} A)", color = ThemePrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                                                     onClick = {
                                                         viewModel.updateCircuit(circ.copy(overrideDeviceSize = null))
                                                         deviceDropdownExpanded = false
@@ -603,7 +603,7 @@ fun CircuitsGridScreen(
                                                 )
                                                 CableSizingEngine.STANDARD_RATINGS.forEach { rating ->
                                                     DropdownMenuItem(
-                                                        text = { Text("${rating.toInt()} A", color = ThemeTextColor, fontSize = 12.sp) },
+                                                        text = { Text("${rating.toInt()} A", color = ThemeTextPrimary, fontSize = 12.sp) },
                                                         onClick = {
                                                             viewModel.updateCircuit(circ.copy(overrideDeviceSize = rating))
                                                             deviceDropdownExpanded = false
@@ -630,27 +630,27 @@ fun CircuitsGridScreen(
                                                 value = selectedCableSizeStr,
                                                 onValueChange = {},
                                                 readOnly = true,
-                                                label = { Text("Cable Cross-Section Override", color = SlateTextSecondary, fontSize = 11.sp) },
+                                                label = { Text("Cable Cross-Section Override", color = ThemeTextSecondary, fontSize = 11.sp) },
                                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = cableDropdownExpanded) },
                                                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
                                                     focusedContainerColor = DarkBackground,
                                                     unfocusedContainerColor = DarkBackground,
-                                                    focusedBorderColor = SleekPrimary,
-                                                    unfocusedBorderColor = BorderColor,
-                                                    focusedLabelColor = SleekPrimary,
-                                                    unfocusedLabelColor = SlateTextSecondary,
-                                                    focusedTextColor = ThemeTextColor,
-                                                    unfocusedTextColor = ThemeTextColor
+                                                    focusedBorderColor = ThemePrimary,
+                                                    unfocusedBorderColor = ThemeBorderSubtle,
+                                                    focusedLabelColor = ThemePrimary,
+                                                    unfocusedLabelColor = ThemeTextSecondary,
+                                                    focusedTextColor = ThemeTextPrimary,
+                                                    unfocusedTextColor = ThemeTextPrimary
                                                 ),
                                                 modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable).testTag("override_cable_btn")
                                             )
                                             ExposedDropdownMenu(
                                                 expanded = cableDropdownExpanded,
                                                 onDismissRequest = { cableDropdownExpanded = false },
-                                                modifier = Modifier.background(DarkCardBg).heightIn(max = 280.dp)
+                                                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer).heightIn(max = 280.dp)
                                             ) {
                                                 DropdownMenuItem(
-                                                    text = { Text("Auto (Recommended ${result.cableSize_mm2})", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                                                    text = { Text("Auto (Recommended ${result.cableSize_mm2})", color = ThemePrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                                                     onClick = {
                                                         viewModel.updateCircuit(circ.copy(overrideCableSize = null))
                                                         cableDropdownExpanded = false
@@ -658,7 +658,7 @@ fun CircuitsGridScreen(
                                                 )
                                                 catalogSizes.forEach { sizeStr ->
                                                     DropdownMenuItem(
-                                                        text = { Text(sizeStr, color = ThemeTextColor, fontSize = 12.sp) },
+                                                        text = { Text(sizeStr, color = ThemeTextPrimary, fontSize = 12.sp) },
                                                         onClick = {
                                                             viewModel.updateCircuit(circ.copy(overrideCableSize = sizeStr))
                                                             cableDropdownExpanded = false
@@ -681,9 +681,9 @@ fun CircuitsGridScreen(
                                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                                                 modifier = Modifier.testTag("apply_override_btn_${circ.circuitName}")
                                             ) {
-                                                Icon(Icons.Default.Check, contentDescription = "Apply Override", modifier = Modifier.size(14.dp), tint = ThemeTextColor)
+                                                Icon(Icons.Default.Check, contentDescription = "Apply Override", modifier = Modifier.size(14.dp), tint = ThemeTextPrimary)
                                                 Spacer(modifier = Modifier.width(4.dp))
-                                                Text("Apply Override", color = ThemeTextColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                Text("Apply Override", color = ThemeTextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                             }
                                         }
                                         Spacer(modifier = Modifier.height(16.dp))
@@ -697,7 +697,7 @@ fun CircuitsGridScreen(
                     item {
                         Text(
                             "Showing all ${filteredCircuits.size} matching circuits.",
-                            color = SlateTextSecondary,
+                            color = ThemeTextSecondary,
                             fontSize = 11.sp,
                             textAlign = TextAlign.Center,
                             modifier = Modifier
@@ -719,7 +719,7 @@ fun CircuitsGridScreen(
                 .align(Alignment.BottomEnd)
                 .padding(16.dp)
                 .testTag("add_circuit_fab"),
-            containerColor = SleekPrimary
+            containerColor = ThemePrimary
         ) {
             Icon(Icons.Default.Add, contentDescription = "Add Circuit", tint = MaterialTheme.colorScheme.onPrimary)
         }
@@ -765,7 +765,7 @@ fun CircuitsGridScreen(
             title = {
                 Text(
                     text = if (dependents.isNotEmpty()) "Delete Parent Board '${deletingCircuit.circuitName}'?" else "Delete Circuit '${deletingCircuit.circuitName}'?",
-                    color = ThemeTextColor,
+                    color = ThemeTextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 17.sp
                 )
@@ -774,13 +774,13 @@ fun CircuitsGridScreen(
                 if (dependents.isNotEmpty()) {
                     Text(
                         text = "Warning: '${deletingCircuit.circuitName}' feeds ${dependents.size} downstream circuit(s) (${dependents.joinToString { it.circuitName }}). Deleting it will disconnect these circuits and reset their source to Transformer. Do you want to proceed?",
-                        color = ThemeTextColor,
+                        color = ThemeTextPrimary,
                         fontSize = 13.sp
                     )
                 } else {
                     Text(
                         text = "Are you sure you want to delete circuit '${deletingCircuit.circuitName}'?",
-                        color = ThemeTextColor,
+                        color = ThemeTextPrimary,
                         fontSize = 13.sp
                     )
                 }
@@ -791,7 +791,7 @@ fun CircuitsGridScreen(
                         viewModel.deleteCircuit(deletingCircuit)
                         circuitToDelete = null
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = SleekFail),
+                    colors = ButtonDefaults.buttonColors(containerColor = ThemeStatusFail),
                     modifier = Modifier.testTag("confirm_delete_circuit_btn_${deletingCircuit.circuitName}")
                 ) {
                     Text("Delete", color = MaterialTheme.colorScheme.onError, fontWeight = FontWeight.Bold)
@@ -801,10 +801,10 @@ fun CircuitsGridScreen(
                 OutlinedButton(
                     onClick = { circuitToDelete = null }
                 ) {
-                    Text("Cancel", color = ThemeTextColor)
+                    Text("Cancel", color = ThemeTextPrimary)
                 }
             },
-            containerColor = DarkCardBg
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
         )
     }
 }
