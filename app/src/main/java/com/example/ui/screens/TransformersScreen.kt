@@ -59,22 +59,28 @@ import com.example.engine.TransformerEngine
 import com.example.ui.EngineeringViewModel
 import com.example.ui.UiState
 import com.example.ui.designsystem.components.DsCard
+import com.example.ui.designsystem.components.DsListRowItem
 import com.example.ui.designsystem.components.DsMetricTile
 import com.example.ui.designsystem.components.DsSectionHeader
 import com.example.ui.designsystem.components.DsSelectableChip
+import com.example.ui.designsystem.components.DsStatusBadge
 import com.example.ui.designsystem.components.DsStatusVariant
 import com.example.ui.designsystem.icons.ElectricalIcons
 import com.example.ui.designsystem.theme.dsExtendedColors
 
 /**
- * TRANSFORMERS re-skin #01 (Phase 2): visual-only restyle onto the approved Ds
- * design system. Every value keeps its pre-existing binding — this screen only
- * renders what [EngineeringViewModel] / [UiState.Success] already expose today:
- *  - Vector Group          -> read-only display of the existing `vectorGroup`.
- *  - Secondary Voltage(LV) -> read-only display of the existing `result.voltage`
- *    (the per-transformer snapshot seeded at creation; see AUDIT-03).
- *  - Loading band colors   -> derived ONLY from the existing `result.status`
- *    strings emitted by TransformerEngine (VERIFIED / REVIEW / OVERLOADED).
+ * TRANSFORMERS re-skin #01 (Phase 2 + V2 corrections): visual-only restyle onto
+ * the approved Ds design system. Every value keeps its pre-existing binding —
+ * this screen only renders what [EngineeringViewModel] / [UiState.Success]
+ * already expose today:
+ *  - Vector Group / Secondary Voltage -> read-only displays of existing data.
+ *  - Loading band colors              -> derived ONLY from the existing
+ *    `result.status` strings emitted by TransformerEngine (VERIFIED / REVIEW /
+ *    OVERLOADED). Sourced from theme-aware [MaterialTheme.dsExtendedColors].
+ *    Loading bar appearance is UNCHANGED (user instruction).
+ *  - Assigned Circuits list           -> derived from the EXISTING
+ *    circuit->transformer assignment (`CircuitEntity.transformerId`), mirroring
+ *    TransformerEngine's belongsToTx filter. No recompute, no new field.
  * No new data, no fabricated values, no engine/ViewModel changes.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -191,7 +197,22 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Text("Assigned circuits: ${result.circuitsAssigned}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
+                            Text(activeTx.transformerId, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    "Insulation: ${activeTx.txType}",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp
+                                )
+                                DsStatusBadge(
+                                    text = activeTx.status,
+                                    variant = if (activeTx.status.equals("Active", ignoreCase = true)) DsStatusVariant.Pass else DsStatusVariant.Neutral
+                                )
+                            }
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         Image(
@@ -246,33 +267,43 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
             }
 
             item {
-                // Electrical Ratings grid — same values/formats as before, tile layout.
-                DsSectionHeader(title = "Electrical Ratings")
-                Spacer(modifier = Modifier.height(12.dp))
+                // Compact summary strip — Connected / Max Active Demand / Recommended / Operating.
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         DsMetricTile("Connected Load", String.format("%.2f", result.connectedLoad), Modifier.weight(1f), unit = "kVA")
                         DsMetricTile("Max Active Demand", String.format("%.2f", result.demandLoad), Modifier.weight(1f), unit = "kW")
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        DsMetricTile("FLC (Incomer Rating)", String.format("%.2f", result.flc), Modifier.weight(1f), unit = "A")
                         DsMetricTile("Recommended Size", String.format("%.0f", result.recommendedSize), Modifier.weight(1f), unit = "kVA")
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         DsMetricTile("Operating Size", String.format("%.0f", result.selectedSize), Modifier.weight(1f), unit = "kVA")
-                        DsMetricTile("Impedance Zt (%Z / mΩ)", "${String.format("%.2f", activeTx.percentZ)}% (${String.format("%.2f", result.zt)} mΩ)", Modifier.weight(1f))
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        DsMetricTile("Isc 3-Phase", String.format("%.2f", result.isc3Phase), Modifier.weight(1f), unit = "kA", status = DsStatusVariant.Warning)
-                        DsMetricTile("Isc 1-Phase", String.format("%.2f", result.isc1Phase), Modifier.weight(1f), unit = "kA", status = DsStatusVariant.Warning)
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        // Decision A: read-only display of the pre-existing vectorGroup.
-                        DsMetricTile("Vector Group", result.vectorGroup, Modifier.weight(1f))
-                        // Decision B: read-only display of the pre-existing per-TX
-                        // secondary-voltage snapshot (`result.voltage`). No primary
-                        // voltage exists; no live GlobalPreferences re-sync (AUDIT-03).
-                        DsMetricTile("Secondary Voltage (LV)", String.format("%.0f", result.voltage), Modifier.weight(1f), unit = "V")
+                }
+            }
+
+            item {
+                // Electrical Ratings card
+                Column {
+                    DsSectionHeader(title = "Electrical Ratings")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    DsCard {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                DsMetricTile("FLC (Incomer Rating)", String.format("%.2f", result.flc), Modifier.weight(1f), unit = "A")
+                                DsMetricTile("Impedance Zt", "${String.format("%.2f", activeTx.percentZ)}% (${String.format("%.2f", result.zt)} mΩ)", Modifier.weight(1f))
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                DsMetricTile("Isc 3-Phase", String.format("%.2f", result.isc3Phase), Modifier.weight(1f), unit = "kA", status = DsStatusVariant.Warning)
+                                DsMetricTile("Isc 1-Phase", String.format("%.2f", result.isc1Phase), Modifier.weight(1f), unit = "kA", status = DsStatusVariant.Warning)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                // Decision A: read-only display of the pre-existing vectorGroup.
+                                DsMetricTile("Vector Group", result.vectorGroup, Modifier.weight(1f))
+                                // Decision B: read-only display of the pre-existing per-TX
+                                // secondary-voltage snapshot (`result.voltage`). No primary
+                                // voltage exists; no live GlobalPreferences re-sync (AUDIT-03).
+                                DsMetricTile("Secondary Voltage (LV)", String.format("%.0f", result.voltage), Modifier.weight(1f), unit = "V")
+                            }
+                        }
                     }
                 }
             }
@@ -283,12 +314,13 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                     DsSectionHeader(title = "Transformer Specifications & Overrides")
                     Spacer(modifier = Modifier.height(12.dp))
                     DsCard {
-                        // 1. Insulation type selection
+                        // 1. Insulation type selection — chips stacked full-width so
+                        // "Dry Type (Cast Resin)" never truncates.
                         Text("Transformer Insulation Type:", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         Spacer(modifier = Modifier.height(6.dp))
-                        Row(
+                        Column(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             val types = listOf("Dry Type (Cast Resin)", "Oil-Immersed")
                             types.forEach { type ->
@@ -303,7 +335,7 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                                             activeTx.copy(txType = type, percentZ = defaultZ)
                                         )
                                     },
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
@@ -409,6 +441,63 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
                         )
+                    }
+                }
+            }
+
+            item {
+                // Assigned Circuits — derived from the EXISTING circuit->transformer
+                // assignment (CircuitEntity.transformerId), mirroring TransformerEngine's
+                // belongsToTx filter. No recompute, no new field.
+                Column {
+                    DsSectionHeader(title = "Assigned Circuits (${result.circuitsAssigned})")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    DsCard {
+                        val txIdClean = activeTx.transformerId.trim().lowercase()
+                        val assigned = state.circuits.filter { c ->
+                            val cTxId = c.transformerId.trim().lowercase()
+                            if (cTxId.isNotEmpty()) {
+                                cTxId == txIdClean
+                            } else {
+                                val fedFromClean = c.fedFrom.trim().lowercase()
+                                fedFromClean == txIdClean || fedFromClean in listOf("transformer", "ats", "generator", "grid")
+                            }
+                        }
+                        if (assigned.isEmpty()) {
+                            Text(
+                                "No circuits assigned to this transformer.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp
+                            )
+                        } else {
+                            val shown = assigned.take(3)
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                shown.forEach { c ->
+                                    DsListRowItem(
+                                        title = c.circuitName,
+                                        trailingValue = "%.1f kVA".format(c.loadKVA)
+                                    )
+                                }
+                                val more = (result.circuitsAssigned - shown.size).coerceAtLeast(0)
+                                if (more > 0) {
+                                    Text(
+                                        text = "+$more More",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            // "View All" — non-interactive subtitle
+                            Text(
+                                "View All",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }
