@@ -2,6 +2,7 @@ package com.example.ui.designsystem.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -23,6 +24,7 @@ import com.example.ui.designsystem.theme.DsSpacing
 fun DsCard(
     modifier: Modifier = Modifier,
     containerColor: Color = Color.Unspecified,
+    contentPadding: PaddingValues = PaddingValues(DsSpacing.md),
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
@@ -49,7 +51,7 @@ fun DsCard(
         shadowElevation = 0.dp
     ) {
         androidx.compose.foundation.layout.Column(
-            modifier = Modifier.padding(DsSpacing.lg),
+            modifier = Modifier.padding(contentPadding),
             content = content
         )
     }

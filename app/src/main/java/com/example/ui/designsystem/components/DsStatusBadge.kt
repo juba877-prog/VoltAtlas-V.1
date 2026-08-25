@@ -61,31 +61,33 @@ fun DsStatusBadge(
         modifier = modifier
             .clip(DsShape.pill)
             .background(statusColor.copy(alpha = 0.15f))
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             if (icon != null) {
                 Icon(
                     icon,
                     contentDescription = null,
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier.size(12.dp),
                     tint = statusColor
                 )
             } else {
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
+                        .size(6.dp)
                         .background(statusColor, CircleShape)
                 )
             }
             Text(
                 text = text,
-                style = DsType.labelMedium,
-                color = statusColor
+                style = DsType.labelSmall,
+                color = statusColor,
+                maxLines = 1,
+                softWrap = false
             )
         }
     }

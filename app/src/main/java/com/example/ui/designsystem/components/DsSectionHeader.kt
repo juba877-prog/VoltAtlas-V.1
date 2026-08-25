@@ -44,7 +44,7 @@ fun DsSectionHeader(
             text = title,
             style = DsType.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1
+            maxLines = 2
         )
         Spacer(modifier = Modifier.weight(1f))
         if (trailingAction != null) { trailingAction() }

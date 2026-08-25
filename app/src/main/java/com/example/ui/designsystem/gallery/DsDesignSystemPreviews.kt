@@ -23,6 +23,7 @@ import com.example.ui.designsystem.components.DsBottomNavBar
 import com.example.ui.designsystem.components.DsBottomNavItem
 import com.example.ui.designsystem.components.DsCard
 import com.example.ui.designsystem.components.DsFab
+import com.example.ui.designsystem.components.DsInfoChip
 import com.example.ui.designsystem.components.DsListRowItem
 import com.example.ui.designsystem.components.DsMetricTile
 import com.example.ui.designsystem.components.DsSectionHeader
@@ -139,6 +140,18 @@ fun PreviewDsTopAppBar() = DsTheme(darkTheme = true) {
         onAssistantClick = {},
         onMenuClick = {}
     )
+}
+
+@Preview(name = "DsInfoChip", widthDp = 420)
+@Composable
+fun PreviewDsInfoChip() = DsTheme(darkTheme = true) {
+    Row(
+        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)
+    ) {
+        DsInfoChip("DP-G3", trailingValue = "87.9 kVA")
+        DsInfoChip("MCC-01", trailingValue = "120.0 kVA")
+    }
 }
 
 @Preview(name = "DsBottomNavBar", widthDp = 420)

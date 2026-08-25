@@ -1,8 +1,10 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -59,28 +61,33 @@ import com.example.engine.TransformerEngine
 import com.example.ui.EngineeringViewModel
 import com.example.ui.UiState
 import com.example.ui.designsystem.components.DsCard
-import com.example.ui.designsystem.components.DsListRowItem
+import com.example.ui.designsystem.components.DsInfoChip
 import com.example.ui.designsystem.components.DsMetricTile
 import com.example.ui.designsystem.components.DsSectionHeader
 import com.example.ui.designsystem.components.DsSelectableChip
 import com.example.ui.designsystem.components.DsStatusBadge
 import com.example.ui.designsystem.components.DsStatusVariant
 import com.example.ui.designsystem.icons.ElectricalIcons
+import com.example.ui.designsystem.theme.DsShape
+import com.example.ui.designsystem.theme.DsSpacing
+import com.example.ui.designsystem.theme.DsType
 import com.example.ui.designsystem.theme.dsExtendedColors
 
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
+
 /**
- * TRANSFORMERS re-skin #01 (Phase 2 + V2 corrections): visual-only restyle onto
- * the approved Ds design system. Every value keeps its pre-existing binding —
- * this screen only renders what [EngineeringViewModel] / [UiState.Success]
- * already expose today:
+ * TRANSFORMERS re-skin #01 (Phase 2 + V3 polish): visual-only restyle onto the
+ * approved Ds design system with high-density engineering tool layout.
+ * Every value keeps its pre-existing binding:
  *  - Vector Group / Secondary Voltage -> read-only displays of existing data.
  *  - Loading band colors              -> derived ONLY from the existing
  *    `result.status` strings emitted by TransformerEngine (VERIFIED / REVIEW /
  *    OVERLOADED). Sourced from theme-aware [MaterialTheme.dsExtendedColors].
  *    Loading bar appearance is UNCHANGED (user instruction).
- *  - Assigned Circuits list           -> derived from the EXISTING
- *    circuit->transformer assignment (`CircuitEntity.transformerId`), mirroring
- *    TransformerEngine's belongsToTx filter. No recompute, no new field.
+ *  - Assigned Circuits list           -> display-only compact chips derived
+ *    from the EXISTING circuit->transformer assignment (`CircuitEntity.transformerId`),
+ *    mirroring TransformerEngine's belongsToTx filter. No recompute, no new field.
  * No new data, no fabricated values, no engine/ViewModel changes.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -90,16 +97,20 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
     val activeTx = state.transformers.firstOrNull { it.transformerId == txId } ?: state.transformers.firstOrNull()
     val result = activeTx?.let { state.transformerResults[it.transformerId] }
 
-    LazyColumn(
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
     ) {
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
 
         if (activeTx == null) {
             item {
                 DsCard {
                     Column(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
@@ -114,22 +125,22 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                             text = "No Transformer Yet",
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
+                            style = DsType.titleMedium
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "No transformer yet. Add one from a circuit's Fed From, or here. Its size is calculated from the loads you assign.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp,
+                            style = DsType.bodySmall,
                             textAlign = TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
                         Button(
                             onClick = { viewModel.addNewTransformerInline() },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = RoundedCornerShape(999.dp)
                         ) {
-                            Text("Add Transformer", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Add Transformer", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, style = DsType.labelMedium)
                         }
                     }
                 }
@@ -144,7 +155,7 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Select Transformer:", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                Text("Select Transformer:", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, style = DsType.labelMedium, maxLines = 1)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -181,7 +192,7 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
         if (result != null) {
 
             item {
-                // Header card: identity, decorative illustration, delete, loading band.
+                // Hero card: identity, illustration, status, delete, loading band + compact summary KPIs.
                 DsCard {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -193,24 +204,29 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                                 activeTx.transformerName,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontSize = 16.sp,
-                                fontWeight = FontWeight.Black,
+                                fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Text(activeTx.transformerId, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
+                            Text(
+                                text = activeTx.transformerId,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = DsType.labelSmall,
+                                maxLines = 1
+                            )
                             Spacer(modifier = Modifier.height(4.dp))
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text(
-                                    "Insulation: ${activeTx.txType}",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp
-                                )
                                 DsStatusBadge(
                                     text = activeTx.status,
                                     variant = if (activeTx.status.equals("Active", ignoreCase = true)) DsStatusVariant.Pass else DsStatusVariant.Neutral
+                                )
+                                Text(
+                                    "Insulation: ${activeTx.txType}",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = DsType.labelSmall
                                 )
                             }
                         }
@@ -218,26 +234,27 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                         Image(
                             painter = painterResource(id = R.drawable.ic_transformer_illustration),
                             contentDescription = null, // purely decorative
-                            modifier = Modifier.size(56.dp)
+                            modifier = Modifier.size(52.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         if (state.transformers.isNotEmpty()) {
                             IconButton(
                                 onClick = { viewModel.deleteTransformer(activeTx) },
-                                modifier = Modifier.testTag("delete_tx_btn_${activeTx.transformerId}")
+                                modifier = Modifier.size(36.dp).testTag("delete_tx_btn_${activeTx.transformerId}")
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,
                                     contentDescription = "Delete Transformer",
-                                    tint = MaterialTheme.dsExtendedColors.danger
+                                    tint = MaterialTheme.dsExtendedColors.danger,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     // Loading % — colored by the existing three-band result.status.
                     val band = loadingBandColor(result.status)
@@ -246,62 +263,64 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Loading", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                        Text("Loading", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.labelSmall)
                         Text(
                             text = "${String.format("%.1f", result.loadingPct)}%",
                             color = band,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            style = DsType.titleMedium,
                             maxLines = 1
                         )
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     LinearProgressIndicator(
                         progress = { (result.loadingPct / 100.0).toFloat().coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(999.dp)),
+                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(999.dp)),
                         color = band,
                         trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         strokeCap = StrokeCap.Round
                     )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Compact Summary KPI Strip (2x2 grid inside hero card)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CompactKpiTile("Connected Load", String.format("%.2f", result.connectedLoad), unit = "kVA", modifier = Modifier.weight(1f))
+                            CompactKpiTile("Max Active Demand", String.format("%.2f", result.demandLoad), unit = "kW", modifier = Modifier.weight(1f))
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CompactKpiTile("Recommended Size", String.format("%.0f", result.recommendedSize), unit = "kVA", modifier = Modifier.weight(1f))
+                            CompactKpiTile("Operating Size", String.format("%.0f", result.selectedSize), unit = "kVA", modifier = Modifier.weight(1f))
+                        }
+                    }
                 }
             }
 
             item {
-                // Compact summary strip — Connected / Max Active Demand / Recommended / Operating.
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        DsMetricTile("Connected Load", String.format("%.2f", result.connectedLoad), Modifier.weight(1f), unit = "kVA")
-                        DsMetricTile("Max Active Demand", String.format("%.2f", result.demandLoad), Modifier.weight(1f), unit = "kW")
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        DsMetricTile("Recommended Size", String.format("%.0f", result.recommendedSize), Modifier.weight(1f), unit = "kVA")
-                        DsMetricTile("Operating Size", String.format("%.0f", result.selectedSize), Modifier.weight(1f), unit = "kVA")
-                    }
-                }
-            }
-
-            item {
-                // Electrical Ratings card
+                // Electrical Ratings card — compact 3x2 grid
                 Column {
                     DsSectionHeader(title = "Electrical Ratings")
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     DsCard {
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                DsMetricTile("FLC (Incomer Rating)", String.format("%.2f", result.flc), Modifier.weight(1f), unit = "A")
-                                DsMetricTile("Impedance Zt", "${String.format("%.2f", activeTx.percentZ)}% (${String.format("%.2f", result.zt)} mΩ)", Modifier.weight(1f))
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                DsMetricTile("FLC (Incomer Rating)", String.format("%.2f", result.flc), Modifier.weight(1f), unit = "A", dense = true)
+                                DsMetricTile("Impedance Zt", "${String.format("%.2f", activeTx.percentZ)}% (${String.format("%.2f", result.zt)} mΩ)", Modifier.weight(1f), dense = true)
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                DsMetricTile("Isc 3-Phase", String.format("%.2f", result.isc3Phase), Modifier.weight(1f), unit = "kA", status = DsStatusVariant.Warning)
-                                DsMetricTile("Isc 1-Phase", String.format("%.2f", result.isc1Phase), Modifier.weight(1f), unit = "kA", status = DsStatusVariant.Warning)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                DsMetricTile("Isc 3-Phase", String.format("%.2f", result.isc3Phase), Modifier.weight(1f), unit = "kA", status = DsStatusVariant.Warning, dense = true)
+                                DsMetricTile("Isc 1-Phase", String.format("%.2f", result.isc1Phase), Modifier.weight(1f), unit = "kA", status = DsStatusVariant.Warning, dense = true)
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 // Decision A: read-only display of the pre-existing vectorGroup.
-                                DsMetricTile("Vector Group", result.vectorGroup, Modifier.weight(1f))
+                                DsMetricTile("Vector Group", result.vectorGroup, Modifier.weight(1f), dense = true)
                                 // Decision B: read-only display of the pre-existing per-TX
                                 // secondary-voltage snapshot (`result.voltage`). No primary
                                 // voltage exists; no live GlobalPreferences re-sync (AUDIT-03).
-                                DsMetricTile("Secondary Voltage (LV)", String.format("%.0f", result.voltage), Modifier.weight(1f), unit = "V")
+                                DsMetricTile("Secondary Voltage (LV)", String.format("%.0f", result.voltage), Modifier.weight(1f), unit = "V", dense = true)
                             }
                         }
                     }
@@ -309,18 +328,18 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
             }
 
             item {
-                // Override settings card — same bindings, restyled.
+                // Override settings card — same bindings, restyled and compact.
                 Column {
                     DsSectionHeader(title = "Transformer Specifications & Overrides")
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     DsCard {
                         // 1. Insulation type selection — chips stacked full-width so
                         // "Dry Type (Cast Resin)" never truncates.
-                        Text("Transformer Insulation Type:", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        Text("Transformer Insulation Type:", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.labelSmall)
                         Spacer(modifier = Modifier.height(6.dp))
                         Column(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             val types = listOf("Dry Type (Cast Resin)", "Oil-Immersed")
                             types.forEach { type ->
@@ -340,9 +359,9 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
                         // 2. Capacity sizing mode
                         Row(
@@ -350,7 +369,7 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Auto-recommend capacity", color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
+                            Text("Auto-recommend capacity", color = MaterialTheme.colorScheme.onSurface, style = DsType.bodyMedium)
                             Switch(
                                 checked = activeTx.sizeMode == "Auto",
                                 onCheckedChange = { isChecked ->
@@ -363,9 +382,9 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                         }
 
                         if (activeTx.sizeMode == "Manual") {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text("Manual Capacity Rating (kVA):", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Manual Capacity Rating (kVA):", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.labelSmall)
+                            Spacer(modifier = Modifier.height(4.dp))
 
                             var capacityExpanded by remember { mutableStateOf(false) }
                             val iecRatings = listOf(50.0, 100.0, 160.0, 200.0, 250.0, 315.0, 400.0, 500.0, 630.0, 800.0, 1000.0, 1250.0, 1600.0, 2000.0, 2500.0, 3150.0, 4000.0)
@@ -407,13 +426,13 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
                         // 3. Editable %Z Impedance Field
-                        Text("Impedance %Z (Standard or Nameplate):", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Impedance %Z (Standard or Nameplate):", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.labelSmall)
+                        Spacer(modifier = Modifier.height(4.dp))
                         var zText by remember(activeTx.percentZ) { mutableStateOf(activeTx.percentZ.toString()) }
                         OutlinedTextField(
                             value = zText,
@@ -439,19 +458,17 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                         Text(
                             "Auto-set per IEC 60076 / EN 50588-1 tables. Editable for real nameplate %Z.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp
+                            style = DsType.bodySmall
                         )
                     }
                 }
             }
 
             item {
-                // Assigned Circuits — derived from the EXISTING circuit->transformer
-                // assignment (CircuitEntity.transformerId), mirroring TransformerEngine's
-                // belongsToTx filter. No recompute, no new field.
+                // Assigned Circuits — display-only compact chips
                 Column {
                     DsSectionHeader(title = "Assigned Circuits (${result.circuitsAssigned})")
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     DsCard {
                         val txIdClean = activeTx.transformerId.trim().lowercase()
                         val assigned = state.circuits.filter { c ->
@@ -467,38 +484,87 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                             Text(
                                 "No circuits assigned to this transformer.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 13.sp
+                                style = DsType.bodySmall
                             )
                         } else {
-                            val shown = assigned.take(3)
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                shown.forEach { c ->
-                                    DsListRowItem(
-                                        title = c.circuitName,
-                                        trailingValue = "%.1f kVA".format(c.loadKVA)
-                                    )
+                            val shown = assigned.take(4)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                shown.chunked(2).forEach { pair ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        pair.forEach { c ->
+                                            DsInfoChip(
+                                                label = c.circuitName,
+                                                trailingValue = "%.1f kVA".format(c.loadKVA),
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                        if (pair.size == 1) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                    }
                                 }
                                 val more = (result.circuitsAssigned - shown.size).coerceAtLeast(0)
                                 if (more > 0) {
                                     Text(
                                         text = "+$more More",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 12.sp,
+                                        style = DsType.labelSmall,
                                         fontWeight = FontWeight.Medium,
-                                        modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+                                        modifier = Modifier.padding(start = 2.dp, top = 2.dp)
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            // "View All" — non-interactive subtitle
-                            Text(
-                                "View All",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+}
+
+
+@Composable
+private fun CompactKpiTile(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    unit: String? = null
+) {
+    Box(
+        modifier = modifier
+            .clip(DsShape.card)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+    ) {
+        Column {
+            Text(
+                text = label,
+                style = DsType.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = value,
+                    style = DsType.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+                if (unit != null) {
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = unit,
+                        style = DsType.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
                 }
             }
         }
@@ -523,4 +589,5 @@ private fun loadingBandColor(status: String): Color {
         else -> ext.neutral
     }
 }
+
 
