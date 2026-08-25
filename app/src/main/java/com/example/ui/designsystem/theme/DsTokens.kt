@@ -41,6 +41,14 @@ object DsColor {
     // ── Text ───────────────────────────────────────────────────────────
     val onSurface = Color(0xFFE6EDF3)
     val onSurfaceVariant = Color(0xFF8B949E)
+
+    /**
+     * Pixel-exact mirror of production `SlateTextSecondary` (#AEB6C2) —
+     * zero drift. Dark-theme value by definition; see the known-limitation
+     * note on [com.example.ui.designsystem.components.DsBottomNavBar]
+     * (future shell-migration concern: no light-scheme adaptation yet).
+     */
+    val textSecondary = Color(0xFFAEB6C2)
 }
 
 /**
