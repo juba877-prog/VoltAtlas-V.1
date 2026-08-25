@@ -43,7 +43,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.sld.SldValidationStatus
-import com.example.ui.theme.ElectricalIcons
+import com.example.ui.designsystem.icons.ElectricalIcons
 import com.example.data.Catalog
 import com.example.data.CircuitEntity
 import com.example.data.ProjectEntity

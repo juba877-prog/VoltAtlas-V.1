@@ -25,6 +25,7 @@ import com.example.ui.conversions.ConversionDetailScreen
 import com.example.ui.conversions.ConversionTool
 import com.example.ui.conversions.ConversionsScreen
 import com.example.ui.theme.*
+import com.example.ui.designsystem.icons.ElectricalIcons
 
 @Composable
 fun MoreModulesGrid(onNavigate: (Int) -> Unit) {

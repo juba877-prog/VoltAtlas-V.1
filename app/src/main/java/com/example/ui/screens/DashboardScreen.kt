@@ -29,6 +29,7 @@ import com.example.sld.SldValidationStatus
 import com.example.ui.UiState
 import com.example.ui.components.*
 import com.example.ui.theme.*
+import com.example.ui.designsystem.icons.ElectricalIcons
 import com.example.ui.theme.ThemePrimary
 import com.example.ui.theme.ThemeTextPrimary
 import com.example.ui.theme.ThemeTextSecondary

@@ -44,6 +44,7 @@ import com.example.ui.parseFamilyInfo
 import com.example.ui.standardConductorSizeOptions
 import com.example.ui.standardDeviceRatingOptions
 import com.example.ui.theme.*
+import com.example.ui.designsystem.icons.ElectricalIcons
 import kotlinx.coroutines.launch
 import java.util.Locale
 

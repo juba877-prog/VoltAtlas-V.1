@@ -25,6 +25,7 @@ import com.example.engine.TransformerEngine
 import com.example.ui.EngineeringViewModel
 import com.example.ui.UiState
 import com.example.ui.theme.*
+import com.example.ui.designsystem.icons.ElectricalIcons
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.vector.ImageVector
-import com.example.ui.theme.ElectricalIcons
+import com.example.ui.designsystem.icons.ElectricalIcons
 import org.json.JSONObject
 
 object ConversionCatalogLoader {

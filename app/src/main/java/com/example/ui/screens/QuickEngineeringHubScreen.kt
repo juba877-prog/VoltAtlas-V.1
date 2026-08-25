@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.VoltAtlasCard
 import com.example.ui.theme.*
+import com.example.ui.designsystem.icons.ElectricalIcons
 
 data class QuickToolItem(
     val id: String,
