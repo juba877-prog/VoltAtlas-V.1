@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -53,9 +54,15 @@ fun DsBottomNavBar(
     selected: DsBottomNavItem,
     onSelect: (DsBottomNavItem) -> Unit,
     modifier: Modifier = Modifier,
-    containerColor: Color = DsColor.surfaceContainer
+    containerColor: Color = Color.Unspecified
 ) {
-    Surface(modifier = modifier.fillMaxWidth(), color = containerColor) {
+    val resolvedContainerColor = if (containerColor == Color.Unspecified) {
+        MaterialTheme.colorScheme.surfaceContainer
+    } else {
+        containerColor
+    }
+
+    Surface(modifier = modifier.fillMaxWidth(), color = resolvedContainerColor) {
         NavigationBar(
             modifier = Modifier.navigationBarsPadding(),
             containerColor = Color.Transparent

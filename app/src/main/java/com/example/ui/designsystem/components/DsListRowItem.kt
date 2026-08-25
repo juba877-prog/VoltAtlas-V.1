@@ -23,7 +23,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.ui.designsystem.theme.DsColor
 import com.example.ui.designsystem.theme.DsShape
 import com.example.ui.designsystem.theme.DsSpacing
 import com.example.ui.designsystem.theme.DsType
@@ -48,7 +47,7 @@ fun DsListRowItem(
         Modifier
     }
 
-    DsCard(modifier = modifier, containerColor = DsColor.surfaceContainer) {
+    DsCard(modifier = modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()

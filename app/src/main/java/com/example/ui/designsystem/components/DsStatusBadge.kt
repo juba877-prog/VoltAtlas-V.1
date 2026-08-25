@@ -20,22 +20,34 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import com.example.ui.designsystem.theme.DsColor
 import com.example.ui.designsystem.theme.DsShape
 import com.example.ui.designsystem.theme.DsType
+import com.example.ui.designsystem.theme.dsExtendedColors
 
-enum class DsStatusVariant(val color: Color) {
-    Pass(DsColor.success),
-    Warning(DsColor.warning),
-    Fail(DsColor.danger),
-    Info(DsColor.info),
-    Neutral(DsColor.neutral),
+enum class DsStatusVariant {
+    Pass,
+    Warning,
+    Fail,
+    Info,
+    Neutral;
+
+    @Composable
+    fun color(): Color {
+        val ext = MaterialTheme.dsExtendedColors
+        return when (this) {
+            Pass -> ext.success
+            Warning -> ext.warning
+            Fail -> ext.danger
+            Info -> ext.info
+            Neutral -> ext.neutral
+        }
+    }
 }
 
 /**
  * VoltAtlas pill status badge — `surfaceContainer` + tinted 15% status
  * background, full-saturation status foreground text and a leading dot / icon.
- * The ONLY status visualization. Colors come from the approved token file.
+ * The ONLY status visualization. Colors come from the theme-aware extended palette.
  */
 @Composable
 fun DsStatusBadge(
@@ -44,7 +56,7 @@ fun DsStatusBadge(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null
 ) {
-    val statusColor = variant.color
+    val statusColor = variant.color()
     Box(
         modifier = modifier
             .clip(DsShape.pill)

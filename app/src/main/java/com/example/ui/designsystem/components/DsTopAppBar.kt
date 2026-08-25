@@ -23,7 +23,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.ui.designsystem.theme.DsColor
 import com.example.ui.designsystem.theme.DsSpacing
 import com.example.ui.designsystem.theme.DsType
 
@@ -44,7 +43,7 @@ fun DsTopAppBar(
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.background,
-        border = androidx.compose.foundation.BorderStroke(1.dp, DsColor.outlineVariant)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
             modifier = Modifier

@@ -8,9 +8,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import com.example.ui.designsystem.theme.DsColor
 import com.example.ui.designsystem.theme.DsShape
 import com.example.ui.designsystem.theme.DsSpacing
 
@@ -22,10 +22,16 @@ import com.example.ui.designsystem.theme.DsSpacing
 @Composable
 fun DsCard(
     modifier: Modifier = Modifier,
-    containerColor: androidx.compose.ui.graphics.Color = DsColor.surfaceContainer,
+    containerColor: Color = Color.Unspecified,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val resolvedContainerColor = if (containerColor == Color.Unspecified) {
+        MaterialTheme.colorScheme.surfaceContainer
+    } else {
+        containerColor
+    }
+
     val clickModifier = if (onClick != null) {
         Modifier.clickable(role = Role.Button, onClick = onClick)
     } else {
@@ -37,7 +43,7 @@ fun DsCard(
             .fillMaxWidth()
             .then(clickModifier),
         shape = DsShape.card,
-        color = containerColor,
+        color = resolvedContainerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 1.dp,
         shadowElevation = 0.dp

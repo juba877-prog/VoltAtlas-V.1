@@ -32,7 +32,7 @@ fun DsMetricTile(
                 text = label,
                 style = DsType.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
+                maxLines = 2
             )
             Spacer(modifier = Modifier.height(DsSpacing.xs))
             Row(verticalAlignment = Alignment.Bottom) {

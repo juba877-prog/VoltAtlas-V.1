@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
 /**
  * Extended semantic palette consumed by Ds* components that need
@@ -122,13 +123,17 @@ private val DsLightColorScheme = lightColorScheme(
     surfaceTint = Color(0xFF3B9EFF),
 )
 
-// Public semantic extension object; read the CURRENT extended palette off the chain.
-val LocalDsExtendedColors = staticCompositionLocalOf {
-    DarkExtendedColors
+val LocalDsExtendedColors = staticCompositionLocalOf<DsExtendedColors?> {
+    null
 }
 
 val MaterialTheme.dsExtendedColors: DsExtendedColors
-    @Composable get() = LocalDsExtendedColors.current
+    @Composable get() {
+        val explicit = LocalDsExtendedColors.current
+        if (explicit != null) return explicit
+        val isDark = colorScheme.surface.luminance() < 0.5f
+        return if (isDark) DarkExtendedColors else LightExtendedColors
+    }
 
 /**
  * Volt Atlas Design System theme.

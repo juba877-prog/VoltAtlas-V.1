@@ -17,7 +17,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import com.example.ui.designsystem.theme.DsColor
 import com.example.ui.designsystem.theme.DsShape
 import com.example.ui.designsystem.theme.DsSpacing
 import com.example.ui.designsystem.theme.DsType
@@ -31,9 +30,15 @@ fun DsSummaryStatCard(
     value: String,
     caption: String,
     modifier: Modifier = Modifier,
-    accent: Color = DsColor.primary
+    accent: Color = Color.Unspecified
 ) {
-    DsCard(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+    val resolvedAccent = if (accent == Color.Unspecified) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        accent
+    }
+
+    DsCard(modifier = modifier) {
         Row(
             modifier = Modifier.padding(DsSpacing.lg),
             verticalAlignment = Alignment.CenterVertically,
@@ -43,14 +48,14 @@ fun DsSummaryStatCard(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(DsShape.pill)
-                    .background(accent.copy(alpha = 0.15f)),
+                    .background(resolvedAccent.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     icon,
                     contentDescription = null,
                     modifier = Modifier.size(22.dp),
-                    tint = accent
+                    tint = resolvedAccent
                 )
             }
             Column(Modifier.weight(1f)) {

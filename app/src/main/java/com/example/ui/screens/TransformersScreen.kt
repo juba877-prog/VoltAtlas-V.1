@@ -64,7 +64,7 @@ import com.example.ui.designsystem.components.DsSectionHeader
 import com.example.ui.designsystem.components.DsSelectableChip
 import com.example.ui.designsystem.components.DsStatusVariant
 import com.example.ui.designsystem.icons.ElectricalIcons
-import com.example.ui.designsystem.theme.DsColor
+import com.example.ui.designsystem.theme.dsExtendedColors
 
 /**
  * TRANSFORMERS re-skin #01 (Phase 2): visual-only restyle onto the approved Ds
@@ -106,14 +106,14 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "No Transformer Yet",
-                            color = DsColor.onSurface,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = "No transformer yet. Add one from a circuit's Fed From, or here. Its size is calculated from the loads you assign.",
-                            color = DsColor.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 13.sp,
                             textAlign = TextAlign.Center
                         )
@@ -138,7 +138,7 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Select Transformer:", color = DsColor.onSurface, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                Text("Select Transformer:", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -165,7 +165,7 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Add Transformer",
-                            tint = DsColor.primary
+                            tint = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -185,13 +185,13 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 activeTx.transformerName,
-                                color = DsColor.primary,
+                                color = MaterialTheme.colorScheme.primary,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Black,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Text("Assigned circuits: ${result.circuitsAssigned}", color = DsColor.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
+                            Text("Assigned circuits: ${result.circuitsAssigned}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         Image(
@@ -208,14 +208,14 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                                 Icon(
                                     imageVector = Icons.Default.Delete,
                                     contentDescription = "Delete Transformer",
-                                    tint = DsColor.danger
+                                    tint = MaterialTheme.dsExtendedColors.danger
                                 )
                             }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(color = DsColor.outlineVariant)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Loading % — colored by the existing three-band result.status.
@@ -225,7 +225,7 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Loading", color = DsColor.onSurfaceVariant, fontSize = 11.sp)
+                        Text("Loading", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                         Text(
                             text = "${String.format("%.1f", result.loadingPct)}%",
                             color = band,
@@ -239,7 +239,7 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                         progress = { (result.loadingPct / 100.0).toFloat().coerceIn(0f, 1f) },
                         modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(999.dp)),
                         color = band,
-                        trackColor = DsColor.surfaceContainerHigh,
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         strokeCap = StrokeCap.Round
                     )
                 }
@@ -284,7 +284,7 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                     Spacer(modifier = Modifier.height(12.dp))
                     DsCard {
                         // 1. Insulation type selection
-                        Text("Transformer Insulation Type:", color = DsColor.onSurfaceVariant, fontSize = 12.sp)
+                        Text("Transformer Insulation Type:", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         Spacer(modifier = Modifier.height(6.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -309,7 +309,7 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider(color = DsColor.outlineVariant)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Spacer(modifier = Modifier.height(12.dp))
 
                         // 2. Capacity sizing mode
@@ -318,7 +318,7 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Auto-recommend capacity", color = DsColor.onSurface, fontSize = 13.sp)
+                            Text("Auto-recommend capacity", color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
                             Switch(
                                 checked = activeTx.sizeMode == "Auto",
                                 onCheckedChange = { isChecked ->
@@ -332,7 +332,7 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
 
                         if (activeTx.sizeMode == "Manual") {
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text("Manual Capacity Rating (kVA):", color = DsColor.onSurfaceVariant, fontSize = 12.sp)
+                            Text("Manual Capacity Rating (kVA):", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                             Spacer(modifier = Modifier.height(6.dp))
 
                             var capacityExpanded by remember { mutableStateOf(false) }
@@ -349,10 +349,10 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = capacityExpanded) },
                                     modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
                                     colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = DsColor.primary,
-                                        unfocusedBorderColor = DsColor.outlineVariant,
-                                        focusedTextColor = DsColor.onSurface,
-                                        unfocusedTextColor = DsColor.onSurface
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                                     )
                                 )
                                 ExposedDropdownMenu(
@@ -376,11 +376,11 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider(color = DsColor.outlineVariant)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Spacer(modifier = Modifier.height(12.dp))
 
                         // 3. Editable %Z Impedance Field
-                        Text("Impedance %Z (Standard or Nameplate):", color = DsColor.onSurfaceVariant, fontSize = 12.sp)
+                        Text("Impedance %Z (Standard or Nameplate):", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         Spacer(modifier = Modifier.height(6.dp))
                         var zText by remember(activeTx.percentZ) { mutableStateOf(activeTx.percentZ.toString()) }
                         OutlinedTextField(
@@ -394,19 +394,19 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                             },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            trailingIcon = { Text("%", color = DsColor.onSurfaceVariant, modifier = Modifier.padding(end = 12.dp)) },
+                            trailingIcon = { Text("%", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 12.dp)) },
                             modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = DsColor.primary,
-                                unfocusedBorderColor = DsColor.outlineVariant,
-                                focusedTextColor = DsColor.onSurface,
-                                unfocusedTextColor = DsColor.onSurface
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                             )
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             "Auto-set per IEC 60076 / EN 50588-1 tables. Editable for real nameplate %Z.",
-                            color = DsColor.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
                         )
                     }
@@ -422,11 +422,16 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
  *  - "VERIFIED"                               -> success (green)
  *  - "REVIEW — CONNECTED LOAD EXCEEDS RATING" -> warning (amber)
  *  - "OVERLOADED — FAIL"                      -> danger (red)
- * The neutral fallback is defensive only; the engine never emits other values.
+ * Sourced from theme-aware [MaterialTheme.dsExtendedColors].
  */
-private fun loadingBandColor(status: String): Color = when (status) {
-    "VERIFIED" -> DsColor.success
-    "REVIEW — CONNECTED LOAD EXCEEDS RATING" -> DsColor.warning
-    "OVERLOADED — FAIL" -> DsColor.danger
-    else -> DsColor.neutral
+@Composable
+private fun loadingBandColor(status: String): Color {
+    val ext = MaterialTheme.dsExtendedColors
+    return when (status) {
+        "VERIFIED" -> ext.success
+        "REVIEW — CONNECTED LOAD EXCEEDS RATING" -> ext.warning
+        "OVERLOADED — FAIL" -> ext.danger
+        else -> ext.neutral
+    }
 }
+
