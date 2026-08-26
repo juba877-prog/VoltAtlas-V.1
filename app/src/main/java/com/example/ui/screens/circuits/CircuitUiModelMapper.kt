@@ -19,16 +19,17 @@ object CircuitUiModelMapper {
 
     /**
      * Resolves the presentation status exhaustively from the non-null typed [SizingResultStatus].
-     * Returns [CircuitUiStatus.STANDBY] strictly when no sizing result exists.
+     * Returns [CircuitUiStatus.STANDBY] strictly when no sizing result exists, or when sizing status
+     * is INCOMPLETE, ERROR, or unreachable/unsupported WARNING.
      */
     fun resolveCircuitStatus(sizingResult: SizingResult?): CircuitUiStatus {
         if (sizingResult == null) return CircuitUiStatus.STANDBY
         return when (sizingResult.resultStatus) {
             SizingResultStatus.PASS -> CircuitUiStatus.PASS
             SizingResultStatus.FAIL -> CircuitUiStatus.FAIL
-            SizingResultStatus.WARNING -> CircuitUiStatus.WARNING
-            SizingResultStatus.INCOMPLETE -> CircuitUiStatus.INCOMPLETE
-            SizingResultStatus.ERROR -> CircuitUiStatus.ERROR
+            SizingResultStatus.WARNING,
+            SizingResultStatus.INCOMPLETE,
+            SizingResultStatus.ERROR -> CircuitUiStatus.STANDBY
         }
     }
 
@@ -78,64 +79,67 @@ object CircuitUiModelMapper {
             String.format(Locale.US, "%.1f kVA", circuit.loadKVA)
         }
 
-        // Ib
-        val ibDisplay = if (sizingResult == null || sizingResult.Ib_A.isNaN() || sizingResult.Ib_A.isInfinite() || sizingResult.Ib_A < 0.0) {
-            "—"
-        } else {
+        // Design Current Ib
+        val ibDisplay = if (sizingResult?.Ib_A != null && !sizingResult.Ib_A.isNaN() && sizingResult.Ib_A > 0.0) {
             String.format(Locale.US, "%.1f A", sizingResult.Ib_A)
+        } else {
+            "—"
         }
 
-        // In (Breaker rating & type)
-        val inDisplay = if (sizingResult == null || sizingResult.deviceSize_A.isNaN() || sizingResult.deviceSize_A <= 0.0) {
-            "—"
+        // Breaker Rating In / Device
+        val inDisplay = if (sizingResult?.deviceSize_A != null && !sizingResult.deviceSize_A.isNaN() && sizingResult.deviceSize_A > 0.0) {
+            val devType = sizingResult.deviceType.ifBlank { "MCCB" }
+            "${sizingResult.deviceSize_A.toInt()}A $devType"
         } else {
-            val devType = sizingResult.deviceType.ifBlank { "MCB" }
-            "${sizingResult.deviceSize_A.toInt()} A ($devType)"
+            "—"
         }
 
-        // Voltage Drop (cumulative % and limit %)
-        val vdDisplay = if (sizingResult == null || sizingResult.cumulativeVDpct.isNaN() || sizingResult.cumulativeVDpct.isInfinite() || sizingResult.cumulativeVDpct < 0.0) {
-            "—"
-        } else {
+        // Voltage Drop
+        val vdDisplay = if (sizingResult?.cumulativeVDpct != null && !sizingResult.cumulativeVDpct.isNaN() && !sizingResult.cumulativeVDpct.isInfinite() && sizingResult.cumulativeVDpct >= 0.0) {
             String.format(Locale.US, "%.2f%%", sizingResult.cumulativeVDpct)
+        } else {
+            "—"
         }
 
+        // Voltage Drop Limit
         val vdLimitDisplay = if (circuit.maxVDpct.isNaN() || circuit.maxVDpct.isInfinite() || circuit.maxVDpct <= 0.0) {
-            "Limit —"
-        } else {
-            "Limit ${(circuit.maxVDpct * 100).toInt()}%"
-        }
-
-        // Loading (utilization %) and Iz
-        val loadingDisplay = if (sizingResult == null || sizingResult.utilizationPct.isNaN() || sizingResult.utilizationPct.isInfinite() || sizingResult.utilizationPct < 0.0) {
             "—"
         } else {
+            String.format(Locale.US, "%.1f%%", circuit.maxVDpct * 100.0)
+        }
+
+        // Thermal Loading / Utilization
+        val loadingDisplay = if (sizingResult?.utilizationPct != null && !sizingResult.utilizationPct.isNaN() && !sizingResult.utilizationPct.isInfinite() && sizingResult.utilizationPct >= 0.0) {
             String.format(Locale.US, "%.1f%%", sizingResult.utilizationPct)
-        }
-
-        val izDisplay = if (sizingResult == null || sizingResult.capacity_derated_Iz_A.isNaN() || sizingResult.capacity_derated_Iz_A.isInfinite() || sizingResult.capacity_derated_Iz_A <= 0.0) {
-            "Iz: —"
         } else {
-            String.format(Locale.US, "Iz: %.1f A", sizingResult.capacity_derated_Iz_A)
-        }
-
-        // Short-Circuit Current Isc(3ph) and Breaker Breaking Capacity Icu
-        val isc3phDisplay = if (shortCircuitResult == null || shortCircuitResult.iscKA.isNaN() || shortCircuitResult.iscKA.isInfinite() || shortCircuitResult.iscKA < 0.0) {
             "—"
-        } else {
-            String.format(Locale.US, "%.2f kA", shortCircuitResult.iscKA)
         }
 
-        val icuDisplay = if (sizingResult == null || sizingResult.deviceBreakingKA.isNaN() || sizingResult.deviceBreakingKA.isInfinite() || sizingResult.deviceBreakingKA <= 0.0) {
-            "Icu: —"
+        // Cable Derated Capacity Iz
+        val izDisplay = if (sizingResult?.capacity_derated_Iz_A != null && !sizingResult.capacity_derated_Iz_A.isNaN() && !sizingResult.capacity_derated_Iz_A.isInfinite() && sizingResult.capacity_derated_Iz_A > 0.0) {
+            String.format(Locale.US, "%.1f A", sizingResult.capacity_derated_Iz_A)
         } else {
-            String.format(Locale.US, "Icu: %.1f kA", sizingResult.deviceBreakingKA)
+            "—"
+        }
+
+        // Short Circuit 3-Phase
+        val isc3phDisplay = if (shortCircuitResult != null && !shortCircuitResult.iscKA.isNaN() && shortCircuitResult.iscKA > 0.0) {
+            String.format(Locale.US, "%.1f kA", shortCircuitResult.iscKA)
+        } else {
+            "—"
+        }
+
+        // Breaker Breaking Capacity Icu
+        val icuDisplay = if (sizingResult?.deviceBreakingKA != null && !sizingResult.deviceBreakingKA.isNaN() && !sizingResult.deviceBreakingKA.isInfinite() && sizingResult.deviceBreakingKA > 0.0) {
+            String.format(Locale.US, "%.0f kA", sizingResult.deviceBreakingKA)
+        } else {
+            "—"
         }
 
         // Footer Spec
-        val validLength = !circuit.length_m.isNaN() && !circuit.length_m.isInfinite() && circuit.length_m >= 0.0
+        val validLength = circuit.length_m > 0.0
         val lengthStr = if (validLength) {
-            String.format(Locale.US, "%.1f m", circuit.length_m)
+            String.format(Locale.US, "%.0fm", circuit.length_m)
         } else {
             "—"
         }
@@ -180,17 +184,15 @@ object CircuitUiModelMapper {
 
     /**
      * Aggregates summary health metrics evaluated across the entire project collection.
+     * Exactly 5 project health metrics: Total, Pass, Fail, Standby, Max Vd.
      */
     fun mapToSummaryUiModel(
         allCircuits: List<CircuitEntity>,
         sizingResults: Map<Int, SizingResult>
     ): CircuitsSummaryUiModel {
         var passCount = 0
-        var warningCount = 0
         var failCount = 0
         var standbyCount = 0
-        var incompleteCount = 0
-        var errorCount = 0
 
         var maxVd: Double? = null
 
@@ -201,10 +203,10 @@ object CircuitUiModelMapper {
             } else {
                 when (sizing.resultStatus) {
                     SizingResultStatus.PASS -> passCount++
-                    SizingResultStatus.WARNING -> warningCount++
                     SizingResultStatus.FAIL -> failCount++
-                    SizingResultStatus.INCOMPLETE -> incompleteCount++
-                    SizingResultStatus.ERROR -> errorCount++
+                    SizingResultStatus.WARNING,
+                    SizingResultStatus.INCOMPLETE,
+                    SizingResultStatus.ERROR -> standbyCount++
                 }
 
                 val vd = sizing.cumulativeVDpct
@@ -225,11 +227,8 @@ object CircuitUiModelMapper {
         return CircuitsSummaryUiModel(
             totalCount = allCircuits.size,
             passCount = passCount,
-            warningCount = warningCount,
             failCount = failCount,
             standbyCount = standbyCount,
-            incompleteCount = incompleteCount,
-            errorCount = errorCount,
             maxVdDisplay = maxVdDisplay,
             rawMaxVdPct = maxVd
         )
@@ -277,17 +276,12 @@ object CircuitUiModelMapper {
 
             if (!matchesLevel) return@filter false
 
-            // Status filter matching
+            // Status filter matching: Strictly ALL, PASS, FAIL, STANDBY
             val matchesStatus = when (statusFilter) {
                 CircuitStatusFilter.ALL -> true
                 CircuitStatusFilter.PASS -> card.status == CircuitUiStatus.PASS
-                CircuitStatusFilter.WARNING -> card.status == CircuitUiStatus.WARNING
                 CircuitStatusFilter.FAIL -> card.status == CircuitUiStatus.FAIL
-                CircuitStatusFilter.STANDBY -> {
-                    card.status == CircuitUiStatus.STANDBY ||
-                        card.status == CircuitUiStatus.INCOMPLETE ||
-                        card.status == CircuitUiStatus.ERROR
-                }
+                CircuitStatusFilter.STANDBY -> card.status == CircuitUiStatus.STANDBY
             }
 
             matchesStatus
@@ -331,11 +325,8 @@ object CircuitUiModelMapper {
                     compareBy<CircuitCardUiModel> {
                         when (it.status) {
                             CircuitUiStatus.FAIL -> 0
-                            CircuitUiStatus.ERROR -> 1
-                            CircuitUiStatus.INCOMPLETE -> 2
-                            CircuitUiStatus.WARNING -> 3
-                            CircuitUiStatus.PASS -> 4
-                            CircuitUiStatus.STANDBY -> 5
+                            CircuitUiStatus.PASS -> 1
+                            CircuitUiStatus.STANDBY -> 2
                         }
                     }.thenByDescending {
                         if (it.rawLoadKVA.isNaN() || it.rawLoadKVA.isInfinite()) -Double.MAX_VALUE else it.rawLoadKVA

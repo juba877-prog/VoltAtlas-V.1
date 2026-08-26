@@ -5,16 +5,14 @@ import com.example.ui.designsystem.components.DsStatusVariant
 /**
  * Presentation-only status representation for Circuit list items and summary badges.
  * Derived exhaustively from domain [com.example.engine.SizingResultStatus].
+ * Pass, Fail, and Standby are the only user-visible status categories.
  */
 enum class CircuitUiStatus(
     val displayLabel: String,
     val dsVariant: DsStatusVariant
 ) {
     PASS("PASS", DsStatusVariant.Pass),
-    WARNING("WARNING", DsStatusVariant.Warning),
     FAIL("FAIL", DsStatusVariant.Fail),
-    INCOMPLETE("INCOMPLETE", DsStatusVariant.Neutral),
-    ERROR("ERROR", DsStatusVariant.Neutral),
     STANDBY("STANDBY", DsStatusVariant.Neutral);
 
     fun toDsStatusVariant(): DsStatusVariant = dsVariant
@@ -45,11 +43,11 @@ enum class CircuitLevelFilter(val displayLabel: String) {
 
 /**
  * Typed Status filter options for the Circuits screen.
+ * Strictly Pass, Fail, and Standby.
  */
 enum class CircuitStatusFilter(val displayLabel: String) {
     ALL("All"),
     PASS("Pass"),
-    WARNING("Warning"),
     FAIL("Fail"),
     STANDBY("Standby")
 }
@@ -88,15 +86,13 @@ data class CircuitCardUiModel(
 
 /**
  * Summary metrics model evaluated across all project circuits (whole-project collection).
+ * Exactly 5 project health metrics: Total, Pass, Fail, Standby, Max Vd.
  */
 data class CircuitsSummaryUiModel(
     val totalCount: Int,
     val passCount: Int,
-    val warningCount: Int,
     val failCount: Int,
     val standbyCount: Int,
-    val incompleteCount: Int,
-    val errorCount: Int,
     val maxVdDisplay: String,
-    val rawMaxVdPct: Double?
+    val rawMaxVdPct: Double? = null
 )

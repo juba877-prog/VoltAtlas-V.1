@@ -95,9 +95,9 @@ class CircuitUiModelMapperTest {
     fun testResolveCircuitStatus_allTypedStatuses() {
         assertEquals(CircuitUiStatus.PASS, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.PASS)))
         assertEquals(CircuitUiStatus.FAIL, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.FAIL)))
-        assertEquals(CircuitUiStatus.WARNING, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.WARNING)))
-        assertEquals(CircuitUiStatus.INCOMPLETE, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.INCOMPLETE)))
-        assertEquals(CircuitUiStatus.ERROR, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.ERROR)))
+        assertEquals(CircuitUiStatus.STANDBY, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.WARNING)))
+        assertEquals(CircuitUiStatus.STANDBY, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.INCOMPLETE)))
+        assertEquals(CircuitUiStatus.STANDBY, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.ERROR)))
         assertEquals(CircuitUiStatus.STANDBY, CircuitUiModelMapper.resolveCircuitStatus(null))
     }
 
@@ -143,7 +143,7 @@ class CircuitUiModelMapperTest {
         )
 
         assertEquals("0.0 kVA", card.loadDisplay)
-        assertEquals("Cu/XLPE/PVC • Length: 0.0 m", card.footerSpecDisplay)
+        assertEquals("Cu/XLPE/PVC • Length: —", card.footerSpecDisplay)
         assertEquals(CircuitUiStatus.STANDBY, card.status)
         assertEquals("—", card.cableSizeDisplay)
         assertEquals("—", card.ibDisplay)
@@ -177,11 +177,11 @@ class CircuitUiModelMapperTest {
         assertEquals("—", card.ibDisplay)
         assertEquals("—", card.inDisplay)
         assertEquals("—", card.vdDisplay)
-        assertEquals("Limit —", card.vdLimitDisplay)
+        assertEquals("—", card.vdLimitDisplay)
         assertEquals("—", card.loadingDisplay)
-        assertEquals("Iz: —", card.izDisplay)
+        assertEquals("—", card.izDisplay)
         assertEquals("—", card.isc3phDisplay)
-        assertEquals("Icu: —", card.icuDisplay)
+        assertEquals("—", card.icuDisplay)
         assertEquals("Cu/XLPE/PVC • Length: —", card.footerSpecDisplay)
     }
 
@@ -196,8 +196,8 @@ class CircuitUiModelMapperTest {
         val card1 = CircuitUiModelMapper.mapToCardUiModel(c1, null, null, listOf(c1), false)
         val card2 = CircuitUiModelMapper.mapToCardUiModel(c2, null, null, listOf(c2), false)
 
-        assertEquals("Limit 3%", card1.vdLimitDisplay)
-        assertEquals("Limit 5%", card2.vdLimitDisplay)
+        assertEquals("3.0%", card1.vdLimitDisplay)
+        assertEquals("5.0%", card2.vdLimitDisplay)
     }
 
     // =========================================================================
@@ -211,8 +211,8 @@ class CircuitUiModelMapperTest {
         val sizing = createSizing(status = SizingResultStatus.PASS, breakingKA = 36.0)
         val card = CircuitUiModelMapper.mapToCardUiModel(circ, sizing, sc, listOf(circ), false)
 
-        assertEquals("14.85 kA", card.isc3phDisplay)
-        assertEquals("Icu: 36.0 kA", card.icuDisplay)
+        assertEquals("14.9 kA", card.isc3phDisplay)
+        assertEquals("36 kA", card.icuDisplay)
     }
 
     // =========================================================================
@@ -240,10 +240,7 @@ class CircuitUiModelMapperTest {
         assertEquals(5, summary.totalCount)
         assertEquals(1, summary.passCount)
         assertEquals(1, summary.failCount)
-        assertEquals(1, summary.warningCount)
-        assertEquals(1, summary.incompleteCount)
-        assertEquals(0, summary.errorCount)
-        assertEquals(1, summary.standbyCount)
+        assertEquals(3, summary.standbyCount)
         assertEquals("4.20%", summary.maxVdDisplay)
         assertEquals(4.2, summary.rawMaxVdPct!!, 0.001)
     }

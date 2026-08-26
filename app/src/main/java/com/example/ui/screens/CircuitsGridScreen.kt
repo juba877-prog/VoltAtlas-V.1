@@ -1,4 +1,4 @@
-﻿package com.example.ui.screens
+package com.example.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Spring
@@ -19,7 +19,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -34,6 +37,16 @@ import com.example.ui.components.themeStatusColor
 import com.example.ui.components.statusSymbol
 import com.example.ui.dialogs.CircuitEditDialog
 import com.example.ui.catalogCableSizeOptions
+import com.example.ui.designsystem.theme.DsShape
+import com.example.ui.designsystem.theme.DsSpacing
+import com.example.ui.designsystem.theme.DsType
+import com.example.ui.designsystem.theme.dsExtendedColors
+import com.example.ui.screens.circuits.CircuitCardUiModel
+import com.example.ui.screens.circuits.CircuitLevelFilter
+import com.example.ui.screens.circuits.CircuitSortOrder
+import com.example.ui.screens.circuits.CircuitStatusFilter
+import com.example.ui.screens.circuits.CircuitUiModelMapper
+import com.example.ui.screens.circuits.CircuitsSummaryUiModel
 import com.example.ui.theme.*
 
 private val PANEL_TYPES = setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER")
@@ -47,145 +60,216 @@ fun CircuitsGridScreen(
     onOpenAssistant: ((AssistantEntryPoint, CircuitEntity) -> Unit)? = null
 ) {
     val query by viewModel.circuitSearchQuery.collectAsState()
-    val statusFilter by viewModel.circuitStatusFilter.collectAsState()
-    val parentFilter by viewModel.circuitParentFilter.collectAsState()
     val selectedId by viewModel.selectedCircuitId.collectAsState()
+
+    // Typed presentation filter & sort states (screen-local authority)
+    var selectedLevel by rememberSaveable { mutableStateOf(CircuitLevelFilter.ALL) }
+    var selectedStatus by rememberSaveable { mutableStateOf(CircuitStatusFilter.ALL) }
+    var selectedSort by rememberSaveable { mutableStateOf(CircuitSortOrder.SOURCE_ORDER) }
 
     var showDialog by rememberSaveable { mutableStateOf(false) }
     var editingCircuit by rememberSaveable { mutableStateOf<CircuitEntity?>(null) }
     var circuitToDelete by rememberSaveable { mutableStateOf<CircuitEntity?>(null) }
 
-    // Perform queries and filters (memoized to prevent un-remembered re-filtering on every animation frame)
+    // Hierarchy lookup for schedule eligibility & conflict detection
     val childrenLookup = remember(state.circuits) {
         CircuitChildLookup.build(state.circuits)
     }
 
-    val filteredCircuits = remember(state.circuits, state.sizingResults, query, statusFilter, parentFilter) {
-        state.circuits.filter { circ ->
-            val matchesQuery = query.isBlank() ||
-                circ.circuitName.contains(query, ignoreCase = true) ||
-                circ.fedFrom.contains(query, ignoreCase = true) ||
-                circ.cableType.contains(query, ignoreCase = true) ||
-                circ.loadType.contains(query, ignoreCase = true) ||
-                (circ.overrideCableSize ?: "").contains(query, ignoreCase = true)
+    // 1. Whole-project health summary (strictly computed from whole state.circuits, invariant to filters)
+    val summary = remember(state.circuits, state.sizingResults) {
+        CircuitUiModelMapper.mapToSummaryUiModel(state.circuits, state.sizingResults)
+    }
 
-            val matchesStatus = when (statusFilter) {
-                "PASS" -> state.sizingResults[circ.id]?.status?.contains("PASS") == true
-                "FAIL" -> state.sizingResults[circ.id]?.status?.contains("FAIL") == true
-                "WARNING" -> state.sizingResults[circ.id]?.status?.contains("WARN") == true
-                else -> true
-            }
-
-            val matchesParent = when (parentFilter) {
-                "Transformer" -> circ.fedFrom.equals("Transformer", ignoreCase = true)
-                "Sub-feeders" -> !circ.fedFrom.equals("Transformer", ignoreCase = true)
-                else -> true
-            }
-
-            matchesQuery && matchesStatus && matchesParent
+    // 2. Adapter pipeline: CircuitEntity -> CircuitCardUiModel -> Filter -> Sort -> Ordered CircuitEntity
+    val cardModels = remember(state.circuits, state.sizingResults, state.shortCircuitResults) {
+        state.circuits.map { circ ->
+            CircuitUiModelMapper.mapToCardUiModel(
+                circuit = circ,
+                sizingResult = state.sizingResults[circ.id],
+                shortCircuitResult = state.shortCircuitResults[circ.id],
+                allCircuits = state.circuits,
+                hasChildren = childrenLookup.hasChildren(circ.circuitName)
+            )
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Search Bar
-            TextField(
-                value = query,
-                onValueChange = { viewModel.circuitSearchQuery.value = it },
-                placeholder = { Text("Search circuits by name, parent, cable, or load...") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("search_circuits_input"),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                    focusedTextColor = ThemeTextPrimary,
-                    unfocusedTextColor = ThemeTextPrimary
-                )
-            )
+    val filteredCards = remember(cardModels, query, selectedLevel, selectedStatus) {
+        CircuitUiModelMapper.filterCircuits(
+            cards = cardModels,
+            query = query,
+            levelFilter = selectedLevel,
+            statusFilter = selectedStatus,
+            childrenLookup = { childrenLookup.hasChildren(it) }
+        )
+    }
 
-            // Dynamic Filter Controls
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+    val sortedCards = remember(filteredCards, selectedSort) {
+        CircuitUiModelMapper.sortCircuits(filteredCards, selectedSort)
+    }
+
+    val entityById = remember(state.circuits) { state.circuits.associateBy { it.id } }
+    val visibleCircuits = remember(sortedCards, entityById) {
+        sortedCards.mapNotNull { entityById[it.id] }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = DsSpacing.md, vertical = DsSpacing.xs),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Tier filter chip (All -> Transformer -> Sub-feeders)
-                val isParentFiltered = parentFilter != "All"
-                FilterChip(
-                    selected = isParentFiltered,
-                    onClick = {
-                        viewModel.circuitParentFilter.value = when (parentFilter) {
-                            "All" -> "Transformer"
-                            "Transformer" -> "Sub-feeders"
-                            else -> "All"
-                        }
-                    },
-                    label = {
+                // 1. Search Bar
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { viewModel.circuitSearchQuery.value = it },
+                    placeholder = {
                         Text(
-                            text = "Tier: $parentFilter",
-                            color = ThemeTextPrimary,
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            softWrap = false
+                            "Search circuits by name, parent, cable, load...",
+                            style = DsType.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = ThemePrimary,
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer
-                    ),
-                    modifier = Modifier.weight(1f)
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = "Search icon",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(
+                                onClick = { viewModel.circuitSearchQuery.value = "" },
+                                modifier = Modifier.testTag("clear_circuit_search_btn")
+                            ) {
+                                Icon(
+                                    Icons.Default.Clear,
+                                    contentDescription = "Clear search",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("search_circuits_input"),
+                    shape = DsShape.card,
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                    )
                 )
 
-                // Status filter chip (All -> PASS -> WARNING -> FAIL)
-                val isStatusFiltered = statusFilter != "All"
-                val statusChipBg = when (statusFilter) {
-                    "PASS" -> ThemeStatusPass
-                    "FAIL" -> ThemeStatusFail
-                    "WARNING" -> ThemeStatusWarning
-                    else -> MaterialTheme.colorScheme.surfaceContainer
+                // 2. Compact Selectors (Level & Status Dropdown Selectors)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Compact Level Selector
+                    CompactSelector(
+                        labelPrefix = "Level",
+                        currentLabel = selectedLevel.displayLabel,
+                        options = CircuitLevelFilter.values().map { level ->
+                            level.displayLabel to {
+                                selectedLevel = level
+                                viewModel.circuitParentFilter.value = when (level) {
+                                    CircuitLevelFilter.ALL -> "All"
+                                    CircuitLevelFilter.MAIN_FEEDERS -> "Transformer"
+                                    CircuitLevelFilter.DOWNSTREAM -> "Downstream"
+                                    CircuitLevelFilter.PANELS -> "Panels"
+                                }
+                            }
+                        },
+                        testTag = "filter_level_selector",
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    // Compact Status Selector (Strictly All, Pass, Fail, Standby)
+                    CompactSelector(
+                        labelPrefix = "Status",
+                        currentLabel = selectedStatus.displayLabel,
+                        options = CircuitStatusFilter.values().map { status ->
+                            status.displayLabel to {
+                                selectedStatus = status
+                                viewModel.circuitStatusFilter.value = when (status) {
+                                    CircuitStatusFilter.ALL -> "All"
+                                    CircuitStatusFilter.PASS -> "PASS"
+                                    CircuitStatusFilter.FAIL -> "FAIL"
+                                    CircuitStatusFilter.STANDBY -> "Standby"
+                                }
+                            }
+                        },
+                        testTag = "filter_status_selector",
+                        modifier = Modifier.weight(1f)
+                    )
                 }
-                FilterChip(
-                    selected = isStatusFiltered,
-                    onClick = {
-                        viewModel.circuitStatusFilter.value = when (statusFilter) {
-                            "All" -> "PASS"
-                            "PASS" -> "WARNING"
-                            "WARNING" -> "FAIL"
-                            else -> "All"
-                        }
-                    },
-                    label = {
-                        Text(
-                            text = "Status: $statusFilter",
-                            color = if (isStatusFiltered) MaterialTheme.colorScheme.onPrimary else ThemeTextPrimary,
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = statusChipBg,
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer
-                    ),
-                    modifier = Modifier.weight(1f)
+
+                // 3. Whole-Project Health Summary Strip
+                CircuitsSummaryStrip(
+                    summary = summary,
+                    modifier = Modifier.testTag("circuits_summary_strip")
                 )
-            }
 
+                // 4. Visible Count Header and Compact Sort Selector Row
+                val totalCount = state.circuits.size
+                val visibleCount = visibleCircuits.size
+                val countHeaderText = if (visibleCount == totalCount) {
+                    "CIRCUITS ($totalCount)"
+                } else {
+                    "CIRCUITS ($visibleCount of $totalCount)"
+                }
 
-            // Horizontal Grid/List of circuits
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 88.dp)
-            ) {
-                if (filteredCircuits.isEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = DsSpacing.xs),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = countHeaderText,
+                        style = DsType.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .testTag("circuits_visible_count_header")
+                    )
+
+                    Spacer(modifier = Modifier.width(DsSpacing.xs))
+
+                    // Compact Sort Selector
+                    CompactSortSelector(
+                        currentSort = selectedSort,
+                        onSortSelected = { selectedSort = it },
+                        testTag = "circuits_sort_selector"
+                    )
+                }
+
+                // 5. Horizontal Grid/List of circuits
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 88.dp)
+                ) {
+                if (state.circuits.isEmpty()) {
                     item {
                         Box(
                             modifier = Modifier
@@ -195,14 +279,44 @@ fun CircuitsGridScreen(
                         ) {
                             Text(
                                 text = "No circuits found. Click '+' to add your first circuit.",
-                                color = ThemeTextSecondary,
-                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = DsType.bodyMedium,
                                 textAlign = TextAlign.Center
                             )
                         }
                     }
+                } else if (visibleCircuits.isEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "No circuits match the current search or filters.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = DsType.bodyMedium,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(DsSpacing.md))
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.circuitSearchQuery.value = ""
+                                    viewModel.circuitParentFilter.value = "All"
+                                    viewModel.circuitStatusFilter.value = "All"
+                                    selectedLevel = CircuitLevelFilter.ALL
+                                    selectedStatus = CircuitStatusFilter.ALL
+                                },
+                                modifier = Modifier.testTag("reset_filters_btn")
+                            ) {
+                                Text("Reset Filters", color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
                 }
-                items(filteredCircuits, key = { it.id }) { circ ->
+                items(visibleCircuits, key = { it.id }) { circ ->
                     val result = state.sizingResults[circ.id]
                     val isSelected = selectedId == circ.id
                     
@@ -693,12 +807,12 @@ fun CircuitsGridScreen(
                         }
                     }
                 }
-                if (filteredCircuits.size > 50) {
+                if (visibleCircuits.size > 50) {
                     item {
                         Text(
-                            "Showing all ${filteredCircuits.size} matching circuits.",
-                            color = ThemeTextSecondary,
-                            fontSize = 11.sp,
+                            "Showing all ${visibleCircuits.size} matching circuits.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = DsType.bodySmall,
                             textAlign = TextAlign.Center,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -807,4 +921,299 @@ fun CircuitsGridScreen(
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         )
     }
+    }
 }
+
+/**
+ * Compact, whole-project health summary strip.
+ * Exactly 5 project health metrics: Total, Pass, Fail, Standby, Max Vd.
+ * Stateless, theme-aware, with adaptive wrapping for narrow/dense form factors and merged TalkBack semantics.
+ */
+@Composable
+private fun CircuitsSummaryStrip(
+    summary: CircuitsSummaryUiModel,
+    modifier: Modifier = Modifier
+) {
+    val extColors = MaterialTheme.dsExtendedColors
+    val isMaxVdExceeded = (summary.rawMaxVdPct ?: 0.0) > 4.0
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = DsShape.card,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = "PROJECT HEALTH SUMMARY",
+                style = DsType.labelSmall.copy(fontSize = 9.sp, letterSpacing = 0.5.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val isNarrow = maxWidth < 350.dp || LocalDensity.current.fontScale >= 1.25f
+                if (isNarrow) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            SummaryMetricCell(
+                                label = "Total",
+                                value = summary.totalCount.toString(),
+                                valueColor = MaterialTheme.colorScheme.onSurface,
+                                contentDescription = "Total circuits: ${summary.totalCount}",
+                                modifier = Modifier.weight(1f)
+                            )
+                            SummaryMetricCell(
+                                label = "Pass",
+                                value = summary.passCount.toString(),
+                                valueColor = extColors.success,
+                                contentDescription = "Passing circuits: ${summary.passCount}",
+                                modifier = Modifier.weight(1f)
+                            )
+                            SummaryMetricCell(
+                                label = "Fail",
+                                value = summary.failCount.toString(),
+                                valueColor = extColors.danger,
+                                contentDescription = "Failing circuits: ${summary.failCount}",
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            SummaryMetricCell(
+                                label = "Standby",
+                                value = summary.standbyCount.toString(),
+                                valueColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                contentDescription = "Standby circuits: ${summary.standbyCount}",
+                                modifier = Modifier.weight(1f)
+                            )
+                            SummaryMetricCell(
+                                label = "Max Vd",
+                                value = summary.maxVdDisplay,
+                                valueColor = if (isMaxVdExceeded) extColors.danger else MaterialTheme.colorScheme.onSurface,
+                                contentDescription = "Maximum voltage drop: ${summary.maxVdDisplay}",
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        SummaryMetricCell(
+                            label = "Total",
+                            value = summary.totalCount.toString(),
+                            valueColor = MaterialTheme.colorScheme.onSurface,
+                            contentDescription = "Total circuits: ${summary.totalCount}",
+                            modifier = Modifier.weight(1f)
+                        )
+                        SummaryMetricCell(
+                            label = "Pass",
+                            value = summary.passCount.toString(),
+                            valueColor = extColors.success,
+                            contentDescription = "Passing circuits: ${summary.passCount}",
+                            modifier = Modifier.weight(1f)
+                        )
+                        SummaryMetricCell(
+                            label = "Fail",
+                            value = summary.failCount.toString(),
+                            valueColor = extColors.danger,
+                            contentDescription = "Failing circuits: ${summary.failCount}",
+                            modifier = Modifier.weight(1f)
+                        )
+                        SummaryMetricCell(
+                            label = "Standby",
+                            value = summary.standbyCount.toString(),
+                            valueColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            contentDescription = "Standby circuits: ${summary.standbyCount}",
+                            modifier = Modifier.weight(1f)
+                        )
+                        SummaryMetricCell(
+                            label = "Max Vd",
+                            value = summary.maxVdDisplay,
+                            valueColor = if (isMaxVdExceeded) extColors.danger else MaterialTheme.colorScheme.onSurface,
+                            contentDescription = "Maximum voltage drop: ${summary.maxVdDisplay}",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryMetricCell(
+    label: String,
+    value: String,
+    valueColor: androidx.compose.ui.graphics.Color,
+    contentDescription: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.semantics(mergeDescendants = true) {
+            this.contentDescription = contentDescription
+        }
+    ) {
+        Text(
+            text = label,
+            style = DsType.labelSmall.copy(fontSize = 11.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.height(1.dp))
+        Text(
+            text = value,
+            style = DsType.titleMedium.copy(fontSize = 15.sp),
+            color = valueColor,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun CompactSelector(
+    labelPrefix: String,
+    currentLabel: String,
+    options: List<Pair<String, () -> Unit>>,
+    testTag: String,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
+        Surface(
+            onClick = { expanded = true },
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(testTag)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "$labelPrefix: $currentLabel",
+                    style = DsType.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Spacer(modifier = Modifier.width(DsSpacing.xs))
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Expand $labelPrefix options",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        ) {
+            options.forEach { (optionLabel, onSelect) ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = optionLabel,
+                            style = DsType.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onClick = {
+                        onSelect()
+                        expanded = false
+                    },
+                    modifier = Modifier.testTag("${testTag}_option_${optionLabel.replace(" ", "_")}")
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactSortSelector(
+    currentSort: CircuitSortOrder,
+    onSortSelected: (CircuitSortOrder) -> Unit,
+    testTag: String,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
+        Surface(
+            onClick = { expanded = true },
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.testTag(testTag)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Sort: ${currentSort.displayLabel}",
+                    style = DsType.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Expand sort options",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        ) {
+            CircuitSortOrder.values().forEach { sortOption ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = sortOption.displayLabel,
+                            style = DsType.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onClick = {
+                        onSortSelected(sortOption)
+                        expanded = false
+                    },
+                    modifier = Modifier.testTag("sort_option_${sortOption.name}")
+                )
+            }
+        }
+    }
+}
+
+
