@@ -94,10 +94,10 @@ class CircuitUiModelMapperTest {
     @Test
     fun testResolveCircuitStatus_allTypedStatuses() {
         assertEquals(CircuitUiStatus.PASS, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.PASS)))
+        assertEquals(CircuitUiStatus.WARNING, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.WARNING)))
         assertEquals(CircuitUiStatus.FAIL, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.FAIL)))
-        assertEquals(CircuitUiStatus.STANDBY, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.WARNING)))
-        assertEquals(CircuitUiStatus.STANDBY, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.INCOMPLETE)))
-        assertEquals(CircuitUiStatus.STANDBY, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.ERROR)))
+        assertEquals(CircuitUiStatus.INCOMPLETE, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.INCOMPLETE)))
+        assertEquals(CircuitUiStatus.ERROR, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.ERROR)))
         assertEquals(CircuitUiStatus.STANDBY, CircuitUiModelMapper.resolveCircuitStatus(null))
     }
 

@@ -13,18 +13,21 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ai.ui.AssistantEntryPoint
@@ -46,6 +49,7 @@ import com.example.ui.screens.circuits.CircuitLevelFilter
 import com.example.ui.screens.circuits.CircuitSortOrder
 import com.example.ui.screens.circuits.CircuitStatusFilter
 import com.example.ui.screens.circuits.CircuitUiModelMapper
+import com.example.ui.screens.circuits.CircuitUiStatus
 import com.example.ui.screens.circuits.CircuitsSummaryUiModel
 import com.example.ui.theme.*
 
@@ -118,159 +122,161 @@ fun CircuitsGridScreen(
         color = MaterialTheme.colorScheme.background
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = DsSpacing.md, vertical = DsSpacing.xs),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(horizontal = DsSpacing.md),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(top = DsSpacing.xs, bottom = 88.dp)
             ) {
                 // 1. Search Bar
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { viewModel.circuitSearchQuery.value = it },
-                    placeholder = {
-                        Text(
-                            "Search circuits by name, parent, cable, load...",
-                            style = DsType.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = "Search icon",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) {
-                            IconButton(
-                                onClick = { viewModel.circuitSearchQuery.value = "" },
-                                modifier = Modifier.testTag("clear_circuit_search_btn")
-                            ) {
-                                Icon(
-                                    Icons.Default.Clear,
-                                    contentDescription = "Clear search",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                item(key = "circuit_search_bar") {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { viewModel.circuitSearchQuery.value = it },
+                        placeholder = {
+                            Text(
+                                "Search circuits by name, parent, cable, load...",
+                                style = DsType.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = "Search icon",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { viewModel.circuitSearchQuery.value = "" },
+                                    modifier = Modifier.testTag("clear_circuit_search_btn")
+                                ) {
+                                    Icon(
+                                        Icons.Default.Clear,
+                                        contentDescription = "Clear search",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("search_circuits_input"),
-                    shape = DsShape.card,
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("search_circuits_input"),
+                        shape = DsShape.card,
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                        )
                     )
-                )
+                }
 
                 // 2. Compact Selectors (Level & Status Dropdown Selectors)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Compact Level Selector
-                    CompactSelector(
-                        labelPrefix = "Level",
-                        currentLabel = selectedLevel.displayLabel,
-                        options = CircuitLevelFilter.values().map { level ->
-                            level.displayLabel to {
-                                selectedLevel = level
-                                viewModel.circuitParentFilter.value = when (level) {
-                                    CircuitLevelFilter.ALL -> "All"
-                                    CircuitLevelFilter.MAIN_FEEDERS -> "Transformer"
-                                    CircuitLevelFilter.DOWNSTREAM -> "Downstream"
-                                    CircuitLevelFilter.PANELS -> "Panels"
+                item(key = "circuit_filter_selectors") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Compact Level Selector
+                        CompactSelector(
+                            labelPrefix = "Level",
+                            currentLabel = selectedLevel.displayLabel,
+                            options = CircuitLevelFilter.values().map { level ->
+                                level.displayLabel to {
+                                    selectedLevel = level
+                                    viewModel.circuitParentFilter.value = when (level) {
+                                        CircuitLevelFilter.ALL -> "All"
+                                        CircuitLevelFilter.MAIN_FEEDERS -> "Transformer"
+                                        CircuitLevelFilter.DOWNSTREAM -> "Downstream"
+                                        CircuitLevelFilter.PANELS -> "Panels"
+                                    }
                                 }
-                            }
-                        },
-                        testTag = "filter_level_selector",
-                        modifier = Modifier.weight(1f)
-                    )
+                            },
+                            testTag = "filter_level_selector",
+                            modifier = Modifier.weight(1f)
+                        )
 
-                    // Compact Status Selector (Strictly All, Pass, Fail, Standby)
-                    CompactSelector(
-                        labelPrefix = "Status",
-                        currentLabel = selectedStatus.displayLabel,
-                        options = CircuitStatusFilter.values().map { status ->
-                            status.displayLabel to {
-                                selectedStatus = status
-                                viewModel.circuitStatusFilter.value = when (status) {
-                                    CircuitStatusFilter.ALL -> "All"
-                                    CircuitStatusFilter.PASS -> "PASS"
-                                    CircuitStatusFilter.FAIL -> "FAIL"
-                                    CircuitStatusFilter.STANDBY -> "Standby"
+                        // Compact Status Selector (Strictly All, Pass, Fail, Standby)
+                        CompactSelector(
+                            labelPrefix = "Status",
+                            currentLabel = selectedStatus.displayLabel,
+                            options = CircuitStatusFilter.values().map { status ->
+                                status.displayLabel to {
+                                    selectedStatus = status
+                                    viewModel.circuitStatusFilter.value = when (status) {
+                                        CircuitStatusFilter.ALL -> "All"
+                                        CircuitStatusFilter.PASS -> "PASS"
+                                        CircuitStatusFilter.FAIL -> "FAIL"
+                                        CircuitStatusFilter.STANDBY -> "Standby"
+                                    }
                                 }
-                            }
-                        },
-                        testTag = "filter_status_selector",
-                        modifier = Modifier.weight(1f)
-                    )
+                            },
+                            testTag = "filter_status_selector",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
 
                 // 3. Whole-Project Health Summary Strip
-                CircuitsSummaryStrip(
-                    summary = summary,
-                    modifier = Modifier.testTag("circuits_summary_strip")
-                )
-
-                // 4. Visible Count Header and Compact Sort Selector Row
-                val totalCount = state.circuits.size
-                val visibleCount = visibleCircuits.size
-                val countHeaderText = if (visibleCount == totalCount) {
-                    "CIRCUITS ($totalCount)"
-                } else {
-                    "CIRCUITS ($visibleCount of $totalCount)"
+                item(key = "circuit_summary_strip") {
+                    CircuitsSummaryStrip(
+                        summary = summary,
+                        modifier = Modifier.testTag("circuits_summary_strip")
+                    )
                 }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = DsSpacing.xs),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = countHeaderText,
-                        style = DsType.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
+                // 4. Visible Count Header and Compact Sort Selector Row
+                item(key = "circuit_count_sort_header") {
+                    val totalCount = state.circuits.size
+                    val visibleCount = visibleCircuits.size
+                    val countHeaderText = if (visibleCount == totalCount) {
+                        "CIRCUITS ($totalCount)"
+                    } else {
+                        "CIRCUITS ($visibleCount of $totalCount)"
+                    }
+
+                    Row(
                         modifier = Modifier
-                            .weight(1f, fill = false)
-                            .testTag("circuits_visible_count_header")
-                    )
+                            .fillMaxWidth()
+                            .padding(horizontal = DsSpacing.xs),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = countHeaderText,
+                            style = DsType.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .testTag("circuits_visible_count_header")
+                        )
 
-                    Spacer(modifier = Modifier.width(DsSpacing.xs))
+                        Spacer(modifier = Modifier.width(DsSpacing.xs))
 
-                    // Compact Sort Selector
-                    CompactSortSelector(
-                        currentSort = selectedSort,
-                        onSortSelected = { selectedSort = it },
-                        testTag = "circuits_sort_selector"
-                    )
+                        // Compact Sort Selector
+                        CompactSortSelector(
+                            currentSort = selectedSort,
+                            onSortSelected = { selectedSort = it },
+                            testTag = "circuits_sort_selector"
+                        )
+                    }
                 }
 
                 // 5. Horizontal Grid/List of circuits
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 88.dp)
-                ) {
                 if (state.circuits.isEmpty()) {
-                    item {
+                    item(key = "empty_circuits_state") {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -286,7 +292,7 @@ fun CircuitsGridScreen(
                         }
                     }
                 } else if (visibleCircuits.isEmpty()) {
-                    item {
+                    item(key = "no_matching_circuits_state") {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -318,497 +324,33 @@ fun CircuitsGridScreen(
                 }
                 items(visibleCircuits, key = { it.id }) { circ ->
                     val result = state.sizingResults[circ.id]
+                    val scResult = state.shortCircuitResults[circ.id]
                     val isSelected = selectedId == circ.id
-                    
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.selectedCircuitId.value = if (isSelected) null else circ.id }
-                            .testTag("circuit_card_${circ.circuitName}"),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isSelected) if (LocalThemeIsDark.current) SelectedTabContainerDark else SelectedTabContainerLight else MaterialTheme.colorScheme.surfaceContainer
-                        ),
-                        border = BorderStroke(1.dp, if (isSelected) ThemePrimary else ThemeBorderSubtle)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    val childCircuits = childrenLookup.getChildren(circ.circuitName)
-                                    val hasChildren = childrenLookup.hasChildren(circ.circuitName)
-                                    val pType = circ.panelType?.trim()?.uppercase() ?: ""
-                                    val isPanelRow = pType in PANEL_TYPES || hasChildren
-
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            circ.circuitName,
-                                            color = ThemeTextPrimary,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 15.sp,
-                                            maxLines = 1,
-                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f, fill = false)
-                                        )
-
-                                        if (isPanelRow) {
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Surface(
-                                                onClick = {
-                                                    viewModel.selectedCircuitId.value = circ.id
-                                                    onNavigateToPanelSchedule?.invoke(circ.id)
-                                                },
-                                                color = ThemePrimary.copy(alpha = 0.12f),
-                                                shape = RoundedCornerShape(6.dp),
-                                                border = BorderStroke(1.dp, ThemePrimary.copy(alpha = 0.4f)),
-                                                modifier = Modifier.testTag("open_panel_schedule_chip_${circ.circuitName}")
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Open Panel Schedule", tint = ThemePrimary, modifier = Modifier.size(12.dp))
-                                                    Spacer(modifier = Modifier.width(3.dp))
-                                                    Text("Schedule →", color = ThemePrimary, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text("Fed from: ${circ.fedFrom}  •  ${circ.loadKVA} kVA | ${circ.phases}", color = ThemeTextSecondary, fontSize = 11.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                    
-                                    val childrenTotalLoad = childrenLookup.getChildrenTotalLoad(circ.circuitName)
-                                    val childrenDiffers = kotlin.math.abs(circ.loadKVA - childrenTotalLoad) > 0.001
-                                    val isUnconfirmedConflict = hasChildren && circ.directLoadConfirmed == null && childrenDiffers
-                                
-                                if (isUnconfirmedConflict) {
-                                    Surface(
-                                        onClick = {
-                                            viewModel.selectedCircuitId.value = circ.id
-                                            onNavigateToPanelSchedule?.invoke(circ.id)
-                                        },
-                                        color = ThemeStatusWarning.copy(alpha = 0.15f),
-                                        shape = RoundedCornerShape(6.dp),
-                                        border = BorderStroke(1.dp, ThemeStatusWarning.copy(alpha = 0.5f)),
-                                        modifier = Modifier
-                                            .padding(top = 4.dp)
-                                            .testTag("unconfirmed_conflict_badge_${circ.circuitName}")
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Warning,
-                                                contentDescription = "Load conflict warning",
-                                                tint = ThemeStatusWarning,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = "Superseded by ${Math.round(childrenTotalLoad * 10.0) / 10.0} kVA from children — tap to review in Panel Schedule",
-                                                color = ThemeStatusWarning,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                            )
-                                        }
-                                    }
-                                }
-                                
-                                val isUnsupported = Catalog.isCableTypeUnsupported(circ.cableType)
-                                if (isUnsupported) {
-                                    Text(
-                                        text = "Catalog data is not available for this cable family.",
-                                        color = ThemeStatusWarning,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 2,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                        modifier = Modifier.padding(top = 4.dp).testTag("unsupported_warning_${circ.circuitName}")
-                                    )
-                                }
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                if (result != null) {
-                                    Column(horizontalAlignment = Alignment.End) {
-                                        Text(
-                                            text = result.cableSize_mm2,
-                                            color = ThemePrimary,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            maxLines = 1
-                                        )
-                                        Text(
-                                            text = statusSymbol(result.status),
-                                            color = themeStatusColor(result.status),
-                                            fontSize = 18.sp,
-                                            fontWeight = FontWeight.Black
-                                        )
-                                    }
-                                }
-                            }
-                            // Expanded detailing with interactive overrides and CRUD edit/delete buttons
-                            AnimatedVisibility(
-                                visible = isSelected,
-                                enter = fadeIn(tween(200)) + expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)),
-                                exit = fadeOut(tween(150)) + shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow))
-                            ) {
-                                Column(modifier = Modifier.padding(top = 12.dp)) {
-                                    HorizontalDivider(color = ThemeBorderSubtle)
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    
-                                    // CRUD Quick Control Panel
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.End,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        val pTypeExp = circ.panelType?.trim()?.uppercase() ?: ""
-                                        val isPanelRowExp = pTypeExp in setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER") || childrenLookup.hasChildren(circ.circuitName)
-
-                                        Text("Circuit Operations:", color = ThemeTextSecondary, fontSize = 11.sp)
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        if (isPanelRowExp) {
-                                            IconButton(
-                                                onClick = {
-                                                    viewModel.selectedCircuitId.value = circ.id
-                                                    onNavigateToPanelSchedule?.invoke(circ.id)
-                                                },
-                                                modifier = Modifier.testTag("open_panel_schedule_btn_${circ.circuitName}")
-                                            ) {
-                                                Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Open Panel Schedule", tint = ThemePrimary)
-                                            }
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                        }
-                                        IconButton(
-                                            onClick = {
-                                                editingCircuit = circ
-                                                showDialog = true
-                                            },
-                                            modifier = Modifier.testTag("edit_circuit_btn_${circ.circuitName}")
-                                        ) {
-                                            Icon(Icons.Default.Edit, contentDescription = "Edit Circuit", tint = ThemePrimary)
-                                        }
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        IconButton(
-                                            onClick = {
-                                                circuitToDelete = circ
-                                            },
-                                            modifier = Modifier.testTag("delete_circuit_btn_${circ.circuitName}")
-                                        ) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete Circuit", tint = ThemeStatusFail)
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    
-                                    if (result != null) {
-                                        // Sizing Details
-                                        Text("Sizing Specifications", color = ThemePrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text("Design Current (Ib)", color = ThemeTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                                            Text("${String.format("%.2f", result.Ib_A)} A", color = ThemeTextPrimary, fontSize = 11.sp, maxLines = 1)
-                                        }
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text("Derating Factor", color = ThemeTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                                            Text("${String.format("%.3f", result.cTotalDerating)}", color = ThemeTextPrimary, fontSize = 11.sp, maxLines = 1)
-                                        }
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text("Device & Type", color = ThemeTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                                            Text("${result.deviceSize_A.toInt()} A (${result.deviceType})", color = ThemeTextPrimary, fontSize = 11.sp, maxLines = 1)
-                                        }
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text("Voltage Drop (V / %)", color = ThemeTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                                            Text("${String.format("%.2f", result.voltDrop_V)} V (${String.format("%.2f", result.vdPct)}%)", color = ThemeTextPrimary, fontSize = 11.sp, maxLines = 1)
-                                        }
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text("Cumulative VD %", color = ThemeTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                                            Text(
-                                                text = "${String.format("%.2f", result.cumulativeVDpct)}% / ${circ.maxVDpct * 100}%",
-                                                color = themeStatusColor(result.status),
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 11.sp,
-                                                maxLines = 1
-                                            )
-                                        }
-
-                                        if (result.failReason.isNotBlank()) {
-                                            Spacer(modifier = Modifier.height(8.dp))
-
-                                             Text(
-                                                text = "Failure reason:",
-                                                color = ThemeStatusFail,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-
-                                            Text(
-                                                text = result.failReason,
-                                                color = ThemeTextPrimary,
-                                                fontSize = 11.sp
-                                            )
-                                        }
-
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        HorizontalDivider(color = ThemeBorderSubtle)
-                                        Spacer(modifier = Modifier.height(12.dp))
-
-                                        // Interactive Manual Overrides Panel
-                                        Text("MANUAL OVERRIDES PANEL", color = ThemeStatusWarning, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                        Spacer(modifier = Modifier.height(8.dp))
-
-                                        // Mode Indicator & Reset to Auto Row
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            val isOverrideActive = circ.overrideDeviceSize != null || circ.overrideCableSize != null || circ.overrideDeviceType != null
-                                            Text(
-                                                text = if (isOverrideActive) "MODE: OVERRIDE ACTIVE" else "MODE: AUTOMATIC SIZING",
-                                                color = if (isOverrideActive) ThemeStatusWarning else ThemeStatusPass,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-
-                                            OutlinedButton(
-                                                onClick = {
-                                                    viewModel.updateCircuit(
-                                                        circ.copy(
-                                                            overrideDeviceSize = null,
-                                                            overrideCableSize = null,
-                                                            overrideDeviceType = null
-                                                        )
-                                                    )
-                                                },
-                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                                border = BorderStroke(1.dp, ThemeBorderSubtle),
-                                                modifier = Modifier.testTag("reset_to_auto_btn_${circ.circuitName}")
-                                            ) {
-                                                Text("Reset to Auto", color = ThemeTextPrimary, fontSize = 11.sp)
-                                            }
-                                        }
-
-                                        if (onOpenAssistant != null) {
-                                            Spacer(modifier = Modifier.height(6.dp))
-                                            OutlinedButton(
-                                                onClick = { onOpenAssistant(AssistantEntryPoint.CONTEXTUAL_CIRCUIT, circ) },
-                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                                border = BorderStroke(1.dp, ThemePrimary.copy(alpha = 0.4f)),
-                                                shape = RoundedCornerShape(VoltAtlasShapes.chip),
-                                                modifier = Modifier.fillMaxWidth().testTag("ask_assistant_circuit_btn_${circ.circuitName}")
-                                            ) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.Center
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.AutoAwesome,
-                                                        contentDescription = "Ask Assistant",
-                                                        tint = ThemePrimary,
-                                                        modifier = Modifier.size(14.dp)
-                                                    )
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                    Text("Ask Assistant about this circuit", color = ThemePrimary, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
-                                                }
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(10.dp))
-
-                                        // 1. Device Type Dropdown via ExposedDropdownMenuBox
-                                        var deviceTypeDropdownExpanded by remember { mutableStateOf(false) }
-                                        val selectedDeviceTypeStr = circ.overrideDeviceType ?: "Auto (${result.deviceType})"
-
-                                        ExposedDropdownMenuBox(
-                                            expanded = deviceTypeDropdownExpanded,
-                                            onExpandedChange = { deviceTypeDropdownExpanded = !deviceTypeDropdownExpanded },
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                        ) {
-                                            OutlinedTextField(
-                                                value = selectedDeviceTypeStr,
-                                                onValueChange = {},
-                                                readOnly = true,
-                                                label = { Text("Protection Device Type Override", color = ThemeTextSecondary, fontSize = 11.sp) },
-                                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = deviceTypeDropdownExpanded) },
-                                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
-                                                    focusedContainerColor = DarkBackground,
-                                                    unfocusedContainerColor = DarkBackground,
-                                                    focusedBorderColor = ThemePrimary,
-                                                    unfocusedBorderColor = ThemeBorderSubtle,
-                                                    focusedLabelColor = ThemePrimary,
-                                                    unfocusedLabelColor = ThemeTextSecondary,
-                                                    focusedTextColor = ThemeTextPrimary,
-                                                    unfocusedTextColor = ThemeTextPrimary
-                                                ),
-                                                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable).testTag("override_device_type_btn")
-                                            )
-                                            ExposedDropdownMenu(
-                                                expanded = deviceTypeDropdownExpanded,
-                                                onDismissRequest = { deviceTypeDropdownExpanded = false },
-                                                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer).heightIn(max = 280.dp)
-                                            ) {
-                                                DropdownMenuItem(
-                                                    text = { Text("Auto (Recommended ${result.deviceType})", color = ThemePrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
-                                                    onClick = {
-                                                        viewModel.updateCircuit(circ.copy(overrideDeviceType = null))
-                                                        deviceTypeDropdownExpanded = false
-                                                    }
-                                                )
-                                                listOf("MCB", "MCCB", "ACB", "Switch-Disconnector").forEach { typeOption ->
-                                                    DropdownMenuItem(
-                                                        text = { Text(typeOption, color = ThemeTextPrimary, fontSize = 12.sp) },
-                                                        onClick = {
-                                                            viewModel.updateCircuit(circ.copy(overrideDeviceType = typeOption))
-                                                            deviceTypeDropdownExpanded = false
-                                                        },
-                                                        modifier = Modifier.testTag("device_type_option_$typeOption")
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(6.dp))
-
-                                        // 2. Device Rating Dropdown via ExposedDropdownMenuBox
-                                        var deviceDropdownExpanded by remember { mutableStateOf(false) }
-                                        val selectedDeviceRatingStr = if (circ.overrideDeviceSize != null) "${circ.overrideDeviceSize.toInt()} A" else "Auto (${result.deviceSize_A.toInt()} A)"
-
-                                        ExposedDropdownMenuBox(
-                                            expanded = deviceDropdownExpanded,
-                                            onExpandedChange = { deviceDropdownExpanded = !deviceDropdownExpanded },
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                        ) {
-                                            OutlinedTextField(
-                                                value = selectedDeviceRatingStr,
-                                                onValueChange = {},
-                                                readOnly = true,
-                                                label = { Text("Protection Device Rating Override", color = ThemeTextSecondary, fontSize = 11.sp) },
-                                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = deviceDropdownExpanded) },
-                                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
-                                                    focusedContainerColor = DarkBackground,
-                                                    unfocusedContainerColor = DarkBackground,
-                                                    focusedBorderColor = ThemePrimary,
-                                                    unfocusedBorderColor = ThemeBorderSubtle,
-                                                    focusedLabelColor = ThemePrimary,
-                                                    unfocusedLabelColor = ThemeTextSecondary,
-                                                    focusedTextColor = ThemeTextPrimary,
-                                                    unfocusedTextColor = ThemeTextPrimary
-                                                ),
-                                                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable).testTag("override_breaker_btn")
-                                            )
-                                            ExposedDropdownMenu(
-                                                expanded = deviceDropdownExpanded,
-                                                onDismissRequest = { deviceDropdownExpanded = false },
-                                                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer).heightIn(max = 280.dp)
-                                            ) {
-                                                DropdownMenuItem(
-                                                    text = { Text("Auto (Recommended ${result.deviceSize_A.toInt()} A)", color = ThemePrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
-                                                    onClick = {
-                                                        viewModel.updateCircuit(circ.copy(overrideDeviceSize = null))
-                                                        deviceDropdownExpanded = false
-                                                    }
-                                                )
-                                                CableSizingEngine.STANDARD_RATINGS.forEach { rating ->
-                                                    DropdownMenuItem(
-                                                        text = { Text("${rating.toInt()} A", color = ThemeTextPrimary, fontSize = 12.sp) },
-                                                        onClick = {
-                                                            viewModel.updateCircuit(circ.copy(overrideDeviceSize = rating))
-                                                            deviceDropdownExpanded = false
-                                                        },
-                                                        modifier = Modifier.testTag("breaker_option_${rating.toInt()}A")
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(6.dp))
-
-                                        // 2. Cable Size Dropdown via ExposedDropdownMenuBox
-                                        var cableDropdownExpanded by remember { mutableStateOf(false) }
-                                        val catalogSizes = catalogCableSizeOptions(circ.manufacturer, circ.cableType)
-                                        val selectedCableSizeStr = circ.overrideCableSize ?: "Auto (${result.cableSize_mm2})"
-
-                                        ExposedDropdownMenuBox(
-                                            expanded = cableDropdownExpanded,
-                                            onExpandedChange = { if (catalogSizes.isNotEmpty()) cableDropdownExpanded = !cableDropdownExpanded },
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                        ) {
-                                            OutlinedTextField(
-                                                value = selectedCableSizeStr,
-                                                onValueChange = {},
-                                                readOnly = true,
-                                                label = { Text("Cable Cross-Section Override", color = ThemeTextSecondary, fontSize = 11.sp) },
-                                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = cableDropdownExpanded) },
-                                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
-                                                    focusedContainerColor = DarkBackground,
-                                                    unfocusedContainerColor = DarkBackground,
-                                                    focusedBorderColor = ThemePrimary,
-                                                    unfocusedBorderColor = ThemeBorderSubtle,
-                                                    focusedLabelColor = ThemePrimary,
-                                                    unfocusedLabelColor = ThemeTextSecondary,
-                                                    focusedTextColor = ThemeTextPrimary,
-                                                    unfocusedTextColor = ThemeTextPrimary
-                                                ),
-                                                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable).testTag("override_cable_btn")
-                                            )
-                                            ExposedDropdownMenu(
-                                                expanded = cableDropdownExpanded,
-                                                onDismissRequest = { cableDropdownExpanded = false },
-                                                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer).heightIn(max = 280.dp)
-                                            ) {
-                                                DropdownMenuItem(
-                                                    text = { Text("Auto (Recommended ${result.cableSize_mm2})", color = ThemePrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
-                                                    onClick = {
-                                                        viewModel.updateCircuit(circ.copy(overrideCableSize = null))
-                                                        cableDropdownExpanded = false
-                                                    }
-                                                )
-                                                catalogSizes.forEach { sizeStr ->
-                                                    DropdownMenuItem(
-                                                        text = { Text(sizeStr, color = ThemeTextPrimary, fontSize = 12.sp) },
-                                                        onClick = {
-                                                            viewModel.updateCircuit(circ.copy(overrideCableSize = sizeStr))
-                                                            cableDropdownExpanded = false
-                                                        },
-                                                        modifier = Modifier.testTag("cable_option_$sizeStr")
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(8.dp))
-
-                                        // Apply Override Button Row
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.End
-                                        ) {
-                                            FilledTonalButton(
-                                                onClick = { viewModel.recalculate() },
-                                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                                modifier = Modifier.testTag("apply_override_btn_${circ.circuitName}")
-                                            ) {
-                                                Icon(Icons.Default.Check, contentDescription = "Apply Override", modifier = Modifier.size(14.dp), tint = ThemeTextPrimary)
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text("Apply Override", color = ThemeTextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                    }
-                                }
-                            }
-                        }
+                    val cardModel = remember(circ, result, scResult, state.circuits) {
+                        CircuitUiModelMapper.mapToCardUiModel(
+                            circuit = circ,
+                            sizingResult = result,
+                            shortCircuitResult = scResult,
+                            allCircuits = state.circuits,
+                            hasChildren = childrenLookup.hasChildren(circ.circuitName)
+                        )
                     }
+
+                    CircuitCardV3(
+                        circ = circ,
+                        result = result,
+                        model = cardModel,
+                        isSelected = isSelected,
+                        childrenLookup = childrenLookup,
+                        viewModel = viewModel,
+                        onNavigateToPanelSchedule = onNavigateToPanelSchedule,
+                        onOpenAssistant = onOpenAssistant,
+                        onEdit = { editingCircuit = it; showDialog = true },
+                        onDelete = { circuitToDelete = it }
+                    )
                 }
                 if (visibleCircuits.size > 50) {
-                    item {
+                    item(key = "circuits_footer_count") {
                         Text(
                             "Showing all ${visibleCircuits.size} matching circuits.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -821,21 +363,21 @@ fun CircuitsGridScreen(
                     }
                 }
             }
-        }
 
-        // Add Floating Action Button for adding new circuits
-        FloatingActionButton(
-            onClick = {
-                editingCircuit = null
-                showDialog = true
-            },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp)
-                .testTag("add_circuit_fab"),
-            containerColor = ThemePrimary
-        ) {
-            Icon(Icons.Default.Add, contentDescription = "Add Circuit", tint = MaterialTheme.colorScheme.onPrimary)
+            // Add Floating Action Button for adding new circuits
+            FloatingActionButton(
+                onClick = {
+                    editingCircuit = null
+                    showDialog = true
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp)
+                    .testTag("add_circuit_fab"),
+                containerColor = ThemePrimary
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add Circuit", tint = MaterialTheme.colorScheme.onPrimary)
+            }
         }
     }
 
@@ -920,7 +462,6 @@ fun CircuitsGridScreen(
             },
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         )
-    }
     }
 }
 
@@ -1210,6 +751,721 @@ private fun CompactSortSelector(
                         expanded = false
                     },
                     modifier = Modifier.testTag("sort_option_${sortOption.name}")
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalAnimationApi::class, ExperimentalMaterial3Api::class)
+@Composable
+fun CircuitCardV3(
+    circ: CircuitEntity,
+    result: com.example.engine.SizingResult?,
+    model: CircuitCardUiModel,
+    isSelected: Boolean,
+    childrenLookup: CircuitChildLookup,
+    viewModel: EngineeringViewModel,
+    onNavigateToPanelSchedule: ((Int) -> Unit)?,
+    onOpenAssistant: ((AssistantEntryPoint, CircuitEntity) -> Unit)?,
+    onEdit: (CircuitEntity) -> Unit,
+    onDelete: (CircuitEntity) -> Unit
+) {
+    val childCircuits = childrenLookup.getChildren(circ.circuitName)
+    val hasChildren = childrenLookup.hasChildren(circ.circuitName)
+    val pType = circ.panelType?.trim()?.uppercase() ?: ""
+    val isPanelRow = pType in PANEL_TYPES || hasChildren
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { viewModel.selectedCircuitId.value = if (isSelected) null else circ.id }
+            .testTag("circuit_card_${circ.circuitName}"),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) {
+                if (LocalThemeIsDark.current) SelectedTabContainerDark else SelectedTabContainerLight
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer
+            }
+        ),
+        border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Row 1: Circuit Name + Tier Badge + Expand Affordance + Status Badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    Text(
+                        text = model.circuitName,
+                        style = DsType.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    val tierLabel = if (circ.parentId == null) "Tier 1 • Main" else if (hasChildren) "Tier 2 • Sub-Main" else "Tier 3 • Branch"
+                    MiniTierChip(tier = tierLabel)
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { viewModel.selectedCircuitId.value = if (isSelected) null else circ.id },
+                        modifier = Modifier
+                            .size(24.dp)
+                            .testTag("circuit_expand_btn_${circ.circuitName}")
+                    ) {
+                        Icon(
+                            imageVector = if (isSelected) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (isSelected) "Collapse circuit" else "Expand circuit",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    MiniStatusBadge(
+                        text = model.status.displayLabel,
+                        isPass = model.status == CircuitUiStatus.PASS
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(3.dp))
+
+            // Row 2: Electrical specs summary (Load, Phase, Ib, In) + Cable summary
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    Text(
+                        text = "⚡ ${model.loadDisplay}",
+                        style = DsType.bodySmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                    Text("•", style = DsType.bodySmall.copy(fontSize = 11.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = model.phasesDisplay,
+                        style = DsType.bodySmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                    Text("•", style = DsType.bodySmall.copy(fontSize = 11.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = "Ib: ${model.ibDisplay}",
+                        style = DsType.bodySmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                    Text("•", style = DsType.bodySmall.copy(fontSize = 11.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = "In: ${model.inDisplay}",
+                        style = DsType.bodySmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = model.cableSizeDisplay,
+                    style = DsType.labelSmall.copy(fontSize = 10.5.sp),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Row 2.5: Breadcrumb & Length footer line
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Fed from: ${model.breadcrumbDisplay}",
+                    style = DsType.bodySmall.copy(fontSize = 10.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Length: ${circ.length_m.toInt()}m",
+                    style = DsType.bodySmall.copy(fontSize = 10.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+
+            // Warnings / Conflict alerts
+            val childrenTotalLoad = childrenLookup.getChildrenTotalLoad(circ.circuitName)
+            val childrenDiffers = kotlin.math.abs(circ.loadKVA - childrenTotalLoad) > 0.001
+            val isUnconfirmedConflict = hasChildren && circ.directLoadConfirmed == null && childrenDiffers
+
+            if (isUnconfirmedConflict) {
+                Surface(
+                    onClick = {
+                        viewModel.selectedCircuitId.value = circ.id
+                        onNavigateToPanelSchedule?.invoke(circ.id)
+                    },
+                    color = MaterialTheme.dsExtendedColors.warning.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.dsExtendedColors.warning.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .testTag("unconfirmed_conflict_badge_${circ.circuitName}")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Load conflict warning",
+                            tint = MaterialTheme.dsExtendedColors.warning,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Superseded by ${Math.round(childrenTotalLoad * 10.0) / 10.0} kVA from children — tap to review in Panel Schedule",
+                            color = MaterialTheme.dsExtendedColors.warning,
+                            style = DsType.bodySmall.copy(fontSize = 10.5.sp),
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            val isUnsupported = Catalog.isCableTypeUnsupported(circ.cableType)
+            if (isUnsupported) {
+                Text(
+                    text = "Catalog data is not available for this cable family.",
+                    color = MaterialTheme.dsExtendedColors.warning,
+                    style = DsType.bodySmall.copy(fontSize = 10.5.sp),
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp).testTag("unsupported_warning_${circ.circuitName}")
+                )
+            }
+
+            // Row 3: 3 Horizontal Engineering Metric Tiles
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val vdVoltSubtitle = if (result != null) "${String.format("%.2f", result.voltDrop_V)} V" else model.vdLimitDisplay
+                EngineeringMetricTile(
+                    title = "Voltage Drop",
+                    icon = Icons.AutoMirrored.Filled.TrendingDown,
+                    value = model.vdDisplay,
+                    subtitle = vdVoltSubtitle,
+                    badgeText = if (model.isVdOk) "PASS" else "FAIL",
+                    isPass = model.isVdOk,
+                    modifier = Modifier.weight(1f)
+                )
+                EngineeringMetricTile(
+                    title = "Loading (Iz)",
+                    icon = Icons.Default.ElectricBolt,
+                    value = model.loadingDisplay,
+                    subtitle = model.izDisplay,
+                    badgeText = if (model.isLoadingOk) "PASS" else "FAIL",
+                    isPass = model.isLoadingOk,
+                    modifier = Modifier.weight(1f)
+                )
+                EngineeringMetricTile(
+                    title = "Isc (3Φ)",
+                    icon = Icons.Default.Speed,
+                    value = model.isc3phDisplay,
+                    subtitle = model.icuDisplay,
+                    badgeText = if (model.isIscOk) "PASS" else "FAIL",
+                    isPass = model.isIscOk,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // Row 4: Expanded Drawer with full sizing specs, CRUD and overrides
+            AnimatedVisibility(
+                visible = isSelected,
+                enter = fadeIn(tween(200)) + expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)),
+                exit = fadeOut(tween(150)) + shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow))
+            ) {
+                Column(modifier = Modifier.padding(top = 12.dp)) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Circuit Operations
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Circuit Operations:", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.labelSmall)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        if (isPanelRow) {
+                            FilledTonalButton(
+                                onClick = {
+                                    viewModel.selectedCircuitId.value = circ.id
+                                    onNavigateToPanelSchedule?.invoke(circ.id)
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(28.dp).testTag("open_panel_schedule_btn_${circ.circuitName}")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
+                                    contentDescription = "Open Panel Schedule",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Schedule", style = DsType.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                        IconButton(
+                            onClick = { onEdit(circ) },
+                            modifier = Modifier.size(28.dp).testTag("edit_circuit_btn_${circ.circuitName}")
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit Circuit", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        IconButton(
+                            onClick = { onDelete(circ) },
+                            modifier = Modifier.size(28.dp).testTag("delete_circuit_btn_${circ.circuitName}")
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete Circuit", tint = MaterialTheme.dsExtendedColors.danger, modifier = Modifier.size(16.dp))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (result != null) {
+                        Text("Sizing Specifications", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, style = DsType.titleSmall)
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Design Current (Ib)", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.bodySmall, modifier = Modifier.weight(1f))
+                            Text("${String.format("%.2f", result.Ib_A)} A", color = MaterialTheme.colorScheme.onSurface, style = DsType.bodySmall, maxLines = 1)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Derating Factor", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.bodySmall, modifier = Modifier.weight(1f))
+                            Text("${String.format("%.3f", result.cTotalDerating)}", color = MaterialTheme.colorScheme.onSurface, style = DsType.bodySmall, maxLines = 1)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Device & Type", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.bodySmall, modifier = Modifier.weight(1f))
+                            Text("${result.deviceSize_A.toInt()} A (${result.deviceType})", color = MaterialTheme.colorScheme.onSurface, style = DsType.bodySmall, maxLines = 1)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Voltage Drop (V / %)", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.bodySmall, modifier = Modifier.weight(1f))
+                            Text("${String.format("%.2f", result.voltDrop_V)} V (${String.format("%.2f", result.vdPct)}%)", color = MaterialTheme.colorScheme.onSurface, style = DsType.bodySmall, maxLines = 1)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Cumulative VD %", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.bodySmall, modifier = Modifier.weight(1f))
+                            Text(
+                                text = "${String.format("%.2f", result.cumulativeVDpct)}% / ${circ.maxVDpct * 100}%",
+                                color = themeStatusColor(result.status),
+                                fontWeight = FontWeight.Bold,
+                                style = DsType.bodySmall,
+                                maxLines = 1
+                            )
+                        }
+
+                        if (result.failReason.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(text = "Failure reason:", color = MaterialTheme.dsExtendedColors.danger, style = DsType.bodySmall, fontWeight = FontWeight.Bold)
+                            Text(text = result.failReason, color = MaterialTheme.colorScheme.onSurface, style = DsType.bodySmall)
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    // Manual Overrides Panel
+                    Text("MANUAL OVERRIDES PANEL", color = MaterialTheme.dsExtendedColors.warning, fontWeight = FontWeight.Bold, style = DsType.titleSmall)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val isOverrideActive = circ.overrideDeviceSize != null || circ.overrideCableSize != null || circ.overrideDeviceType != null
+                        Text(
+                            text = if (isOverrideActive) "MODE: OVERRIDE ACTIVE" else "MODE: AUTOMATIC SIZING",
+                            color = if (isOverrideActive) MaterialTheme.dsExtendedColors.warning else MaterialTheme.dsExtendedColors.success,
+                            style = DsType.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.updateCircuit(
+                                    circ.copy(
+                                        overrideDeviceSize = null,
+                                        overrideCableSize = null,
+                                        overrideDeviceType = null
+                                    )
+                                )
+                            },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            modifier = Modifier.testTag("reset_to_auto_btn_${circ.circuitName}")
+                        ) {
+                            Text("Reset to Auto", color = MaterialTheme.colorScheme.onSurface, style = DsType.bodySmall)
+                        }
+                    }
+
+                    if (onOpenAssistant != null) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedButton(
+                            onClick = { onOpenAssistant(AssistantEntryPoint.CONTEXTUAL_CIRCUIT, circ) },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+                            shape = RoundedCornerShape(VoltAtlasShapes.chip),
+                            modifier = Modifier.fillMaxWidth().testTag("ask_assistant_circuit_btn_${circ.circuitName}")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "Ask Assistant",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Ask Assistant about this circuit", color = MaterialTheme.colorScheme.primary, style = DsType.labelSmall, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // 1. Device Type Override
+                    var deviceTypeDropdownExpanded by remember { mutableStateOf(false) }
+                    val selectedDeviceTypeStr = circ.overrideDeviceType ?: if (result != null) "Auto (${result.deviceType})" else "Auto (no sizing run yet)"
+
+                    ExposedDropdownMenuBox(
+                        expanded = deviceTypeDropdownExpanded,
+                        onExpandedChange = { deviceTypeDropdownExpanded = !deviceTypeDropdownExpanded },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = selectedDeviceTypeStr,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Protection Device Type Override", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.bodySmall) },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = deviceTypeDropdownExpanded) },
+                            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                focusedLabelColor = MaterialTheme.colorScheme.primary,
+                                unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable).testTag("override_device_type_btn")
+                        )
+                        ExposedDropdownMenu(
+                            expanded = deviceTypeDropdownExpanded,
+                            onDismissRequest = { deviceTypeDropdownExpanded = false },
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer).heightIn(max = 280.dp)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(if (result != null) "Auto (Recommended ${result.deviceType})" else "Auto (no sizing run yet)", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, style = DsType.bodySmall) },
+                                onClick = {
+                                    viewModel.updateCircuit(circ.copy(overrideDeviceType = null))
+                                    deviceTypeDropdownExpanded = false
+                                }
+                            )
+                            listOf("MCB", "MCCB", "ACB", "Switch-Disconnector").forEach { typeOption ->
+                                DropdownMenuItem(
+                                    text = { Text(typeOption, color = MaterialTheme.colorScheme.onSurface, style = DsType.bodySmall) },
+                                    onClick = {
+                                        viewModel.updateCircuit(circ.copy(overrideDeviceType = typeOption))
+                                        deviceTypeDropdownExpanded = false
+                                    },
+                                    modifier = Modifier.testTag("device_type_option_$typeOption")
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // 2. Device Rating Override
+                    var deviceDropdownExpanded by remember { mutableStateOf(false) }
+                    val selectedDeviceRatingStr = if (circ.overrideDeviceSize != null) {
+                        "${circ.overrideDeviceSize.toInt()} A"
+                    } else if (result != null) {
+                        "Auto (${result.deviceSize_A.toInt()} A)"
+                    } else {
+                        "Auto (no sizing run yet)"
+                    }
+
+                    ExposedDropdownMenuBox(
+                        expanded = deviceDropdownExpanded,
+                        onExpandedChange = { deviceDropdownExpanded = !deviceDropdownExpanded },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = selectedDeviceRatingStr,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Protection Device Rating Override", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.bodySmall) },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = deviceDropdownExpanded) },
+                            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                focusedLabelColor = MaterialTheme.colorScheme.primary,
+                                unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable).testTag("override_breaker_btn")
+                        )
+                        ExposedDropdownMenu(
+                            expanded = deviceDropdownExpanded,
+                            onDismissRequest = { deviceDropdownExpanded = false },
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer).heightIn(max = 280.dp)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(if (result != null) "Auto (Recommended ${result.deviceSize_A.toInt()} A)" else "Auto (no sizing run yet)", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, style = DsType.bodySmall) },
+                                onClick = {
+                                    viewModel.updateCircuit(circ.copy(overrideDeviceSize = null))
+                                    deviceDropdownExpanded = false
+                                }
+                            )
+                            CableSizingEngine.STANDARD_RATINGS.forEach { rating ->
+                                DropdownMenuItem(
+                                    text = { Text("${rating.toInt()} A", color = MaterialTheme.colorScheme.onSurface, style = DsType.bodySmall) },
+                                    onClick = {
+                                        viewModel.updateCircuit(circ.copy(overrideDeviceSize = rating))
+                                        deviceDropdownExpanded = false
+                                    },
+                                    modifier = Modifier.testTag("breaker_option_${rating.toInt()}A")
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // 3. Cable Size Override
+                    var cableDropdownExpanded by remember { mutableStateOf(false) }
+                    val catalogSizes = catalogCableSizeOptions(circ.manufacturer, circ.cableType)
+                    val selectedCableSizeStr = circ.overrideCableSize ?: if (result != null) "Auto (${result.cableSize_mm2})" else "Auto (no sizing run yet)"
+
+                    ExposedDropdownMenuBox(
+                        expanded = cableDropdownExpanded,
+                        onExpandedChange = { if (catalogSizes.isNotEmpty()) cableDropdownExpanded = !cableDropdownExpanded },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = selectedCableSizeStr,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Cable Cross-Section Override", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.bodySmall) },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = cableDropdownExpanded) },
+                            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                focusedLabelColor = MaterialTheme.colorScheme.primary,
+                                unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable).testTag("override_cable_btn")
+                        )
+                        ExposedDropdownMenu(
+                            expanded = cableDropdownExpanded,
+                            onDismissRequest = { cableDropdownExpanded = false },
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer).heightIn(max = 280.dp)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(if (result != null) "Auto (Recommended ${result.cableSize_mm2})" else "Auto (no sizing run yet)", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, style = DsType.bodySmall) },
+                                onClick = {
+                                    viewModel.updateCircuit(circ.copy(overrideCableSize = null))
+                                    cableDropdownExpanded = false
+                                }
+                            )
+                            catalogSizes.forEach { sizeStr ->
+                                DropdownMenuItem(
+                                    text = { Text(sizeStr, color = MaterialTheme.colorScheme.onSurface, style = DsType.bodySmall) },
+                                    onClick = {
+                                        viewModel.updateCircuit(circ.copy(overrideCableSize = sizeStr))
+                                        cableDropdownExpanded = false
+                                    },
+                                    modifier = Modifier.testTag("cable_option_$sizeStr")
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Apply Override
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        FilledTonalButton(
+                            onClick = { viewModel.recalculate() },
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            modifier = Modifier.testTag("apply_override_btn_${circ.circuitName}")
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = "Apply Override", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurface)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Apply Override", color = MaterialTheme.colorScheme.onSurface, style = DsType.bodySmall, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiniTierChip(
+    tier: String
+) {
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Text(
+            text = tier,
+            style = DsType.labelSmall.copy(fontSize = 9.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp),
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun MiniStatusBadge(
+    text: String,
+    isPass: Boolean
+) {
+    val color = if (isPass) MaterialTheme.dsExtendedColors.success else MaterialTheme.dsExtendedColors.danger
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(3.dp))
+            .background(color.copy(alpha = 0.15f))
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = 7.5.sp,
+            fontWeight = FontWeight.Bold,
+            color = color,
+            lineHeight = 9.sp
+        )
+    }
+}
+
+@Composable
+private fun EngineeringMetricTile(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    value: String,
+    subtitle: String,
+    badgeText: String,
+    isPass: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.background,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(11.dp)
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+                Text(
+                    text = title,
+                    style = DsType.labelSmall.copy(fontSize = 9.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = value,
+                style = DsType.titleSmall.copy(fontSize = 12.sp),
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = subtitle,
+                    style = DsType.bodySmall.copy(fontSize = 8.5.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+                MiniStatusBadge(
+                    text = badgeText,
+                    isPass = isPass
                 )
             }
         }

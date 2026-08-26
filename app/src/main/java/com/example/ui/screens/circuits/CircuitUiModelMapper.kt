@@ -18,18 +18,20 @@ val PANEL_TYPES: Set<String> = setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER
 object CircuitUiModelMapper {
 
     /**
-     * Resolves the presentation status exhaustively from the non-null typed [SizingResultStatus].
-     * Returns [CircuitUiStatus.STANDBY] strictly when no sizing result exists, or when sizing status
-     * is INCOMPLETE, ERROR, or unreachable/unsupported WARNING.
+     * Resolves the presentation status NON-LOSSILY from the typed [SizingResult].
+     * Missing sizing result maps to [CircuitUiStatus.STANDBY]. Every engine
+     * status keeps its exact typed label on the card: PASS, WARNING, FAIL,
+     * INCOMPLETE, ERROR. No substring matching, no lossy coercion.
+     * (C2 whole-project summary aggregation is intentionally unaffected.)
      */
     fun resolveCircuitStatus(sizingResult: SizingResult?): CircuitUiStatus {
         if (sizingResult == null) return CircuitUiStatus.STANDBY
         return when (sizingResult.resultStatus) {
             SizingResultStatus.PASS -> CircuitUiStatus.PASS
+            SizingResultStatus.WARNING -> CircuitUiStatus.WARNING
             SizingResultStatus.FAIL -> CircuitUiStatus.FAIL
-            SizingResultStatus.WARNING,
-            SizingResultStatus.INCOMPLETE,
-            SizingResultStatus.ERROR -> CircuitUiStatus.STANDBY
+            SizingResultStatus.INCOMPLETE -> CircuitUiStatus.INCOMPLETE
+            SizingResultStatus.ERROR -> CircuitUiStatus.ERROR
         }
     }
 
@@ -63,8 +65,13 @@ object CircuitUiModelMapper {
         val isScheduleEligible = (circuit.panelType?.uppercase(Locale.ROOT) in PANEL_TYPES) || hasChildren
 
         // Cable Size
-        val cableSizeDisplay = if (!sizingResult?.cableSize_mm2.isNullOrBlank()) {
-            "${sizingResult?.cableSize_mm2} mm²"
+        val rawCableSize = sizingResult?.cableSize_mm2?.trim() ?: ""
+        val cableSizeDisplay = if (rawCableSize.isNotBlank()) {
+            if (rawCableSize.contains("mm²") || rawCableSize.contains("mm2")) {
+                rawCableSize.replace("mm2", "mm²")
+            } else {
+                "$rawCableSize mm²"
+            }
         } else {
             "—"
         }
@@ -154,6 +161,26 @@ object CircuitUiModelMapper {
         val safeVd: Double? = sizingResult?.cumulativeVDpct?.takeIf { !it.isNaN() && !it.isInfinite() && it >= 0.0 }
         val safeUtilization: Double? = sizingResult?.utilizationPct?.takeIf { !it.isNaN() && !it.isInfinite() && it >= 0.0 }
 
+        val isVdOk = if (sizingResult != null) {
+            sizingResult.isVoltageDropOk
+        } else {
+            true
+        }
+
+        val isLoadingOk = if (sizingResult != null) {
+            sizingResult.isAmpacityOk
+        } else {
+            true
+        }
+
+        val isIscOk = if (shortCircuitResult != null && sizingResult?.deviceBreakingKA != null && !sizingResult.deviceBreakingKA.isNaN()) {
+            shortCircuitResult.iscKA <= sizingResult.deviceBreakingKA
+        } else {
+            true
+        }
+
+        val phasesDisplay = circuit.phases.ifBlank { "3P+N" }
+
         return CircuitCardUiModel(
             id = circuit.id,
             circuitName = circuit.circuitName.ifBlank { "—" },
@@ -178,13 +205,17 @@ object CircuitUiModelMapper {
             rawParentId = circuit.parentId,
             rawPanelType = circuit.panelType,
             rawCableType = circuit.cableType,
-            rawLoadType = circuit.loadType
+            rawLoadType = circuit.loadType,
+            phasesDisplay = phasesDisplay,
+            isVdOk = isVdOk,
+            isLoadingOk = isLoadingOk,
+            isIscOk = isIscOk
         )
     }
 
     /**
      * Aggregates summary health metrics evaluated across the entire project collection.
-     * Exactly 5 project health metrics: Total, Pass, Fail, Standby, Max Vd.
+     * Exactly 5 project health metrics: Total, Pass, Fail, Standby, Max Vd, plus Warning count.
      */
     fun mapToSummaryUiModel(
         allCircuits: List<CircuitEntity>,
@@ -192,6 +223,7 @@ object CircuitUiModelMapper {
     ): CircuitsSummaryUiModel {
         var passCount = 0
         var failCount = 0
+        var warningCount = 0
         var standbyCount = 0
 
         var maxVd: Double? = null
@@ -204,7 +236,10 @@ object CircuitUiModelMapper {
                 when (sizing.resultStatus) {
                     SizingResultStatus.PASS -> passCount++
                     SizingResultStatus.FAIL -> failCount++
-                    SizingResultStatus.WARNING,
+                    SizingResultStatus.WARNING -> {
+                        warningCount++
+                        standbyCount++
+                    }
                     SizingResultStatus.INCOMPLETE,
                     SizingResultStatus.ERROR -> standbyCount++
                 }
@@ -230,7 +265,8 @@ object CircuitUiModelMapper {
             failCount = failCount,
             standbyCount = standbyCount,
             maxVdDisplay = maxVdDisplay,
-            rawMaxVdPct = maxVd
+            rawMaxVdPct = maxVd,
+            warningCount = warningCount
         )
     }
 
@@ -324,9 +360,13 @@ object CircuitUiModelMapper {
                 cards.sortedWith(
                     compareBy<CircuitCardUiModel> {
                         when (it.status) {
+                            // Deterministic: Fail first, Standby last, id tie-breaker below.
                             CircuitUiStatus.FAIL -> 0
-                            CircuitUiStatus.PASS -> 1
-                            CircuitUiStatus.STANDBY -> 2
+                            CircuitUiStatus.WARNING -> 1
+                            CircuitUiStatus.ERROR -> 2
+                            CircuitUiStatus.INCOMPLETE -> 3
+                            CircuitUiStatus.PASS -> 4
+                            CircuitUiStatus.STANDBY -> 5
                         }
                     }.thenByDescending {
                         if (it.rawLoadKVA.isNaN() || it.rawLoadKVA.isInfinite()) -Double.MAX_VALUE else it.rawLoadKVA

@@ -4,15 +4,19 @@ import com.example.ui.designsystem.components.DsStatusVariant
 
 /**
  * Presentation-only status representation for Circuit list items and summary badges.
- * Derived exhaustively from domain [com.example.engine.SizingResultStatus].
- * Pass, Fail, and Standby are the only user-visible status categories.
+ * Derived exhaustively and NON-LOSSILY from domain
+ * [com.example.engine.SizingResultStatus]. Cards preserve the exact typed
+ * label; the summary aggregates non-PASS/non-FAIL results into Standby.
  */
 enum class CircuitUiStatus(
     val displayLabel: String,
     val dsVariant: DsStatusVariant
 ) {
     PASS("PASS", DsStatusVariant.Pass),
+    WARNING("WARNING", DsStatusVariant.Warning),
     FAIL("FAIL", DsStatusVariant.Fail),
+    INCOMPLETE("INCOMPLETE", DsStatusVariant.Neutral),
+    ERROR("ERROR", DsStatusVariant.Neutral),
     STANDBY("STANDBY", DsStatusVariant.Neutral);
 
     fun toDsStatusVariant(): DsStatusVariant = dsVariant
@@ -81,12 +85,16 @@ data class CircuitCardUiModel(
     val rawParentId: Int?,
     val rawPanelType: String?,
     val rawCableType: String,
-    val rawLoadType: String
+    val rawLoadType: String,
+    val phasesDisplay: String = "3P+N",
+    val isVdOk: Boolean = true,
+    val isLoadingOk: Boolean = true,
+    val isIscOk: Boolean = true
 )
 
 /**
  * Summary metrics model evaluated across all project circuits (whole-project collection).
- * Exactly 5 project health metrics: Total, Pass, Fail, Standby, Max Vd.
+ * Exactly 5 project health metrics: Total, Pass, Fail, Standby, Max Vd, plus Warning count.
  */
 data class CircuitsSummaryUiModel(
     val totalCount: Int,
@@ -94,5 +102,6 @@ data class CircuitsSummaryUiModel(
     val failCount: Int,
     val standbyCount: Int,
     val maxVdDisplay: String,
-    val rawMaxVdPct: Double? = null
+    val rawMaxVdPct: Double? = null,
+    val warningCount: Int = 0
 )
