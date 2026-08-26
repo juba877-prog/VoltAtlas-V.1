@@ -8,10 +8,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import com.example.ui.designsystem.icons.ElectricalIcons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AspectRatio
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
 import kotlinx.coroutines.launch
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -126,6 +126,73 @@ fun SldScreen(
 
     val isDarkTheme = com.example.ui.theme.LocalThemeIsDark.current
     val palette = com.example.sld.SldTheme.palette(isDarkTheme)
+
+    // SAF Launcher for SLD PNG Image Export
+    val savePngLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("image/png")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val bitmap = com.example.sld.SldImageExporter.renderSldBitmap(
+                        engineResult = engineResult,
+                        projectName = activeProjectId.ifBlank { "VoltAtlas_SLD" },
+                        isDarkTheme = isDarkTheme
+                    )
+                    if (bitmap != null) {
+                        context.contentResolver.openOutputStream(uri)?.use { out ->
+                            com.example.sld.SldImageExporter.writeBitmapToStream(bitmap, out)
+                        }
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "SLD Image saved successfully", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "Diagram empty. Please add components first.", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        android.widget.Toast.makeText(context, "Failed to save image: ${e.localizedMessage}", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    }
+
+    // SAF Launcher for SLD DXF Export
+    val saveDxfLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("*/*")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    if (engineResult.nodes.isEmpty()) {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "Diagram not ready or empty. Please add components first.", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                        return@launch
+                    }
+                    val dxfContent = com.example.sld.SldDxfExporter.generateDxf(
+                        engineResult,
+                        activeProjectId.ifBlank { "VoltAtlas_SLD" }
+                    )
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        com.example.sld.SldDxfExporter.writeDxfToStream(dxfContent, out)
+                    }
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        android.widget.Toast.makeText(context, "SLD DXF saved successfully", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        android.widget.Toast.makeText(context, "Failed to save DXF: ${e.localizedMessage}", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    }
 
     var viewportSize by remember { mutableStateOf(Size.Zero) }
     var zoomScale by remember { mutableFloatStateOf(1.0f) }
@@ -294,6 +361,14 @@ fun SldScreen(
             isFullscreen = false,
             onToggleFullscreen = {},
             onExportImage = {
+                if (engineResult.nodes.isEmpty()) {
+                    android.widget.Toast.makeText(context, "Diagram empty. Please add components first.", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    val safeName = activeProjectId.ifBlank { "VoltAtlas" }.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                    savePngLauncher.launch("${safeName}_SLD.png")
+                }
+            },
+            onShareImage = {
                 com.example.sld.SldImageExporter.exportAndShareImage(
                     context = context,
                     engineResult = engineResult,
@@ -304,40 +379,17 @@ fun SldScreen(
             onExportDxf = {
                 if (engineResult.nodes.isEmpty()) {
                     android.widget.Toast.makeText(context, "Diagram not ready or empty. Please add components first.", android.widget.Toast.LENGTH_SHORT).show()
-                    return@SldToolbar
+                } else {
+                    val safeName = activeProjectId.ifBlank { "VoltAtlas" }.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                    saveDxfLauncher.launch("${safeName}_SLD.dxf")
                 }
-                try {
-                    val dxfContent = com.example.sld.SldDxfExporter.generateDxf(
-                        engineResult,
-                        activeProjectId.ifBlank { "VoltAtlas_SLD" }
-                    )
-                    val cacheDir = context.cacheDir
-                    val file = java.io.File(cacheDir, "VoltAtlas_SLD.dxf")
-                    com.example.sld.SldDxfExporter.saveDxfToFile(dxfContent, file)
-
-                    if (file.exists() && file.length() >= 100L) {
-                        val contentUri = androidx.core.content.FileProvider.getUriForFile(
-                            context,
-                            "${context.packageName}.fileprovider",
-                            file
-                        )
-                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                            type = "*/*"
-                            putExtra(android.content.Intent.EXTRA_STREAM, contentUri)
-                            putExtra(android.content.Intent.EXTRA_SUBJECT, "VoltAtlas SLD Diagram DXF")
-                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        val chooser = android.content.Intent.createChooser(intent, "Export DXF (AutoCAD)")
-                        chooser.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        context.startActivity(chooser)
-                        android.widget.Toast.makeText(context, "DXF Exported successfully (${file.length() / 1024} KB)", android.widget.Toast.LENGTH_SHORT).show()
-                    } else {
-                        android.widget.Toast.makeText(context, "DXF Export failed: Empty output file", android.widget.Toast.LENGTH_LONG).show()
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    android.widget.Toast.makeText(context, "DXF Export failed: ${e.localizedMessage}", android.widget.Toast.LENGTH_LONG).show()
-                }
+            },
+            onShareDxf = {
+                com.example.sld.SldDxfExporter.exportAndShareDxf(
+                    context = context,
+                    engineResult = engineResult,
+                    projectName = activeProjectId.ifBlank { "VoltAtlas_SLD" }
+                )
             },
             onOpenSymbolGallery = { showSymbolGallery = true },
             modifier = Modifier

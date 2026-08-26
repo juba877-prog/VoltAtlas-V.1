@@ -138,4 +138,21 @@ class SldDxfExporterTest {
         assertTrue(dxf.startsWith("0\nSECTION"))
         assertTrue(dxf.endsWith("0\nEOF\n"))
     }
+
+    @Test
+    fun testDxfWriteToStream() {
+        val engineResult = SldEngineResult(
+            nodes = emptyList(),
+            edges = emptyList(),
+            bounds = Rect(0f, 0f, 1000f, 800f)
+        )
+        val dxf = SldDxfExporter.generateDxf(engineResult, "STREAM_TEST")
+        val baos = java.io.ByteArrayOutputStream()
+        SldDxfExporter.writeDxfToStream(dxf, baos)
+        val output = baos.toString(Charsets.UTF_8.name())
+
+        assertEquals(dxf, output)
+        assertTrue(output.startsWith("0\nSECTION\n2\nHEADER\n"))
+        assertTrue(output.endsWith("0\nEOF\n"))
+    }
 }

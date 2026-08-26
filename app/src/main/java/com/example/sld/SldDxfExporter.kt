@@ -1,6 +1,11 @@
 package com.example.sld
 
+import android.content.Context
+import android.content.Intent
+import android.widget.Toast
+import androidx.core.content.FileProvider
 import java.io.File
+import java.io.OutputStream
 import java.util.Locale
 
 /**
@@ -258,5 +263,58 @@ object SldDxfExporter {
             writer.flush()
         }
         println("[$TAG] Atomically wrote ${file.length()} bytes to ${file.absolutePath}")
+    }
+
+    /**
+     * Writes DXF string directly to an OutputStream (e.g. SAF destination) and flushes the stream.
+     */
+    fun writeDxfToStream(dxfString: String, outputStream: OutputStream) {
+        outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
+            writer.write(dxfString)
+            writer.flush()
+        }
+    }
+
+    /**
+     * Generates DXF, writes it to cache, and invokes the ACTION_SEND share sheet.
+     */
+    fun exportAndShareDxf(
+        context: Context,
+        engineResult: SldEngineResult,
+        projectName: String = "VoltAtlas_SLD"
+    ) {
+        if (engineResult.nodes.isEmpty()) {
+            Toast.makeText(context, "Diagram not ready or empty. Please add components first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val dxfContent = generateDxf(engineResult, projectName)
+            val cacheDir = context.cacheDir
+            val file = File(cacheDir, "VoltAtlas_SLD.dxf")
+            saveDxfToFile(dxfContent, file)
+
+            if (file.exists() && file.length() >= 100L) {
+                val contentUri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_STREAM, contentUri)
+                    putExtra(Intent.EXTRA_SUBJECT, "VoltAtlas SLD Diagram DXF")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                val chooser = Intent.createChooser(intent, "Export DXF (AutoCAD)")
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(chooser)
+                Toast.makeText(context, "DXF Exported successfully (${file.length() / 1024} KB)", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "DXF Export failed: Empty output file", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(context, "DXF Export failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+        }
     }
 }

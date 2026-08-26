@@ -49,8 +49,10 @@ fun SldToolbar(
     onCollapseAll: () -> Unit,
     isFullscreen: Boolean,
     onToggleFullscreen: () -> Unit,
-    onExportImage: () -> Unit,
+    onExportImage: () -> Unit = {},
+    onShareImage: () -> Unit = {},
     onExportDxf: () -> Unit = {},
+    onShareDxf: () -> Unit = {},
     onOpenSymbolGallery: () -> Unit = {},
     layoutModeEnabled: Boolean = false,
     onToggleLayoutMode: () -> Unit = {},
@@ -315,9 +317,9 @@ fun SldToolbar(
                 onDismissRequest = { showOverflowMenu = false },
                 modifier = Modifier.background(DarkCardBg)
             ) {
-                // Group 1: Export Actions
+                // Group 1: Export Actions (Save to Device & Share)
                 DropdownMenuItem(
-                    text = { Text("Export DXF (AutoCAD)", fontSize = 12.sp, color = SleekPrimary, fontWeight = FontWeight.Bold) },
+                    text = { Text("Save DXF to Device", fontSize = 12.sp, color = SleekPrimary, fontWeight = FontWeight.Bold) },
                     leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null, tint = SleekPrimary) },
                     onClick = {
                         onExportDxf()
@@ -327,13 +329,34 @@ fun SldToolbar(
                     modifier = Modifier.testTag("export_dxf_toolbar_btn")
                 )
                 DropdownMenuItem(
-                    text = { Text("Export Image", fontSize = 12.sp, color = ThemeTextColor) },
-                    leadingIcon = { Icon(Icons.Default.CameraAlt, contentDescription = null, tint = SleekPrimary) },
+                    text = { Text("Share DXF (AutoCAD)", fontSize = 12.sp, color = ThemeTextColor) },
+                    leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, tint = SleekPrimary) },
+                    onClick = {
+                        onShareDxf()
+                        showOverflowMenu = false
+                        isExpanded = false
+                    },
+                    modifier = Modifier.testTag("share_dxf_toolbar_btn")
+                )
+                DropdownMenuItem(
+                    text = { Text("Save Image to Device", fontSize = 12.sp, color = SleekPrimary, fontWeight = FontWeight.Bold) },
+                    leadingIcon = { Icon(Icons.Default.Save, contentDescription = null, tint = SleekPrimary) },
                     onClick = {
                         onExportImage()
                         showOverflowMenu = false
                         isExpanded = false
-                    }
+                    },
+                    modifier = Modifier.testTag("export_image_toolbar_btn")
+                )
+                DropdownMenuItem(
+                    text = { Text("Share Image (PNG)", fontSize = 12.sp, color = ThemeTextColor) },
+                    leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, tint = SleekPrimary) },
+                    onClick = {
+                        onShareImage()
+                        showOverflowMenu = false
+                        isExpanded = false
+                    },
+                    modifier = Modifier.testTag("share_image_toolbar_btn")
                 )
 
                 HorizontalDivider(color = borderColor)
