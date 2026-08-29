@@ -1,4 +1,4 @@
-﻿package com.example.ui.screens.circuits
+package com.example.ui.screens.circuits
 
 import com.example.data.CircuitEntity
 import com.example.engine.ShortCircuitResult
@@ -62,20 +62,22 @@ class CircuitCardModelCache {
     }
 
     /**
-     * Prunes removed circuits from the cache to prevent memory leaks on deletion.
+     * Prunes removed circuits from the cache to prevent memory leaks on deletion
+     * or stale model retention on equal-count replacement.
      */
     fun sync(currentCircuits: List<CircuitEntity>) {
-        if (cache.size > currentCircuits.size) {
-            val activeIds = HashSet<Int>(currentCircuits.size)
-            for (circuit in currentCircuits) {
-                activeIds.add(circuit.id)
-            }
-            cache.keys.retainAll(activeIds)
+        val activeIds = HashSet<Int>(currentCircuits.size)
+        for (circuit in currentCircuits) {
+            activeIds.add(circuit.id)
         }
+        cache.keys.retainAll(activeIds)
     }
 
     @androidx.annotation.VisibleForTesting
     fun getCachedEntryCount(): Int = cache.size
+
+    @androidx.annotation.VisibleForTesting
+    internal fun cachedIdsForTesting(): Set<Int> = cache.keys.toSet()
 
     @androidx.annotation.VisibleForTesting
     fun clear() = cache.clear()

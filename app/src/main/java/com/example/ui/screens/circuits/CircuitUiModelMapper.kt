@@ -17,14 +17,6 @@ val PANEL_TYPES: Set<String> = setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER
  */
 object CircuitUiModelMapper {
 
-    @androidx.annotation.VisibleForTesting
-    var modelConstructionCount = 0
-
-    @androidx.annotation.VisibleForTesting
-    fun resetModelConstructionCount() {
-        modelConstructionCount = 0
-    }
-
     /**
      * Resolves the presentation status NON-LOSSILY from the typed [SizingResult].
      * Missing sizing result maps to [CircuitUiStatus.STANDBY]. Every engine
@@ -76,7 +68,6 @@ object CircuitUiModelMapper {
         parentName: String?,
         hasChildren: Boolean
     ): CircuitCardUiModel {
-        modelConstructionCount++
         val status = resolveCircuitStatus(sizingResult)
         val isScheduleEligible = (circuit.panelType?.uppercase(Locale.ROOT) in PANEL_TYPES) || hasChildren
 
