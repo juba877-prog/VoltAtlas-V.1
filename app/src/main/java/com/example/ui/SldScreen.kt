@@ -210,19 +210,12 @@ fun SldScreen(
     // Auto "Fit to Screen" calculation
     fun fitToScreen() {
         if (viewportSize.width > 0f && viewportSize.height > 0f) {
-            val bounds = engineResult.bounds
-            val graphW = maxOf(10f, bounds.width)
-            val graphH = maxOf(10f, bounds.height)
-
-            val availW = viewportSize.width - 60f
-            val availH = viewportSize.height - 60f
-
-            val fitScale = (minOf(availW / graphW, availH / graphH)).coerceIn(0.05f, 2.5f)
-            val fitPanX = (viewportSize.width - graphW * fitScale) / 2f - bounds.left * fitScale
-            val fitPanY = (viewportSize.height - graphH * fitScale) / 2f - bounds.top * fitScale
-
+            val (fitScale, fitPan) = com.example.sld.SldViewportHelper.calculateFitViewport(
+                contentBounds = engineResult.bounds,
+                viewportSize = viewportSize
+            )
             zoomScale = fitScale
-            panOffset = Offset(fitPanX, fitPanY)
+            panOffset = fitPan
         }
     }
 
@@ -307,8 +300,14 @@ fun SldScreen(
                     )
                 },
                 onPanZoomChange = { panChange, zoomChange ->
-                    zoomScale = (zoomScale * zoomChange).coerceIn(0.05f, 4.0f)
-                    panOffset += panChange
+                    val newScale = (zoomScale * zoomChange).coerceIn(0.05f, 4.0f)
+                    zoomScale = newScale
+                    panOffset = com.example.sld.SldViewportHelper.clampPan(
+                        zoomScale = newScale,
+                        panOffset = panOffset + panChange,
+                        contentBounds = engineResult.bounds,
+                        viewportSize = viewportSize
+                    )
                 },
                 isEditMode = layoutModeEnabled,
                 onNodeDrag = { nodeId, dragDelta ->
@@ -363,6 +362,7 @@ fun SldScreen(
                         shape = RoundedCornerShape(20.dp),
                         color = if (isSelected) palette.enclosureBusTaps else Color.Transparent,
                         modifier = Modifier
+                            .testTag("sld_mode_pill_${mode.name}")
                             .clickable { displayMode = mode }
                             .padding(horizontal = 2.dp, vertical = 2.dp)
                     ) {
