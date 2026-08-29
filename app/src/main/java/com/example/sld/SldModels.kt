@@ -31,7 +31,8 @@ enum class SldEdgeType {
     ATS_EMERGENCY_PATH,
     ATS_OUTPUT,
     UPS_INPUT,
-    UPS_OUTPUT
+    UPS_OUTPUT,
+    UNRESOLVED_PATH
 }
 
 enum class SldValidationStatus {

@@ -30,11 +30,14 @@ object ElectricalNetworkGraphBuilder {
         atsResult: AtsResult? = null,
         atsEntity: AtsEntity? = null,
         upsResult: UpsResult? = null,
+        upsEntity: UpsEntity? = null,
         pfCorrectionResults: List<PfCorrectionResult> = emptyList(),
         generators: List<GeneratorEntity>? = null,
         generatorResults: Map<String, GeneratorResult> = emptyMap(),
         atsList: List<AtsEntity>? = null,
-        atsResults: Map<String, AtsResult> = emptyMap()
+        atsResults: Map<String, AtsResult> = emptyMap(),
+        upsList: List<UpsEntity>? = null,
+        upsResults: Map<String, UpsResult> = emptyMap()
     ): ElectricalNetworkGraph {
         val nodes = mutableListOf<SldNode>()
         val edges = mutableListOf<SldEdge>()
@@ -523,17 +526,28 @@ object ElectricalNetworkGraphBuilder {
                         label = "NORMAL"
                     )
                 )
-            } else if (normalSourceErrorIssue == null) {
-                validationIssues.add(
-                    SldValidationIssue(
-                        affectedNodeId = atsNodeId,
-                        componentName = atsName,
-                        failedCondition = "ATS Normal Power Source Missing",
-                        issueCode = "ATS_NORMAL_SOURCE_REQUIRED",
-                        severity = SldValidationStatus.DATA_REQUIRED,
-                        recommendedCorrection = "Ensure transformer/utility source is configured and assigned"
+            } else {
+                edges.add(
+                    SldEdge(
+                        id = "edge_unresolved_normal_$atsNodeId",
+                        fromNodeId = "unresolved_normal_$atsNodeId",
+                        toNodeId = atsNodeId,
+                        type = SldEdgeType.UNRESOLVED_PATH,
+                        label = "NO NORMAL SOURCE"
                     )
                 )
+                if (normalSourceErrorIssue == null) {
+                    validationIssues.add(
+                        SldValidationIssue(
+                            affectedNodeId = atsNodeId,
+                            componentName = atsName,
+                            failedCondition = "ATS Normal Power Source Missing",
+                            issueCode = "ATS_NORMAL_SOURCE_REQUIRED",
+                            severity = SldValidationStatus.DATA_REQUIRED,
+                            recommendedCorrection = "Ensure transformer/utility source is configured and assigned"
+                        )
+                    )
+                }
             }
 
             if (hasEmergSource && emergGenNodeId != null) {
@@ -547,6 +561,15 @@ object ElectricalNetworkGraphBuilder {
                     )
                 )
             } else {
+                edges.add(
+                    SldEdge(
+                        id = "edge_unresolved_emerg_$atsNodeId",
+                        fromNodeId = "unresolved_emerg_$atsNodeId",
+                        toNodeId = atsNodeId,
+                        type = SldEdgeType.UNRESOLVED_PATH,
+                        label = "NO EMERGENCY SOURCE"
+                    )
+                )
                 validationIssues.add(
                     SldValidationIssue(
                         affectedNodeId = atsNodeId,
@@ -568,6 +591,133 @@ object ElectricalNetworkGraphBuilder {
                         issueCode = "ATS_OUTPUT_DESTINATION_REQUIRED",
                         severity = SldValidationStatus.DATA_REQUIRED,
                         recommendedCorrection = "Select a downstream output board on the ATS screen, or assign circuits to this ATS"
+                    )
+                )
+            }
+        }
+
+        // 2.5 Multi-Instance UPS Processing
+        val projUpsList = when {
+            upsList != null -> {
+                upsList.filter {
+                    it.projectId == effectiveProjectId ||
+                        (it.projectId == "DEFAULT_PROJECT" && effectiveProjectId != "DEFAULT_PROJECT")
+                }
+            }
+            upsEntity != null -> listOf(upsEntity)
+            upsResult != null && upsResult.status.isNotBlank() -> {
+                listOf(
+                    UpsEntity(
+                        projectId = effectiveProjectId,
+                        upsId = "1",
+                        upsName = "UPS 1",
+                        manualSizeKVA = upsResult.recommendedSize ?: upsResult.designUpsKVA
+                    )
+                )
+            }
+            else -> emptyList()
+        }
+
+        val effectiveUpsResults: Map<String, UpsResult> = if (upsResults.isNotEmpty()) {
+            upsResults
+        } else if (upsResult != null) {
+            mapOf((upsEntity?.upsId ?: "1") to upsResult)
+        } else {
+            emptyMap()
+        }
+
+        projUpsList.forEach { ups ->
+            val upsId = ups.upsId.ifBlank { "1" }
+            val upsNodeId = "ups_$upsId"
+            val upsRes = effectiveUpsResults[upsId] ?: (if (upsId == "1" || upsId == upsEntity?.upsId) upsResult else null)
+            val upsRatedKva = upsRes?.recommendedSize?.takeIf { it > 0.0 } ?: upsRes?.designUpsKVA?.takeIf { it > 0.0 } ?: ups.manualSizeKVA ?: 0.0
+            val upsRatedKvaStr = if (upsRatedKva > 0.0) "${upsRatedKva.toInt()} kVA" else "DATA REQUIRED"
+            val upsSysV = if (ups.systemVoltage > 0) "${ups.systemVoltage} V" else "400 V"
+            val sysVDbl = (ups.systemVoltage.takeIf { it > 0 } ?: 400).toDouble()
+            val upsIbAmp = if (upsRatedKva > 0.0) "%.0f A".format((upsRatedKva * 1000) / (Math.sqrt(3.0) * sysVDbl)) else "DATA REQUIRED"
+            val upsName = ups.upsName.ifBlank { "UPS $upsId" }
+
+            // Resolve upstream source for UPS (from ATS output, panel, or transformer)
+            val matchedAts = projAtsList.firstOrNull()
+            val matchedTx = projTransformers.firstOrNull()
+            val upstreamSourceId = when {
+                matchedAts != null -> "ats_${matchedAts.atsId.ifBlank { "1" }}"
+                matchedTx != null -> "tx_${matchedTx.transformerId}"
+                nodes.any { it.type == SldNodeType.UTILITY_SOURCE } -> nodes.find { it.type == SldNodeType.UTILITY_SOURCE }?.id
+                else -> null
+            }
+
+            // Check if UPS has downstream served circuits
+            val hasUpsDest = projCircuits.any {
+                it.assignedUpsId == upsId ||
+                it.upsBacked ||
+                it.fedFrom.trim().equals(upsName, ignoreCase = true) ||
+                it.fedFrom.trim().lowercase().contains("ups")
+            }
+
+            val upsStatus = if (upstreamSourceId == null || !hasUpsDest) SldValidationStatus.DATA_REQUIRED else SldValidationStatus.VALID
+
+            nodes.add(
+                SldNode(
+                    id = upsNodeId,
+                    projectId = effectiveProjectId,
+                    type = SldNodeType.UPS,
+                    displayName = "$upsName ($upsRatedKvaStr)",
+                    voltage = upsSysV,
+                    parentSourceId = upstreamSourceId,
+                    dataBlock = SldDataBlock(
+                        ratedKva = upsRatedKvaStr,
+                        voltage = upsSysV,
+                        ibAmp = upsIbAmp,
+                        statusText = upsRes?.status?.ifBlank { "UNINTERRUPTIBLE POWER" } ?: "UNINTERRUPTIBLE POWER"
+                    ),
+                    status = upsStatus,
+                    provenance = SldProvenance.PROJECT_INPUT,
+                    targetTab = 3
+                )
+            )
+
+            if (upstreamSourceId != null) {
+                edges.add(
+                    SldEdge(
+                        id = "edge_${upstreamSourceId}_$upsNodeId",
+                        fromNodeId = upstreamSourceId,
+                        toNodeId = upsNodeId,
+                        type = SldEdgeType.UPS_INPUT,
+                        label = "UPS FEED"
+                    )
+                )
+            } else {
+                edges.add(
+                    SldEdge(
+                        id = "edge_unresolved_ups_$upsNodeId",
+                        fromNodeId = "unresolved_upstream_$upsNodeId",
+                        toNodeId = upsNodeId,
+                        type = SldEdgeType.UNRESOLVED_PATH,
+                        label = "NO UPSTREAM SOURCE"
+                    )
+                )
+                validationIssues.add(
+                    SldValidationIssue(
+                        affectedNodeId = upsNodeId,
+                        componentName = upsName,
+                        failedCondition = "UPS Upstream Power Source Missing",
+                        issueCode = "UPS_UPSTREAM_SOURCE_REQUIRED",
+                        severity = SldValidationStatus.DATA_REQUIRED,
+                        recommendedCorrection = "Ensure ATS or upstream distribution board feeds this UPS"
+                    )
+                )
+            }
+
+            if (!hasUpsDest) {
+                validationIssues.add(
+                    SldValidationIssue(
+                        affectedNodeId = upsNodeId,
+                        componentName = upsName,
+                        failedCondition = "UPS Output Load Destination Missing",
+                        issueCode = "UPS_OUTPUT_DESTINATION_REQUIRED",
+                        severity = SldValidationStatus.DATA_REQUIRED,
+                        recommendedCorrection = "Assign critical circuits or essential DB to this UPS"
                     )
                 )
             }
@@ -695,7 +845,18 @@ object ElectricalNetworkGraphBuilder {
                     projGenerators.firstOrNull { it.generatorName.equals(circ.fedFrom.trim(), ignoreCase = true) }
                 }
 
-                if (matchedAts != null) {
+                val matchedUps = if (!circ.assignedUpsId.isNullOrBlank()) {
+                    projUpsList.firstOrNull { it.upsId.equals(circ.assignedUpsId, ignoreCase = true) }
+                } else if (circ.upsBacked) {
+                    projUpsList.firstOrNull()
+                } else {
+                    projUpsList.firstOrNull { it.upsName.equals(circ.fedFrom.trim(), ignoreCase = true) }
+                }
+
+                if (matchedUps != null) {
+                    resolvedParentNodeId = "ups_${matchedUps.upsId.ifBlank { "1" }}"
+                    provenance = SldProvenance.APPROVED_STANDARD
+                } else if (matchedAts != null) {
                     // Option (b): When assignedAtsId (or outputBoardId) is set, ATS path takes precedence on SLD diagram
                     // even if assignedGeneratorId is also set (which feeds the ATS emergency input upstream).
                     resolvedParentNodeId = "ats_${matchedAts.atsId.ifBlank { "1" }}"
@@ -822,7 +983,11 @@ object ElectricalNetworkGraphBuilder {
                 unconnected.add(node)
             } else {
                 nodes.add(node)
-                val edgeType = if (resolvedParentNodeId.startsWith("ats_")) SldEdgeType.ATS_OUTPUT else SldEdgeType.CABLE
+                val edgeType = when {
+                    resolvedParentNodeId.startsWith("ups_") -> SldEdgeType.UPS_OUTPUT
+                    resolvedParentNodeId.startsWith("ats_") -> SldEdgeType.ATS_OUTPUT
+                    else -> SldEdgeType.CABLE
+                }
                 edges.add(
                     SldEdge(
                         id = "edge_${resolvedParentNodeId}_${circNodeId}",
@@ -830,6 +995,23 @@ object ElectricalNetworkGraphBuilder {
                         toNodeId = circNodeId,
                         type = edgeType,
                         label = circ.circuitName
+                    )
+                )
+            }
+        }
+
+        // Unconnected Standalone Generators
+        projGenerators.forEach { gen ->
+            val genNodeId = "gen_${gen.generatorId.ifBlank { "1" }}"
+            val hasDownstream = edges.any { it.fromNodeId == genNodeId }
+            if (!hasDownstream) {
+                edges.add(
+                    SldEdge(
+                        id = "edge_unresolved_gen_$genNodeId",
+                        fromNodeId = genNodeId,
+                        toNodeId = "unresolved_dest_$genNodeId",
+                        type = SldEdgeType.UNRESOLVED_PATH,
+                        label = "UNASSIGNED GENERATOR OUTPUT"
                     )
                 )
             }
