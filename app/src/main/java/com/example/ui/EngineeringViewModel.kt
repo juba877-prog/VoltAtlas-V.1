@@ -270,6 +270,8 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
         try {
             _activeProjectId.value = null // Never auto-open project on startup
 
+            preferences.awaitLoaded()
+
             val allProjects = repository.getAllProjectsList()
             val lastId = preferences.lastOpenedProjectId.value
 
