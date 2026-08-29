@@ -1,5 +1,6 @@
 package com.example.ui
 
+import android.os.Looper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.AppDatabase
@@ -8,6 +9,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 import org.junit.Assert.assertTrue
 
@@ -26,8 +28,14 @@ class ViewModelTest {
         }
         
         viewModel.createAndOpenProject("Test")
-        // Wait a bit
-        kotlinx.coroutines.delay(1000)
+        // Bounded poll for UiState.Success (pipeline waits for catalog load)
+        val readyDeadline = System.currentTimeMillis() + 15_000
+        while (System.currentTimeMillis() < readyDeadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            if (viewModel.uiState.value is UiState.Success) break
+            kotlinx.coroutines.delay(50)
+        }
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
         val state = viewModel.uiState.value
         println("STATE IS: " + state.javaClass.simpleName)
         job.cancel()

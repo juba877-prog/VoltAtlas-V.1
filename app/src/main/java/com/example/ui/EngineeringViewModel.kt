@@ -195,6 +195,9 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
 
     val projectError = MutableStateFlow<String?>(null)
     val startupState = MutableStateFlow<StartupState>(StartupState.Initial)
+
+    /** R2a: true once the catalog load attempt has finished (success or failure). */
+    val catalogReady = MutableStateFlow(false)
     private val _autoDesignResultState = MutableStateFlow<com.example.engine.EarthingAutoDesignResult?>(null)
 
     init {
@@ -231,6 +234,10 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
 
                 // 3. Await catalogJob before emitting StartupState.Ready
                 catalogJob.join()
+
+                // R2a: the catalog load ATTEMPT has finished (success OR failure).
+                // Unblocks the uiState combine guard. Never set back to false.
+                catalogReady.value = true
 
                 if (projects.isEmpty()) {
                     startupState.value = StartupState.NoProjects
@@ -496,8 +503,12 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
         conduitSettingsFlow,
         generatorsList,
         atsList,
-        upsList
+        upsList,
+        catalogReady
     ) { flows ->
+        val catalogReadyFlag = flows[8] as Boolean
+        // R2a guard: hold Loading until the catalog load attempt has finished.
+        if (!catalogReadyFlag) return@combine UiState.Loading
         @Suppress("UNCHECKED_CAST")
         val circuits = flows[0] as List<CircuitEntity>
         @Suppress("UNCHECKED_CAST")
