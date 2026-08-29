@@ -222,12 +222,11 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
 
                 // 2. Perform Database opening & state restoration in parallel
                 startupState.value = StartupState.OpeningDatabase
-                withContext(Dispatchers.IO) {
+                val projects = withContext(Dispatchers.IO) {
                     repository.getAllProjectsList()
                 }
 
                 startupState.value = StartupState.LoadingProjects
-                val projects = repository.getAllProjectsList()
 
                 startupState.value = StartupState.RestoringApplicationState
                 initializeNewInstallationIfRequired()
