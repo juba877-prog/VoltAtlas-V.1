@@ -44,6 +44,7 @@ import com.example.ui.designsystem.theme.DsShape
 import com.example.ui.designsystem.theme.DsSpacing
 import com.example.ui.designsystem.theme.DsType
 import com.example.ui.designsystem.theme.dsExtendedColors
+import com.example.ui.screens.circuits.CircuitCardModelCache
 import com.example.ui.screens.circuits.CircuitCardUiModel
 import com.example.ui.screens.circuits.CircuitLevelFilter
 import com.example.ui.screens.circuits.CircuitSortOrder
@@ -75,9 +76,16 @@ fun CircuitsGridScreen(
     var editingCircuit by rememberSaveable { mutableStateOf<CircuitEntity?>(null) }
     var circuitToDelete by rememberSaveable { mutableStateOf<CircuitEntity?>(null) }
 
+    val modelCache = remember { CircuitCardModelCache() }
+
     // Hierarchy lookup for schedule eligibility & conflict detection
     val childrenLookup = remember(state.circuits) {
         CircuitChildLookup.build(state.circuits)
+    }
+
+    // O(N) parent name lookup by ID for breadcrumbs without full-list scans
+    val parentNamesById = remember(state.circuits) {
+        state.circuits.associate { it.id to it.circuitName }
     }
 
     // 1. Whole-project health summary (strictly computed from whole state.circuits, invariant to filters)
@@ -85,17 +93,24 @@ fun CircuitsGridScreen(
         CircuitUiModelMapper.mapToSummaryUiModel(state.circuits, state.sizingResults)
     }
 
-    // 2. Adapter pipeline: CircuitEntity -> CircuitCardUiModel -> Filter -> Sort -> Ordered CircuitEntity
-    val cardModels = remember(state.circuits, state.sizingResults, state.shortCircuitResults) {
-        state.circuits.map { circ ->
-            CircuitUiModelMapper.mapToCardUiModel(
+    // 2. Authoritative card models map (memoized per-circuit via modelCache)
+    val cardModelsById = remember(state.circuits, state.sizingResults, state.shortCircuitResults, childrenLookup, parentNamesById) {
+        modelCache.sync(state.circuits)
+        state.circuits.associate { circ ->
+            val parentName = circ.parentId?.let { pId -> if (pId != circ.id) parentNamesById[pId] else null }
+            val model = modelCache.getOrCompute(
                 circuit = circ,
                 sizingResult = state.sizingResults[circ.id],
                 shortCircuitResult = state.shortCircuitResults[circ.id],
-                allCircuits = state.circuits,
+                parentName = parentName,
                 hasChildren = childrenLookup.hasChildren(circ.circuitName)
             )
+            circ.id to model
         }
+    }
+
+    val cardModels = remember(state.circuits, cardModelsById) {
+        state.circuits.mapNotNull { cardModelsById[it.id] }
     }
 
     val filteredCards = remember(cardModels, query, selectedLevel, selectedStatus) {
@@ -324,17 +339,8 @@ fun CircuitsGridScreen(
                 }
                 items(visibleCircuits, key = { it.id }) { circ ->
                     val result = state.sizingResults[circ.id]
-                    val scResult = state.shortCircuitResults[circ.id]
                     val isSelected = selectedId == circ.id
-                    val cardModel = remember(circ, result, scResult, state.circuits) {
-                        CircuitUiModelMapper.mapToCardUiModel(
-                            circuit = circ,
-                            sizingResult = result,
-                            shortCircuitResult = scResult,
-                            allCircuits = state.circuits,
-                            hasChildren = childrenLookup.hasChildren(circ.circuitName)
-                        )
-                    }
+                    val cardModel = cardModelsById[circ.id] ?: return@items
 
                     CircuitCardV3(
                         circ = circ,

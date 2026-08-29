@@ -17,6 +17,14 @@ val PANEL_TYPES: Set<String> = setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER
  */
 object CircuitUiModelMapper {
 
+    @androidx.annotation.VisibleForTesting
+    var modelConstructionCount = 0
+
+    @androidx.annotation.VisibleForTesting
+    fun resetModelConstructionCount() {
+        modelConstructionCount = 0
+    }
+
     /**
      * Resolves the presentation status NON-LOSSILY from the typed [SizingResult].
      * Missing sizing result maps to [CircuitUiStatus.STANDBY]. Every engine
@@ -36,19 +44,26 @@ object CircuitUiModelMapper {
     }
 
     /**
-     * Resolves the non-interactive hierarchy breadcrumb safely from verified relationships.
+     * Resolves the non-interactive hierarchy breadcrumb safely from resolved parent name.
      */
-    fun resolveBreadcrumb(circuit: CircuitEntity, allCircuits: List<CircuitEntity>): String {
-        if (circuit.parentId != null) {
-            val parent = allCircuits.firstOrNull { it.id == circuit.parentId }
-            if (parent != null && parent.id != circuit.id) {
-                return "${parent.circuitName} > ${circuit.circuitName}"
-            }
+    fun resolveBreadcrumb(circuit: CircuitEntity, parentName: String?): String {
+        if (circuit.parentId != null && parentName != null) {
+            return "$parentName > ${circuit.circuitName}"
         }
         if (circuit.fedFrom.isNotBlank() && !circuit.fedFrom.equals(circuit.circuitName, ignoreCase = true)) {
             return "${circuit.fedFrom} > ${circuit.circuitName}"
         }
         return circuit.circuitName.ifBlank { "—" }
+    }
+
+    /**
+     * Resolves the non-interactive hierarchy breadcrumb safely from verified relationships.
+     */
+    fun resolveBreadcrumb(circuit: CircuitEntity, allCircuits: List<CircuitEntity>): String {
+        val parentName = if (circuit.parentId != null) {
+            allCircuits.firstOrNull { it.id == circuit.parentId && it.id != circuit.id }?.circuitName
+        } else null
+        return resolveBreadcrumb(circuit, parentName)
     }
 
     /**
@@ -58,9 +73,10 @@ object CircuitUiModelMapper {
         circuit: CircuitEntity,
         sizingResult: SizingResult?,
         shortCircuitResult: ShortCircuitResult?,
-        allCircuits: List<CircuitEntity>,
+        parentName: String?,
         hasChildren: Boolean
     ): CircuitCardUiModel {
+        modelConstructionCount++
         val status = resolveCircuitStatus(sizingResult)
         val isScheduleEligible = (circuit.panelType?.uppercase(Locale.ROOT) in PANEL_TYPES) || hasChildren
 
@@ -77,7 +93,7 @@ object CircuitUiModelMapper {
         }
 
         // Breadcrumb
-        val breadcrumbDisplay = resolveBreadcrumb(circuit, allCircuits)
+        val breadcrumbDisplay = resolveBreadcrumb(circuit, parentName)
 
         // Load kVA (Real zero 0.0 is valid data and renders as "0.0 kVA")
         val loadDisplay = if (circuit.loadKVA.isNaN() || circuit.loadKVA.isInfinite() || circuit.loadKVA < 0.0) {
@@ -210,6 +226,28 @@ object CircuitUiModelMapper {
             isVdOk = isVdOk,
             isLoadingOk = isLoadingOk,
             isIscOk = isIscOk
+        )
+    }
+
+    /**
+     * Compatibility overload accepting the entire [allCircuits] list.
+     */
+    fun mapToCardUiModel(
+        circuit: CircuitEntity,
+        sizingResult: SizingResult?,
+        shortCircuitResult: ShortCircuitResult?,
+        allCircuits: List<CircuitEntity>,
+        hasChildren: Boolean
+    ): CircuitCardUiModel {
+        val parentName = if (circuit.parentId != null) {
+            allCircuits.firstOrNull { it.id == circuit.parentId && it.id != circuit.id }?.circuitName
+        } else null
+        return mapToCardUiModel(
+            circuit = circuit,
+            sizingResult = sizingResult,
+            shortCircuitResult = shortCircuitResult,
+            parentName = parentName,
+            hasChildren = hasChildren
         )
     }
 
