@@ -1,5 +1,6 @@
 package com.example.sld
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -52,7 +53,9 @@ fun SldSymbolGallery(
             SymbolGalleryItem("Digital Multi Meter", "IEC 60617-8", "DMM V/A/Hz/PF", SldSymbols.IecSymbolType.DIGITAL_MULTI_METER_DMM),
             SymbolGalleryItem("Indication Lamp", "IEC 60617-8", "Pilot Light 230V", SldSymbols.IecSymbolType.INDICATION_LAMP),
             SymbolGalleryItem("Digital kWh Meter", "IEC 60617-8", "Energy Meter RS485", SldSymbols.IecSymbolType.DIGITAL_KWH_METER),
-            SymbolGalleryItem("Final Load Arrow", "IEC 60617-2", "Feeder Load Drop", SldSymbols.IecSymbolType.LOAD_ARROW)
+            SymbolGalleryItem("Final Load Arrow", "IEC 60617-2", "Feeder Load Drop", SldSymbols.IecSymbolType.LOAD_ARROW),
+            SymbolGalleryItem("Motor Load", "IEC 60617-6", "3Ph Induction M", SldSymbols.IecSymbolType.MOTOR_LOAD),
+            SymbolGalleryItem("Earth / Ground", "IEC 60617-2", "Protective Earth", SldSymbols.IecSymbolType.EARTHING)
         )
     }
 
@@ -78,49 +81,31 @@ fun SldSymbolGallery(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Gate C.1 — Parameterized Theme-Aware Symbols",
+                    text = "Engineering Drawing Standards & Visual Primitives",
                     color = palette.textSecondary,
                     fontSize = 12.sp
                 )
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                FilterChip(
-                    selected = !isDark,
-                    onClick = { isDark = false },
-                    label = { Text("Light Theme") },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = palette.enclosureBusTaps,
-                        selectedLabelColor = Color.White
-                    )
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                FilterChip(
-                    selected = isDark,
-                    onClick = { isDark = true },
-                    label = { Text("Dark Theme") },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = palette.enclosureBusTaps,
-                        selectedLabelColor = Color.White
-                    )
-                )
+                Text(if (isDark) "Dark" else "Light", color = palette.textSecondary, fontSize = 12.sp)
+                Spacer(Modifier.width(6.dp))
+                Switch(checked = isDark, onCheckedChange = { isDark = it })
             }
         }
 
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 150.dp),
+            columns = GridCells.Adaptive(150.dp),
+            modifier = Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.weight(1f)
+            contentPadding = PaddingValues(bottom = 24.dp)
         ) {
             items(symbols) { item ->
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
-                        .border(1.dp, palette.tierDatum, RoundedCornerShape(8.dp)),
+                    modifier = Modifier.height(170.dp),
                     colors = CardDefaults.cardColors(containerColor = palette.surface),
-                    shape = RoundedCornerShape(8.dp)
+                    border = BorderStroke(1.dp, palette.tierDatum)
                 ) {
                     Column(
                         modifier = Modifier
@@ -160,6 +145,8 @@ fun SldSymbolGallery(
                                 SldSymbols.IecSymbolType.SWITCH_DISCONNECTOR -> SldSymbols.drawSwitchDisconnector(this, center, sizePx, palette, item.spec)
                                 SldSymbols.IecSymbolType.UPS -> SldSymbols.drawUps(this, center, sizePx, palette)
                                 SldSymbols.IecSymbolType.LOAD_ARROW -> SldSymbols.drawLoadArrow(this, center, sizePx, palette)
+                                SldSymbols.IecSymbolType.MOTOR_LOAD -> SldSymbols.drawMotorLoad(this, center, sizePx, palette, item.spec)
+                                SldSymbols.IecSymbolType.EARTHING -> SldSymbols.drawEarthing(this, center, sizePx, palette)
                             }
                         }
 

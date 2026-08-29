@@ -35,7 +35,9 @@ object SldSymbols {
         SWITCH_DISCONNECTOR,
         UTILITY_SOURCE,
         UPS,
-        LOAD_ARROW
+        LOAD_ARROW,
+        MOTOR_LOAD,
+        EARTHING
     }
 
     /** Which fixed input terminal of an ATS the movable blade rests on. */
@@ -418,11 +420,124 @@ object SldSymbols {
             size = Size(size, size),
             style = Stroke(width = strokeWidth)
         )
-        // Screen bar
-        drawScope.drawRect(
+        // Screen bar with digital display readout
+        drawScope.drawRoundRect(
+            color = palette.surface,
+            topLeft = Offset(center.x - size * 0.38f, center.y - size * 0.38f),
+            size = Size(size * 0.76f, size * 0.42f),
+            cornerRadius = CornerRadius(2f, 2f)
+        )
+        drawScope.drawRoundRect(
             color = color,
-            topLeft = Offset(center.x - size * 0.35f, center.y - size * 0.35f),
-            size = Size(size * 0.7f, size * 0.3f)
+            topLeft = Offset(center.x - size * 0.38f, center.y - size * 0.38f),
+            size = Size(size * 0.76f, size * 0.42f),
+            cornerRadius = CornerRadius(2f, 2f),
+            style = Stroke(width = 1.2f)
+        )
+        // Simulated digital readout text lines
+        drawScope.drawLine(
+            color = palette.validStatus,
+            start = Offset(center.x - size * 0.28f, center.y - size * 0.26f),
+            end = Offset(center.x + size * 0.28f, center.y - size * 0.26f),
+            strokeWidth = 1.5f
+        )
+        drawScope.drawLine(
+            color = palette.textSecondary,
+            start = Offset(center.x - size * 0.28f, center.y - size * 0.12f),
+            end = Offset(center.x + size * 0.18f, center.y - size * 0.12f),
+            strokeWidth = 1.2f
+        )
+        // Bottom 3 button dots
+        val btnY = center.y + size * 0.25f
+        val btnSpacing = size * 0.22f
+        for (i in -1..1) {
+            drawScope.drawCircle(
+                color = color,
+                radius = size * 0.06f,
+                center = Offset(center.x + i * btnSpacing, btnY)
+            )
+        }
+    }
+
+    // 9b. Earthing / Ground Symbol
+    fun drawEarthing(
+        drawScope: DrawScope,
+        center: Offset,
+        sizePx: Float,
+        palette: SldPalette
+    ) {
+        val color = palette.earth
+        val strokeWidth = 2.0f
+        val topY = center.y - sizePx * 0.4f
+        val midY = center.y
+        // Vertical stem
+        drawScope.drawLine(
+            color = color,
+            start = Offset(center.x, topY),
+            end = Offset(center.x, midY),
+            strokeWidth = strokeWidth
+        )
+        // 3 horizontal stepped bars
+        val w1 = sizePx * 0.6f
+        val w2 = sizePx * 0.4f
+        val w3 = sizePx * 0.2f
+        val step = sizePx * 0.15f
+        drawScope.drawLine(color, Offset(center.x - w1 / 2f, midY), Offset(center.x + w1 / 2f, midY), strokeWidth = strokeWidth)
+        drawScope.drawLine(color, Offset(center.x - w2 / 2f, midY + step), Offset(center.x + w2 / 2f, midY + step), strokeWidth = strokeWidth)
+        drawScope.drawLine(color, Offset(center.x - w3 / 2f, midY + step * 2f), Offset(center.x + w3 / 2f, midY + step * 2f), strokeWidth = strokeWidth)
+    }
+
+    // 9c. Motor Load Symbol (IEC Circle with 'M' and load arrow)
+    fun drawMotorLoad(
+        drawScope: DrawScope,
+        center: Offset,
+        sizePx: Float,
+        palette: SldPalette,
+        ratingText: String = ""
+    ) {
+        val r = sizePx * 0.45f
+        val strokeWidth = 2.5f
+        val color = palette.textPrimary
+
+        // Outer Stator Circle
+        drawScope.drawCircle(
+            color = color,
+            radius = r,
+            center = center,
+            style = Stroke(width = strokeWidth)
+        )
+        // Letter 'M' inside
+        val mw = r * 0.55f
+        val mh = r * 0.55f
+        val path = Path().apply {
+            moveTo(center.x - mw / 2f, center.y + mh / 2f)
+            lineTo(center.x - mw / 2f, center.y - mh / 2f)
+            lineTo(center.x, center.y + mh * 0.1f)
+            lineTo(center.x + mw / 2f, center.y - mh / 2f)
+            lineTo(center.x + mw / 2f, center.y + mh / 2f)
+        }
+        drawScope.drawPath(path = path, color = color, style = Stroke(width = strokeWidth))
+
+        // Downward load arrow below the motor circle
+        val arrowTopY = center.y + r + 2f
+        val arrowBottomY = arrowTopY + sizePx * 0.35f
+        drawScope.drawLine(
+            color = color,
+            start = Offset(center.x, arrowTopY),
+            end = Offset(center.x, arrowBottomY),
+            strokeWidth = strokeWidth
+        )
+        drawScope.drawLine(
+            color = color,
+            start = Offset(center.x - sizePx * 0.15f, arrowBottomY - sizePx * 0.15f),
+            end = Offset(center.x, arrowBottomY),
+            strokeWidth = strokeWidth
+        )
+        drawScope.drawLine(
+            color = color,
+            start = Offset(center.x + sizePx * 0.15f, arrowBottomY - sizePx * 0.15f),
+            end = Offset(center.x, arrowBottomY),
+            strokeWidth = strokeWidth
         )
     }
 
