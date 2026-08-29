@@ -2,6 +2,7 @@ package com.example.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
@@ -335,6 +336,48 @@ fun SldScreen(
             )
         }
 
+        // Top Analysis Mode Selector Pills: [Overview] [Cables] [Voltage Drop] [Short Circuit]
+        Surface(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 12.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = if (isDarkTheme) Color(0xFF0F172A).copy(alpha = 0.92f) else Color(0xFFFFFFFF).copy(alpha = 0.95f),
+            border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1)),
+            shadowElevation = 4.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val modes = listOf(
+                    DisplayMode.OVERVIEW to "Overview",
+                    DisplayMode.CABLES to "Cables",
+                    DisplayMode.VOLTAGE_DROP to "Voltage Drop",
+                    DisplayMode.SHORT_CIRCUIT to "Short Circuit"
+                )
+                modes.forEach { (mode, label) ->
+                    val isSelected = displayMode == mode
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (isSelected) palette.enclosureBusTaps else Color.Transparent,
+                        modifier = Modifier
+                            .clickable { displayMode = mode }
+                            .padding(horizontal = 2.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = label,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            color = if (isSelected) Color.White else palette.textSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+
         // Top Overlay: SLD Toolbar with Display Modes & IEC Symbol Gallery
         SldToolbar(
             displayMode = displayMode,
@@ -396,6 +439,50 @@ fun SldScreen(
                 .align(Alignment.BottomStart)
                 .padding(start = 24.dp, bottom = 24.dp)
         )
+
+        // Adaptive Minimap Radar on wider viewports (tablets & landscape)
+        if (viewportSize.width >= 600f && engineResult.nodes.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 85.dp, bottom = 20.dp)
+                    .size(130.dp, 90.dp)
+            ) {
+                com.example.sld.SldMinimap(
+                    layoutResult = com.example.sld.SldLayoutResult(
+                        layoutNodes = engineResult.nodes.associate {
+                            it.id to com.example.sld.SldLayoutNode(
+                                node = it.toSldNode(effectiveProjId),
+                                x = it.x,
+                                y = it.y,
+                                width = it.width,
+                                height = it.height,
+                                depth = 0
+                            )
+                        },
+                        layoutEdges = engineResult.edges.map {
+                            com.example.sld.SldLayoutEdge(
+                                edge = com.example.sld.SldEdge(
+                                    id = "${it.fromId}_${it.toId}",
+                                    fromNodeId = it.fromId,
+                                    toNodeId = it.toId,
+                                    type = com.example.sld.SldEdgeType.CABLE
+                                ),
+                                pathPoints = it.pathPoints
+                            )
+                        },
+                        unconnectedLayoutNodes = emptyList(),
+                        totalWidth = maxOf(10f, engineResult.bounds.width),
+                        totalHeight = maxOf(10f, engineResult.bounds.height),
+                        unconnectedBoundsY = 0f
+                    ),
+                    viewportSize = viewportSize,
+                    panOffset = panOffset,
+                    zoomScale = zoomScale,
+                    manualPositions = manualPositions
+                )
+            }
+        }
 
         // Edit Mode Top Banner Indicator
         if (layoutModeEnabled) {
