@@ -13,6 +13,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
@@ -233,18 +234,73 @@ fun SldCanvas(
                 val points = edge.pathPoints
                 val edgePath = edgePaths.getOrNull(index)
                 if (points.size >= 2 && edgePath != null) {
-                    val strokeColor = if (edge.isEmergency) palette.feeders else palette.enclosureBusTaps
-                    val strokeWidth = if (edge.isEmergency) SldTheme.sourceSpineStroke() else SldTheme.feederStroke()
-
-                    drawPath(
-                        path = edgePath,
-                        color = strokeColor,
-                        style = Stroke(width = strokeWidth)
-                    )
-
                     val childNode = engineResult.nodes.find { it.id == edge.toId }
                     val isAtsChild = childNode?.panelType?.uppercase()?.contains("ATS") == true
                     val isAtsEdge = edge.isEmergency || edge.label == "NORMAL" || edge.label == "EMERGENCY"
+                    val isBusway = edge.label.contains("Busway", ignoreCase = true) || childNode?.dataBlock?.cableDescription?.contains("Busway", ignoreCase = true) == true
+
+                    // Dynamic status color for Voltage Drop mode & Short Circuit mode
+                    val cumVdVal = childNode?.dataBlock?.cumulativeVdPct?.replace("%", "")?.toFloatOrNull()
+                        ?: childNode?.dataBlock?.voltageDropPct?.replace("%", "")?.toFloatOrNull() ?: 0f
+
+                    val vdStatusColor = when {
+                        cumVdVal > 5.0f -> palette.invalidStatus
+                        cumVdVal > 3.0f -> palette.warningStatus
+                        else -> palette.validStatus
+                    }
+
+                    val rawIk3 = childNode?.dataBlock?.faultLevelKa.orEmpty()
+                    val cleanedIk3 = rawIk3.replace("kA", "", ignoreCase = true).trim()
+                    val ik3Val = cleanedIk3.toDoubleOrNull() ?: 0.0
+                    val isIscFail = childNode?.dataBlock?.statusText?.uppercase()?.contains("FAIL") == true ||
+                            childNode?.dataBlock?.statusText?.uppercase()?.contains("ICU") == true
+
+                    val baseStrokeColor = when (displayMode) {
+                        DisplayMode.VOLTAGE_DROP -> if (!isAtsEdge && childNode != null && !childNode.isSource) vdStatusColor else if (edge.isEmergency) palette.feeders else palette.enclosureBusTaps
+                        DisplayMode.SHORT_CIRCUIT -> if (isIscFail) palette.invalidStatus else if (edge.isEmergency) palette.feeders else palette.enclosureBusTaps
+                        else -> if (isBusway) Color(0xFFE08A4B) else if (edge.isEmergency) palette.feeders else Color(0xFFE2E8F0)
+                    }
+
+                    val strokeWidth = if (isBusway) SldTheme.busbarStroke() * 0.45f else if (edge.isEmergency) SldTheme.sourceSpineStroke() else SldTheme.feederStroke()
+
+                    // Draw the orthogonal wire path
+                    drawPath(
+                        path = edgePath,
+                        color = baseStrokeColor,
+                        style = Stroke(width = strokeWidth)
+                    )
+
+                    // Draw connection tap dot on busbar start point
+                    val firstPt = points.firstOrNull() ?: Pair(0f, 0f)
+                    val lastPt = points.lastOrNull() ?: Pair(0f, 0f)
+                    val feederX = lastPt.first
+
+                    if (!isAtsEdge) {
+                        drawCircle(
+                            color = baseStrokeColor,
+                            radius = 3.5f,
+                            center = Offset(firstPt.first, firstPt.second)
+                        )
+                    }
+
+                    // Draw direction arrow on feeder drop wire
+                    val verticalDropStartY = if (points.size >= 4) (points.getOrNull(2)?.second ?: firstPt.second) else firstPt.second
+                    val verticalDropEndY = lastPt.second
+                    val arrowY = verticalDropStartY + (verticalDropEndY - verticalDropStartY) * 0.85f
+
+                    if (!isAtsEdge && verticalDropEndY - verticalDropStartY > 40f && zoomScale > 0.35f) {
+                        val arrowSize = 6f
+                        val arrowPath = Path().apply {
+                            moveTo(feederX - arrowSize, arrowY - arrowSize)
+                            lineTo(feederX, arrowY)
+                            lineTo(feederX + arrowSize, arrowY - arrowSize)
+                        }
+                        drawPath(
+                            path = arrowPath,
+                            color = baseStrokeColor,
+                            style = Stroke(width = 2.0f, cap = StrokeCap.Round)
+                        )
+                    }
 
                     if (isAtsEdge) {
                         if (edge.label.isNotBlank() && zoomScale > 0.35f) {
@@ -253,16 +309,11 @@ fun SldCanvas(
                             drawSafeText(
                                 textMeasurer = textMeasurer,
                                 text = edge.label,
-                                style = TextStyle(color = strokeColor, fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                                style = TextStyle(color = baseStrokeColor, fontSize = 11.sp, fontWeight = FontWeight.Bold),
                                 topLeft = Offset(channelMidX - 24f, channelY - 16f)
                             )
                         }
-                    } else if (childNode != null && !childNode.isSource && childNode.dataBlock != null && zoomScale > 0.4f) {
-                        val firstPt = points.firstOrNull() ?: Pair(0f, 0f)
-                        val lastPt = points.lastOrNull() ?: Pair(0f, 0f)
-                        val feederX = lastPt.first
-                        val verticalDropStartY = if (points.size >= 4) (points.getOrNull(2)?.second ?: firstPt.second) else firstPt.second
-
+                    } else if (childNode != null && !childNode.isSource && childNode.dataBlock != null && zoomScale > 0.35f) {
                         val breakerY = verticalDropStartY + 25f
 
                         val breakerText = childNode.dataBlock.deviceTypeAndRating.orEmpty()
@@ -270,9 +321,6 @@ fun SldCanvas(
                         val lengthText = childNode.dataBlock.lengthM?.takeIf { it.isNotBlank() }?.let { "L: ${it}m" }.orEmpty()
                         val vdText = childNode.dataBlock.voltageDropPct?.takeIf { it.isNotBlank() }?.let { "VD: $it" }.orEmpty()
                         val cumVdText = childNode.dataBlock.cumulativeVdPct?.takeIf { it.isNotBlank() }?.let { "Cum: $it" }.orEmpty()
-
-                        val rawIk3 = childNode.dataBlock.faultLevelKa.orEmpty()
-                        val cleanedIk3 = rawIk3.replace("kA", "", ignoreCase = true).trim()
                         val ik3Text = if (cleanedIk3.isNotBlank()) "Isc: $cleanedIk3 kA" else ""
 
                         // A. Breaker Symbol (Top of vertical drop wire)
@@ -281,76 +329,57 @@ fun SldCanvas(
                                 drawScope = this,
                                 center = Offset(feederX, breakerY),
                                 sizePx = SldTheme.breakerBoxSize() * densityScale,
-                                color = strokeColor
+                                color = baseStrokeColor
                             )
                         }
 
-                        // B. Accumulate Mode-Specific Data Lines for Dynamic Measured Y Stacking
+                        // B. Accumulate Structured 3-Line Feeder Callout Badges
                         val linesToDraw = mutableListOf<Pair<String, TextStyle>>()
 
+                        // Line 1: Protection Device & Rating (e.g. 400A MCCB)
                         if (breakerText.isNotBlank()) {
-                            linesToDraw.add(Pair(breakerText, TextStyle(color = palette.textPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)))
+                            linesToDraw.add(Pair(breakerText, TextStyle(color = Color(0xFFF0F6FC), fontSize = 11.sp, fontWeight = FontWeight.Bold)))
                         }
 
+                        // Line 2: Cable or Busway specification
+                        if (isBusway) {
+                            val buswayLabel = if (cableText.isNotBlank()) cableText else "Busway Trunk"
+                            linesToDraw.add(Pair(buswayLabel, TextStyle(color = Color(0xFFE08A4B), fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)))
+                        } else if (cableText.isNotBlank()) {
+                            val runsText = if (childNode.dataBlock.parallelRuns > 1) "${childNode.dataBlock.parallelRuns}x" else ""
+                            val fullCableStr = "$runsText$cableText".trim()
+                            linesToDraw.add(Pair(fullCableStr, TextStyle(color = Color(0xFF94A3B8), fontSize = 10.5.sp)))
+                        }
+
+                        // Line 3: Mode-Specific Engineering Metric or Status (e.g. VD: 0.85% PASS)
                         when (displayMode) {
                             DisplayMode.OVERVIEW -> {
-                                // OVERVIEW: Minimal view — Breaker rating only, hide detailed cable specs
+                                val vdStatusStr = if (vdText.isNotBlank()) "$vdText PASS" else childNode.dataBlock.statusText
+                                val statusTextColor = if (childNode.status == SldValidationStatus.INVALID) palette.invalidStatus else palette.validStatus
+                                linesToDraw.add(Pair(vdStatusStr, TextStyle(color = statusTextColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)))
                             }
                             DisplayMode.CABLES -> {
-                                // CABLES: Emphasize cable type, size, parallel runs, and length
-                                val runsText = if (childNode.dataBlock.parallelRuns > 1) "${childNode.dataBlock.parallelRuns}x " else ""
-                                val fullCableStr = "$runsText$cableText".trim()
-                                if (fullCableStr.isNotBlank()) {
-                                    linesToDraw.add(Pair(fullCableStr, TextStyle(color = palette.textPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)))
-                                }
                                 if (lengthText.isNotBlank()) {
                                     linesToDraw.add(Pair(lengthText, defaultTextStyle))
                                 }
                             }
                             DisplayMode.VOLTAGE_DROP -> {
-                                // VOLTAGE DROP: Emphasize cumulative VD% with amber/red status thresholding
-                                val cumVdVal = childNode.dataBlock.cumulativeVdPct?.replace("%", "")?.toFloatOrNull()
-                                    ?: childNode.dataBlock.voltageDropPct?.replace("%", "")?.toFloatOrNull() ?: 0f
-
-                                val vdColor = when {
-                                    cumVdVal > 5.0f -> palette.invalidStatus // Red (>5%)
-                                    cumVdVal > 3.0f -> palette.warningStatus // Amber (>3%)
-                                    else -> palette.validStatus // Green (Normal)
-                                }
-
-                                if (vdText.isNotBlank()) {
-                                    linesToDraw.add(Pair(vdText, TextStyle(color = vdColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)))
-                                }
-                                if (cumVdText.isNotBlank()) {
-                                    linesToDraw.add(Pair(cumVdText, TextStyle(color = vdColor, fontSize = 10.sp)))
-                                }
+                                val vdDisplayStr = if (cumVdText.isNotBlank()) "$vdText ($cumVdText)" else vdText
+                                linesToDraw.add(Pair(vdDisplayStr, TextStyle(color = vdStatusColor, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)))
                             }
                             DisplayMode.SHORT_CIRCUIT -> {
-                                // SHORT CIRCUIT: Emphasize fault level Isc (kA) and device Icu rating
-                                val statusTxt = childNode.dataBlock.statusText
-                                val isIscFail = statusTxt.uppercase().contains("FAIL") || statusTxt.uppercase().contains("ICU")
                                 val scColor = if (isIscFail) palette.invalidStatus else palette.textPrimary
-
                                 if (ik3Text.isNotBlank()) {
-                                    linesToDraw.add(Pair(ik3Text, TextStyle(color = scColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)))
-                                }
-                                if (statusTxt.isNotBlank()) {
-                                    linesToDraw.add(Pair(statusTxt, TextStyle(color = scColor, fontSize = 10.sp)))
+                                    linesToDraw.add(Pair(ik3Text, TextStyle(color = scColor, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)))
                                 }
                             }
                             DisplayMode.VALIDATION -> {
-                                // VALIDATION: Show status summary on feeder run
-                                val statusTxt = childNode.dataBlock.statusText
                                 val valColor = when (childNode.status) {
                                     SldValidationStatus.INVALID, SldValidationStatus.DATA_REQUIRED -> palette.invalidStatus
                                     SldValidationStatus.WARNING -> palette.warningStatus
                                     else -> palette.validStatus
                                 }
-
-                                if (cableText.isNotBlank()) {
-                                    linesToDraw.add(Pair(cableText, defaultTextStyle))
-                                }
-                                linesToDraw.add(Pair(statusTxt, TextStyle(color = valColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)))
+                                linesToDraw.add(Pair(childNode.dataBlock.statusText, TextStyle(color = valColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)))
                             }
                         }
 
@@ -364,13 +393,13 @@ fun SldCanvas(
                                 style = style,
                                 topLeft = Offset(feederX + 14f, currentY)
                             )
-                            currentY += measuredH + 5f
+                            currentY += measuredH + 4f
                         }
                     }
                 }
             }
 
-            // 2. Draw Nodes (Mode-Specific Validation Badging & Outlines)
+            // 2. Draw Nodes (Switchboard Enclosures, Busbars, Sources, and Loads)
             engineResult.nodes.forEach { node ->
                 val isSelected = node.id == selectedNodeId
                 val statusColor = when (displayMode) {
@@ -390,28 +419,28 @@ fun SldCanvas(
                 if (node.isSource) {
                     val panelUpper = node.panelType.uppercase()
                     if (panelUpper.contains("GRID") || panelUpper.contains("UTILITY") || panelUpper.contains("SOURCE")) {
-                        val gridX = node.x
-                        val gridY = node.y
-                        val gridW = maxOf(node.width, 140f)
+                        val cx = node.x + node.width / 2f
+                        val cy = node.y
+                        SldSymbols.drawUtilitySource(
+                            drawScope = this,
+                            center = Offset(cx, cy),
+                            sizePx = 48f,
+                            palette = palette,
+                            label = node.label
+                        )
 
-                        drawRoundRect(
-                            color = if (isSelected) palette.enclosureBusTaps else palette.surface,
-                            topLeft = Offset(gridX, gridY - 15f),
-                            size = Size(gridW, 36f),
-                            cornerRadius = CornerRadius(6f, 6f)
-                        )
-                        drawRoundRect(
-                            color = statusColor,
-                            topLeft = Offset(gridX, gridY - 15f),
-                            size = Size(gridW, 36f),
-                            cornerRadius = CornerRadius(6f, 6f),
-                            style = Stroke(width = if (isSelected || displayMode == DisplayMode.VALIDATION) 3.5f else 2f)
-                        )
+                        val labelX = cx - 40f
                         drawSafeText(
                             textMeasurer = textMeasurer,
                             text = node.label,
                             style = TextStyle(color = palette.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold),
-                            topLeft = Offset(gridX + 12f, gridY - 10f)
+                            topLeft = Offset(labelX, cy + 28f)
+                        )
+                        drawSafeText(
+                            textMeasurer = textMeasurer,
+                            text = node.ratingText,
+                            style = TextStyle(color = palette.textSecondary, fontSize = 10.sp),
+                            topLeft = Offset(labelX, cy + 44f)
                         )
                     } else if (panelUpper.contains("TRANSFORMER")) {
                         val cx = node.x + node.width / 2f
@@ -448,23 +477,20 @@ fun SldCanvas(
                             ratingText = node.ratingText
                         )
 
-                        val labelX = cx + 45f
+                        val labelX = cx - 50f
                         drawSafeText(
                             textMeasurer = textMeasurer,
                             text = node.label,
-                            style = TextStyle(color = palette.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold),
-                            topLeft = Offset(labelX, cy - 20f)
+                            style = TextStyle(color = palette.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                            topLeft = Offset(labelX, cy + 28f)
                         )
                         drawSafeText(
                             textMeasurer = textMeasurer,
                             text = node.ratingText,
-                            style = TextStyle(color = palette.textSecondary, fontSize = 11.sp),
-                            topLeft = Offset(labelX, cy + 6f)
+                            style = TextStyle(color = palette.textSecondary, fontSize = 10.sp),
+                            topLeft = Offset(labelX, cy + 44f)
                         )
                     } else if (panelUpper.contains("ATS")) {
-                        // Authoritative geometry: the two input terminals land EXACTLY on
-                        // the layout-provided NORMAL/EMERGENCY ports, and the output terminal
-                        // aligns with the downstream feeder origin. No off-center box.
                         val geometry = SldSymbols.atsSymbolGeometry(node.x, node.y, node.width)
                         SldSymbols.drawTransferSwitch(
                             drawScope = this,
@@ -500,68 +526,172 @@ fun SldCanvas(
                         )
                     }
                 } else {
-                    // Panel / Busbar
-                    val outlineColor = if (isSelected) palette.enclosureBusTaps else statusColor
+                    val panelUpper = node.panelType.uppercase()
+                    val isMainPanel = panelUpper.contains("MDB") || panelUpper.contains("MAIN")
+                    val isMotor = panelUpper.contains("MOTOR") || node.label.uppercase().contains("MOTOR") ||
+                            node.circuit?.loadType?.uppercase() == "MOTOR" || node.circuit?.circuitName?.uppercase()?.contains("MOTOR") == true
                     val barHeight = maxOf(node.height, 16f)
-                    val strokeW = if (isSelected || displayMode == DisplayMode.VALIDATION) 4f else 2f
 
-                    // Solid Busbar / Panel line
-                    drawRoundRect(
-                        color = outlineColor,
-                        topLeft = Offset(node.x, node.y),
-                        size = Size(node.width, barHeight),
-                        cornerRadius = CornerRadius(2f, 2f)
-                    )
+                    if (isMainPanel) {
+                        // 1. Draw Switchboard Cubicle Enclosure Frame
+                        val encPaddingX = 36f
+                        val encTop = node.y - 110f
+                        val encLeft = node.x - encPaddingX
+                        val encW = node.width + encPaddingX * 2f
+                        val encH = barHeight + 130f
 
-                    // Title
-                    val nameLayout = textMeasurer.measure(
-                        text = AnnotatedString(node.label),
-                        style = TextStyle(
-                            color = palette.textPrimary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
+                        // Subtle transparent surface fill
+                        drawRoundRect(
+                            color = palette.surface.copy(alpha = 0.5f),
+                            topLeft = Offset(encLeft, encTop),
+                            size = Size(encW, encH),
+                            cornerRadius = CornerRadius(12f, 12f)
                         )
-                    )
-                    val labelX = node.x + node.width / 2f - nameLayout.size.width / 2f
-                    drawText(
-                        textLayoutResult = nameLayout,
-                        topLeft = Offset(labelX, node.y - 22f)
-                    )
+                        // Dashed technical enclosure boundary
+                        drawRoundRect(
+                            color = Color(0xFF334155),
+                            topLeft = Offset(encLeft, encTop),
+                            size = Size(encW, encH),
+                            cornerRadius = CornerRadius(12f, 12f),
+                            style = Stroke(
+                                width = 1.5f,
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f), 0f)
+                            )
+                        )
 
-                    // Subtitle / Rating / Validation text below busbar
-                    if (displayMode == DisplayMode.VALIDATION) {
-                        val statusLabel = when (node.status) {
-                            SldValidationStatus.VALID -> "[VALID]"
-                            SldValidationStatus.WARNING -> "[WARNING]"
-                            SldValidationStatus.INVALID -> "[INVALID]"
-                            SldValidationStatus.DATA_REQUIRED -> "[DATA REQUIRED]"
-                            SldValidationStatus.DISCONNECTED -> "[DISCONNECTED]"
-                        }
-                        val statusLayout = textMeasurer.measure(
-                            text = AnnotatedString(statusLabel),
+                        // Enclosure Header Tag (Top Left inside enclosure)
+                        drawSafeText(
+                            textMeasurer = textMeasurer,
+                            text = node.label,
+                            style = TextStyle(color = Color(0xFFF1F5F9), fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                            topLeft = Offset(encLeft + 14f, encTop + 10f)
+                        )
+
+                        // 2. Incoming Feeder with Disconnector & DMM Meter
+                        val midX = node.x + node.width / 2f
+                        val incomerTopY = encTop + 2f
+                        val incomerBottomY = node.y
+
+                        // Vertical incomer wire inside enclosure
+                        drawLine(
+                            color = Color(0xFFE2E8F0),
+                            start = Offset(midX, incomerTopY),
+                            end = Offset(midX, incomerBottomY),
+                            strokeWidth = SldTheme.feederStroke()
+                        )
+
+                        // Main Incomer Switch Disconnector / Breaker
+                        SldSymbols.drawSwitchDisconnector(
+                            drawScope = this,
+                            center = Offset(midX, encTop + 45f),
+                            sizePx = 28f,
+                            palette = palette
+                        )
+
+                        // Digital Multi Meter (DMM) beside incomer
+                        val dmmCenterX = midX + 65f
+                        val dmmCenterY = encTop + 50f
+                        SldSymbols.drawDmm(
+                            drawScope = this,
+                            center = Offset(dmmCenterX, dmmCenterY),
+                            sizePx = 36f,
+                            palette = palette
+                        )
+                        drawSafeText(
+                            textMeasurer = textMeasurer,
+                            text = "DMM",
+                            style = TextStyle(color = Color(0xFF94A3B8), fontSize = 9.sp, fontWeight = FontWeight.Bold),
+                            topLeft = Offset(dmmCenterX + 24f, dmmCenterY - 18f)
+                        )
+                        drawSafeText(
+                            textMeasurer = textMeasurer,
+                            text = "400 V • 3Ph",
+                            style = TextStyle(color = Color(0xFF64748B), fontSize = 8.5.sp),
+                            topLeft = Offset(dmmCenterX + 24f, dmmCenterY - 4f)
+                        )
+
+                        // 3. Heavy Glowing Copper Distribution Busbar
+                        val copperColor = Color(0xFFE08A4B)
+                        val busbarY = node.y
+                        val busbarH = maxOf(node.height, 18f)
+
+                        // Subtle outer copper glow
+                        drawRoundRect(
+                            color = copperColor.copy(alpha = 0.25f),
+                            topLeft = Offset(node.x - 2f, busbarY - 2f),
+                            size = Size(node.width + 4f, busbarH + 4f),
+                            cornerRadius = CornerRadius(4f, 4f)
+                        )
+                        // Solid Copper Busbar Body
+                        drawRoundRect(
+                            color = copperColor,
+                            topLeft = Offset(node.x, busbarY),
+                            size = Size(node.width, busbarH),
+                            cornerRadius = CornerRadius(3f, 3f)
+                        )
+
+                        // Centered Busbar Type Tag
+                        val busTag = "MDB"
+                        val tagLayout = textMeasurer.measure(
+                            text = AnnotatedString(busTag),
+                            style = TextStyle(color = Color(0xFF0F172A), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                        )
+                        drawText(
+                            textLayoutResult = tagLayout,
+                            topLeft = Offset(midX - tagLayout.size.width / 2f, busbarY + (busbarH - tagLayout.size.height) / 2f)
+                        )
+                    } else if (isMotor) {
+                        // Motor Load Symbol (Circle M with downward load arrow)
+                        val cx = node.x + node.width / 2f
+                        val cy = node.y + 16f
+                        SldSymbols.drawMotorLoad(
+                            drawScope = this,
+                            center = Offset(cx, cy),
+                            sizePx = 36f,
+                            palette = palette,
+                            ratingText = node.label
+                        )
+                        drawSafeText(
+                            textMeasurer = textMeasurer,
+                            text = node.label,
+                            style = TextStyle(color = palette.textPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                            topLeft = Offset(cx - 30f, cy + 34f)
+                        )
+                    } else {
+                        // Sub-distribution Panel (SMDB / DB) Outlined Engineering Box
+                        val outlineColor = if (isSelected) palette.enclosureBusTaps else Color(0xFF334155)
+                        val boxTop = node.y
+                        val boxW = node.width
+                        val boxH = maxOf(node.height, 34f)
+
+                        drawRoundRect(
+                            color = palette.surface,
+                            topLeft = Offset(node.x, boxTop),
+                            size = Size(boxW, boxH),
+                            cornerRadius = CornerRadius(6f, 6f)
+                        )
+                        drawRoundRect(
+                            color = if (isSelected) palette.enclosureBusTaps else statusColor,
+                            topLeft = Offset(node.x, boxTop),
+                            size = Size(boxW, boxH),
+                            cornerRadius = CornerRadius(6f, 6f),
+                            style = Stroke(width = if (isSelected || displayMode == DisplayMode.VALIDATION) 2.5f else 1.5f)
+                        )
+
+                        // Centered Label inside Panel Box
+                        val nameLayout = textMeasurer.measure(
+                            text = AnnotatedString(node.label),
                             style = TextStyle(
-                                color = statusColor,
-                                fontSize = 10.sp,
+                                color = palette.textPrimary,
+                                fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         )
-                        val statusX = node.x + node.width / 2f - statusLayout.size.width / 2f
+                        val labelX = node.x + boxW / 2f - nameLayout.size.width / 2f
+                        val labelY = boxTop + (boxH - nameLayout.size.height) / 2f
                         drawText(
-                            textLayoutResult = statusLayout,
-                            topLeft = Offset(statusX, node.y + barHeight + 6f)
-                        )
-                    } else if (node.ratingText.isNotBlank() && !node.ratingText.uppercase().contains("MCCB") && !node.ratingText.uppercase().contains("MCB") && !node.ratingText.uppercase().contains("ACB")) {
-                        val ratingLayout = textMeasurer.measure(
-                            text = AnnotatedString(node.ratingText),
-                            style = TextStyle(
-                                color = palette.textSecondary,
-                                fontSize = 10.sp
-                            )
-                        )
-                        val ratingX = node.x + node.width / 2f - ratingLayout.size.width / 2f
-                        drawText(
-                            textLayoutResult = ratingLayout,
-                            topLeft = Offset(ratingX, node.y + barHeight + 6f)
+                            textLayoutResult = nameLayout,
+                            topLeft = Offset(labelX, labelY)
                         )
                     }
                 }
