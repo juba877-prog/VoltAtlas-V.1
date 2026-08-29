@@ -35,7 +35,7 @@ class EngineeringAssistantViewModelFactory private constructor(
     companion object {
         fun production(application: Application): EngineeringAssistantViewModelFactory {
             val database = AppDatabase.getDatabase(application)
-            val preferences = GlobalPreferences(application)
+            val preferences = GlobalPreferences.getInstance(application)
             val principalProvider = DefaultTrustedPrincipalProvider {
                 preferences.trustedEngineerIdentity.value
             }

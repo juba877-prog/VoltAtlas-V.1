@@ -29,7 +29,7 @@ import kotlinx.coroutines.withContext
 
 class EngineeringViewModel(application: Application) : AndroidViewModel(application) {
 
-    val preferences = com.example.data.GlobalPreferences(application)
+    val preferences = com.example.data.GlobalPreferences.getInstance(application)
 
     private val _showGlobalSettings = MutableStateFlow(false)
     val showGlobalSettings = _showGlobalSettings.asStateFlow()
