@@ -255,19 +255,26 @@ fun SldCanvas(
                     val isIscFail = childNode?.dataBlock?.statusText?.uppercase()?.contains("FAIL") == true ||
                             childNode?.dataBlock?.statusText?.uppercase()?.contains("ICU") == true
 
-                    val baseStrokeColor = when (displayMode) {
+                    val baseStrokeColor = if (edge.isUnresolved) {
+                        Color(0xFFF59E0B)
+                    } else when (displayMode) {
                         DisplayMode.VOLTAGE_DROP -> if (!isAtsEdge && childNode != null && !childNode.isSource) vdStatusColor else if (edge.isEmergency) palette.feeders else palette.enclosureBusTaps
                         DisplayMode.SHORT_CIRCUIT -> if (isIscFail) palette.invalidStatus else if (edge.isEmergency) palette.feeders else palette.enclosureBusTaps
                         else -> if (isBusway) Color(0xFFE08A4B) else if (edge.isEmergency) palette.feeders else Color(0xFFE2E8F0)
                     }
 
                     val strokeWidth = if (isBusway) SldTheme.busbarStroke() * 0.45f else if (edge.isEmergency) SldTheme.sourceSpineStroke() else SldTheme.feederStroke()
+                    val strokeStyle = if (edge.isUnresolved) {
+                        Stroke(width = 2.0f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f))
+                    } else {
+                        Stroke(width = strokeWidth)
+                    }
 
                     // Draw the orthogonal wire path
                     drawPath(
                         path = edgePath,
                         color = baseStrokeColor,
-                        style = Stroke(width = strokeWidth)
+                        style = strokeStyle
                     )
 
                     // Draw connection tap dot on busbar start point
@@ -275,7 +282,26 @@ fun SldCanvas(
                     val lastPt = points.lastOrNull() ?: Pair(0f, 0f)
                     val feederX = lastPt.first
 
-                    if (!isAtsEdge) {
+                    if (edge.isUnresolved) {
+                        // Draw warning triangle at unresolved start
+                        val warnX = firstPt.first
+                        val warnY = firstPt.second
+                        val warnPath = Path().apply {
+                            moveTo(warnX, warnY - 8f)
+                            lineTo(warnX - 7f, warnY + 6f)
+                            lineTo(warnX + 7f, warnY + 6f)
+                            close()
+                        }
+                        drawPath(path = warnPath, color = Color(0xFFF59E0B), style = androidx.compose.ui.graphics.drawscope.Fill)
+                        if (edge.label.isNotBlank() && zoomScale > 0.35f) {
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = edge.label,
+                                style = TextStyle(color = Color(0xFFF59E0B), fontSize = 10.sp, fontWeight = FontWeight.SemiBold),
+                                topLeft = Offset(warnX + 10f, warnY - 8f)
+                            )
+                        }
+                    } else if (!isAtsEdge) {
                         drawCircle(
                             color = baseStrokeColor,
                             radius = 3.5f,
@@ -510,6 +536,29 @@ fun SldCanvas(
                             text = node.ratingText,
                             style = TextStyle(color = palette.textSecondary, fontSize = 11.sp),
                             topLeft = Offset(labelX, node.y + 6f)
+                        )
+                    } else if (panelUpper.contains("UPS")) {
+                        val cx = node.x + node.width / 2f
+                        val cy = node.y
+                        SldSymbols.drawUps(
+                            drawScope = this,
+                            center = Offset(cx, cy),
+                            sizePx = 48f,
+                            palette = palette
+                        )
+
+                        val labelX = cx + 36f
+                        drawSafeText(
+                            textMeasurer = textMeasurer,
+                            text = node.label,
+                            style = TextStyle(color = palette.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                            topLeft = Offset(labelX, cy - 20f)
+                        )
+                        drawSafeText(
+                            textMeasurer = textMeasurer,
+                            text = node.ratingText,
+                            style = TextStyle(color = palette.textSecondary, fontSize = 11.sp),
+                            topLeft = Offset(labelX, cy + 6f)
                         )
                     } else {
                         drawRect(

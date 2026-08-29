@@ -22,7 +22,8 @@ object RiserLayoutEngine {
 
         SldNodeType.MDB,
         SldNodeType.MCC,
-        SldNodeType.ATS -> 1
+        SldNodeType.ATS,
+        SldNodeType.UPS -> 1
 
         SldNodeType.SMDB -> 2
 
@@ -324,7 +325,38 @@ object RiserLayoutEngine {
             val fromNode = positionedNodesMap[edge.fromNodeId]
             val toNode = positionedNodesMap[edge.toNodeId]
 
-            if (fromNode != null && toNode != null) {
+            if (edge.type == SldEdgeType.UNRESOLVED_PATH) {
+                val points = if (toNode != null) {
+                    val portOffsetX = if (edge.fromNodeId.contains("emerg")) {
+                        toNode.width * 0.75f
+                    } else if (edge.fromNodeId.contains("normal")) {
+                        toNode.width * 0.25f
+                    } else {
+                        toNode.width / 2f
+                    }
+                    val toXPort = toNode.x + portOffsetX
+                    val toYPort = toNode.y - (if (toNode.panelType.uppercase().contains("ATS")) 24f else 12f)
+                    listOf(Pair(toXPort, toYPort - 45f), Pair(toXPort, toYPort))
+                } else if (fromNode != null) {
+                    val fromXPort = fromNode.x + fromNode.width / 2f
+                    val fromYPort = fromNode.y + (if (fromNode.isSource) 24f else fromNode.height)
+                    listOf(Pair(fromXPort, fromYPort), Pair(fromXPort, fromYPort + 45f))
+                } else {
+                    emptyList()
+                }
+
+                if (points.isNotEmpty()) {
+                    positionedEdges.add(
+                        PositionedSldEdge(
+                            fromId = edge.fromNodeId,
+                            toId = edge.toNodeId,
+                            label = edge.label ?: "",
+                            pathPoints = points,
+                            isUnresolved = true
+                        )
+                    )
+                }
+            } else if (fromNode != null && toNode != null) {
                 val isToAts = toNode.panelType.uppercase().contains("ATS") || edge.type == SldEdgeType.ATS_NORMAL_PATH || edge.type == SldEdgeType.ATS_EMERGENCY_PATH
 
                 val points = if (isToAts) {
@@ -357,12 +389,6 @@ object RiserLayoutEngine {
                     } else {
                         // Same-tier (or below) panel sources (e.g. an MDB sharing the ATS
                         // tier): the incomer must leave the panel's output port DOWNWARD.
-                        // Rising above the panel would run collinear with the upstream
-                        // feeder and pass through the panel body, making the wire visually
-                        // appear to originate from the transformer (Gate 3 regression).
-                        // Instead: drop into the inter-tier channel, cross BELOW the ATS
-                        // enclosure, rise just OUTSIDE its left edge, then approach the top
-                        // terminal from above.
                         val maxBottom = maxOf(fromNode.y + fromNode.height, toNode.y + toNode.height)
                         val lowChannelY = maxBottom + staggerStep + siblingIndex * staggerStep
                         val riseX = toNode.x - staggerStep
@@ -403,7 +429,8 @@ object RiserLayoutEngine {
                         toId = edge.toNodeId,
                         label = edge.label ?: "",
                         pathPoints = points,
-                        isEmergency = (edge.type == SldEdgeType.ATS_EMERGENCY_PATH)
+                        isEmergency = (edge.type == SldEdgeType.ATS_EMERGENCY_PATH),
+                        isUps = (edge.type == SldEdgeType.UPS_INPUT || edge.type == SldEdgeType.UPS_OUTPUT)
                     )
                 )
             }
@@ -449,7 +476,8 @@ object RiserLayoutEngine {
         SldNodeType.UTILITY_SOURCE,
         SldNodeType.TRANSFORMER,
         SldNodeType.GENERATOR,
-        SldNodeType.ATS -> true
+        SldNodeType.ATS,
+        SldNodeType.UPS -> true
         else -> false
     }
 

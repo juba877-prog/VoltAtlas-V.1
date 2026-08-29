@@ -31,7 +31,9 @@ data class PositionedSldEdge(
     val label: String,
     val pathPoints: List<Pair<Float, Float>>,
     val isEmergency: Boolean = false,
-    val labelStaggerY: Float = 0f
+    val labelStaggerY: Float = 0f,
+    val isUnresolved: Boolean = false,
+    val isUps: Boolean = false
 )
 
 data class SldEngineResult(
@@ -53,10 +55,14 @@ object SldLayoutEngine {
         generatorResult: GeneratorResult? = null,
         atsResult: com.example.engine.AtsResult? = null,
         atsEntity: AtsEntity? = null,
+        upsResult: com.example.engine.UpsResult? = null,
+        upsEntity: com.example.data.UpsEntity? = null,
         generators: List<com.example.data.GeneratorEntity> = emptyList(),
         generatorResults: Map<String, GeneratorResult> = emptyMap(),
         atsList: List<AtsEntity> = emptyList(),
         atsResults: Map<String, com.example.engine.AtsResult> = emptyMap(),
+        upsList: List<com.example.data.UpsEntity> = emptyList(),
+        upsResults: Map<String, com.example.engine.UpsResult> = emptyMap(),
         textMeasurer: androidx.compose.ui.text.TextMeasurer? = null,
         manualPositions: Map<String, androidx.compose.ui.geometry.Offset> = emptyMap()
     ): SldEngineResult {
@@ -70,10 +76,14 @@ object SldLayoutEngine {
             generatorResult = generatorResult,
             atsResult = atsResult,
             atsEntity = atsEntity,
+            upsResult = upsResult,
+            upsEntity = upsEntity,
             generators = generators,
             generatorResults = generatorResults,
             atsList = atsList,
-            atsResults = atsResults
+            atsResults = atsResults,
+            upsList = upsList,
+            upsResults = upsResults
         )
 
         return RiserLayoutEngine.calculateLayout(graph, circuits, textMeasurer, manualPositions)
