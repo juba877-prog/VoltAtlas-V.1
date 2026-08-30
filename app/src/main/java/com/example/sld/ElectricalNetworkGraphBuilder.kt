@@ -771,6 +771,13 @@ object ElectricalNetworkGraphBuilder {
             val isParentBoard = parentFedNames.contains(circ.circuitName.trim().lowercase()) ||
                     effectiveParents.values.contains(circ.id)
 
+            val fedLower = circ.fedFrom.trim().lowercase()
+            val sourceKeywords = setOf("transformer", "source", "grid", "main", "utility", "ats", "generator", "gen", "")
+            val isExplicitSourceKeyword = sourceKeywords.contains(fedLower) ||
+                    fedLower.startsWith("trans") || fedLower.startsWith("tx") ||
+                    fedLower.startsWith("ats") || fedLower.startsWith("gen") ||
+                    fedLower.startsWith("grid") || fedLower.startsWith("util")
+
             val nameLower = circ.circuitName.trim().lowercase()
             val nodeType = when {
                 circ.panelType?.lowercase()?.contains("mcc") == true -> SldNodeType.MCC
@@ -781,7 +788,7 @@ object ElectricalNetworkGraphBuilder {
                 nameLower.contains("smdb") -> SldNodeType.SMDB
                 nameLower.contains("mdb") -> SldNodeType.MDB
                 nameLower.contains("db") -> SldNodeType.DB
-                isParentBoard && circ.fedFrom.lowercase() in listOf("transformer", "ats", "generator", "grid", "source", "main", "") -> SldNodeType.MDB
+                isParentBoard && isExplicitSourceKeyword -> SldNodeType.MDB
                 isParentBoard -> SldNodeType.SMDB
                 else -> SldNodeType.FINAL_CIRCUIT
             }
@@ -804,13 +811,6 @@ object ElectricalNetworkGraphBuilder {
             var resolvedParentNodeId: String? = null
             var provenance = SldProvenance.PROJECT_INPUT
             var isDisconnected = false
-            val fedLower = circ.fedFrom.trim().lowercase()
-
-            val sourceKeywords = setOf("transformer", "source", "grid", "main", "utility", "ats", "generator", "gen", "")
-            val isExplicitSourceKeyword = sourceKeywords.contains(fedLower) ||
-                    fedLower.startsWith("trans") || fedLower.startsWith("tx") ||
-                    fedLower.startsWith("ats") || fedLower.startsWith("gen") ||
-                    fedLower.startsWith("grid") || fedLower.startsWith("util")
 
             if (circ.circuitName.equals(circ.fedFrom, ignoreCase = true)) {
                 isDisconnected = true

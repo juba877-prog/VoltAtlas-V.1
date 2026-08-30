@@ -215,18 +215,18 @@ object RiserLayoutEngine {
         }
 
         downstreamRoots.forEach { rootNode ->
-            val rootSubWidth = subtreeWidths[rootNode.id] ?: (nodeWidths[rootNode.id] ?: 140f)
             positionSubtree(rootNode.id, currentRootX)
-            currentRootX += rootSubWidth + 120f
+            val subtreeRight = getSubtreeRightBound(rootNode.id, positionedNodesMap, childrenMap, textMeasurer)
+            currentRootX = maxOf(currentRootX + (subtreeWidths[rootNode.id] ?: 140f) + MIN_HORIZONTAL_GAP, subtreeRight + MIN_HORIZONTAL_GAP)
         }
 
         // Safe handling for any unpositioned nodes: position in a clear side lane
         nonSourceNodes.forEach { node ->
             if (!positionedNodesMap.containsKey(node.id)) {
                 computeSubtreeWidth(node.id)
-                val subW = subtreeWidths[node.id] ?: 140f
                 positionSubtree(node.id, currentRootX)
-                currentRootX += subW + 120f
+                val subRight = getSubtreeRightBound(node.id, positionedNodesMap, childrenMap, textMeasurer)
+                currentRootX = maxOf(currentRootX + (subtreeWidths[node.id] ?: 140f) + MIN_HORIZONTAL_GAP, subRight + MIN_HORIZONTAL_GAP)
             }
         }
 
@@ -314,7 +314,7 @@ object RiserLayoutEngine {
         }
 
         // 3.5 Dynamic Automatic Collision Avoidance Pass
-        applyDynamicCollisionAvoidance(positionedNodesMap, textMeasurer, childrenMap)
+        applyDynamicCollisionAvoidance(positionedNodesMap, textMeasurer, childrenMap, graph)
 
         // 3.6 Manual Position Overrides
         manualPositions.forEach { (nodeId, offset) ->
@@ -555,36 +555,122 @@ object RiserLayoutEngine {
         SldValidationStatus.DATA_REQUIRED -> SldSemanticColors.RISER_DATA_REQUIRED
     }
 
+    private data class VisualBounds(val left: Float, val top: Float, val right: Float, val bottom: Float) {
+        val centerX: Float get() = (left + right) / 2f
+    }
+
+    private data class CollisionPair(
+        val leftNode: PositionedSldNode,
+        val rightNode: PositionedSldNode,
+        val leftBox: VisualBounds,
+        val rightBox: VisualBounds
+    )
+
+    private fun getNodeVisualBounds(node: PositionedSldNode, textMeasurer: androidx.compose.ui.text.TextMeasurer?): VisualBounds {
+        val isMainPanel = node.panelType.uppercase().contains("MDB") || node.panelType.uppercase().contains("MAIN")
+        val isAts = node.panelType.uppercase().contains("ATS")
+        val labelWidth = measureLabelWidth(node, textMeasurer)
+        // The feeder callout text actually starts at the node's horizontal
+        // center + 14f (matching toCenterX in the edge-routing code and
+        // feederX + 14f in SldCanvas.kt), not at node.x. Measure from the
+        // real anchor point instead of the box's left edge.
+        val calloutTextRight = (node.x + node.width / 2f) + 14f + labelWidth
+
+        return when {
+            isMainPanel -> {
+                VisualBounds(
+                    left = node.x - 36f,
+                    top = node.y - 110f,
+                    right = maxOf(node.x + node.width + 36f, calloutTextRight),
+                    bottom = node.y + node.height + 20f
+                )
+            }
+            isAts -> {
+                VisualBounds(
+                    left = node.x - 10f,
+                    top = node.y - 28f,
+                    right = node.x + node.width + 14f + labelWidth,
+                    bottom = node.y + 28f
+                )
+            }
+            else -> {
+                VisualBounds(
+                    left = node.x,
+                    top = node.y,
+                    right = maxOf(node.x + node.width, calloutTextRight),
+                    bottom = node.y + node.height
+                )
+            }
+        }
+    }
+
+    private fun getSubtreeRightBound(
+        nodeId: String,
+        positionedNodesMap: Map<String, PositionedSldNode>,
+        childrenMap: Map<String, List<String>>,
+        textMeasurer: androidx.compose.ui.text.TextMeasurer?,
+        visited: MutableSet<String> = mutableSetOf()
+    ): Float {
+        if (!visited.add(nodeId)) return 0f
+        val node = positionedNodesMap[nodeId] ?: return 0f
+        val box = getNodeVisualBounds(node, textMeasurer)
+        var maxRight = box.right
+
+        childrenMap[nodeId]?.forEach { childId ->
+            val childRight = getSubtreeRightBound(childId, positionedNodesMap, childrenMap, textMeasurer, visited)
+            maxRight = maxOf(maxRight, childRight)
+        }
+        return maxRight
+    }
+
     private fun applyDynamicCollisionAvoidance(
         positionedNodesMap: MutableMap<String, PositionedSldNode>,
         textMeasurer: androidx.compose.ui.text.TextMeasurer?,
-        childrenMap: Map<String, List<String>>
+        childrenMap: Map<String, List<String>>,
+        graph: ElectricalNetworkGraph
     ) {
-        val nodesByY = positionedNodesMap.values.groupBy { it.y }
-
         var hasCollision = true
         var iteration = 0
-        val maxIterations = 10
+        val maxIterations = 15
 
         while (hasCollision && iteration < maxIterations) {
             hasCollision = false
             iteration++
 
-            nodesByY.forEach { (_, tierNodes) ->
-                val sorted = tierNodes.sortedBy { it.x }
-                for (i in 0 until sorted.size - 1) {
-                    val nodeA = sorted[i]
-                    val nodeB = sorted[i + 1]
+            val allNodes = positionedNodesMap.values.toList()
+            for (i in allNodes.indices) {
+                for (j in (i + 1) until allNodes.size) {
+                    val nodeA = allNodes[i]
+                    val nodeB = allNodes[j]
+                    if (nodeA.id == nodeB.id) continue
 
-                    val aLabelWidth = measureLabelWidth(nodeA, textMeasurer)
-                    val aRight = maxOf(nodeA.x + nodeA.width, nodeA.x + aLabelWidth)
-                    val minAllowedBLeft = aRight + MIN_HORIZONTAL_GAP
+                    val boxA = getNodeVisualBounds(nodeA, textMeasurer)
+                    val boxB = getNodeVisualBounds(nodeB, textMeasurer)
 
-                    val currentBLeft = nodeB.x
-                    if (currentBLeft < minAllowedBLeft) {
-                        val shiftDelta = minAllowedBLeft - currentBLeft
-                        shiftSubtree(nodeB.id, shiftDelta, positionedNodesMap, childrenMap)
-                        hasCollision = true
+                    // 2D overlap check: Y overlap requires horizontal clearance >= MIN_HORIZONTAL_GAP
+                    val yOverlap = (boxA.top < boxB.bottom && boxA.bottom > boxB.top)
+                    if (yOverlap) {
+                        val pair = if (boxA.centerX <= boxB.centerX) {
+                            CollisionPair(nodeA, nodeB, boxA, boxB)
+                        } else {
+                            CollisionPair(nodeB, nodeA, boxB, boxA)
+                        }
+
+                        val minAllowedRightLeft = pair.leftBox.right + MIN_HORIZONTAL_GAP
+                        if (pair.rightBox.left < minAllowedRightLeft) {
+                            val shiftDelta = minAllowedRightLeft - pair.rightBox.left
+                            shiftSubtree(pair.rightNode.id, shiftDelta, positionedNodesMap, childrenMap)
+
+                            // If rightNode is an ATS, co-shift connected generator
+                            if (pair.rightNode.panelType.uppercase().contains("ATS")) {
+                                val genEdge = graph.edges.firstOrNull { it.toNodeId == pair.rightNode.id && it.type == SldEdgeType.ATS_EMERGENCY_PATH }
+                                val genNode = genEdge?.let { positionedNodesMap[it.fromNodeId] }
+                                if (genNode != null) {
+                                    positionedNodesMap[genNode.id] = genNode.copy(x = genNode.x + shiftDelta)
+                                }
+                            }
+                            hasCollision = true
+                        }
                     }
                 }
             }
@@ -597,7 +683,13 @@ object RiserLayoutEngine {
         val l1 = textMeasurer.measure(node.label, style).size.width.toFloat()
         val l2 = textMeasurer.measure(node.ratingText, style).size.width.toFloat()
         val l3 = node.dataBlock?.cableDescription?.let { textMeasurer.measure(it, style).size.width.toFloat() } ?: 0f
-        return maxOf(l1, l2, l3) * 1.25f
+        // Accounts for the third feeder-callout line SldCanvas.kt draws dynamically
+        // per branch (VD%/PASS-FAIL status, length, or fault-level text). This text
+        // is never a stored field, so it can't be measured directly — use worst-case
+        // representative strings instead so collision spacing keeps enough margin.
+        val l4 = textMeasurer.measure("VD: 99.99% PASS", style).size.width.toFloat()
+        val l5 = textMeasurer.measure("Isc: 99.99 kA", style).size.width.toFloat()
+        return maxOf(l1, l2, l3, l4, l5) * 1.25f
     }
 
     private fun shiftSubtree(

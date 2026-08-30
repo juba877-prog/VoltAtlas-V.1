@@ -1,6 +1,7 @@
 package com.example.sld
 
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -25,10 +26,10 @@ import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [33], qualifiers = RobolectricDeviceQualifiers.Pixel6)
+@Config(sdk = [34], qualifiers = RobolectricDeviceQualifiers.Pixel6)
 class SldScreenScreenshotTest {
     @get:Rule
-    val composeTestRule = createComposeRule()
+    val composeTestRule = createAndroidComposeRule<ComponentActivity>()
 
     private val transformers = listOf(
         TransformerEntity(
@@ -183,6 +184,126 @@ class SldScreenScreenshotTest {
         composeTestRule.onNodeWithTag("sld_fit_btn").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("sld_screen_container").captureRoboImage(file = File(outputDir, "sld_fit_executed.png"))
+    }
+
+    @OptIn(ExperimentalRoborazziApi::class)
+    @Test
+    fun captureScenario1_SingleAts() {
+        val outputDir = File("build/outputs/roborazzi")
+        if (!outputDir.exists()) outputDir.mkdirs()
+
+        val singleAtsList = listOf(
+            AtsEntity(projectId = "proj_1", atsId = "ATS-01", atsName = "ATS-Main", normalSourceId = "TX-01", emergencySourceId = "GEN-01")
+        )
+        val singleGenList = listOf(
+            com.example.data.GeneratorEntity(projectId = "proj_1", generatorId = "GEN-01", generatorName = "Standby Gen", manualSizeKVA = 800.0)
+        )
+        val s1Circuits = listOf(
+            CircuitEntity(id = 1, projectId = "proj_1", circuitName = "MDB-Main", fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"),
+            CircuitEntity(id = 2, projectId = "proj_1", circuitName = "SMDB-1", fedFrom = "MDB-Main", transformerId = "TX-01", panelType = "SMDB"),
+            CircuitEntity(id = 3, projectId = "proj_1", circuitName = "DB-Power", fedFrom = "MDB-Main", transformerId = "TX-01", panelType = "DB")
+        )
+
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = true) {
+                com.example.ui.SldScreen(
+                    circuits = s1Circuits,
+                    transformers = transformers,
+                    generators = singleGenList,
+                    atsList = singleAtsList,
+                    transformerResults = transformerResults
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("sld_screen_container").captureRoboImage(file = File(outputDir, "scenario_1_single_ats.png"))
+    }
+
+    @OptIn(ExperimentalRoborazziApi::class)
+    @Test
+    fun captureScenario2_MultiAtsMultiGenerator() {
+        val outputDir = File("build/outputs/roborazzi")
+        if (!outputDir.exists()) outputDir.mkdirs()
+
+        val multiAtsList = listOf(
+            AtsEntity(projectId = "proj_1", atsId = "ATS-01", atsName = "ATS-Main", normalSourceId = "TX-01", emergencySourceId = "GEN-01"),
+            AtsEntity(projectId = "proj_1", atsId = "ATS-02", atsName = "ATS-Essential", normalSourceId = "TX-01", emergencySourceId = "GEN-02")
+        )
+        val multiGenList = listOf(
+            com.example.data.GeneratorEntity(projectId = "proj_1", generatorId = "GEN-01", generatorName = "Gen 1", manualSizeKVA = 500.0),
+            com.example.data.GeneratorEntity(projectId = "proj_1", generatorId = "GEN-02", generatorName = "Gen 2", manualSizeKVA = 500.0)
+        )
+        val s2Circuits = listOf(
+            CircuitEntity(id = 1, projectId = "proj_1", circuitName = "MDB-Main", fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"),
+            CircuitEntity(id = 2, projectId = "proj_1", circuitName = "Essential-DB", fedFrom = "ATS-Essential", assignedAtsId = "ATS-02", panelType = "DB")
+        )
+
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = true) {
+                com.example.ui.SldScreen(
+                    circuits = s2Circuits,
+                    transformers = transformers,
+                    generators = multiGenList,
+                    atsList = multiAtsList,
+                    transformerResults = transformerResults
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("sld_screen_container").captureRoboImage(file = File(outputDir, "scenario_2_multi_ats_generator.png"))
+    }
+
+    @OptIn(ExperimentalRoborazziApi::class)
+    @Test
+    fun captureScenario3_BuswayCircuitPresent() {
+        val outputDir = File("build/outputs/roborazzi")
+        if (!outputDir.exists()) outputDir.mkdirs()
+
+        val s3Circuits = listOf(
+            CircuitEntity(id = 1, projectId = "proj_1", circuitName = "MDB-Main", fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"),
+            CircuitEntity(id = 2, projectId = "proj_1", circuitName = "Riser-Busway-1", fedFrom = "MDB-Main", transformerId = "TX-01", overrideCableSize = "800A Busway Trunk", panelType = "SMDB"),
+            CircuitEntity(id = 3, projectId = "proj_1", circuitName = "DB-Level-5", fedFrom = "Riser-Busway-1", transformerId = "TX-01", panelType = "DB")
+        )
+
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = true) {
+                com.example.ui.SldScreen(
+                    circuits = s3Circuits,
+                    transformers = transformers,
+                    transformerResults = transformerResults
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("sld_screen_container").captureRoboImage(file = File(outputDir, "scenario_3_busway_present.png"))
+    }
+
+    @OptIn(ExperimentalRoborazziApi::class)
+    @Test
+    fun captureScenario4_WideBusbarHighFeederCount() {
+        val outputDir = File("build/outputs/roborazzi")
+        if (!outputDir.exists()) outputDir.mkdirs()
+
+        val s4Circuits = listOf(
+            CircuitEntity(id = 1, projectId = "proj_1", circuitName = "MDB-Main", fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"),
+            CircuitEntity(id = 10, projectId = "proj_1", circuitName = "SMDB-North", fedFrom = "MDB-Main", transformerId = "TX-01", panelType = "SMDB"),
+            CircuitEntity(id = 20, projectId = "proj_1", circuitName = "SMDB-South", fedFrom = "MDB-Main", transformerId = "TX-01", panelType = "SMDB"),
+            CircuitEntity(id = 30, projectId = "proj_1", circuitName = "DB-HVAC", fedFrom = "MDB-Main", transformerId = "TX-01", panelType = "DB"),
+            CircuitEntity(id = 40, projectId = "proj_1", circuitName = "DB-Elevators", fedFrom = "MDB-Main", transformerId = "TX-01", panelType = "DB"),
+            CircuitEntity(id = 50, projectId = "proj_1", circuitName = "Chiller-Motor", fedFrom = "MDB-Main", transformerId = "TX-01", loadType = "MOTOR")
+        )
+
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = true) {
+                com.example.ui.SldScreen(
+                    circuits = s4Circuits,
+                    transformers = transformers,
+                    transformerResults = transformerResults
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("sld_screen_container").captureRoboImage(file = File(outputDir, "scenario_4_wide_busbar_high_feeder.png"))
     }
 }
 

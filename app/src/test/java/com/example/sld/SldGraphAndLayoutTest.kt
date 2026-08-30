@@ -1433,4 +1433,125 @@ class SldGraphAndLayoutTest {
             assertEquals("Feeder wire ${edge.label} must drop straight vertically without crossing", startX, endX, 2.0f)
         }
     }
+
+    @Test
+    fun testArbitraryMainPanelNameClassificationMdb() {
+        val transformers = listOf(
+            TransformerEntity(projectId = projectId, transformerId = "TX-01", kVA = 1000.0)
+        )
+        // Main panel is named arbitrarily (no "mdb"/"smdb"/"db"/"mcc" substring) and fedFrom is "Tx-01"
+        val circuits = listOf(
+            CircuitEntity(id = 1, projectId = projectId, circuitName = "CENTRAL-SWITCHBOARD", fedFrom = "Tx-01", panelType = null),
+            CircuitEntity(id = 2, projectId = projectId, circuitName = "LIGHTING-BOARD", fedFrom = "CENTRAL-SWITCHBOARD", panelType = null),
+            CircuitEntity(id = 3, projectId = projectId, circuitName = "POWER-BOARD", fedFrom = "CENTRAL-SWITCHBOARD", panelType = null)
+        )
+
+        val graph = ElectricalNetworkGraphBuilder.buildGraph(
+            activeProjectId = projectId,
+            transformers = transformers,
+            circuits = circuits
+        )
+
+        val centralNode = graph.nodes.first { it.id == "circ_1" }
+        assertEquals("Main panel fed from source equipment name must be classified MDB regardless of arbitrary name", SldNodeType.MDB, centralNode.type)
+    }
+
+    @Test
+    fun testSiblingBranchesSpacingWithDynamicCalloutLines() {
+        val transformers = listOf(
+            TransformerEntity(projectId = projectId, transformerId = "TX-01", kVA = 1000.0)
+        )
+        // Sibling branches with short names
+        val circuits = listOf(
+            CircuitEntity(id = 1, projectId = projectId, circuitName = "MAIN-SWITCHBOARD", fedFrom = "TX-01", panelType = "MDB"),
+            CircuitEntity(id = 2, projectId = projectId, circuitName = "P1", fedFrom = "MAIN-SWITCHBOARD", panelType = "DB"),
+            CircuitEntity(id = 3, projectId = projectId, circuitName = "P2", fedFrom = "MAIN-SWITCHBOARD", panelType = "DB")
+        )
+
+        val result = SldLayoutEngine.calculateLayout(
+            activeProjectId = projectId,
+            transformers = transformers,
+            circuits = circuits
+        )
+
+        val p1Node = result.nodes.first { it.id == "circ_2" }
+        val p2Node = result.nodes.first { it.id == "circ_3" }
+
+        val p1Right = p1Node.x + p1Node.width
+        val gap = p2Node.x - p1Right
+        assertTrue("Sibling branch gap must be >= 100f to accommodate dynamic callout strings (actual: $gap)", gap >= 100f)
+    }
+
+    @Test
+    fun testGate3MultiAtsMultiGeneratorMdbSeparation() {
+        val transformers = listOf(
+            TransformerEntity(projectId = projectId, transformerId = "TX-01", kVA = 1000.0)
+        )
+        val generators = listOf(
+            GeneratorEntity(projectId = projectId, generatorId = "GEN-01", generatorName = "Generator 1", manualSizeKVA = 40.0),
+            GeneratorEntity(projectId = projectId, generatorId = "GEN-02", generatorName = "Generator 2", manualSizeKVA = 30.0)
+        )
+        val atsList = listOf(
+            AtsEntity(projectId = projectId, atsId = "ATS-01", atsName = "ATS 1", normalSourceId = "DP-G3", emergencySourceId = "GEN-01"),
+            AtsEntity(projectId = projectId, atsId = "ATS-02", atsName = "ATS 2", normalSourceId = "DP-G3", emergencySourceId = "GEN-02")
+        )
+        val circuits = listOf(
+            CircuitEntity(id = 1, projectId = projectId, circuitName = "DP-G3", fedFrom = "TX-01", panelType = "MDB"),
+            // Downstream of ATS-01
+            CircuitEntity(id = 10, projectId = projectId, circuitName = "UPP-G3-1", fedFrom = "ATS-01", panelType = "DB"),
+            CircuitEntity(id = 11, projectId = projectId, circuitName = "UPP-G3-2", fedFrom = "ATS-01", panelType = "DB"),
+            // Downstream of ATS-02
+            CircuitEntity(id = 20, projectId = projectId, circuitName = "LPP-G3-1", fedFrom = "ATS-02", panelType = "DB"),
+            CircuitEntity(id = 21, projectId = projectId, circuitName = "LPP-G3-2", fedFrom = "ATS-02", panelType = "DB"),
+            CircuitEntity(id = 22, projectId = projectId, circuitName = "LPP-G3-3", fedFrom = "ATS-02", panelType = "DB"),
+            CircuitEntity(id = 23, projectId = projectId, circuitName = "FOUNTAIN", fedFrom = "ATS-02", panelType = "LOAD")
+        )
+
+        val result = SldLayoutEngine.calculateLayout(
+            activeProjectId = projectId,
+            transformers = transformers,
+            generators = generators,
+            atsList = atsList,
+            circuits = circuits
+        )
+
+        val mdbNode = result.nodes.first { it.id == "circ_1" }
+        val ats1Node = result.nodes.first { it.id == "ats_ATS-01" }
+        val ats2Node = result.nodes.first { it.id == "ats_ATS-02" }
+        val gen1Node = result.nodes.first { it.id == "gen_GEN-01" }
+        val gen2Node = result.nodes.first { it.id == "gen_GEN-02" }
+
+        // MDB enclosure right bound: node.x + node.width + 36f
+        val mdbEnclosureRight = mdbNode.x + mdbNode.width + 36f
+
+        // 1. Visible clearance between MDB enclosure and ATS 1 (>= 160f)
+        val mdbToAts1Gap = ats1Node.x - mdbEnclosureRight
+        assertTrue(
+            "ATS 1 (x=${ats1Node.x}) must have >= 160f clearance from MDB enclosure right (x=$mdbEnclosureRight). Actual gap: $mdbToAts1Gap",
+            mdbToAts1Gap >= 160f
+        )
+
+        // 2. Visible clearance between ATS 1 and ATS 2 (>= 160f)
+        val ats1Right = ats1Node.x + ats1Node.width
+        val ats1ToAts2Gap = ats2Node.x - ats1Right
+        assertTrue(
+            "ATS 2 (x=${ats2Node.x}) must have >= 160f clearance from ATS 1 right (x=$ats1Right). Actual gap: $ats1ToAts2Gap",
+            ats1ToAts2Gap >= 160f
+        )
+
+        // 3. Generators aligned above their respective ATS units
+        val ats1EmergencyX = ats1Node.x + ats1Node.width * 0.75f
+        val gen1CenterX = gen1Node.x + gen1Node.width / 2f
+        assertEquals("Generator 1 must align with ATS 1 emergency terminal", ats1EmergencyX, gen1CenterX, 5.0f)
+
+        val ats2EmergencyX = ats2Node.x + ats2Node.width * 0.75f
+        val gen2CenterX = gen2Node.x + gen2Node.width / 2f
+        assertEquals("Generator 2 must align with ATS 2 emergency terminal", ats2EmergencyX, gen2CenterX, 5.0f)
+
+        // 4. Edges correctly connected
+        val ats1NormalEdge = result.edges.first { it.toId == "ats_ATS-01" && it.label == "NORMAL" }
+        val ats1EmergencyEdge = result.edges.first { it.toId == "ats_ATS-01" && it.isEmergency }
+        assertEquals("ats_ATS-01", ats1NormalEdge.toId)
+        assertEquals("gen_GEN-01", ats1EmergencyEdge.fromId)
+    }
 }
