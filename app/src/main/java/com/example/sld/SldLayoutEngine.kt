@@ -36,12 +36,36 @@ data class PositionedSldEdge(
     val isUps: Boolean = false
 )
 
+/**
+ * Explicit busbar tap port (Roadmap §2.3).
+ *
+ * A busbar is not a single connection point — it is a shared rail with one
+ * port per outgoing feeder. [RiserLayoutEngine] computes one [BusbarPort] per
+ * non-ATS child of every panel node (BUS/MDB/SMDB/DB/MCC); [SldCanvas] draws
+ * the feeder taps at exactly these X positions, so the model and the rendering
+ * cannot drift apart (contract-tested by SldBusbarPortModelTest).
+ *
+ * ATS nodes are deliberately excluded: they expose their own dedicated
+ * terminal geometry via [SldSymbols.atsSymbolGeometry] and never consume
+ * busbar ports.
+ */
+data class BusbarPort(
+    /** 0-based tap index, ordered left-to-right along the bar. */
+    val portIndex: Int,
+    /** The downstream node this port feeds. */
+    val childNodeId: String,
+    /** Absolute X of the tap point on the busbar (same coordinate space as [PositionedSldNode.x]). */
+    val tapX: Float
+)
+
 data class SldEngineResult(
     val nodes: List<PositionedSldNode>,
     val edges: List<PositionedSldEdge>,
     val bounds: Rect,
     val validationIssues: List<SldValidationIssue> = emptyList(),
-    val tierDatums: List<TierDatumLine> = emptyList()
+    val tierDatums: List<TierDatumLine> = emptyList(),
+    /** Panel node id → its busbar tap ports, ordered left-to-right (Roadmap §2.3). */
+    val busbarPorts: Map<String, List<BusbarPort>> = emptyMap()
 )
 
 object SldLayoutEngine {

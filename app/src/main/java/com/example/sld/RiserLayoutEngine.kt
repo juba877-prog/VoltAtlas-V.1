@@ -31,6 +31,18 @@ object RiserLayoutEngine {
      */
     const val ATS_TO_PANEL_MIN_GAP = MIN_HORIZONTAL_GAP
 
+    /** Node types rendered as busbar panels — these expose explicit tap ports (Roadmap §2.3). */
+    val PANEL_BUSBAR_TYPES = setOf(
+        SldNodeType.BUS,
+        SldNodeType.MDB,
+        SldNodeType.SMDB,
+        SldNodeType.DB,
+        SldNodeType.MCC
+    )
+
+    /** Minimum clearance between a busbar tap port and either end of the bar. */
+    const val BUSBAR_TAP_END_PAD = 24f
+
     fun getBaseTierIndex(type: SldNodeType): Int = when (type) {
         SldNodeType.UTILITY_SOURCE -> -1 // Utility Grid sits at Tier -1 (very top above Transformer)
         SldNodeType.TRANSFORMER,
@@ -352,6 +364,32 @@ object RiserLayoutEngine {
         // untouched.
         enforceAtsToPanelClearance(positionedNodesMap, textMeasurer, childrenMap, graph)
 
+        // 3.8 Busbar Port Model (Roadmap §2.3): every panel node exposes one
+        // explicit tap port per non-ATS child. The tap is the child's top-center
+        // X, clamped inside the (post-expansion) bar span with an end pad, so a
+        // tap can never land off the rail. ATS children are excluded — they use
+        // their dedicated AtsSymbolGeometry terminals instead. The feeder edge
+        // router already leaves each in-span child at its own center X, so the
+        // modeled tap and the drawn wire origin coincide by construction.
+        val busbarPorts: Map<String, List<BusbarPort>> = graph.nodes
+            .filter { it.type in PANEL_BUSBAR_TYPES }
+            .mapNotNull { panelNode ->
+                val panel = positionedNodesMap[panelNode.id] ?: return@mapNotNull null
+                val childEntries = (childrenMap[panelNode.id] ?: emptyList())
+                    .mapNotNull { childId -> positionedNodesMap[childId]?.let { childId to it } }
+                    .sortedBy { (_, child) -> child.x + child.width / 2f }
+                if (childEntries.isEmpty()) return@mapNotNull null
+                val ports = childEntries.mapIndexed { index, (childId, child) ->
+                    val childCenterX = child.x + child.width / 2f
+                    val minTap = panel.x + BUSBAR_TAP_END_PAD
+                    val maxTap = panel.x + panel.width - BUSBAR_TAP_END_PAD
+                    val tapX = if (minTap <= maxTap) childCenterX.coerceIn(minTap, maxTap) else panel.x + panel.width / 2f
+                    BusbarPort(portIndex = index, childNodeId = childId, tapX = tapX)
+                }
+                panelNode.id to ports
+            }
+            .toMap()
+
         // 4. Orthogonal Edge Routing with Dedicated Source Routing Channel
         // 4a. Shared-source ATS NORMAL incomers get staggered channels so parallel
         //     wires and their NORMAL labels never overlap (see SldAtsRoutingTest).
@@ -524,7 +562,8 @@ object RiserLayoutEngine {
             edges = positionedEdges,
             bounds = Rect(minX, minY, maxX, maxY),
             validationIssues = graph.validationIssues,
-            tierDatums = tierDatums
+            tierDatums = tierDatums,
+            busbarPorts = busbarPorts
         )
     }
 
