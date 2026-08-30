@@ -3,6 +3,8 @@ package com.example.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
@@ -347,15 +349,19 @@ fun SldScreen(
         Surface(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = 12.dp),
+                .padding(top = 10.dp, start = 12.dp, end = 12.dp)
+                .widthIn(max = 600.dp),
             shape = RoundedCornerShape(24.dp),
-            color = if (isDarkTheme) Color(0xFF0F172A).copy(alpha = 0.92f) else Color(0xFFFFFFFF).copy(alpha = 0.95f),
+            color = if (isDarkTheme) Color(0xFF0F172A).copy(alpha = 0.94f) else Color(0xFFFFFFFF).copy(alpha = 0.96f),
             border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1)),
             shadowElevation = 4.dp
         ) {
+            val modeScrollState = rememberScrollState()
             Row(
-                modifier = Modifier.padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier
+                    .horizontalScroll(modeScrollState)
+                    .padding(horizontal = 4.dp, vertical = 3.dp),
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val modes = listOf(
@@ -367,18 +373,19 @@ fun SldScreen(
                 modes.forEach { (mode, label) ->
                     val isSelected = displayMode == mode
                     Surface(
-                        shape = RoundedCornerShape(20.dp),
+                        shape = RoundedCornerShape(18.dp),
                         color = if (isSelected) palette.enclosureBusTaps else Color.Transparent,
                         modifier = Modifier
                             .testTag("sld_mode_pill_${mode.name}")
                             .clickable { displayMode = mode }
-                            .padding(horizontal = 2.dp, vertical = 2.dp)
+                            .padding(horizontal = 1.dp, vertical = 1.dp)
                     ) {
                         Text(
                             text = label,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                             color = if (isSelected) Color.White else palette.textSecondary,
-                            fontSize = 12.sp,
+                            fontSize = 11.5.sp,
+                            maxLines = 1,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                         )
                     }
