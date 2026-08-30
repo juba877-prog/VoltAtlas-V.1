@@ -87,6 +87,10 @@ data class SldDataBlock(
     val voltageDropPct: String? = null,
     val cumulativeVdPct: String? = null,
     val faultLevelKa: String? = null,
+    /** Transformer winding vector group, e.g. "Dyn11" (Roadmap §1.2 checklist). */
+    val windingConnection: String? = null,
+    /** Protective device interrupting rating (Icu), e.g. "36 kA" (Roadmap §1.2 checklist). */
+    val interruptingRatingKa: String? = null,
     val statusText: String = "DATA REQUIRED",
     val customFields: Map<String, String> = emptyMap()
 )

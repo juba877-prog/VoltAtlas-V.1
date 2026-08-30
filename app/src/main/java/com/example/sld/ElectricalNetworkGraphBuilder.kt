@@ -133,6 +133,7 @@ object ElectricalNetworkGraphBuilder {
                             ratedKva = "$ratedKvaStr (${tx.txType})",
                             voltage = "$primaryVoltageStr / 400 V",
                             impedancePct = "${tx.percentZ}%",
+                            windingConnection = tx.vectorGroup,
                             loadingPct = loadingStr,
                             isc3PhaseKa = iscKaStr,
                             ibAmp = ibAmpStr,
@@ -954,6 +955,8 @@ object ElectricalNetworkGraphBuilder {
                 else -> SldValidationStatus.VALID
             }
 
+            val icuStr = sizingRes?.deviceBreakingKA?.takeIf { it > 0.0 }?.let { "%.0f kA".format(it) }
+
             val node = SldNode(
                 id = circNodeId,
                 projectId = effectiveProjectId,
@@ -971,6 +974,7 @@ object ElectricalNetworkGraphBuilder {
                     voltageDropPct = vdStr,
                     cumulativeVdPct = cumVdStr,
                     faultLevelKa = ik3Str,
+                    interruptingRatingKa = icuStr,
                     statusText = sizingRes?.status ?: "COMPLIANT"
                 ),
                 status = if (isDisconnected) SldValidationStatus.DISCONNECTED else statusVal,
