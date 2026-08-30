@@ -360,7 +360,7 @@ fun SldScreen(
             Row(
                 modifier = Modifier
                     .horizontalScroll(modeScrollState)
-                    .padding(horizontal = 4.dp, vertical = 3.dp),
+                    .padding(start = 4.dp, end = 12.dp, top = 3.dp, bottom = 3.dp),
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -385,7 +385,7 @@ fun SldScreen(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                             color = if (isSelected) Color.White else palette.textSecondary,
                             fontSize = 11.5.sp,
-                            maxLines = 1,
+                            softWrap = false,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                         )
                     }
