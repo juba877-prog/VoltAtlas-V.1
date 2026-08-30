@@ -57,6 +57,8 @@ fun SldToolbar(
     layoutModeEnabled: Boolean = false,
     onToggleLayoutMode: () -> Unit = {},
     onResetLayout: () -> Unit = {},
+    detailLevel: SldDetailLevel = SldDetailLevel.STANDARD,
+    onCycleDetailLevel: () -> Unit = {},
     isDarkTheme: Boolean = com.example.ui.theme.LocalThemeIsDark.current,
     modifier: Modifier = Modifier
 ) {
@@ -380,6 +382,16 @@ fun SldToolbar(
                         showOverflowMenu = false
                         isExpanded = false
                     }
+                )
+                DropdownMenuItem(
+                    text = { Text("Detail: ${SldDetailLevelPolicy.label(detailLevel)}", fontSize = 12.sp, color = if (detailLevel != SldDetailLevel.STANDARD) SleekPrimary else ThemeTextColor) },
+                    leadingIcon = { Icon(Icons.Default.DataObject, contentDescription = null, tint = SleekPrimary) },
+                    onClick = {
+                        onCycleDetailLevel()
+                        showOverflowMenu = false
+                        isExpanded = false
+                    },
+                    modifier = Modifier.testTag("sld_detail_level_btn")
                 )
 
                 HorizontalDivider(color = borderColor)

@@ -43,6 +43,8 @@ import com.example.sld.SldLayoutEngine
 import com.example.sld.SldSymbolGallery
 import com.example.sld.SldToolbar
 import com.example.sld.DisplayMode
+import com.example.sld.SldDetailLevel
+import com.example.sld.SldDetailLevelPolicy
 import com.example.ui.components.*
 import com.example.ui.theme.*
 
@@ -216,6 +218,7 @@ fun SldScreen(
     var isSearchOpen by remember { mutableStateOf(false) }
     var isValidationOpen by remember { mutableStateOf(false) }
     var displayMode by remember { mutableStateOf(DisplayMode.OVERVIEW) }
+    var detailLevel by remember { mutableStateOf(SldDetailLevel.STANDARD) }
 
     // Auto "Fit to Screen" calculation
     fun fitToScreen() {
@@ -291,6 +294,7 @@ fun SldScreen(
                 panOffset = panOffset,
                 selectedNodeId = selectedNode?.id,
                 displayMode = displayMode,
+                detailLevel = detailLevel,
                 onNodeClick = { pNode ->
                     selectedNode = pNode
                     showBottomSheet = true
@@ -416,6 +420,8 @@ fun SldScreen(
                 }
                 android.widget.Toast.makeText(context, "Layout reset to auto-tree hierarchy", android.widget.Toast.LENGTH_SHORT).show()
             },
+            detailLevel = detailLevel,
+            onCycleDetailLevel = { detailLevel = SldDetailLevelPolicy.next(detailLevel) },
             isFullscreen = false,
             onToggleFullscreen = {},
             onExportImage = {

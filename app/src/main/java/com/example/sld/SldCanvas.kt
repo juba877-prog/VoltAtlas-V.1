@@ -44,6 +44,7 @@ fun SldCanvas(
     panOffset: Offset,
     selectedNodeId: String?,
     displayMode: DisplayMode = DisplayMode.OVERVIEW,
+    detailLevel: SldDetailLevel = SldDetailLevel.STANDARD,
     onNodeClick: (PositionedSldNode) -> Unit,
     onCanvasClick: () -> Unit,
     onDoubleTap: ((Offset) -> Unit)? = null,
@@ -359,53 +360,70 @@ fun SldCanvas(
                             )
                         }
 
-                        // B. Accumulate Structured 3-Line Feeder Callout Badges
+                        // B. Accumulate Structured Feeder Callout Badges (filtered by §3.2 detail level)
+                        val calloutPolicy = SldDetailLevelPolicy.feederCallout(detailLevel)
                         val linesToDraw = mutableListOf<Pair<String, TextStyle>>()
 
                         // Line 1: Protection Device & Rating (e.g. 400A MCCB)
-                        if (breakerText.isNotBlank()) {
+                        if (calloutPolicy.breakerLine && breakerText.isNotBlank()) {
                             linesToDraw.add(Pair(breakerText, TextStyle(color = palette.textPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)))
                         }
 
                         // Line 2: Cable or Busway specification
-                        if (isBusway) {
-                            val buswayLabel = if (cableText.isNotBlank()) cableText else "Busway Trunk"
-                            linesToDraw.add(Pair(buswayLabel, TextStyle(color = Color(0xFFE08A4B), fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)))
-                        } else if (cableText.isNotBlank()) {
-                            val runsText = if (childNode.dataBlock.parallelRuns > 1) "${childNode.dataBlock.parallelRuns}x" else ""
-                            val fullCableStr = "$runsText$cableText".trim()
-                            linesToDraw.add(Pair(fullCableStr, TextStyle(color = palette.textSecondary, fontSize = 10.5.sp)))
+                        if (calloutPolicy.cableLine) {
+                            if (isBusway) {
+                                val buswayLabel = if (cableText.isNotBlank()) cableText else "Busway Trunk"
+                                linesToDraw.add(Pair(buswayLabel, TextStyle(color = Color(0xFFE08A4B), fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)))
+                            } else if (cableText.isNotBlank()) {
+                                val runsText = if (childNode.dataBlock.parallelRuns > 1) "${childNode.dataBlock.parallelRuns}x" else ""
+                                val fullCableStr = "$runsText$cableText".trim()
+                                linesToDraw.add(Pair(fullCableStr, TextStyle(color = palette.textSecondary, fontSize = 10.5.sp)))
+                            }
                         }
 
                         // Line 3: Mode-Specific Engineering Metric or Status (e.g. VD: 0.85% PASS)
-                        when (displayMode) {
-                            DisplayMode.OVERVIEW -> {
-                                val vdStatusStr = if (vdText.isNotBlank()) "$vdText PASS" else childNode.dataBlock.statusText
-                                val statusTextColor = if (childNode.status == SldValidationStatus.INVALID) palette.invalidStatus else palette.validStatus
-                                linesToDraw.add(Pair(vdStatusStr, TextStyle(color = statusTextColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)))
-                            }
-                            DisplayMode.CABLES -> {
-                                if (lengthText.isNotBlank()) {
-                                    linesToDraw.add(Pair(lengthText, defaultTextStyle))
+                        if (calloutPolicy.modeMetricLine) {
+                            when (displayMode) {
+                                DisplayMode.OVERVIEW -> {
+                                    val vdStatusStr = if (vdText.isNotBlank()) "$vdText PASS" else childNode.dataBlock.statusText
+                                    val statusTextColor = if (childNode.status == SldValidationStatus.INVALID) palette.invalidStatus else palette.validStatus
+                                    linesToDraw.add(Pair(vdStatusStr, TextStyle(color = statusTextColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)))
+                                }
+                                DisplayMode.CABLES -> {
+                                    if (lengthText.isNotBlank()) {
+                                        linesToDraw.add(Pair(lengthText, defaultTextStyle))
+                                    }
+                                }
+                                DisplayMode.VOLTAGE_DROP -> {
+                                    val vdDisplayStr = if (cumVdText.isNotBlank()) "$vdText ($cumVdText)" else vdText
+                                    linesToDraw.add(Pair(vdDisplayStr, TextStyle(color = vdStatusColor, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)))
+                                }
+                                DisplayMode.SHORT_CIRCUIT -> {
+                                    val scColor = if (isIscFail) palette.invalidStatus else palette.textPrimary
+                                    if (ik3Text.isNotBlank()) {
+                                        linesToDraw.add(Pair(ik3Text, TextStyle(color = scColor, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)))
+                                    }
+                                }
+                                DisplayMode.VALIDATION -> {
+                                    val valColor = when (childNode.status) {
+                                        SldValidationStatus.INVALID, SldValidationStatus.DATA_REQUIRED -> palette.invalidStatus
+                                        SldValidationStatus.WARNING -> palette.warningStatus
+                                        else -> palette.validStatus
+                                    }
+                                    linesToDraw.add(Pair(childNode.dataBlock.statusText, TextStyle(color = valColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)))
                                 }
                             }
-                            DisplayMode.VOLTAGE_DROP -> {
-                                val vdDisplayStr = if (cumVdText.isNotBlank()) "$vdText ($cumVdText)" else vdText
-                                linesToDraw.add(Pair(vdDisplayStr, TextStyle(color = vdStatusColor, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)))
+                        }
+
+                        // Advanced lines (DETAILED only): route length + device interrupting rating (§1.2)
+                        if (calloutPolicy.advancedLines) {
+                            if (lengthText.isNotBlank()) {
+                                linesToDraw.add(Pair(lengthText, defaultTextStyle))
                             }
-                            DisplayMode.SHORT_CIRCUIT -> {
-                                val scColor = if (isIscFail) palette.invalidStatus else palette.textPrimary
-                                if (ik3Text.isNotBlank()) {
-                                    linesToDraw.add(Pair(ik3Text, TextStyle(color = scColor, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)))
-                                }
-                            }
-                            DisplayMode.VALIDATION -> {
-                                val valColor = when (childNode.status) {
-                                    SldValidationStatus.INVALID, SldValidationStatus.DATA_REQUIRED -> palette.invalidStatus
-                                    SldValidationStatus.WARNING -> palette.warningStatus
-                                    else -> palette.validStatus
-                                }
-                                linesToDraw.add(Pair(childNode.dataBlock.statusText, TextStyle(color = valColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)))
+                            val icuText = childNode.dataBlock.interruptingRatingKa
+                                ?.takeIf { it.isNotBlank() }?.let { "Icu: $it" }.orEmpty()
+                            if (icuText.isNotBlank()) {
+                                linesToDraw.add(Pair(icuText, defaultTextStyle))
                             }
                         }
 
