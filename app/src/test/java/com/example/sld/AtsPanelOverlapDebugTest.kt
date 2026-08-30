@@ -10,8 +10,8 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Reproduction harness for the owner-reported Gate-3 overlap:
- *   "ATS symbol/icon overlaps the MDB panel box outline (rectangle around DP-G3)".
+ * Reproduction harness for the owner-reported ATS/panel overlap:
+ *   "ATS symbol/icon overlaps the MDB panel box outline (rectangle around DP-01)".
  *
  * Dumps every positioned node + the SldCanvas-drawn geometry so we can prove
  * where the ATS sits relative to the panel box right edge for a NARROW panel
@@ -20,33 +20,33 @@ import java.io.File
  */
 class AtsPanelOverlapDebugTest {
 
-    private fun buildGate3(feederChildren: List<CircuitEntity>): SldEngineResult {
+    private fun buildFixture(feederChildren: List<CircuitEntity>): SldEngineResult {
         val transformers = listOf(
-            TransformerEntity(projectId = "gate3", transformerId = "TX-01", kVA = 1000.0)
+            TransformerEntity(projectId = "atsOverlap", transformerId = "TX-01", kVA = 1000.0)
         )
         val generators = listOf(
-            GeneratorEntity(projectId = "gate3", generatorId = "GEN-01", generatorName = "Generator 1", manualSizeKVA = 40.0),
-            GeneratorEntity(projectId = "gate3", generatorId = "GEN-02", generatorName = "Generator 2", manualSizeKVA = 30.0)
+            GeneratorEntity(projectId = "atsOverlap", generatorId = "GEN-01", generatorName = "Generator 1", manualSizeKVA = 40.0),
+            GeneratorEntity(projectId = "atsOverlap", generatorId = "GEN-02", generatorName = "Generator 2", manualSizeKVA = 30.0)
         )
         val atsList = listOf(
-            AtsEntity(projectId = "gate3", atsId = "ATS-01", atsName = "ATS 1", normalSourceId = "DP-G3", emergencySourceId = "GEN-01", outputBoardId = 10),
-            AtsEntity(projectId = "gate3", atsId = "ATS-02", atsName = "ATS 2", normalSourceId = "DP-G3", emergencySourceId = "GEN-02", outputBoardId = 20)
+            AtsEntity(projectId = "atsOverlap", atsId = "ATS-01", atsName = "ATS 1", normalSourceId = "DP-01", emergencySourceId = "GEN-01", outputBoardId = 10),
+            AtsEntity(projectId = "atsOverlap", atsId = "ATS-02", atsName = "ATS 2", normalSourceId = "DP-01", emergencySourceId = "GEN-02", outputBoardId = 20)
         )
         val circuits = listOf(
             CircuitEntity(
-                id = 1, projectId = "gate3",
-                circuitName = "DP-G3", fedFrom = "Transformer", transformerId = "TX-01",
+                id = 1, projectId = "atsOverlap",
+                circuitName = "DP-01", fedFrom = "Transformer", transformerId = "TX-01",
                 panelType = "MDB", cableType = "Cu/XLPE/SWA/PVC", length_m = 25.0,
                 overrideDeviceType = "MCCB", overrideDeviceSize = 400.0, overrideCableSize = "4x185+95 mm²"
             )
         ) + feederChildren + listOf(
-            CircuitEntity(id = 10, projectId = "gate3", circuitName = "UPP-G3-1", fedFrom = "ATS 1", panelType = "DB"),
-            CircuitEntity(id = 11, projectId = "gate3", circuitName = "UPP-G3-2", fedFrom = "ATS 1", panelType = "DB"),
-            CircuitEntity(id = 20, projectId = "gate3", circuitName = "LPP-G3-1", fedFrom = "ATS 2", panelType = "DB"),
-            CircuitEntity(id = 21, projectId = "gate3", circuitName = "LPP-G3-2", fedFrom = "ATS 2", panelType = "DB")
+            CircuitEntity(id = 10, projectId = "atsOverlap", circuitName = "UPP-01", fedFrom = "ATS 1", panelType = "DB"),
+            CircuitEntity(id = 11, projectId = "atsOverlap", circuitName = "UPP-02", fedFrom = "ATS 1", panelType = "DB"),
+            CircuitEntity(id = 20, projectId = "atsOverlap", circuitName = "LPP-01", fedFrom = "ATS 2", panelType = "DB"),
+            CircuitEntity(id = 21, projectId = "atsOverlap", circuitName = "LPP-02", fedFrom = "ATS 2", panelType = "DB")
         )
         return SldLayoutEngine.calculateLayout(
-            activeProjectId = "gate3",
+            activeProjectId = "atsOverlap",
             transformers = transformers,
             circuits = circuits,
             generators = generators,
@@ -54,36 +54,36 @@ class AtsPanelOverlapDebugTest {
         )
     }
 
-    private fun buildGate3WithManual(
+    private fun buildFixtureWithManual(
         feederChildren: List<CircuitEntity>,
         manualPositions: Map<String, androidx.compose.ui.geometry.Offset>
     ): SldEngineResult {
         val transformers = listOf(
-            TransformerEntity(projectId = "gate3", transformerId = "TX-01", kVA = 1000.0)
+            TransformerEntity(projectId = "atsOverlap", transformerId = "TX-01", kVA = 1000.0)
         )
         val generators = listOf(
-            GeneratorEntity(projectId = "gate3", generatorId = "GEN-01", generatorName = "Generator 1", manualSizeKVA = 40.0),
-            GeneratorEntity(projectId = "gate3", generatorId = "GEN-02", generatorName = "Generator 2", manualSizeKVA = 30.0)
+            GeneratorEntity(projectId = "atsOverlap", generatorId = "GEN-01", generatorName = "Generator 1", manualSizeKVA = 40.0),
+            GeneratorEntity(projectId = "atsOverlap", generatorId = "GEN-02", generatorName = "Generator 2", manualSizeKVA = 30.0)
         )
         val atsList = listOf(
-            AtsEntity(projectId = "gate3", atsId = "ATS-01", atsName = "ATS 1", normalSourceId = "DP-G3", emergencySourceId = "GEN-01", outputBoardId = 10),
-            AtsEntity(projectId = "gate3", atsId = "ATS-02", atsName = "ATS 2", normalSourceId = "DP-G3", emergencySourceId = "GEN-02", outputBoardId = 20)
+            AtsEntity(projectId = "atsOverlap", atsId = "ATS-01", atsName = "ATS 1", normalSourceId = "DP-01", emergencySourceId = "GEN-01", outputBoardId = 10),
+            AtsEntity(projectId = "atsOverlap", atsId = "ATS-02", atsName = "ATS 2", normalSourceId = "DP-01", emergencySourceId = "GEN-02", outputBoardId = 20)
         )
         val circuits = listOf(
             CircuitEntity(
-                id = 1, projectId = "gate3",
-                circuitName = "DP-G3", fedFrom = "Transformer", transformerId = "TX-01",
+                id = 1, projectId = "atsOverlap",
+                circuitName = "DP-01", fedFrom = "Transformer", transformerId = "TX-01",
                 panelType = "MDB", cableType = "Cu/XLPE/SWA/PVC", length_m = 25.0,
                 overrideDeviceType = "MCCB", overrideDeviceSize = 400.0, overrideCableSize = "4x185+95 mm²"
             )
         ) + feederChildren + listOf(
-            CircuitEntity(id = 10, projectId = "gate3", circuitName = "UPP-G3-1", fedFrom = "ATS 1", panelType = "DB"),
-            CircuitEntity(id = 11, projectId = "gate3", circuitName = "UPP-G3-2", fedFrom = "ATS 1", panelType = "DB"),
-            CircuitEntity(id = 20, projectId = "gate3", circuitName = "LPP-G3-1", fedFrom = "ATS 2", panelType = "DB"),
-            CircuitEntity(id = 21, projectId = "gate3", circuitName = "LPP-G3-2", fedFrom = "ATS 2", panelType = "DB")
+            CircuitEntity(id = 10, projectId = "atsOverlap", circuitName = "UPP-01", fedFrom = "ATS 1", panelType = "DB"),
+            CircuitEntity(id = 11, projectId = "atsOverlap", circuitName = "UPP-02", fedFrom = "ATS 1", panelType = "DB"),
+            CircuitEntity(id = 20, projectId = "atsOverlap", circuitName = "LPP-01", fedFrom = "ATS 2", panelType = "DB"),
+            CircuitEntity(id = 21, projectId = "atsOverlap", circuitName = "LPP-02", fedFrom = "ATS 2", panelType = "DB")
         )
         return SldLayoutEngine.calculateLayout(
-            activeProjectId = "gate3",
+            activeProjectId = "atsOverlap",
             transformers = transformers,
             circuits = circuits,
             generators = generators,
@@ -94,8 +94,8 @@ class AtsPanelOverlapDebugTest {
 
     private fun mccb(id: Int, name: String, amps: Double, cable: String, panelType: String? = null): CircuitEntity =
         CircuitEntity(
-            id = id, projectId = "gate3",
-            circuitName = name, fedFrom = "DP-G3", transformerId = "TX-01",
+            id = id, projectId = "atsOverlap",
+            circuitName = name, fedFrom = "DP-01", transformerId = "TX-01",
             panelType = panelType, cableType = "Cu/XLPE/SWA/PVC", length_m = 40.0,
             overrideDeviceType = "MCCB", overrideDeviceSize = amps, overrideCableSize = cable
         )
@@ -115,7 +115,7 @@ private fun dump(title: String, result: SldEngineResult): String {
         val ats1BoxRight = atsSym1.emergencyTerminal.x + (atsSym1.emergencyTerminal.x - atsSym1.normalTerminal.x) * 0.08f
         val ats2BoxLeft = atsSym2.normalTerminal.x - (atsSym2.emergencyTerminal.x - atsSym2.normalTerminal.x) * 0.08f
 
-        sb.append("MDB(DP-G3): x=${mdb.x} y=${mdb.y} width=${mdb.width} (busbar right=$busbarRight, encRight=$encRight)\n")
+        sb.append("MDB(DP-01): x=${mdb.x} y=${mdb.y} width=${mdb.width} (busbar right=$busbarRight, encRight=$encRight)\n")
         sb.append("ATS1: x=${ats1.x} width=${ats1.width} (symbol box $ats1BoxLeft..$ats1BoxRight)\n")
         sb.append("ATS2: x=${ats2.x} width=${ats2.width} (symbol box $ats2BoxLeft..${ats2.x + ats2.width})\n")
 
@@ -139,16 +139,16 @@ private fun dump(title: String, result: SldEngineResult): String {
     }
 
     @Test
-    fun dumpNarrowPanelGate3() {
-        val result = buildGate3(
+    fun dumpNarrowPanel() {
+        val result = buildFixture(
             listOf(mccb(2, "FEEDER-A", 40.0, "5x6 mm²", "DB"))
         )
-        File("test_output_gate3_narrow.txt").writeText(dump("NARROW PANEL (1 feeder)", result))
+        File("test_output_ats_overlap_narrow.txt").writeText(dump("NARROW PANEL (1 feeder)", result))
     }
 
     @Test
-    fun dumpWidePanelGate3() {
-        // Mirror the screenshot's DP-G3: multiple MCCB columns (40A, 40A, 160A) + more
+    fun dumpWidePanel() {
+        // Mirror the screenshot's DP-01: multiple MCCB columns (40A, 40A, 160A) + more
         val feeders = listOf(
             mccb(2, "Feeder-N1", 40.0, "5x6 mm²", "DB"),
             mccb(3, "Feeder-N2", 40.0, "5x6 mm²", "DB"),
@@ -157,7 +157,7 @@ private fun dump(title: String, result: SldEngineResult): String {
             mccb(6, "SMDB-B", 250.0, "4x120 mm²", "SMDB"),
             mccb(7, "Pump-1", 80.0, "5x16 mm²", "LOAD")
         )
-        File("test_output_gate3_wide.txt").writeText(dump("WIDE PANEL (6 feeders / MCCB columns)", buildGate3(feeders)))
+        File("test_output_ats_overlap_wide.txt").writeText(dump("WIDE PANEL (6 feeders / MCCB columns)", buildFixture(feeders)))
     }
 
     private fun assertAtsClearance(title: String, result: SldEngineResult, panelId: String, atsIds: List<String>) {
@@ -189,8 +189,8 @@ private fun dump(title: String, result: SldEngineResult): String {
             mccb(6, "SMDB-B", 250.0, "4x120 mm²", "SMDB"),
             mccb(7, "Pump-1", 80.0, "5x16 mm²", "LOAD")
         )
-        val narrow = buildGate3(listOf(mccb(2, "FEEDER-A", 40.0, "5x6 mm²", "DB")))
-        val wide = buildGate3(wideFeeders)
+        val narrow = buildFixture(listOf(mccb(2, "FEEDER-A", 40.0, "5x6 mm²", "DB")))
+        val wide = buildFixture(wideFeeders)
 
         assertAtsClearance("NARROW(1 feeder)", narrow, "circ_1", listOf("ats_ATS-01", "ats_ATS-02"))
         assertAtsClearance("WIDE(6 feeders)", wide, "circ_1", listOf("ats_ATS-01", "ats_ATS-02"))
@@ -210,19 +210,19 @@ private fun dump(title: String, result: SldEngineResult): String {
             mccb(6, "SMDB-B", 250.0, "4x120 mm²", "SMDB"),
             mccb(7, "Pump-1", 80.0, "5x16 mm²", "LOAD")
         )
-        val panel = buildGate3(wideFeeders).nodes.first { it.id == "circ_1" }
+        val panel = buildFixture(wideFeeders).nodes.first { it.id == "circ_1" }
         val encRight = panel.x + panel.width + RiserLayoutEngine.MAIN_PANEL_ENCLOSURE_PAD
 
         // Simulate an old saved position: ATS-01 dragged to x just inside the box.
         val staleAts1 = androidx.compose.ui.geometry.Offset(encRight - 10f, panel.y)
         val staleAts2 = androidx.compose.ui.geometry.Offset(encRight - 10f + 220f, panel.y)
 
-        val result = buildGate3WithManual(
+        val result = buildFixtureWithManual(
             wideFeeders,
             mapOf("ats_ATS-01" to staleAts1, "ats_ATS-02" to staleAts2)
         )
 
-        File("test_output_gate3_stale_manual.txt").writeText(dump("WIDE PANEL + STALE MANUAL ATS OVERLAP", result))
+        File("test_output_ats_overlap_stale_manual.txt").writeText(dump("WIDE PANEL + STALE MANUAL ATS OVERLAP", result))
         assertAtsClearance("STALE MANUAL ATS", result, "circ_1", listOf("ats_ATS-01", "ats_ATS-02"))
 
         // Emergency generators must stay aligned above their ATS emergency terminal.

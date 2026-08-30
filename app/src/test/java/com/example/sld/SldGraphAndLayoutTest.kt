@@ -309,7 +309,7 @@ class SldGraphAndLayoutTest {
     }
 
     @Test
-    fun testGate3ProjectSldLayoutTrace() {
+    fun testProjectSldLayoutTrace() {
         val circuits = listOf(
             CircuitEntity(id = 1, projectId = projectId, circuitName = "DB", fedFrom = "TX-01", loadKVA = 100.0, panelType = "DB"),
             CircuitEntity(id = 2, projectId = projectId, circuitName = "LPP 1", fedFrom = "DB", loadKVA = 40.0, panelType = "PANEL"),
@@ -628,15 +628,15 @@ class SldGraphAndLayoutTest {
         )
         val circuits = listOf(
             CircuitEntity(id = 1, projectId = projectId, circuitName = "MDB-01", fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"),
-            CircuitEntity(id = 12, projectId = projectId, circuitName = "DP-G3", fedFrom = "MDB-01", panelType = "DB"),
-            CircuitEntity(id = 20, projectId = projectId, circuitName = "LPP-G3-2", fedFrom = "ATS-01", panelType = "DB")
+            CircuitEntity(id = 12, projectId = projectId, circuitName = "DP-01", fedFrom = "MDB-01", panelType = "DB"),
+            CircuitEntity(id = 20, projectId = projectId, circuitName = "LPP-02", fedFrom = "ATS-01", panelType = "DB")
         )
         val atsList = listOf(
             AtsEntity(
                 projectId = projectId,
                 atsId = "ATS-01",
                 atsName = "ATS 1",
-                normalSourceId = "DP-G3",
+                normalSourceId = "DP-01",
                 emergencySourceId = "GEN-01",
                 outputBoardId = 20
             )
@@ -666,8 +666,8 @@ class SldGraphAndLayoutTest {
             TransformerEntity(projectId = projectId, transformerId = "TX-01", kVA = 1000.0)
         )
         val circuits = listOf(
-            CircuitEntity(id = 10, projectId = projectId, circuitName = "DP-G3-A", fedFrom = "Transformer", transformerId = "TX-01", panelType = "DB"),
-            CircuitEntity(id = 11, projectId = projectId, circuitName = "OLD-DP-G3", fedFrom = "Transformer", transformerId = "TX-01", panelType = "DB"),
+            CircuitEntity(id = 10, projectId = projectId, circuitName = "DP-01-A", fedFrom = "Transformer", transformerId = "TX-01", panelType = "DB"),
+            CircuitEntity(id = 11, projectId = projectId, circuitName = "OLD-DP-01", fedFrom = "Transformer", transformerId = "TX-01", panelType = "DB"),
             CircuitEntity(id = 20, projectId = projectId, circuitName = "EMERG-DB", fedFrom = "ATS-01", panelType = "DB")
         )
         val atsList = listOf(
@@ -675,7 +675,7 @@ class SldGraphAndLayoutTest {
                 projectId = projectId,
                 atsId = "ATS-01",
                 atsName = "ATS 1",
-                normalSourceId = "DP-G3", // Specifically named source that does not exactly match DP-G3-A or OLD-DP-G3
+                normalSourceId = "DP-01", // Specifically named source that does not exactly match DP-01-A or OLD-DP-01
                 emergencySourceId = "GEN-01",
                 outputBoardId = 20
             )
@@ -688,9 +688,9 @@ class SldGraphAndLayoutTest {
             atsList = atsList
         )
 
-        // Must not create edge to DP-G3-A (circ_10) or OLD-DP-G3 (circ_11)
-        assertFalse("Must NOT create normal edge to circ_10 (DP-G3-A)", graph.edges.any { it.fromNodeId == "circ_10" && it.toNodeId == "ats_ATS-01" })
-        assertFalse("Must NOT create normal edge to circ_11 (OLD-DP-G3)", graph.edges.any { it.fromNodeId == "circ_11" && it.toNodeId == "ats_ATS-01" })
+        // Must not create edge to DP-01-A (circ_10) or OLD-DP-01 (circ_11)
+        assertFalse("Must NOT create normal edge to circ_10 (DP-01-A)", graph.edges.any { it.fromNodeId == "circ_10" && it.toNodeId == "ats_ATS-01" })
+        assertFalse("Must NOT create normal edge to circ_11 (OLD-DP-01)", graph.edges.any { it.fromNodeId == "circ_11" && it.toNodeId == "ats_ATS-01" })
 
         // Must raise ATS_NORMAL_SOURCE_NOT_FOUND
         val issue = graph.validationIssues.firstOrNull { it.issueCode == "ATS_NORMAL_SOURCE_NOT_FOUND" }
@@ -703,8 +703,8 @@ class SldGraphAndLayoutTest {
             TransformerEntity(projectId = projectId, transformerId = "TX-01", kVA = 1000.0)
         )
         val circuits = listOf(
-            CircuitEntity(id = 12, projectId = projectId, circuitName = "DP-G3", fedFrom = "Transformer", transformerId = "TX-01", panelType = "DB"),
-            CircuitEntity(id = 15, projectId = projectId, circuitName = "DP-G3", fedFrom = "Transformer", transformerId = "TX-01", panelType = "DB"),
+            CircuitEntity(id = 12, projectId = projectId, circuitName = "DP-01", fedFrom = "Transformer", transformerId = "TX-01", panelType = "DB"),
+            CircuitEntity(id = 15, projectId = projectId, circuitName = "DP-01", fedFrom = "Transformer", transformerId = "TX-01", panelType = "DB"),
             CircuitEntity(id = 20, projectId = projectId, circuitName = "EMERG-DB", fedFrom = "ATS-01", panelType = "DB")
         )
         val atsList = listOf(
@@ -712,7 +712,7 @@ class SldGraphAndLayoutTest {
                 projectId = projectId,
                 atsId = "ATS-01",
                 atsName = "ATS 1",
-                normalSourceId = "DP-G3",
+                normalSourceId = "DP-01",
                 emergencySourceId = "GEN-01",
                 outputBoardId = 20
             )
@@ -881,15 +881,15 @@ class SldGraphAndLayoutTest {
         )
         val circuits = listOf(
             CircuitEntity(id = 1, projectId = projectId, circuitName = "MDB-01", fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"),
-            CircuitEntity(id = 12, projectId = projectId, circuitName = "DP-G3", fedFrom = "MDB-01", panelType = "DB"),
-            CircuitEntity(id = 20, projectId = projectId, circuitName = "LPP-G3-2", fedFrom = "ATS 1", panelType = "DB")
+            CircuitEntity(id = 12, projectId = projectId, circuitName = "DP-01", fedFrom = "MDB-01", panelType = "DB"),
+            CircuitEntity(id = 20, projectId = projectId, circuitName = "LPP-02", fedFrom = "ATS 1", panelType = "DB")
         )
         val atsList = listOf(
             AtsEntity(
                 projectId = projectId,
                 atsId = "ATS-01",
                 atsName = "ATS 1",
-                normalSourceId = "DP-G3",
+                normalSourceId = "DP-01",
                 emergencySourceId = "GEN-01",
                 outputBoardId = 20
             )
@@ -923,9 +923,9 @@ class SldGraphAndLayoutTest {
         val mdbNode = layoutResult.nodes.first { it.id == "circ_1" }
 
         assertTrue("Generator Y (${genNode.y}) must be above ATS Y (${atsNode.y})", genNode.y < atsNode.y)
-        assertTrue("ATS Y (${atsNode.y}) must be at or above DP-G3 Y (${dpG3Node.y})", atsNode.y <= dpG3Node.y)
+        assertTrue("ATS Y (${atsNode.y}) must be at or above DP-01 Y (${dpG3Node.y})", atsNode.y <= dpG3Node.y)
         assertTrue("ATS Y (${atsNode.y}) must be aligned with Main Incomer tier (same Y as MDB: ${mdbNode.y})", atsNode.y == mdbNode.y)
-        assertTrue("LPP-G3-2 Y (${lppNode.y}) must be below ATS Y (${atsNode.y})", lppNode.y > atsNode.y)
+        assertTrue("LPP-02 Y (${lppNode.y}) must be below ATS Y (${atsNode.y})", lppNode.y > atsNode.y)
 
         // 3. Spatial Separation: ATS must be to the right of the entire normal network bounding box
         val normalNodes = layoutResult.nodes.filter { it.id in setOf("grid_TX-01", "tx_TX-01", "circ_1", "circ_12") }
@@ -938,7 +938,7 @@ class SldGraphAndLayoutTest {
 
         // 4. ATS output board remains in the ATS emergency lane
         assertTrue(
-            "LPP-G3-2 X (${lppNode.x}) must remain in the emergency lane to the right of normal network ($normalNetworkMaxRight)",
+            "LPP-02 X (${lppNode.x}) must remain in the emergency lane to the right of normal network ($normalNetworkMaxRight)",
             lppNode.x >= normalNetworkMaxRight - 50f
         )
     }
@@ -955,16 +955,16 @@ class SldGraphAndLayoutTest {
             CircuitEntity(id = 1, projectId = projectId, circuitName = "MDB-01", fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"),
             CircuitEntity(id = 10, projectId = projectId, circuitName = "DP-1", fedFrom = "MDB-01", panelType = "DB"),
             CircuitEntity(id = 11, projectId = projectId, circuitName = "DP-2", fedFrom = "MDB-01", panelType = "DB"),
-            CircuitEntity(id = 12, projectId = projectId, circuitName = "DP-G3", fedFrom = "MDB-01", panelType = "DB"),
-            CircuitEntity(id = 13, projectId = projectId, circuitName = "DP-G3-L1", fedFrom = "DP-G3", panelType = "DB"),
-            CircuitEntity(id = 20, projectId = projectId, circuitName = "LPP-G3-2", fedFrom = "ATS-01", panelType = "DB")
+            CircuitEntity(id = 12, projectId = projectId, circuitName = "DP-01", fedFrom = "MDB-01", panelType = "DB"),
+            CircuitEntity(id = 13, projectId = projectId, circuitName = "DP-01-L1", fedFrom = "DP-01", panelType = "DB"),
+            CircuitEntity(id = 20, projectId = projectId, circuitName = "LPP-02", fedFrom = "ATS-01", panelType = "DB")
         )
         val atsList = listOf(
             AtsEntity(
                 projectId = projectId,
                 atsId = "ATS-01",
                 atsName = "ATS 1",
-                normalSourceId = "DP-G3",
+                normalSourceId = "DP-01",
                 emergencySourceId = "GEN-01",
                 outputBoardId = 20
             )
@@ -1003,7 +1003,7 @@ class SldGraphAndLayoutTest {
         )
         val circuits = listOf(
             CircuitEntity(id = 1, projectId = projectId, circuitName = "MDB-01", fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"),
-            CircuitEntity(id = 12, projectId = projectId, circuitName = "DP-G3", fedFrom = "MDB-01", panelType = "DB"),
+            CircuitEntity(id = 12, projectId = projectId, circuitName = "DP-01", fedFrom = "MDB-01", panelType = "DB"),
             CircuitEntity(id = 20, projectId = projectId, circuitName = "LPP-EMERG-1", fedFrom = "ATS 1", panelType = "DB"),
             CircuitEntity(id = 21, projectId = projectId, circuitName = "LPP-EMERG-2", fedFrom = "ATS 2", panelType = "DB")
         )
@@ -1012,7 +1012,7 @@ class SldGraphAndLayoutTest {
                 projectId = projectId,
                 atsId = "ATS-01",
                 atsName = "ATS 1",
-                normalSourceId = "DP-G3",
+                normalSourceId = "DP-01",
                 emergencySourceId = "GEN-01",
                 outputBoardId = 20
             ),
@@ -1074,7 +1074,7 @@ class SldGraphAndLayoutTest {
         val emergEdge1 = layoutResult.edges.firstOrNull { it.fromId == "gen_GEN-01" && it.toId == "ats_ATS-01" }
         val emergEdge2 = layoutResult.edges.firstOrNull { it.fromId == "gen_GEN-02" && it.toId == "ats_ATS-02" }
 
-        assertNotNull("Normal edge DP-G3 -> ATS-01 must exist", normalEdge1)
+        assertNotNull("Normal edge DP-01 -> ATS-01 must exist", normalEdge1)
         assertNotNull("Normal edge MDB-01 -> ATS-02 must exist", normalEdge2)
         assertNotNull("Emergency edge GEN-01 -> ATS-01 must exist", emergEdge1)
         assertNotNull("Emergency edge GEN-02 -> ATS-02 must exist", emergEdge2)
@@ -1091,8 +1091,8 @@ class SldGraphAndLayoutTest {
         )
         val circuits = listOf(
             CircuitEntity(id = 1, projectId = projectId, circuitName = "MDB-01", fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"),
-            CircuitEntity(id = 12, projectId = projectId, circuitName = "DP-G3", fedFrom = "MDB-01", panelType = "DB"),
-            CircuitEntity(id = 20, projectId = projectId, circuitName = "LPP-G3-2", fedFrom = "ATS 1", panelType = "DB"),
+            CircuitEntity(id = 12, projectId = projectId, circuitName = "DP-01", fedFrom = "MDB-01", panelType = "DB"),
+            CircuitEntity(id = 20, projectId = projectId, circuitName = "LPP-02", fedFrom = "ATS 1", panelType = "DB"),
             CircuitEntity(id = 30, projectId = projectId, circuitName = "FOUNTAIN", fedFrom = "ATS 2", panelType = "DB")
         )
         val atsList = listOf(
@@ -1100,7 +1100,7 @@ class SldGraphAndLayoutTest {
                 projectId = projectId,
                 atsId = "ATS-01",
                 atsName = "ATS 1",
-                normalSourceId = "DP-G3",
+                normalSourceId = "DP-01",
                 emergencySourceId = "GEN-01",
                 outputBoardId = 20
             ),
@@ -1108,7 +1108,7 @@ class SldGraphAndLayoutTest {
                 projectId = projectId,
                 atsId = "ATS-02",
                 atsName = "ATS 2",
-                normalSourceId = "DP-G3",
+                normalSourceId = "DP-01",
                 emergencySourceId = "GEN-02",
                 outputBoardId = 30
             )
@@ -1149,7 +1149,7 @@ class SldGraphAndLayoutTest {
         )
         val circuits = listOf(
             CircuitEntity(id = 1, projectId = projectId, circuitName = "MDB-01", fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"),
-            CircuitEntity(id = 20, projectId = projectId, circuitName = "LPP-G3-2", fedFrom = "ATS 1", panelType = "DB"),
+            CircuitEntity(id = 20, projectId = projectId, circuitName = "LPP-02", fedFrom = "ATS 1", panelType = "DB"),
             CircuitEntity(id = 30, projectId = projectId, circuitName = "FOUNTAIN", fedFrom = "ATS 2", panelType = "DB")
         )
         val atsList = listOf(
@@ -1483,7 +1483,7 @@ class SldGraphAndLayoutTest {
     }
 
     @Test
-    fun testGate3MultiAtsMultiGeneratorMdbSeparation() {
+    fun testMultiAtsMultiGeneratorMdbSeparation() {
         val transformers = listOf(
             TransformerEntity(projectId = projectId, transformerId = "TX-01", kVA = 1000.0)
         )
@@ -1492,18 +1492,18 @@ class SldGraphAndLayoutTest {
             GeneratorEntity(projectId = projectId, generatorId = "GEN-02", generatorName = "Generator 2", manualSizeKVA = 30.0)
         )
         val atsList = listOf(
-            AtsEntity(projectId = projectId, atsId = "ATS-01", atsName = "ATS 1", normalSourceId = "DP-G3", emergencySourceId = "GEN-01"),
-            AtsEntity(projectId = projectId, atsId = "ATS-02", atsName = "ATS 2", normalSourceId = "DP-G3", emergencySourceId = "GEN-02")
+            AtsEntity(projectId = projectId, atsId = "ATS-01", atsName = "ATS 1", normalSourceId = "DP-01", emergencySourceId = "GEN-01"),
+            AtsEntity(projectId = projectId, atsId = "ATS-02", atsName = "ATS 2", normalSourceId = "DP-01", emergencySourceId = "GEN-02")
         )
         val circuits = listOf(
-            CircuitEntity(id = 1, projectId = projectId, circuitName = "DP-G3", fedFrom = "TX-01", panelType = "MDB"),
+            CircuitEntity(id = 1, projectId = projectId, circuitName = "DP-01", fedFrom = "TX-01", panelType = "MDB"),
             // Downstream of ATS-01
-            CircuitEntity(id = 10, projectId = projectId, circuitName = "UPP-G3-1", fedFrom = "ATS-01", panelType = "DB"),
-            CircuitEntity(id = 11, projectId = projectId, circuitName = "UPP-G3-2", fedFrom = "ATS-01", panelType = "DB"),
+            CircuitEntity(id = 10, projectId = projectId, circuitName = "UPP-01", fedFrom = "ATS-01", panelType = "DB"),
+            CircuitEntity(id = 11, projectId = projectId, circuitName = "UPP-02", fedFrom = "ATS-01", panelType = "DB"),
             // Downstream of ATS-02
-            CircuitEntity(id = 20, projectId = projectId, circuitName = "LPP-G3-1", fedFrom = "ATS-02", panelType = "DB"),
-            CircuitEntity(id = 21, projectId = projectId, circuitName = "LPP-G3-2", fedFrom = "ATS-02", panelType = "DB"),
-            CircuitEntity(id = 22, projectId = projectId, circuitName = "LPP-G3-3", fedFrom = "ATS-02", panelType = "DB"),
+            CircuitEntity(id = 20, projectId = projectId, circuitName = "LPP-01", fedFrom = "ATS-02", panelType = "DB"),
+            CircuitEntity(id = 21, projectId = projectId, circuitName = "LPP-02", fedFrom = "ATS-02", panelType = "DB"),
+            CircuitEntity(id = 22, projectId = projectId, circuitName = "LPP-03", fedFrom = "ATS-02", panelType = "DB"),
             CircuitEntity(id = 23, projectId = projectId, circuitName = "FOUNTAIN", fedFrom = "ATS-02", panelType = "LOAD")
         )
 
