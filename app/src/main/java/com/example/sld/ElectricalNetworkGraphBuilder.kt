@@ -638,13 +638,37 @@ object ElectricalNetworkGraphBuilder {
             val upsIbAmp = if (upsRatedKva > 0.0) "%.0f A".format((upsRatedKva * 1000) / (Math.sqrt(3.0) * sysVDbl)) else "DATA REQUIRED"
             val upsName = ups.upsName.ifBlank { "UPS $upsId" }
 
-            // Resolve upstream source for UPS (from ATS output, panel, or transformer)
-            val matchedAts = projAtsList.firstOrNull()
-            val matchedTx = projTransformers.firstOrNull()
+            // Resolve upstream source for UPS (from assigned panel, ATS output, transformer, or utility)
+            val fedCircuit = projCircuits.firstOrNull {
+                it.assignedUpsId.equals(upsId, ignoreCase = true) ||
+                    it.fedFrom.trim().equals(upsName, ignoreCase = true)
+            }
+            val fedParentName = fedCircuit?.fedFrom?.trim()?.lowercase()
+            val upstreamPanel = if (!fedParentName.isNullOrBlank()) {
+                projCircuits.firstOrNull { it.circuitName.trim().lowercase() == fedParentName }
+            } else null
+
+            val matchedAts = if (!fedParentName.isNullOrBlank()) {
+                projAtsList.firstOrNull { it.atsName.trim().lowercase() == fedParentName || it.atsId.trim().lowercase() == fedParentName }
+            } else null
+
+            val matchedTx = if (!fedParentName.isNullOrBlank()) {
+                projTransformers.firstOrNull { it.transformerId.trim().lowercase() == fedParentName }
+            } else null
+
+            val fallbackPanel = nodes.find { it.type == SldNodeType.MDB }?.id
+            val fallbackAts = projAtsList.firstOrNull()?.let { "ats_${it.atsId.ifBlank { "1" }}" }
+            val fallbackTx = projTransformers.firstOrNull()?.let { "tx_${it.transformerId}" }
+            val fallbackGrid = nodes.find { it.type == SldNodeType.UTILITY_SOURCE }?.id
+
             val upstreamSourceId = when {
+                upstreamPanel != null -> "circ_${upstreamPanel.id}"
                 matchedAts != null -> "ats_${matchedAts.atsId.ifBlank { "1" }}"
                 matchedTx != null -> "tx_${matchedTx.transformerId}"
-                nodes.any { it.type == SldNodeType.UTILITY_SOURCE } -> nodes.find { it.type == SldNodeType.UTILITY_SOURCE }?.id
+                fallbackPanel != null -> fallbackPanel
+                fallbackAts != null -> fallbackAts
+                fallbackTx != null -> fallbackTx
+                fallbackGrid != null -> fallbackGrid
                 else -> null
             }
 
@@ -837,13 +861,13 @@ object ElectricalNetworkGraphBuilder {
                 val matchedAts = if (!circ.assignedAtsId.isNullOrBlank()) {
                     projAtsList.firstOrNull { it.atsId.equals(circ.assignedAtsId, ignoreCase = true) }
                 } else {
-                    projAtsList.firstOrNull { it.outputBoardId == circ.id || it.atsName.equals(circ.fedFrom.trim(), ignoreCase = true) }
+                    projAtsList.firstOrNull { it.outputBoardId == circ.id || it.atsName.equals(circ.fedFrom.trim(), ignoreCase = true) || it.atsId.equals(circ.fedFrom.trim(), ignoreCase = true) }
                 }
 
                 val matchedGen = if (!circ.assignedGeneratorId.isNullOrBlank()) {
                     projGenerators.firstOrNull { it.generatorId.equals(circ.assignedGeneratorId, ignoreCase = true) }
                 } else {
-                    projGenerators.firstOrNull { it.generatorName.equals(circ.fedFrom.trim(), ignoreCase = true) }
+                    projGenerators.firstOrNull { it.generatorName.equals(circ.fedFrom.trim(), ignoreCase = true) || it.generatorId.equals(circ.fedFrom.trim(), ignoreCase = true) }
                 }
 
                 val matchedUps = if (!circ.assignedUpsId.isNullOrBlank()) {
@@ -851,7 +875,7 @@ object ElectricalNetworkGraphBuilder {
                 } else if (circ.upsBacked) {
                     projUpsList.firstOrNull()
                 } else {
-                    projUpsList.firstOrNull { it.upsName.equals(circ.fedFrom.trim(), ignoreCase = true) }
+                    projUpsList.firstOrNull { it.upsName.equals(circ.fedFrom.trim(), ignoreCase = true) || it.upsId.equals(circ.fedFrom.trim(), ignoreCase = true) }
                 }
 
                 if (matchedUps != null) {

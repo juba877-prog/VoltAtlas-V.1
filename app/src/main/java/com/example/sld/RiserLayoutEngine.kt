@@ -14,6 +14,7 @@ object RiserLayoutEngine {
     const val MARGIN_X = 100f
     const val MARGIN_Y = 100f
     const val MIN_HORIZONTAL_GAP = 160f // Spacing between adjacent nodes & labels to prevent overlap
+    const val MIN_TREE_GAP = 220f
 
     /**
      * Left/right padding of the MDB enclosure boundary relative to the panel's
@@ -43,6 +44,20 @@ object RiserLayoutEngine {
     /** Minimum clearance between a busbar tap port and either end of the bar. */
     const val BUSBAR_TAP_END_PAD = 24f
 
+    data class LayerAssignmentResult(
+        val effectiveTier: Map<String, Int>,
+        val nodesByTier: Map<Int, List<SldNode>>
+    )
+
+    data class BoundingBoxResult(
+        val nodeWidths: Map<String, Float>
+    )
+
+    data class CoordinateAssignmentResult(
+        val positionedNodes: Map<String, PositionedSldNode>,
+        val busbarPorts: Map<String, List<BusbarPort>>
+    )
+
     fun getBaseTierIndex(type: SldNodeType): Int = when (type) {
         SldNodeType.UTILITY_SOURCE -> -1 // Utility Grid sits at Tier -1 (very top above Transformer)
         SldNodeType.TRANSFORMER,
@@ -63,17 +78,15 @@ object RiserLayoutEngine {
         else -> 1
     }
 
-    fun calculateLayout(
-        graph: ElectricalNetworkGraph,
-        circuits: List<CircuitEntity> = emptyList(),
-        textMeasurer: androidx.compose.ui.text.TextMeasurer? = null,
-        manualPositions: Map<String, androidx.compose.ui.geometry.Offset> = emptyMap()
-    ): SldEngineResult {
+    // =========================================================================
+    // PASS 1 — LAYER ASSIGNMENT (Sugiyama Stage 1)
+    // Assigns hierarchical vertical tiers (-1 to 4) without deciding any
+    // horizontal coordinates or dimensions.
+    // =========================================================================
+    fun assignLayers(graph: ElectricalNetworkGraph): LayerAssignmentResult {
         val nodeMap = graph.nodes.associateBy { it.id }
-        val circuitMap = circuits.associateBy { it.id }
-
-        // 1. Calculate Effective Tier for every node
         val effectiveTier = mutableMapOf<String, Int>()
+
         graph.nodes.forEach { node ->
             effectiveTier[node.id] = getBaseTierIndex(node.type)
         }
@@ -104,20 +117,56 @@ object RiserLayoutEngine {
             }
         }
 
-        // 2. Group nodes by tier
         val nodesByTier = mutableMapOf<Int, MutableList<SldNode>>()
         graph.nodes.forEach { node ->
             val tier = effectiveTier[node.id] ?: 0
             nodesByTier.getOrPut(tier) { mutableListOf() }.add(node)
         }
 
-        // Tier Vertical Gap based on SldTheme
+        return LayerAssignmentResult(effectiveTier, nodesByTier)
+    }
+
+    // =========================================================================
+    // PASS 2 — BOUNDING BOX & CONTENT MEASUREMENT (Sugiyama Stage 2)
+    // Measures real text and icon dimensions for every node uniformly before
+    // any coordinates are assigned.
+    // =========================================================================
+    fun computeBoundingBoxes(
+        graph: ElectricalNetworkGraph,
+        textMeasurer: androidx.compose.ui.text.TextMeasurer?
+    ): BoundingBoxResult {
+        val nodeWidths = graph.nodes.associate { node ->
+            node.id to computeNodeWidth(node, textMeasurer)
+        }
+        return BoundingBoxResult(nodeWidths)
+    }
+
+    // =========================================================================
+    // PASS 3 — COORDINATE ASSIGNMENT & CLEARANCE (Sugiyama Stage 3)
+    // The single authoritative pipeline for deciding (x, y) coordinates:
+    // 3a. Subtree tree positioning (downstream roots & child branches)
+    // 3b. Busbar width expansion (for panels spanning multiple children)
+    // 3c. Source spine alignment (Utility, Transformer, Generator)
+    // 3d. Dynamic 2D AABB collision avoidance
+    // 3e. Manual position overrides
+    // 3f. ATS-to-panel clearance enforcement (enforceAtsToPanelClearance)
+    // 3g. Busbar port assignment (Roadmap §2.3)
+    // =========================================================================
+    fun assignCoordinates(
+        graph: ElectricalNetworkGraph,
+        circuits: List<CircuitEntity>,
+        layers: LayerAssignmentResult,
+        boxes: BoundingBoxResult,
+        textMeasurer: androidx.compose.ui.text.TextMeasurer?,
+        manualPositions: Map<String, androidx.compose.ui.geometry.Offset>
+    ): CoordinateAssignmentResult {
+        val nodeMap = graph.nodes.associateBy { it.id }
+        val circuitMap = circuits.associateBy { it.id }
+        val effectiveTier = layers.effectiveTier
+        val nodeWidths = boxes.nodeWidths
         val tierGap = SldTheme.tierVerticalSpacing() // 288.0f
-        val MIN_TREE_GAP = 220f
 
-        // 3. 2D Subtree Tree Layout Algorithm
         val positionedNodesMap = mutableMapOf<String, PositionedSldNode>()
-
         val childrenMap = mutableMapOf<String, MutableList<String>>()
         val parentMap = mutableMapOf<String, String>()
 
@@ -126,11 +175,6 @@ object RiserLayoutEngine {
                 childrenMap.getOrPut(edge.fromNodeId) { mutableListOf() }.add(edge.toNodeId)
                 parentMap[edge.toNodeId] = edge.fromNodeId
             }
-        }
-
-        // Compute node width for each node
-        val nodeWidths = graph.nodes.associate { node ->
-            node.id to computeNodeWidth(node, textMeasurer)
         }
 
         // Recursive subtree width computation
@@ -299,7 +343,10 @@ object RiserLayoutEngine {
 
                     if (atsPos != null) {
                         val idealGenX = (atsPos.x + atsPos.width * 0.75f) - w / 2f
-                        val minClearanceX = if (txPos != null) txPos.x + txPos.width + 120f else MARGIN_X
+                        val minClearanceX = if (txPos != null) {
+                            val txBounds = getNodeVisualBounds(txPos, textMeasurer)
+                            txBounds.right + MIN_HORIZONTAL_GAP
+                        } else MARGIN_X
 
                         if (idealGenX < minClearanceX) {
                             val shiftDelta = minClearanceX - idealGenX
@@ -341,10 +388,10 @@ object RiserLayoutEngine {
             defaultSourceX = maxOf(defaultSourceX, alignedX + w + 180f)
         }
 
-        // 3.5 Dynamic Automatic Collision Avoidance Pass
+        // 3d. Dynamic Automatic Collision Avoidance Pass
         applyDynamicCollisionAvoidance(positionedNodesMap, textMeasurer, childrenMap, graph)
 
-        // 3.6 Manual Position Overrides
+        // 3e. Manual Position Overrides
         manualPositions.forEach { (nodeId, offset) ->
             val existingNode = positionedNodesMap[nodeId]
             if (existingNode != null) {
@@ -352,7 +399,7 @@ object RiserLayoutEngine {
             }
         }
 
-        // 3.7 ATS <-> Panel-Box Clearance Enforcement (root-cause guarantee)
+        // 3f. ATS <-> Panel-Box Clearance Enforcement (root-cause guarantee)
         // The ATS node X is derived from the NORMAL-source panel's FINAL rendered
         // box right edge as   atsX = panelBoxRight + ATS_TO_PANEL_MIN_GAP   (plus
         // the panel's rendered width, i.e. panel.x + panel.width + enclosure pad).
@@ -364,7 +411,7 @@ object RiserLayoutEngine {
         // untouched.
         enforceAtsToPanelClearance(positionedNodesMap, textMeasurer, childrenMap, graph)
 
-        // 3.8 Busbar Port Model (Roadmap §2.3): every panel node exposes one
+        // 3g. Busbar Port Model (Roadmap §2.3): every panel node exposes one
         // explicit tap port per non-ATS child. The tap is the child's top-center
         // X, clamped inside the (post-expansion) bar span with an end pad, so a
         // tap can never land off the rail. ATS children are excluded — they use
@@ -390,9 +437,21 @@ object RiserLayoutEngine {
             }
             .toMap()
 
-        // 4. Orthogonal Edge Routing with Dedicated Source Routing Channel
-        // 4a. Shared-source ATS NORMAL incomers get staggered channels so parallel
-        //     wires and their NORMAL labels never overlap (see SldAtsRoutingTest).
+        return CoordinateAssignmentResult(positionedNodesMap, busbarPorts)
+    }
+
+    // =========================================================================
+    // POST-PASS — ORTHOGONAL EDGE ROUTING
+    // Routes all power-flow and control edges as strict H-V-H / V-H-V polylines.
+    // =========================================================================
+    fun routeEdges(
+        graph: ElectricalNetworkGraph,
+        positionedNodesMap: Map<String, PositionedSldNode>
+    ): List<PositionedSldEdge> {
+        val nodeMap = graph.nodes.associateBy { it.id }
+
+        // Shared-source ATS NORMAL incomers get staggered channels so parallel
+        // wires and their NORMAL labels never overlap (see SldAtsRoutingTest).
         val normalAtsIncomerIndex = HashMap<String, Int>()
         graph.edges
             .filter { it.type != SldEdgeType.ATS_EMERGENCY_PATH }
@@ -454,7 +513,7 @@ object RiserLayoutEngine {
                     val isEmergencyEdge = edge.type == SldEdgeType.ATS_EMERGENCY_PATH
                     val staggerStep = SldTheme.feederDrop() / 4f
                     val siblingIndex = if (isEmergencyEdge) 0
-                        else normalAtsIncomerIndex["${edge.fromNodeId}->${edge.toNodeId}"] ?: 0
+                    else normalAtsIncomerIndex["${edge.fromNodeId}->${edge.toNodeId}"] ?: 0
 
                     val atsPoints = if (fromNode.y + 50f < toNode.y) {
                         // Tier-0 sources (transformer/generator) sit a full tier above the
@@ -530,8 +589,31 @@ object RiserLayoutEngine {
             }
         }
 
-        // 5. Generate Tier Datum Lines for Populated Tiers
-        val sortedTiers = effectiveTier.values.distinct().sorted()
+        return positionedEdges
+    }
+
+    fun calculateLayout(
+        graph: ElectricalNetworkGraph,
+        circuits: List<CircuitEntity> = emptyList(),
+        textMeasurer: androidx.compose.ui.text.TextMeasurer? = null,
+        manualPositions: Map<String, androidx.compose.ui.geometry.Offset> = emptyMap()
+    ): SldEngineResult {
+        // Sugiyama-Style 3-Pass Layout Pipeline
+        // Pass 1: Layer Assignment
+        val layers = assignLayers(graph)
+
+        // Pass 2: Bounding Box & Content Measurement
+        val boxes = computeBoundingBoxes(graph, textMeasurer)
+
+        // Pass 3: Coordinate Assignment & Clearance Enforcement
+        val coords = assignCoordinates(graph, circuits, layers, boxes, textMeasurer, manualPositions)
+
+        // Post-Pass: Orthogonal Polyline Edge Routing
+        val positionedEdges = routeEdges(graph, coords.positionedNodes)
+
+        // Tier Datum Lines
+        val tierGap = SldTheme.tierVerticalSpacing()
+        val sortedTiers = layers.effectiveTier.values.distinct().sorted()
         val tierDatums = sortedTiers.map { tierIndex ->
             val label = when (tierIndex) {
                 -1 -> "UTILITY INCOMER (22kV)"
@@ -550,8 +632,8 @@ object RiserLayoutEngine {
             )
         }
 
-        // 6. Calculate overall bounding box
-        val allNodesList = positionedNodesMap.values.toList()
+        // Calculate overall bounding box
+        val allNodesList = coords.positionedNodes.values.toList()
         val minX = allNodesList.minOfOrNull { it.x - 50f } ?: 0f
         val maxX = allNodesList.maxOfOrNull { it.x + it.width + 100f } ?: 1000f
         val minY = 0f
@@ -563,7 +645,7 @@ object RiserLayoutEngine {
             bounds = Rect(minX, minY, maxX, maxY),
             validationIssues = graph.validationIssues,
             tierDatums = tierDatums,
-            busbarPorts = busbarPorts
+            busbarPorts = coords.busbarPorts
         )
     }
 
@@ -622,7 +704,7 @@ object RiserLayoutEngine {
         SldValidationStatus.DATA_REQUIRED -> SldSemanticColors.RISER_DATA_REQUIRED
     }
 
-    private data class VisualBounds(val left: Float, val top: Float, val right: Float, val bottom: Float) {
+    internal data class VisualBounds(val left: Float, val top: Float, val right: Float, val bottom: Float) {
         val centerX: Float get() = (left + right) / 2f
     }
 
@@ -633,15 +715,17 @@ object RiserLayoutEngine {
         val rightBox: VisualBounds
     )
 
-    private fun getNodeVisualBounds(node: PositionedSldNode, textMeasurer: androidx.compose.ui.text.TextMeasurer?): VisualBounds {
-        val isMainPanel = node.panelType.uppercase().contains("MDB") || node.panelType.uppercase().contains("MAIN")
-        val isAts = node.panelType.uppercase().contains("ATS")
+    internal fun getNodeVisualBounds(node: PositionedSldNode, textMeasurer: androidx.compose.ui.text.TextMeasurer?): VisualBounds {
+        val panelUpper = node.panelType.uppercase()
+        val isMainPanel = panelUpper.contains("MDB") || panelUpper.contains("MAIN")
+        val isAts = panelUpper.contains("ATS")
+        val isGenerator = panelUpper.contains("GENERATOR")
+        val isUps = panelUpper.contains("UPS")
+        val isUtility = panelUpper.contains("GRID") || panelUpper.contains("UTILITY") || panelUpper.contains("SOURCE")
+        val isTransformer = panelUpper.contains("TRANSFORMER")
         val labelWidth = measureLabelWidth(node, textMeasurer)
-        // The feeder callout text actually starts at the node's horizontal
-        // center + 14f (matching toCenterX in the edge-routing code and
-        // feederX + 14f in SldCanvas.kt), not at node.x. Measure from the
-        // real anchor point instead of the box's left edge.
-        val calloutTextRight = (node.x + node.width / 2f) + 14f + labelWidth
+        val cx = node.x + node.width / 2f
+        val calloutTextRight = cx + 14f + labelWidth
 
         return when {
             isMainPanel -> {
@@ -658,6 +742,50 @@ object RiserLayoutEngine {
                     top = node.y - 28f,
                     right = node.x + node.width + 14f + labelWidth,
                     bottom = node.y + 28f
+                )
+            }
+            isGenerator -> {
+                // SldCanvas: cx = node.x + width/2, cy = node.y. Size 48 (radius 21.6f).
+                // Name label at cx - 50f, cy + 28f. Rating label at cx - 50f, cy + 44f (ends ~cy + 58f).
+                val labelLeft = cx - 50f
+                VisualBounds(
+                    left = minOf(node.x, labelLeft, cx - 24f),
+                    top = node.y - 24f,
+                    right = maxOf(node.x + node.width, cx + 24f, labelLeft + labelWidth),
+                    bottom = node.y + 60f
+                )
+            }
+            isUps -> {
+                // SldCanvas: cx = node.x + width/2, cy = node.y. Box size 36 (spanning y-18 to y+18).
+                // Name label at cx + 36f, cy - 20f. Rating label at cx + 36f, cy + 6f (ends ~cy + 20f).
+                val labelRight = cx + 36f + labelWidth
+                VisualBounds(
+                    left = minOf(node.x, cx - 24f),
+                    top = node.y - 24f,
+                    right = maxOf(node.x + node.width, labelRight),
+                    bottom = node.y + 24f
+                )
+            }
+            isUtility -> {
+                // SldCanvas: cx = node.x + width/2, cy = node.y. Size 48 (radius 21.6f).
+                // Name label at cx - 40f, cy + 28f. Rating label at cx - 40f, cy + 44f (ends ~cy + 58f).
+                val labelLeft = cx - 40f
+                VisualBounds(
+                    left = minOf(node.x, labelLeft, cx - 24f),
+                    top = node.y - 24f,
+                    right = maxOf(node.x + node.width, cx + 24f, labelLeft + labelWidth),
+                    bottom = node.y + 60f
+                )
+            }
+            isTransformer -> {
+                // SldCanvas: cx = node.x + width/2, cy = node.y. Two overlapping circles spanning y-24 to y+24.
+                // Name label at cx + 45f, cy - 20f. Rating label at cx + 45f, cy + 6f (ends ~cy + 20f).
+                val labelRight = cx + 45f + labelWidth
+                VisualBounds(
+                    left = minOf(node.x, cx - 24f),
+                    top = node.y - 24f,
+                    right = maxOf(node.x + node.width, labelRight),
+                    bottom = node.y + 24f
                 )
             }
             else -> {
@@ -728,12 +856,18 @@ object RiserLayoutEngine {
                             val shiftDelta = minAllowedRightLeft - pair.rightBox.left
                             shiftSubtree(pair.rightNode.id, shiftDelta, positionedNodesMap, childrenMap)
 
-                            // If rightNode is an ATS, co-shift connected generator
+                            // If rightNode is an ATS, co-shift connected generator; if rightNode is a Generator, co-shift connected ATS subtree
                             if (pair.rightNode.panelType.uppercase().contains("ATS")) {
                                 val genEdge = graph.edges.firstOrNull { it.toNodeId == pair.rightNode.id && it.type == SldEdgeType.ATS_EMERGENCY_PATH }
                                 val genNode = genEdge?.let { positionedNodesMap[it.fromNodeId] }
                                 if (genNode != null) {
                                     positionedNodesMap[genNode.id] = genNode.copy(x = genNode.x + shiftDelta)
+                                }
+                            } else if (pair.rightNode.panelType.uppercase().contains("GENERATOR")) {
+                                val atsEdge = graph.edges.firstOrNull { it.fromNodeId == pair.rightNode.id && it.type == SldEdgeType.ATS_EMERGENCY_PATH }
+                                val atsNode = atsEdge?.let { positionedNodesMap[it.toNodeId] }
+                                if (atsNode != null) {
+                                    shiftSubtree(atsNode.id, shiftDelta, positionedNodesMap, childrenMap)
                                 }
                             }
                             hasCollision = true

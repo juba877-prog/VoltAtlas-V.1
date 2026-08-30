@@ -26,7 +26,17 @@ fun SldScreen(
         transformers = state.transformers,
         transformerResults = state.transformerResults,
         generatorResult = state.generatorResult,
+        generators = state.generators,
+        generatorResults = state.generatorResults,
         atsResult = state.atsResult,
+        atsList = state.atsList,
+        atsResults = state.atsResults,
+        upsEntity = state.upsList.firstOrNull(),
+        upsResult = state.upsResult,
+        upsList = state.upsList,
+        upsResults = state.upsResults,
+        manualPositions = manualPositions,
+        onNavigateToTab = onNavigateToTab,
         modifier = modifier
     )
 }

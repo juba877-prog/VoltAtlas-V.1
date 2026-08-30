@@ -1332,7 +1332,12 @@ private fun RenderTabContent(
             generatorResults = uiStateVal.generatorResults,
             atsResult = uiStateVal.atsResult,
             atsList = uiStateVal.atsList,
-            atsResults = uiStateVal.atsResults
+            atsResults = uiStateVal.atsResults,
+            upsEntity = uiStateVal.upsList.firstOrNull(),
+            upsResult = uiStateVal.upsResult,
+            upsList = uiStateVal.upsList,
+            upsResults = uiStateVal.upsResults,
+            onNavigateToTab = onNavigateTab
         )
         6 -> ConduitFillScreen(viewModel)
         7 -> BoqProcurementScreen(uiStateVal)
