@@ -192,6 +192,25 @@ object RiserLayoutEngine {
                     positionSubtree(childId, childStartX)
                     childStartX += childSubWidth + MIN_TREE_GAP
                 }
+
+                // Expand busbar width for panels with multiple children so it spans across all children's tap positions
+                val isPanel = !isNodeSource || node.type == SldNodeType.MDB || node.type == SldNodeType.SMDB || node.type == SldNodeType.MCC
+                if (children.size >= 2 && isPanel) {
+                    val firstChild = positionedNodesMap[children.first()]
+                    val lastChild = positionedNodesMap[children.last()]
+                    if (firstChild != null && lastChild != null) {
+                        val firstCenter = firstChild.x + firstChild.width / 2f
+                        val lastCenter = lastChild.x + lastChild.width / 2f
+                        val margin = 40f
+                        val spanWidth = (lastCenter - firstCenter) + margin * 2f
+                        val newWidth = maxOf(nWidth, spanWidth)
+                        val newX = firstCenter - margin
+                        positionedNodesMap[node.id] = positionedNodesMap[node.id]!!.copy(
+                            x = newX,
+                            width = newWidth
+                        )
+                    }
+                }
             }
         }
 
@@ -404,21 +423,30 @@ object RiserLayoutEngine {
                     }
                     atsPoints
                 } else {
-                    val fromX = fromNode.x + fromNode.width / 2f
+                    val toCenterX = toNode.x + toNode.width / 2f
                     val fromY = fromNode.y + (if (fromNode.isSource) 24f else fromNode.height)
-
-                    val toX = toNode.x + toNode.width / 2f
                     val toY = toNode.y - (if (toNode.isSource) 24f else 0f)
 
-                    if (fromX == toX) {
-                        listOf(Pair(fromX, fromY), Pair(toX, toY))
+                    val isParentPanel = fromNode.panelType.uppercase().contains("MDB") ||
+                            fromNode.panelType.uppercase().contains("SMDB") ||
+                            fromNode.panelType.uppercase().contains("MCC") ||
+                            fromNode.panelType.uppercase().contains("DB")
+
+                    val fromX = if (isParentPanel && toCenterX >= fromNode.x - 10f && toCenterX <= fromNode.x + fromNode.width + 10f) {
+                        toCenterX
+                    } else {
+                        fromNode.x + fromNode.width / 2f
+                    }
+
+                    if (Math.abs(fromX - toCenterX) < 2f) {
+                        listOf(Pair(toCenterX, fromY), Pair(toCenterX, toY))
                     } else {
                         val midY = fromY + (toY - fromY) / 2f
                         listOf(
                             Pair(fromX, fromY),
                             Pair(fromX, midY),
-                            Pair(toX, midY),
-                            Pair(toX, toY)
+                            Pair(toCenterX, midY),
+                            Pair(toCenterX, toY)
                         )
                     }
                 }

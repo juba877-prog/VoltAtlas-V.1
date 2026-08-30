@@ -1388,4 +1388,49 @@ class SldGraphAndLayoutTest {
         assertTrue("Updated graph must have GEN-02 -> ATS-02", graph2.edges.any { it.fromNodeId == "gen_GEN-02" && it.toNodeId == "ats_ATS-02" })
         assertFalse("Updated graph must NOT have GEN-01 -> ATS-02", graph2.edges.any { it.fromNodeId == "gen_GEN-01" && it.toNodeId == "ats_ATS-02" })
     }
+
+    @Test
+    fun testMdbMultiFeederSeparationAndStraightDrops() {
+        val transformers = listOf(
+            TransformerEntity(projectId = projectId, transformerId = "TX-01", kVA = 1600.0)
+        )
+        val circuits = listOf(
+            CircuitEntity(id = 1, projectId = projectId, circuitName = "MDB-Main", fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"),
+            CircuitEntity(id = 10, projectId = projectId, circuitName = "SMDB-1", fedFrom = "MDB-Main", transformerId = "TX-01", panelType = "SMDB"),
+            CircuitEntity(id = 20, projectId = projectId, circuitName = "DB-Power", fedFrom = "MDB-Main", transformerId = "TX-01", panelType = "DB"),
+            CircuitEntity(id = 30, projectId = projectId, circuitName = "SMDB-3", fedFrom = "MDB-Main", transformerId = "TX-01", panelType = "SMDB"),
+            CircuitEntity(id = 40, projectId = projectId, circuitName = "Motor-1", fedFrom = "MDB-Main", transformerId = "TX-01", panelType = "LOAD")
+        )
+
+        val result = SldLayoutEngine.calculateLayout(
+            activeProjectId = projectId,
+            transformers = transformers,
+            circuits = circuits
+        )
+
+        val mdbNode = result.nodes.first { it.id == "circ_1" }
+        val outgoingEdges = result.edges.filter { it.fromId == "circ_1" }
+        assertEquals("Must produce 4 outgoing edges from MDB", 4, outgoingEdges.size)
+
+        // Busbar width must span across the children
+        assertTrue("MDB busbar must expand across its 4 children (width >= 300f)", mdbNode.width >= 300f)
+
+        // Every outgoing feeder must have distinct takeoff X coordinate on the busbar
+        val takeoffXs = outgoingEdges.map { it.pathPoints.first().first }
+        assertEquals("All 4 takeoff X coordinates must be distinct", 4, takeoffXs.distinct().size)
+
+        // Adjacent takeoff points must have minimum separation >= 100f
+        val sortedTakeoffs = takeoffXs.sorted()
+        for (i in 0 until sortedTakeoffs.size - 1) {
+            val gap = sortedTakeoffs[i + 1] - sortedTakeoffs[i]
+            assertTrue("Gap between adjacent feeder takeoffs must be >= 100f (actual: $gap)", gap >= 100f)
+        }
+
+        // Each feeder wire must drop straight down without crossing (first X == last X)
+        outgoingEdges.forEach { edge ->
+            val startX = edge.pathPoints.first().first
+            val endX = edge.pathPoints.last().first
+            assertEquals("Feeder wire ${edge.label} must drop straight vertically without crossing", startX, endX, 2.0f)
+        }
+    }
 }
