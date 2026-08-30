@@ -15,6 +15,22 @@ object RiserLayoutEngine {
     const val MARGIN_Y = 100f
     const val MIN_HORIZONTAL_GAP = 160f // Spacing between adjacent nodes & labels to prevent overlap
 
+    /**
+     * Left/right padding of the MDB enclosure boundary relative to the panel's
+     * positioned node box (SldCanvas draws encLeft = node.x - 36 and
+     * encRight = node.x + node.width + 36). Mirrors that value so the layout
+     * engine reasons about the *actually rendered* panel box outline.
+     */
+    const val MAIN_PANEL_ENCLOSURE_PAD = 36f
+
+    /**
+     * Mandatory horizontal clearance between a panel's actual rendered box
+     * right edge and the left edge of an ATS (or the previous ATS in a
+     * side-by-side pair). Reuses the existing SLD spacing token so the safety
+     * margin is consistent with all other node-pair gaps.
+     */
+    const val ATS_TO_PANEL_MIN_GAP = MIN_HORIZONTAL_GAP
+
     fun getBaseTierIndex(type: SldNodeType): Int = when (type) {
         SldNodeType.UTILITY_SOURCE -> -1 // Utility Grid sits at Tier -1 (very top above Transformer)
         SldNodeType.TRANSFORMER,
@@ -323,6 +339,18 @@ object RiserLayoutEngine {
                 positionedNodesMap[nodeId] = existingNode.copy(x = offset.x, y = offset.y)
             }
         }
+
+        // 3.7 ATS <-> Panel-Box Clearance Enforcement (root-cause guarantee)
+        // The ATS node X is derived from the NORMAL-source panel's FINAL rendered
+        // box right edge as   atsX = panelBoxRight + ATS_TO_PANEL_MIN_GAP   (plus
+        // the panel's rendered width, i.e. panel.x + panel.width + enclosure pad).
+        // This pass runs LAST - after subtree positioning AND after manual
+        // position overrides - so a persisted stale/dragged ATS position can
+        // never re-introduce an overlap with the panel box outline or with a
+        // neighbouring ATS, regardless of how many feeder columns the panel box
+        // spans. It only pushes right (never left), so error-free layouts are
+        // untouched.
+        enforceAtsToPanelClearance(positionedNodesMap, textMeasurer, childrenMap, graph)
 
         // 4. Orthogonal Edge Routing with Dedicated Source Routing Channel
         // 4a. Shared-source ATS NORMAL incomers get staggered channels so parallel
@@ -673,6 +701,108 @@ object RiserLayoutEngine {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Enforces the primary SLD invariant for every ATS unit:
+     *
+     *     atsX  >=  panelBoxRight + ATS_TO_PANEL_MIN_GAP
+     *
+     * where `panelBoxRight` is the NORMAL-source panel's ACTUAL final rendered box
+     * right edge:
+     *
+     *     panelBoxRight = panel.x + panel.width + (MDB/MAIN ? MAIN_PANEL_ENCLOSURE_PAD : 0)
+     *
+     * and additionally, for side-by-side units:
+     *
+     *     atsX[i+1]  >=  atsX[i] + ats[i].width + ATS_TO_PANEL_MIN_GAP
+     *
+     * This is the authoritative, panel-width-reactive anchor for the ATS X
+     * coordinate. It runs after subtree positioning AND after manual position
+     * overrides, so even a stale persisted/dragged ATS position (applied on top of
+     * a panel that has since grown wide with extra feeder columns) is pushed to the
+     * panel's actual right edge. The pass only ever shifts nodes to the right and
+     * co-shifts each ATS's emergency generator + downstream subtree so routed wires
+     * keep landing on the same terminals.
+     */
+    private fun enforceAtsToPanelClearance(
+        positionedNodesMap: MutableMap<String, PositionedSldNode>,
+        textMeasurer: androidx.compose.ui.text.TextMeasurer?,
+        childrenMap: Map<String, List<String>>,
+        graph: ElectricalNetworkGraph
+    ) {
+        var changed = true
+        var iteration = 0
+        val maxIterations = 8
+        while (changed && iteration < maxIterations) {
+            changed = false
+            iteration++
+
+            // Left-to-right so each ATS also leaves room for the next sibling.
+            val atsIds = positionedNodesMap.values
+                .filter { it.panelType.uppercase().contains("ATS") }
+                .sortedBy { positionedNodesMap[it.id]?.x ?: it.x }
+                .map { it.id }
+
+            var prevAtsRight = Float.NEGATIVE_INFINITY
+            for (atsId in atsIds) {
+                val atsNode = positionedNodesMap[atsId] ?: continue
+                val atsBoxLeft = atsNode.x
+
+                // 1. Minimum left edge required by the NORMAL-source panel box.
+                val normalSourceId = graph.edges
+                    .firstOrNull {
+                        it.toNodeId == atsId && it.type == SldEdgeType.ATS_NORMAL_PATH
+                    }
+                    ?.fromNodeId
+                val minLeftFromPanel = if (normalSourceId != null) {
+                    val panel = positionedNodesMap[normalSourceId]
+                    if (panel != null) {
+                        val isMainPanel = panel.panelType.uppercase().contains("MDB") ||
+                            panel.panelType.uppercase().contains("MAIN")
+                        val encPad = if (isMainPanel) MAIN_PANEL_ENCLOSURE_PAD else 0f
+                        val boxRight = panel.x + panel.width + encPad
+                        // Use the panel's visual right (includes the widest feeder
+                        // callout text anchor) so callout labels never print on the ATS.
+                        val visualRight = maxOf(boxRight, getNodeVisualBounds(panel, textMeasurer).right)
+                        visualRight + ATS_TO_PANEL_MIN_GAP
+                    } else 0f
+                } else 0f
+
+                // 2. Minimum left edge required by the previous ATS (side-by-side).
+                val minLeftFromPrevAts =
+                    if (prevAtsRight.isFinite()) prevAtsRight + ATS_TO_PANEL_MIN_GAP else 0f
+
+                val requiredLeft = maxOf(minLeftFromPanel, minLeftFromPrevAts, atsBoxLeft)
+                val shiftDelta = requiredLeft - atsBoxLeft
+                if (shiftDelta > 0f) {
+                    // Shift the ATS + its downstream subtree, and co-shift the
+                    // connected emergency generator so the vertical alignment and
+                    // routed terminals stay intact.
+                    shiftSubtree(atsId, shiftDelta, positionedNodesMap, childrenMap)
+                    val shiftedAts = positionedNodesMap[atsId]
+                    val genEdge = graph.edges.firstOrNull {
+                        it.toNodeId == atsId && it.type == SldEdgeType.ATS_EMERGENCY_PATH
+                    }
+                    genEdge?.let { e ->
+                        val genNode = positionedNodesMap[e.fromNodeId]
+                        if (genNode != null && shiftedAts != null) {
+                            // RE-ANCHOR (not just += delta): a stale manual ATS
+                            // position may have moved the ATS without moving its
+                            // generator, so a relative shift would keep the pair
+                            // misaligned. Anchor the generator to the ATS's final
+                            // emergency terminal like the source-positioning step.
+                            val idealGenX = (shiftedAts.x + shiftedAts.width * 0.75f) - genNode.width / 2f
+                            positionedNodesMap[genNode.id] = genNode.copy(x = idealGenX)
+                        }
+                    }
+                    changed = true
+                }
+
+                val updated = positionedNodesMap[atsId] ?: atsNode
+                prevAtsRight = updated.x + updated.width
             }
         }
     }
