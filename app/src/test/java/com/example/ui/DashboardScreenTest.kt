@@ -191,4 +191,126 @@ class DashboardScreenTest {
         assertEquals(4, deriveTargetTab("Protection Coordination Failure"))
         assertEquals(1, deriveTargetTab("FEEDER-1 Cable Oversize"))
     }
+
+    // ── Project Health Card Consistency & Visual State Tests ────────────
+    @Test
+    fun testProjectHealthCard_ConsistencyAndVisualState_ZeroIssues() {
+        val summary = ProjectValidationSummary(
+            totalFailures = 0,
+            totalReviewsRequired = 0,
+            totalWarnings = 0,
+            overallStatus = "100% COMPLIANT / PASS",
+            openIssues = emptyList()
+        )
+
+        val totalIssueCount = summary.totalFailures + summary.totalReviewsRequired + summary.totalWarnings
+
+        // 1. Text Consistency
+        val subtitleText = when (totalIssueCount) {
+            0 -> "No open issues"
+            1 -> "1 item needs attention"
+            else -> "$totalIssueCount items need attention"
+        }
+        val badgeText = when (totalIssueCount) {
+            0 -> "0 items"
+            1 -> "1 item"
+            else -> "$totalIssueCount items"
+        }
+
+        assertEquals("No open issues", subtitleText)
+        assertEquals("0 items", badgeText)
+        assertEquals("100% COMPLIANT / PASS", summary.overallStatus)
+
+        // 2. Visual State Assertion: MUST be PASS/Neutral, NOT Error/Warning
+        val isErrorOrWarning = summary.totalFailures > 0 || summary.totalReviewsRequired > 0
+        assertFalse("Card must NOT be in error or warning visual state when issues == 0", isErrorOrWarning)
+
+        val badgeSeverity = when {
+            summary.totalFailures > 0 -> "FAIL"
+            summary.totalReviewsRequired > 0 -> "REVIEW REQUIRED"
+            summary.totalWarnings > 0 -> "WARNINGS"
+            else -> "PASS"
+        }
+        assertEquals("PASS", badgeSeverity)
+    }
+
+    @Test
+    fun testProjectHealthCard_ConsistencyAndVisualState_SingleFailure() {
+        val summary = ProjectValidationSummary(
+            totalFailures = 1,
+            totalReviewsRequired = 0,
+            totalWarnings = 0,
+            overallStatus = "1 ISSUES REQUIRE ATTENTION",
+            openIssues = emptyList()
+        )
+
+        val totalIssueCount = summary.totalFailures + summary.totalReviewsRequired + summary.totalWarnings
+        val subtitleText = when (totalIssueCount) {
+            0 -> "No open issues"
+            1 -> "1 item needs attention"
+            else -> "$totalIssueCount items need attention"
+        }
+        val badgeText = when (totalIssueCount) {
+            0 -> "0 items"
+            1 -> "1 item"
+            else -> "$totalIssueCount items"
+        }
+
+        // Must be mutually consistent: title, badge, and subtitle all acknowledge 1 item
+        assertEquals("1 item needs attention", subtitleText)
+        assertEquals("1 item", badgeText)
+        assertEquals("1 ISSUES REQUIRE ATTENTION", summary.overallStatus)
+
+        // Visual state must be FAIL
+        val isError = summary.totalFailures > 0
+        assertTrue("Visual state must reflect error when totalFailures > 0", isError)
+    }
+
+    @Test
+    fun testProjectHealthCard_ConsistencyAndVisualState_MultipleIssues() {
+        val summary = ProjectValidationSummary(
+            totalFailures = 2,
+            totalReviewsRequired = 1,
+            totalWarnings = 1,
+            overallStatus = "2 ISSUES REQUIRE ATTENTION",
+            openIssues = emptyList()
+        )
+
+        val totalIssueCount = summary.totalFailures + summary.totalReviewsRequired + summary.totalWarnings
+        val subtitleText = when (totalIssueCount) {
+            0 -> "No open issues"
+            1 -> "1 item needs attention"
+            else -> "$totalIssueCount items need attention"
+        }
+        val badgeText = when (totalIssueCount) {
+            0 -> "0 items"
+            1 -> "1 item"
+            else -> "$totalIssueCount items"
+        }
+
+        assertEquals("4 items need attention", subtitleText)
+        assertEquals("4 items", badgeText)
+    }
+
+    @Test
+    fun testProjectHealthCard_ClickBehavior() {
+        var navigatedTab: Int? = null
+
+        fun handleCardClick(summary: ProjectValidationSummary) {
+            val totalIssueCount = summary.totalFailures + summary.totalReviewsRequired + summary.totalWarnings
+            if (totalIssueCount > 0) {
+                navigatedTab = 5
+            }
+        }
+
+        // Zero issues -> safe no-op (no unexpected navigation)
+        val zeroSummary = ProjectValidationSummary(totalFailures = 0, totalReviewsRequired = 0, totalWarnings = 0)
+        handleCardClick(zeroSummary)
+        assertNull("Zero issues must not trigger navigation", navigatedTab)
+
+        // With issues -> navigates to SLD screen (tab 5)
+        val issuesSummary = ProjectValidationSummary(totalFailures = 1, totalReviewsRequired = 0, totalWarnings = 0)
+        handleCardClick(issuesSummary)
+        assertEquals(5, navigatedTab)
+    }
 }

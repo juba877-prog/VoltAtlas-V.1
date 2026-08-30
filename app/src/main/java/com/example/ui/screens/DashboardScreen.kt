@@ -1,4 +1,4 @@
-﻿package com.example.ui.screens
+package com.example.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -85,9 +85,11 @@ fun DashboardScreen(
     ) {
         // 1. Project Health Card
         item {
+            // Unified issue count: same source as title/color to prevent contradiction
+            val totalIssueCount = summary.totalFailures + summary.totalReviewsRequired + summary.totalWarnings
             VoltAtlasCard(
                 onClick = {
-                    if (summary.openIssues.isNotEmpty()) {
+                    if (totalIssueCount > 0) {
                         onNavigate(5)
                     }
                 }
@@ -132,7 +134,11 @@ fun DashboardScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = if (summary.openIssues.isEmpty()) "No open issues" else if (summary.openIssues.size == 1) "1 item needs attention" else "${summary.openIssues.size} items need attention",
+                                text = when (totalIssueCount) {
+                                    0 -> "No open issues"
+                                    1 -> "1 item needs attention"
+                                    else -> "$totalIssueCount items need attention"
+                                },
                                 style = Caption.copy(fontSize = 12.sp),
                                 color = ThemeTextSecondary,
                                 maxLines = 1,
@@ -147,7 +153,11 @@ fun DashboardScreen(
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = if (summary.openIssues.isEmpty()) "0 items" else if (summary.openIssues.size == 1) "1 item" else "${summary.openIssues.size} items",
+                            text = when (totalIssueCount) {
+                                0 -> "0 items"
+                                1 -> "1 item"
+                                else -> "$totalIssueCount items"
+                            },
                             style = Caption.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
                             color = overallColor
                         )
