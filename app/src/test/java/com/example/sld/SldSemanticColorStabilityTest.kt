@@ -54,4 +54,17 @@ class SldSemanticColorStabilityTest {
         assertEquals(0xFFD97706L, argb(p.warningStatus))
         assertEquals(0xFFDC2626L, argb(p.invalidStatus))
     }
+
+    @Test
+    fun lightPalette_textAndStrokeTokens_haveHighContrastAgainstBackground() {
+        val p = SldTheme.palette(isDark = false)
+        // Background is near-white (0xFFF8FAFC)
+        assertEquals(0xFFF8FAFCL, argb(p.background))
+        // textPrimary is dark navy (0xFF0F172A), contrast ratio > 15:1
+        assertEquals(0xFF0F172AL, argb(p.textPrimary))
+        // enclosureBusTaps is deep blue (0xFF1E3A8A)
+        assertEquals(0xFF1E3A8AL, argb(p.enclosureBusTaps))
+        // feeders is rich copper/amber (0xFFB4530A)
+        assertEquals(0xFFB4530AL, argb(p.feeders))
+    }
 }

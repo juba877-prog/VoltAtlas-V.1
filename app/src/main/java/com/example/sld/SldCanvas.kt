@@ -260,7 +260,7 @@ fun SldCanvas(
                     } else when (displayMode) {
                         DisplayMode.VOLTAGE_DROP -> if (!isAtsEdge && childNode != null && !childNode.isSource) vdStatusColor else if (edge.isEmergency) palette.feeders else palette.enclosureBusTaps
                         DisplayMode.SHORT_CIRCUIT -> if (isIscFail) palette.invalidStatus else if (edge.isEmergency) palette.feeders else palette.enclosureBusTaps
-                        else -> if (isBusway) Color(0xFFE08A4B) else if (edge.isEmergency) palette.feeders else Color(0xFFE2E8F0)
+                        else -> if (isBusway) Color(0xFFE08A4B) else if (edge.isEmergency) palette.feeders else if (palette.isDark) Color(0xFFE2E8F0) else Color(0xFF1E293B)
                     }
 
                     val strokeWidth = if (isBusway) SldTheme.busbarStroke() * 0.45f else if (edge.isEmergency) SldTheme.sourceSpineStroke() else SldTheme.feederStroke()
@@ -364,7 +364,7 @@ fun SldCanvas(
 
                         // Line 1: Protection Device & Rating (e.g. 400A MCCB)
                         if (breakerText.isNotBlank()) {
-                            linesToDraw.add(Pair(breakerText, TextStyle(color = Color(0xFFF0F6FC), fontSize = 11.sp, fontWeight = FontWeight.Bold)))
+                            linesToDraw.add(Pair(breakerText, TextStyle(color = palette.textPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)))
                         }
 
                         // Line 2: Cable or Busway specification
@@ -374,7 +374,7 @@ fun SldCanvas(
                         } else if (cableText.isNotBlank()) {
                             val runsText = if (childNode.dataBlock.parallelRuns > 1) "${childNode.dataBlock.parallelRuns}x" else ""
                             val fullCableStr = "$runsText$cableText".trim()
-                            linesToDraw.add(Pair(fullCableStr, TextStyle(color = Color(0xFF94A3B8), fontSize = 10.5.sp)))
+                            linesToDraw.add(Pair(fullCableStr, TextStyle(color = palette.textSecondary, fontSize = 10.5.sp)))
                         }
 
                         // Line 3: Mode-Specific Engineering Metric or Status (e.g. VD: 0.85% PASS)
@@ -598,7 +598,7 @@ fun SldCanvas(
                         )
                         // Dashed technical enclosure boundary
                         drawRoundRect(
-                            color = Color(0xFF334155),
+                            color = if (palette.isDark) Color(0xFF334155) else Color(0xFF94A3B8),
                             topLeft = Offset(encLeft, encTop),
                             size = Size(encW, encH),
                             cornerRadius = CornerRadius(12f, 12f),
@@ -612,7 +612,7 @@ fun SldCanvas(
                         drawSafeText(
                             textMeasurer = textMeasurer,
                             text = node.label,
-                            style = TextStyle(color = Color(0xFFF1F5F9), fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                            style = TextStyle(color = palette.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold),
                             topLeft = Offset(encLeft + 14f, encTop + 10f)
                         )
 
@@ -623,7 +623,7 @@ fun SldCanvas(
 
                         // Vertical incomer wire inside enclosure
                         drawLine(
-                            color = Color(0xFFE2E8F0),
+                            color = if (palette.isDark) Color(0xFFE2E8F0) else Color(0xFF1E293B),
                             start = Offset(midX, incomerTopY),
                             end = Offset(midX, incomerBottomY),
                             strokeWidth = SldTheme.feederStroke()
@@ -649,13 +649,13 @@ fun SldCanvas(
                         drawSafeText(
                             textMeasurer = textMeasurer,
                             text = "DMM",
-                            style = TextStyle(color = Color(0xFF94A3B8), fontSize = 9.sp, fontWeight = FontWeight.Bold),
+                            style = TextStyle(color = palette.textSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold),
                             topLeft = Offset(dmmCenterX + 24f, dmmCenterY - 18f)
                         )
                         drawSafeText(
                             textMeasurer = textMeasurer,
                             text = "400 V • 3Ph",
-                            style = TextStyle(color = Color(0xFF64748B), fontSize = 8.5.sp),
+                            style = TextStyle(color = if (palette.isDark) Color(0xFF64748B) else Color(0xFF475569), fontSize = 8.5.sp),
                             topLeft = Offset(dmmCenterX + 24f, dmmCenterY - 4f)
                         )
 
@@ -708,7 +708,7 @@ fun SldCanvas(
                         )
                     } else {
                         // Sub-distribution Panel (SMDB / DB) Outlined Engineering Box
-                        val outlineColor = if (isSelected) palette.enclosureBusTaps else Color(0xFF334155)
+                        val outlineColor = if (isSelected) palette.enclosureBusTaps else if (palette.isDark) Color(0xFF334155) else Color(0xFFCBD5E1)
                         val boxTop = node.y
                         val boxW = node.width
                         val boxH = maxOf(node.height, 34f)
