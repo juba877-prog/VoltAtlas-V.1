@@ -1,3 +1,4 @@
 {
-  "workbench.startupEditor": "readme"
+  "workbench.startupEditor": "readme",
+  "CodeGPT.apiKey": "CodeGPT Plus Beta"
 }

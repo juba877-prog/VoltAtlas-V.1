@@ -169,7 +169,7 @@ class PowerSystemsQaTest {
         assertEquals(100.0, r.bankCapacity, 0.0)
         assertEquals(26.84, r.correctedReactive, 0.01)
         assertEquals(0.9876, r.correctedPF, 0.0001)
-        assertEquals("REVIEW — BANK CAPACITY EXCEEDS PEAK REQUIREMENT / HARMONIC INPUTS OPEN", r.status)
+        assertEquals("REVIEW — HARMONIC/DETUNING INPUTS", r.status)
     }
 
     @Test
@@ -330,5 +330,101 @@ class PowerSystemsQaTest {
         )
         val resultsC = PfCorrectionEngine.calculate(globalSettingsB, emptyList(), transformersB, txResultsC)
         assertEquals("INVALID INPUT", resultsC[0].status)
+    }
+
+    @Test
+    fun testIecBenchmark_GeneratorSizing38kVA() {
+        // Benchmark: Essential load 38.00 kVA -> S_min = 38 / 0.80 = 47.50 kVA
+        // Recommended size must be 50.0 kVA with operating loading = 76.0% (Optimal load)
+        val settings = GeneratorEntity(
+            generatorPf = 0.8,
+            demandFactor = 1.0,
+            diversityFactor = 1.0,
+            stepLoadPct = 50.0,
+            oversizingFactor = 1.0,
+            largestMotorKW = 0.0
+        )
+        val circuits = listOf(
+            CircuitEntity(id = 1, circuitName = "ESSENTIAL", loadKVA = 38.00, generatorIncluded = true)
+        )
+        val result = GeneratorEngine.calculate(settings, circuits, 87.90)
+
+        assertEquals("essentialLoadKVA", 38.00, result.essentialLoadKVA, 0.01)
+        assertEquals("requiredGenerator S_min", 47.50, result.requiredGenerator, 0.01)
+        assertEquals("finalSize", 50.0, result.finalSize ?: 0.0, 0.01)
+        assertEquals("loadingPct", 76.0, result.loadingPct ?: 0.0, 0.1)
+        assertEquals("Optimal load", result.status)
+    }
+
+    @Test
+    fun testIecBenchmark_PfCorrection56kW() {
+        // Benchmark: Active load 56.26 kW, cosφ1=0.80, target cosφ2=0.97, step=10 kVAR
+        // Q_initial = 56.26 * tan(acos 0.80) = 42.20 kVAR
+        // Q_target  = 56.26 * tan(acos 0.97) = 14.10 kVAR
+        // Q_req = 42.20 - 14.10 = 28.09 kVAR -> 3 steps of 10 = 30.0 kVAR bank
+        // Q_net = 42.20 - 30.0 = +12.20 kVAR > 0 (Lagging)
+        // PF_corr = 56.26 / sqrt(56.26^2 + 12.20^2) = 0.9773
+        val globalSettings = PfGlobalEntity(targetPf = 0.97, kvarStepSize = 10.0, systemVoltage = 400)
+        val transformers = listOf(TransformerEntity(transformerId = "TX-01", pf = 0.80, status = "Active"))
+        val txResults = mapOf(
+            "TX-01" to TransformerResult(
+                connectedLoad = 70.0,
+                circuitsAssigned = 1,
+                realPower = 56.26,
+                demandLoad = 56.26,
+                diversifiedLoad = 56.26,
+                futureLoad = 56.26,
+                designLoad = 56.26,
+                requiredKVA = 70.325,
+                recommendedSize = 100.0,
+                selectedSize = 100.0,
+                loadingPct = 56.0,
+                flc = 144.3,
+                zt = 0.05,
+                rt = 0.01,
+                xt = 0.049,
+                isc3Phase = 5.0,
+                isc1Phase = 5.0,
+                status = "OK",
+                z0 = 0.05,
+                vectorGroup = "Dyn11"
+            )
+        )
+
+        val txSettings = listOf(PfTransformerEntity(transformerId = "TX-01", harmonicFilter = "Yes", detuningReactor = "No"))
+        val results = PfCorrectionEngine.calculate(globalSettings, txSettings, transformers, txResults)
+        assertEquals(1, results.size)
+        val res = results[0]
+
+        assertEquals(56.26, res.existingKW, 0.01)
+        assertEquals(42.20, res.existingKvar, 0.05)
+        assertEquals(28.09, res.requiredKvar, 0.05)
+        assertEquals(30.0, res.bankCapacity, 0.01)
+        assertEquals(12.20, res.correctedReactive, 0.05)
+        assertEquals(0.9773, res.correctedPF, 0.001)
+        assertEquals("LAGGING", res.pfState)
+        assertEquals("COMPLIANT", res.status)
+    }
+
+    @Test
+    fun testIecBenchmark_UpsSizing6k4VA() {
+        // Benchmark: Critical load 6.40 kVA, designMargin 20% -> design = 7.68 kVA
+        // d = 7.68 / 0.8 = 9.60 kVA -> recommended = 10.0 kVA
+        // operating loading = 6.40 / 10.0 = 64.0% (Optimal)
+        val settings = UpsEntity(
+            upsPf = 0.8,
+            designMarginPct = 20.0,
+            systemVoltage = 400
+        )
+        val circuits = listOf(
+            CircuitEntity(id = 1, circuitName = "CRITICAL", loadKVA = 6.40, upsBacked = true, pf = 0.8)
+        )
+        val result = UpsEngine.calculate(settings, circuits)
+
+        assertEquals(6.40, result.totalCriticalLoadKVA, 0.01)
+        assertEquals(7.68, result.designUpsKVA, 0.01)
+        assertEquals(10.0, result.recommendedSize ?: 0.0, 0.01)
+        assertEquals(64.0, result.loadingPct ?: 0.0, 0.1)
+        assertTrue("Status optimal", result.status.contains("Optimal"))
     }
 }

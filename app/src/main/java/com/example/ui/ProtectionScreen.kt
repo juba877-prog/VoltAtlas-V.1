@@ -639,17 +639,17 @@ fun ShortCircuitPanel(state: UiState.Success) {
             Row(
                 modifier = Modifier
                     .background(DarkBackground)
-                    .padding(vertical = 10.dp, horizontal = 8.dp),
+                    .padding(start = 8.dp, top = 10.dp, bottom = 10.dp, end = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Circuit", modifier = Modifier.width(100.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                Text("Source", modifier = Modifier.width(80.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                Text("Cable", modifier = Modifier.width(90.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                Text("Isc (kA)", modifier = Modifier.width(75.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                Text("Iw (kA)", modifier = Modifier.width(75.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                Text("Device (kA)", modifier = Modifier.width(85.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                Text("Margin %", modifier = Modifier.width(80.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                Text("Status", modifier = Modifier.width(85.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                Text("Circuit", modifier = Modifier.width(110.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                Text("Source", modifier = Modifier.width(90.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                Text("Cable", modifier = Modifier.width(100.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                Text("Isc (kA)", modifier = Modifier.width(85.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                Text("Iw (kA)", modifier = Modifier.width(85.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                Text("Device (kA)", modifier = Modifier.width(95.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                Text("Margin %", modifier = Modifier.width(85.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                Text("Status", modifier = Modifier.width(95.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
             }
 
             // Table Rows
@@ -666,20 +666,20 @@ fun ShortCircuitPanel(state: UiState.Success) {
                     Row(
                         modifier = Modifier
                             .background(DarkCardBg)
-                            .padding(vertical = 8.dp, horizontal = 8.dp),
+                            .padding(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(circuitName, modifier = Modifier.width(100.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(res.sourceName, modifier = Modifier.width(80.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(res.cableMm2, modifier = Modifier.width(90.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(String.format("%.2f", res.iscKA), modifier = Modifier.width(75.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
-                        Text(String.format("%.2f", res.iwKA), modifier = Modifier.width(75.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
-                        Text(String.format("%.1f", res.deviceKA), modifier = Modifier.width(85.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
-                        Text(String.format("%.1f%%", res.marginPct), modifier = Modifier.width(80.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
-                        Text(res.status, modifier = Modifier.width(85.dp), color = color, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                        Text(circuitName, modifier = Modifier.width(110.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(res.sourceName, modifier = Modifier.width(90.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(res.cableMm2, modifier = Modifier.width(100.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(String.format("%.2f", res.iscKA), modifier = Modifier.width(85.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
+                        Text(String.format("%.2f", res.iwKA), modifier = Modifier.width(85.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
+                        Text(String.format("%.1f", res.deviceKA), modifier = Modifier.width(95.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
+                        Text(String.format("%.1f%%", res.marginPct), modifier = Modifier.width(85.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
+                        Text(res.status, modifier = Modifier.width(95.dp), color = color, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
                     }
                     if (res.note.isNotEmpty()) {
-                        Row(modifier = Modifier.background(DarkCardBg).padding(start = 8.dp, bottom = 8.dp, end = 8.dp)) {
+                        Row(modifier = Modifier.background(DarkCardBg).padding(start = 8.dp, bottom = 8.dp, end = 16.dp)) {
                             Text("Note: ${res.note}", color = SlateTextSecondary, fontSize = 11.sp, modifier = Modifier.padding(start = 16.dp))
                         }
                     }

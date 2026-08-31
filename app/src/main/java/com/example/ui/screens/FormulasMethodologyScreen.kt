@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import com.example.ui.theme.LocalReduceMotion
 import com.example.ui.theme.VoltAtlasMotion
@@ -480,8 +481,8 @@ fun FormulasMethodologyScreen() {
                     val reduceMotion = LocalReduceMotion.current
                     AnimatedVisibility(
                         visible = isExpanded,
-                        enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
-                        exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
+                        enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec) else fadeIn(animationSpec = VoltAtlasMotion.StandardSpatial.floatSpec) + expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)),
+                        exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec) else fadeOut(animationSpec = VoltAtlasMotion.FastEffects.floatSpec) + shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow))
                     ) {
                         Column(
                             modifier = Modifier

@@ -112,7 +112,7 @@ object PfCorrectionEngine {
 
             val status = when {
                 bankCapacity < requiredKvar -> "FAIL — UNDERSIZED"
-                correctedPF > 0.98 -> "REVIEW — BANK CAPACITY EXCEEDS PEAK REQUIREMENT${if (missingHarmonicInputs) " / HARMONIC INPUTS OPEN" else ""}"
+                correctedReactive < 0.0 -> "REVIEW — LEADING PF OVER-COMPENSATION${if (missingHarmonicInputs) " / HARMONIC INPUTS OPEN" else ""}"
                 correctedPF < targetPF -> "FAIL — TARGET PF NOT MET"
                 missingHarmonicInputs -> "REVIEW — HARMONIC/DETUNING INPUTS"
                 else -> "COMPLIANT"
@@ -155,10 +155,10 @@ object PfCorrectionEngine {
             bankSteps = 0.0,
             bankCapacity = 0.0,
             bankCurrent = 0.0,
-            correctedReactive = existingKvar,
-            correctedPF = existingPF,
+            correctedReactive = 0.0,
+            correctedPF = if (existingPF > 0.0) existingPF else 1.0,
             correctedKVA = Math.round(existingKVA * 100.0) / 100.0,
-            pfState = if (existingPF >= 1.0) "UNITY" else "LAGGING",
+            pfState = "N/A",
             status = status,
             messages = emptyList()
         )

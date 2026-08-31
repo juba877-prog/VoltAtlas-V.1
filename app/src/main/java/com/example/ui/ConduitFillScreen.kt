@@ -298,8 +298,8 @@ fun ConduitFillScreen(viewModel: EngineeringViewModel) {
                         val reduceMotion = LocalReduceMotion.current
                         AnimatedVisibility(
                             visible = isExpanded && res != null,
-                            enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
-                            exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
+                            enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec) else fadeIn(animationSpec = VoltAtlasMotion.StandardSpatial.floatSpec) + expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)),
+                            exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec) else fadeOut(animationSpec = VoltAtlasMotion.FastEffects.floatSpec) + shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow))
                         ) {
                             Column(
                                 modifier = Modifier

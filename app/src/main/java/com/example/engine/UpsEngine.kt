@@ -103,10 +103,10 @@ object UpsEngine {
         val status: String
         val loadingPct: Double?
         if (isManualOverride) {
-            loadingPct = if (recommendedSize != null && recommendedSize > 0) designUpsKVA / recommendedSize * 100.0 else null
+            loadingPct = if (recommendedSize != null && recommendedSize > 0) Math.round((totalCriticalLoadKVA / recommendedSize * 100.0) * 10.0) / 10.0 else null
             status = "Manual Override Active"
         } else if (recommendedSize != null) {
-            loadingPct = designUpsKVA / recommendedSize * 100.0
+            loadingPct = Math.round((totalCriticalLoadKVA / recommendedSize * 100.0) * 10.0) / 10.0
             status = when {
                 loadingPct <= 60.0 -> "Under-loaded (<60%)"
                 loadingPct <= 80.0 -> "Optimal (60-80%)"

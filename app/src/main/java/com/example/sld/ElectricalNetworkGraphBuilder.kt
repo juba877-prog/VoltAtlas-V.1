@@ -497,7 +497,7 @@ object ElectricalNetworkGraphBuilder {
                 it.fedFrom.trim().lowercase().contains("ats")
             }
 
-            val atsStatus = if (!hasNormalSource || !hasEmergSource || !hasAtsDest || normalSourceErrorIssue != null || emergSourceErrorIssue != null) {
+            val atsStatus = if (!hasNormalSource || !hasEmergSource || !hasAtsDest) {
                 SldValidationStatus.DATA_REQUIRED
             } else SldValidationStatus.VALID
 
@@ -517,11 +517,11 @@ object ElectricalNetworkGraphBuilder {
             )
             nodes.add(atsNode)
 
-            if (hasNormalSource && normalSourceNodeId != null) {
+            if (hasNormalSource) {
                 edges.add(
                     SldEdge(
                         id = "edge_${normalSourceNodeId}_$atsNodeId",
-                        fromNodeId = normalSourceNodeId,
+                        fromNodeId = normalSourceNodeId!!,
                         toNodeId = atsNodeId,
                         type = SldEdgeType.ATS_NORMAL_PATH,
                         label = "NORMAL"
@@ -551,11 +551,11 @@ object ElectricalNetworkGraphBuilder {
                 }
             }
 
-            if (hasEmergSource && emergGenNodeId != null) {
+            if (hasEmergSource) {
                 edges.add(
                     SldEdge(
                         id = "edge_${emergGenNodeId}_$atsNodeId",
-                        fromNodeId = emergGenNodeId,
+                        fromNodeId = emergGenNodeId!!,
                         toNodeId = atsNodeId,
                         type = SldEdgeType.ATS_EMERGENCY_PATH,
                         label = "EMERGENCY"

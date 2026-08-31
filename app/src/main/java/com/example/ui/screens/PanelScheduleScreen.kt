@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import com.example.ui.theme.LocalReduceMotion
 import com.example.ui.theme.VoltAtlasMotion
@@ -18,6 +19,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -1032,7 +1034,7 @@ fun UnconfirmedDirectLoadCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Help, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(24.dp))
+                Icon(Icons.AutoMirrored.Filled.Help, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(24.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Explicit Confirmation Required (Part C)",
@@ -1285,8 +1287,8 @@ fun PanelScheduleRowCard(
             val reduceMotion = LocalReduceMotion.current
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
-                exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
+                enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec) else fadeIn(animationSpec = VoltAtlasMotion.StandardSpatial.floatSpec) + expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)),
+                exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec) else fadeOut(animationSpec = VoltAtlasMotion.FastEffects.floatSpec) + shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow))
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
                     HorizontalDivider(color = ThemeBorderSubtle.copy(alpha = 0.5f))

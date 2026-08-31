@@ -36,7 +36,7 @@ class GeneratorEngineTest {
         assertEquals("requiredGenerator match", 250.0, result.requiredGenerator, 0.1)
         assertEquals("designCapacity match", 250.0, result.designCapacity, 0.1)
         assertEquals("finalSize match", 250.0, result.finalSize ?: 0.0, 0.1)
-        assertEquals("loadingPct match", 100.0, result.loadingPct ?: 0.0, 0.1)
+        assertEquals("loadingPct match", 80.0, result.loadingPct ?: 0.0, 0.1)
     }
 
     @Test
@@ -70,7 +70,7 @@ class GeneratorEngineTest {
         assertEquals("requiredGenerator match", 811.76, result.requiredGenerator, 0.5)
         assertEquals("designCapacity match", 811.76, result.designCapacity, 0.5)
         assertEquals("finalSize match", 1000.0, result.finalSize ?: 0.0, 0.1)
-        assertEquals("loadingPct match", 81.2, result.loadingPct ?: 0.0, 0.5)
+        assertEquals("loadingPct match", 24.0, result.loadingPct ?: 0.0, 0.5)
 
         // Dip warning assertion: motorStart (529.41) / selected (1000) > 0.3
         assertTrue("Motor dip warning must fire", result.messages.any { it.contains("voltage dip") })

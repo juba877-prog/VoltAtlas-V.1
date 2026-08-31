@@ -27,9 +27,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
@@ -102,7 +104,7 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
         color = MaterialTheme.colorScheme.background
     ) {
         LazyColumn(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 80.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
 
@@ -149,42 +151,37 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
         }
 
         item {
-            // Transformer selector row with Add (+) support — same actions as before.
+            // Transformer selector row with Add (+) support — dynamic full-width scrollable row
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Select Transformer:", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, style = DsType.labelMedium, maxLines = 1)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.weight(1f, fill = false).horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        state.transformers.forEach { tx ->
-                            val isSelected = tx.transformerId == txId
-                            DsSelectableChip(
-                                text = tx.transformerId,
-                                selected = isSelected,
-                                onClick = { viewModel.selectedTransformerId.value = tx.transformerId },
-                                modifier = Modifier.testTag("tx_tab_${tx.transformerId}")
-                            )
-                        }
-                    }
+                state.transformers.forEach { tx ->
+                    val isSelected = tx.transformerId == txId
+                    DsSelectableChip(
+                        text = tx.transformerId,
+                        selected = isSelected,
+                        onClick = { viewModel.selectedTransformerId.value = tx.transformerId },
+                        modifier = Modifier.testTag("tx_tab_${tx.transformerId}")
+                    )
+                }
 
-                    IconButton(
-                        onClick = { viewModel.addNewTransformerInline() },
-                        modifier = Modifier.size(32.dp).testTag("add_additional_tx_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Add Transformer",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                FilledTonalIconButton(
+                    onClick = { viewModel.addNewTransformerInline() },
+                    modifier = Modifier.size(36.dp).testTag("add_additional_tx_btn"),
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add Transformer",
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
         }

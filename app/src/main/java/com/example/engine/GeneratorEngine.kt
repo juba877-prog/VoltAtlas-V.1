@@ -85,12 +85,11 @@ object GeneratorEngine {
 
         val genPf = if (settings.generatorPf > 0.0) settings.generatorPf else 0.8
 
-        // B22
+        // Additional essential load
         val additionalKVA = settings.additionalEssentialLoadKW / genPf
         val totalEssentialKVA = essentialLoadKVA + additionalKVA
         val essentialLoadKVA_calc = totalEssentialKVA * settings.demandFactor / settings.diversityFactor
         
-        // B23
         val essentialLoadKW = Math.round(essentialLoadKVA_calc * genPf * 100.0) / 100.0
         
         val motorStartMultiplier = when (settings.motorStartMethod) {
@@ -101,26 +100,25 @@ object GeneratorEngine {
             else -> 6.0
         }
         
-        // B24
         val motorPf = if (settings.motorPf > 0.0) settings.motorPf else 0.85
         val motorStartingKVA = if (settings.largestMotorKW > 0.0) {
             Math.round((settings.largestMotorKW / motorPf * motorStartMultiplier) * 100.0) / 100.0
         } else 0.0
 
-        // B25
         val stepLoadAtStart = Math.round((essentialLoadKVA_calc * settings.stepLoadPct / 100.0 + motorStartingKVA) * 100.0) / 100.0
         
-        // B26: required_kVA = MAX(essential_kVA, stepLoad_kVA) / GenPF
+        // ISO 8528 / IEC 60034 continuous safe loading rule:
+        // Continuous running load must not exceed 80% of rated capacity (Safety Margin >= 1.25x).
+        // Target Minimum Capacity: S_min = S_essential / 0.80 = S_essential * 1.25
         val rawMaxKVA = maxOf(essentialLoadKVA_calc, stepLoadAtStart)
-        val requiredGenerator = Math.round((rawMaxKVA / genPf) * 100.0) / 100.0
+        val requiredGenerator = Math.round((rawMaxKVA / 0.80) * 100.0) / 100.0
         
-        // B27: design_kVA = required_kVA * OversizingFactor
         val designCapacity = Math.round((requiredGenerator * settings.oversizingFactor) * 100.0) / 100.0
 
         val standardSizes = listOf(
-            10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0, 75.0, 100.0, 125.0, 150.0,
-            200.0, 250.0, 300.0, 350.0, 400.0, 500.0, 600.0, 750.0, 1000.0, 1250.0,
-            1500.0, 2000.0, 2500.0
+            10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 60.0, 75.0, 80.0, 100.0, 125.0, 150.0,
+            160.0, 200.0, 250.0, 300.0, 350.0, 400.0, 500.0, 600.0, 625.0, 750.0, 800.0, 1000.0,
+            1250.0, 1500.0, 2000.0, 2500.0
         )
         
         var recommended = standardSizes.firstOrNull { it >= designCapacity }
@@ -133,15 +131,16 @@ object GeneratorEngine {
 
         val messages = mutableListOf<String>()
         val loadingPct = if (recommended != null && recommended > 0.0) {
-            Math.round((designCapacity / recommended * 100.0) * 10.0) / 10.0
+            Math.round((essentialLoadKVA_calc / recommended * 100.0) * 10.0) / 10.0
         } else null
 
         val status = if (isManualOverride) {
             "Manual Override Active"
         } else if (loadingPct != null) {
             when {
-                loadingPct >= 80.0 -> "High load"
-                loadingPct >= 60.0 -> "Optimal load"
+                loadingPct > 100.0 -> "Overloaded"
+                loadingPct > 80.0 -> "High load"
+                loadingPct >= 50.0 -> "Optimal load"
                 else -> "Under-loaded — consider a smaller unit"
             }
         } else {

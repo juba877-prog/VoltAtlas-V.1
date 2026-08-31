@@ -2,35 +2,39 @@
 
 package com.example.ui
 
-import androidx.compose.animation.*
-import androidx.compose.animation.core.spring
-import com.example.ui.theme.LocalReduceMotion
-import com.example.ui.theme.VoltAtlasMotion
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Inbox
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.*
 import com.example.engine.*
+import com.example.ui.components.VoltAtlasDropdown
+import com.example.ui.designsystem.components.*
+import com.example.ui.designsystem.theme.*
+import kotlin.math.abs
 
 private val STANDARD_GENERATOR_SIZES_KVA = listOf(
     10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 62.5, 75.0, 100.0,
@@ -48,8 +52,92 @@ private val STANDARD_UPS_SIZES_KVA = listOf(
     60.0, 80.0, 100.0, 150.0, 200.0, 250.0, 300.0, 350.0, 400.0
 )
 
+private val STANDARD_PFC_STEP_SIZES_KVAR = listOf(
+    10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 60.0, 75.0, 100.0
+)
+
 private fun formatRatingVal(value: Double): String {
-    return if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
+    return if (value % 1.0 == 0.0) value.toInt().toString() else "%.1f".format(value)
+}
+
+@Composable
+private fun CompactKpiTile(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    unit: String? = null
+) {
+    Box(
+        modifier = modifier
+            .clip(DsShape.card)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(horizontal = DsSpacing.md, vertical = DsSpacing.sm)
+    ) {
+        Column {
+            Text(
+                text = label,
+                style = DsType.labelSmall.copy(fontSize = 11.sp, lineHeight = 13.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                minLines = 2,
+                maxLines = 2
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = value,
+                    style = DsType.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+                if (unit != null) {
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = unit,
+                        style = DsType.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun engineLoadingBandColor(status: String, loadingPct: Double? = null): Color {
+    val ext = MaterialTheme.dsExtendedColors
+    val upper = status.uppercase().trim()
+    return when {
+        upper.contains("OVERLOADED") || upper.contains("FAIL") || upper.contains("INVALID") || (loadingPct ?: 0.0) > 100.0 -> ext.danger
+        upper.contains("HIGH") || upper.contains("REVIEW") || upper.contains("SELECT") || (loadingPct ?: 0.0) > 85.0 -> ext.warning
+        upper.contains("OPTIMAL") || upper.contains("VERIFIED") || upper.contains("VALID") || upper.contains("OK") -> ext.success
+        else -> ext.neutral
+    }
+}
+
+private fun engineStatusToVariant(status: String, loadingPct: Double? = null): DsStatusVariant {
+    val upper = status.uppercase().trim()
+    return when {
+        upper.contains("OVERLOADED") || upper.contains("FAIL") || upper.contains("INVALID") || (loadingPct ?: 0.0) > 100.0 -> DsStatusVariant.Fail
+        upper.contains("HIGH") || upper.contains("REVIEW") || upper.contains("SELECT") || (loadingPct ?: 0.0) > 85.0 -> DsStatusVariant.Warning
+        upper.contains("OPTIMAL") || upper.contains("VERIFIED") || upper.contains("VALID") || upper.contains("OK") -> DsStatusVariant.Pass
+        upper.contains("DATA") || upper.contains("NOT_CONFIGURED") || upper.contains("NO_LOAD") -> DsStatusVariant.Info
+        else -> DsStatusVariant.Neutral
+    }
+}
+
+fun formatStatusString(rawStatus: String): String {
+    return when (rawStatus.uppercase().trim()) {
+        "SELECT_LOADS" -> "Action Required — Select Loads"
+        "DATA_REQUIRED" -> "Data Required"
+        "NOT_CONFIGURED" -> "Not Configured"
+        "NO_LOAD" -> "No Connected Load"
+        "INVALID" -> "Engineering Review Required"
+        else -> rawStatus.replace("_", " ").lowercase().split(" ").joinToString(" ") { word ->
+            word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.US) else it.toString() }
+        }
+    }
 }
 
 @Composable
@@ -75,60 +163,70 @@ fun PowerSystemsScreen(
     var selectedTab by rememberSaveable { mutableStateOf(0) }
     val tabs = listOf("Generator", "ATS", "UPS", "PF Correction")
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        ScrollableTabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = DarkBackground,
-            contentColor = ThemeTextColor,
-            edgePadding = 8.dp
-        ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = { Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, softWrap = false) }
-                )
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            ScrollableTabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = MaterialTheme.colorScheme.background,
+                contentColor = MaterialTheme.colorScheme.primary,
+                edgePadding = DsSpacing.lg
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = {
+                            Text(
+                                text = title,
+                                style = DsType.labelMedium,
+                                fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Medium,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    )
+                }
             }
-        }
 
-        Box(modifier = Modifier.weight(1f).padding(16.dp)) {
-            when (selectedTab) {
-                0 -> GeneratorSettingsPanel(
-                    state = state,
-                    singleSettings = generatorSettings,
-                    onSave = onSaveGenerator,
-                    onAddGenerator = onAddGenerator,
-                    onDeleteGenerator = onDeleteGenerator
-                )
-                1 -> AtsSettingsPanel(
-                    state = state,
-                    singleSettings = atsSettings,
-                    onSave = onSaveAts,
-                    onAddAts = onAddAts,
-                    onDeleteAts = onDeleteAts
-                )
-                2 -> UpsSettingsPanel(
-                    state = state,
-                    singleSettings = upsSettings,
-                    onSave = onSaveUps,
-                    onAddUps = onAddUps,
-                    onDeleteUps = onDeleteUps
-                )
-                3 -> PfCorrectionPanel(state, pfGlobalSettings, pfTransformerSettings, onSavePfGlobal, onSavePfTransformer)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = DsSpacing.lg, vertical = DsSpacing.md)
+            ) {
+                when (selectedTab) {
+                    0 -> GeneratorSettingsPanel(
+                        state = state,
+                        singleSettings = generatorSettings,
+                        onSave = onSaveGenerator,
+                        onAddGenerator = onAddGenerator,
+                        onDeleteGenerator = onDeleteGenerator
+                    )
+                    1 -> AtsSettingsPanel(
+                        state = state,
+                        singleSettings = atsSettings,
+                        onSave = onSaveAts,
+                        onAddAts = onAddAts,
+                        onDeleteAts = onDeleteAts
+                    )
+                    2 -> UpsSettingsPanel(
+                        state = state,
+                        singleSettings = upsSettings,
+                        onSave = onSaveUps,
+                        onAddUps = onAddUps,
+                        onDeleteUps = onDeleteUps
+                    )
+                    3 -> PfCorrectionPanel(
+                        state = state,
+                        globalSettings = pfGlobalSettings,
+                        transformerSettings = pfTransformerSettings,
+                        onSaveGlobal = onSavePfGlobal,
+                        onSaveTx = onSavePfTransformer
+                    )
+                }
             }
-        }
-    }
-}
-
-fun formatStatusString(rawStatus: String): String {
-    return when (rawStatus.uppercase().trim()) {
-        "SELECT_LOADS" -> "Action Required — Select Loads"
-        "DATA_REQUIRED" -> "Data Required"
-        "NOT_CONFIGURED" -> "Not Configured"
-        "NO_LOAD" -> "No Connected Load"
-        "INVALID" -> "Engineering Review Required"
-        else -> rawStatus.replace("_", " ").lowercase().split(" ").joinToString(" ") { word ->
-            word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.US) else it.toString() }
         }
     }
 }
@@ -145,200 +243,325 @@ fun GeneratorSettingsPanel(
     val generators = successState?.generators ?: listOf(singleSettings)
     val generatorResults = successState?.generatorResults ?: emptyMap()
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Section Header Row
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "GENERATOR SIZING ENGINE (${generators.size})",
-                fontSize = 16.sp,
-                color = ThemeTextColor,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            OutlinedButton(
-                onClick = onAddGenerator,
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, SleekPrimary)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = SleekPrimary)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("+ Add Generator", fontSize = 12.sp, color = SleekPrimary, maxLines = 1)
-            }
-        }
-
-        if (generators.isEmpty()) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = DarkCardBg),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(Icons.Default.Inbox, contentDescription = null, tint = SleekPrimary, modifier = Modifier.size(36.dp))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("No Generators Configured", color = ThemeTextColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Click '+ Add Generator' above to create an essential power source.", color = SlateTextSecondary, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(onClick = onAddGenerator, colors = ButtonDefaults.buttonColors(containerColor = SleekPrimary)) {
-                        Text("+ Add Generator")
-                    }
-                }
-            }
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                itemsIndexed(generators, key = { _, item -> item.generatorId }) { index, item ->
-                    val defaultExpanded = generators.size == 1 || index == 0
-                    val instanceResult = generatorResults[item.generatorId] ?: successState?.generatorResult
-                    GeneratorInstanceCard(
-                        item = item,
-                        result = instanceResult,
-                        state = state,
-                        defaultExpanded = defaultExpanded,
-                        onSave = onSave,
-                        onDelete = { onDeleteGenerator(item.generatorId) }
-                    )
-                }
-            }
-        }
+    var selectedGenId by rememberSaveable { mutableStateOf("") }
+    val activeGenId = if (selectedGenId.isNotEmpty() && generators.any { it.generatorId == selectedGenId }) {
+        selectedGenId
+    } else {
+        generators.firstOrNull()?.generatorId ?: singleSettings.generatorId
     }
-}
+    val activeGen = generators.firstOrNull { it.generatorId == activeGenId }
 
-@Composable
-fun GeneratorInstanceCard(
-    item: GeneratorEntity,
-    result: GeneratorResult?,
-    state: UiState,
-    defaultExpanded: Boolean,
-    onSave: (GeneratorEntity) -> Unit,
-    onDelete: () -> Unit
-) {
-    var isExpanded by remember { mutableStateOf(defaultExpanded) }
-
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable { isExpanded = !isExpanded },
-        colors = CardDefaults.cardColors(containerColor = DarkCardBg),
-        shape = RoundedCornerShape(10.dp)
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(DsSpacing.md),
+        contentPadding = PaddingValues(bottom = 80.dp),
+        modifier = Modifier.fillMaxSize()
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            // Collapsed Summary Line
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "${item.generatorName} (${item.generatorId})",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = ThemeTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    Text(
-                        text = "Rec. Size: ${result?.finalSize ?: "Auto"} kVA • Start: ${item.motorStartMethod}",
-                        fontSize = 12.sp,
-                        color = SlateTextSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+        // 1. Selector Row with Add Button (No cramped label, full scrollable width)
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)
+            ) {
+                generators.forEach { gen ->
+                    val isSelected = gen.generatorId == activeGenId
+                    val res = generatorResults[gen.generatorId] ?: successState?.generatorResult
+                    val ratingText = res?.finalSize?.let { " (${formatRatingVal(it)} kVA)" } ?: ""
+                    DsSelectableChip(
+                        text = "${gen.generatorName}$ratingText",
+                        selected = isSelected,
+                        onClick = { selectedGenId = gen.generatorId }
                     )
                 }
-                IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete Generator", tint = SleekWarning, modifier = Modifier.size(16.dp))
-                }
-                IconButton(onClick = { isExpanded = !isExpanded }, modifier = Modifier.size(28.dp)) {
+
+                FilledTonalIconButton(
+                    onClick = onAddGenerator,
+                    modifier = Modifier.size(36.dp),
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
                     Icon(
-                        if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Toggle",
-                        tint = SleekPrimary,
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add Generator",
                         modifier = Modifier.size(18.dp)
                     )
                 }
             }
+        }
 
-            val reduceMotion = LocalReduceMotion.current
-            AnimatedVisibility(
-                visible = isExpanded,
-                enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
-                exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
-            ) {
-                Column(modifier = Modifier.padding(top = 12.dp)) {
-                    HorizontalDivider(color = BorderColor, modifier = Modifier.padding(bottom = 12.dp))
-                    if (result != null) {
-                        Text("Status: ${formatStatusString(result.status)}", color = SleekPrimary, fontWeight = FontWeight.Bold, maxLines = 1)
-                        Text("Total Connected Load: ${String.format("%.2f", result.totalConnectedLoad)} kVA", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                        Text("Essential Load (Connected): ${String.format("%.2f", result.essentialLoadKVA)} kVA", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                        Text("Required Capacity (/GenPF): ${String.format("%.2f", result.requiredGenerator)} kVA", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                        Text("Design Capacity: ${String.format("%.2f", result.designCapacity)} kVA", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                        if (result.finalSize != null) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("Recommended Size: ${result.finalSize} kVA", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
-                            Text("Loading: ${String.format("%.1f", result.loadingPct ?: 0.0)}%", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
+        // 2. Empty State or Active Generator Cards
+        if (activeGen == null || generators.isEmpty()) {
+            item {
+                DsCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = DsSpacing.xl),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Inbox,
+                            contentDescription = "No Generators",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Spacer(modifier = Modifier.height(DsSpacing.md))
+                        Text(
+                            text = "No Generators Configured",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Bold,
+                            style = DsType.titleMedium
+                        )
+                        Spacer(modifier = Modifier.height(DsSpacing.xs))
+                        Text(
+                            text = "Click '+' above to create an essential power source.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = DsType.bodySmall,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(DsSpacing.md))
+                        Button(
+                            onClick = onAddGenerator,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            shape = DsShape.pill
+                        ) {
+                            Text("+ Add Generator", style = DsType.labelMedium, fontWeight = FontWeight.Bold)
                         }
-                        if (result.messages.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            result.messages.forEach { msg ->
-                                Text(msg, color = SleekWarning, fontSize = 12.sp)
+                    }
+                }
+            }
+        } else {
+            val result = generatorResults[activeGen.generatorId] ?: successState?.generatorResult
+
+            // Card 1: Hero Sizing & Telemetry Card
+            item {
+                DsCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = activeGen.generatorName,
+                                color = MaterialTheme.colorScheme.primary,
+                                style = DsType.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${activeGen.generatorId} • Standby Genset",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = DsType.labelSmall,
+                                maxLines = 1
+                            )
+                            Spacer(modifier = Modifier.height(DsSpacing.xs))
+                            DsStatusBadge(
+                                text = formatStatusString(result?.status ?: "DATA_REQUIRED"),
+                                variant = engineStatusToVariant(result?.status ?: "", result?.loadingPct)
+                            )
+                        }
+
+                        if (generators.size > 1) {
+                            IconButton(
+                                onClick = { onDeleteGenerator(activeGen.generatorId) },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete Generator",
+                                    tint = MaterialTheme.dsExtendedColors.danger,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
                     }
 
-                    // Manual Override Controls
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Enable Manual Size Override", fontSize = 13.sp, color = ThemeTextColor, modifier = Modifier.weight(1f))
-                        Switch(
-                            checked = item.enableManualOverride,
-                            onCheckedChange = { onSave(item.copy(enableManualOverride = it)) }
-                        )
-                    }
-                    if (item.enableManualOverride) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        var textBuffer by remember(item.id, item.manualSizeKVA) {
-                            mutableStateOf(item.manualSizeKVA?.let { formatRatingVal(it) } ?: "")
-                        }
-                        var dropdownExpanded by remember { mutableStateOf(false) }
+                    if (result != null) {
+                        Spacer(modifier = Modifier.height(DsSpacing.md))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(modifier = Modifier.height(DsSpacing.sm))
 
+                        // Loading Row
+                        val bandColor = engineLoadingBandColor(result.status, result.loadingPct)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            ExposedDropdownMenuBox(
-                                expanded = dropdownExpanded,
-                                onExpandedChange = { dropdownExpanded = !dropdownExpanded },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                OutlinedTextField(
-                                    value = if (item.manualSizeKVA != null) "${formatRatingVal(item.manualSizeKVA!!)} kVA" else "Standard Size",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Standard Size") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
-                                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+                            Text("Operating Loading", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.labelSmall)
+                            Text(
+                                text = "${String.format("%.1f", result.loadingPct ?: 0.0)}%",
+                                color = bandColor,
+                                fontWeight = FontWeight.Bold,
+                                style = DsType.titleMedium,
+                                maxLines = 1
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(DsSpacing.xs))
+                        LinearProgressIndicator(
+                            progress = { ((result.loadingPct ?: 0.0) / 100.0).toFloat().coerceIn(0f, 1f) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(DsShape.pill),
+                            color = bandColor,
+                            trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            strokeCap = StrokeCap.Round
+                        )
+
+                        Spacer(modifier = Modifier.height(DsSpacing.md))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                        // 2x2 Compact KPI Grid
+                        Column(verticalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                                CompactKpiTile(
+                                    label = "Recommended Sizing",
+                                    value = result.finalSize?.let { formatRatingVal(it) } ?: "Auto",
+                                    unit = "kVA",
+                                    modifier = Modifier.weight(1f)
                                 )
-                                ExposedDropdownMenu(
-                                    expanded = dropdownExpanded,
-                                    onDismissRequest = { dropdownExpanded = false }
-                                ) {
-                                    STANDARD_GENERATOR_SIZES_KVA.forEach { size ->
-                                        DropdownMenuItem(
-                                            text = { Text("${formatRatingVal(size)} kVA") },
-                                            onClick = {
-                                                dropdownExpanded = false
-                                                textBuffer = formatRatingVal(size)
-                                                onSave(item.copy(manualSizeKVA = size))
-                                            }
-                                        )
-                                    }
+                                CompactKpiTile(
+                                    label = "Essential Load",
+                                    value = String.format("%.2f", result.essentialLoadKVA),
+                                    unit = "kVA",
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                                CompactKpiTile(
+                                    label = "Total Connected",
+                                    value = String.format("%.2f", result.totalConnectedLoad),
+                                    unit = "kVA",
+                                    modifier = Modifier.weight(1f)
+                                )
+                                CompactKpiTile(
+                                    label = "Design Capacity",
+                                    value = String.format("%.2f", result.designCapacity),
+                                    unit = "kVA",
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        if (result.messages.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(DsSpacing.sm))
+                            result.messages.forEach { msg ->
+                                Text(
+                                    text = msg,
+                                    color = MaterialTheme.dsExtendedColors.warning,
+                                    style = DsType.labelSmall
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Card 2: Configuration & Tactile IEC Standard Override Card
+            item {
+                DsCard {
+                    DsSectionHeader(title = "Configuration & Overrides")
+                    Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(DsShape.card)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(horizontal = DsSpacing.md, vertical = DsSpacing.sm),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Start Method", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(activeGen.motorStartMethod, style = DsType.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Column {
+                            Text("Generator PF", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${activeGen.generatorPf}", style = DsType.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Column {
+                            Text("Motor PF", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${activeGen.motorPf}", style = DsType.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(DsSpacing.md))
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(DsShape.card)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(DsSpacing.md)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Manual Size Override",
+                                    style = DsType.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Select IEC commercial standard rating or enter custom",
+                                    style = DsType.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = activeGen.enableManualOverride,
+                                onCheckedChange = { onSave(activeGen.copy(enableManualOverride = it)) }
+                            )
+                        }
+
+                        if (activeGen.enableManualOverride) {
+                            Spacer(modifier = Modifier.height(DsSpacing.sm))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                            Text(
+                                text = "Standard Commercial Ratings (kVA):",
+                                style = DsType.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(DsSpacing.xs))
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(DsSpacing.xs)
+                            ) {
+                                STANDARD_GENERATOR_SIZES_KVA.forEach { size ->
+                                    val isSelected = activeGen.manualSizeKVA != null && abs(activeGen.manualSizeKVA!! - size) < 0.01
+                                    val isRec = result?.finalSize != null && abs(result.finalSize - size) < 0.01
+                                    DsSelectableChip(
+                                        text = if (isRec) "${formatRatingVal(size)} kVA (Rec)" else "${formatRatingVal(size)} kVA",
+                                        selected = isSelected,
+                                        onClick = { onSave(activeGen.copy(manualSizeKVA = size)) }
+                                    )
                                 }
+                            }
+
+                            Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                            var textBuffer by remember(activeGen.id, activeGen.manualSizeKVA) {
+                                mutableStateOf(activeGen.manualSizeKVA?.let { formatRatingVal(it) } ?: "")
                             }
 
                             OutlinedTextField(
@@ -347,69 +570,82 @@ fun GeneratorInstanceCard(
                                     textBuffer = newText
                                     val trimmed = newText.trim()
                                     if (trimmed.isEmpty()) {
-                                        onSave(item.copy(manualSizeKVA = null))
+                                        onSave(activeGen.copy(manualSizeKVA = null))
                                     } else {
                                         trimmed.toDoubleOrNull()?.let { parsed ->
-                                            onSave(item.copy(manualSizeKVA = parsed))
+                                            onSave(activeGen.copy(manualSizeKVA = parsed))
                                         }
                                     }
                                 },
-                                label = { Text("Custom (kVA)") },
-                                modifier = Modifier.weight(1f)
+                                label = { Text("Custom Rating (kVA)", style = DsType.bodySmall) },
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                shape = DsShape.card,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                )
                             )
                         }
                     }
+                }
+            }
 
-                    val success = state as? UiState.Success
-                    val atsList = success?.atsList ?: emptyList()
-                    val atsFeedingThisGen = atsList.filter { it.emergencySourceId == item.generatorId || (it.emergencySourceId.isNullOrBlank() && item.generatorId == "GEN-01") }.map { it.atsId }.toSet()
-                    val connectedLoads = success?.circuits?.filter { circ ->
-                        if (circ.assignedGeneratorId != null) {
-                            circ.assignedGeneratorId == item.generatorId
-                        } else if (circ.assignedAtsId != null) {
-                            atsFeedingThisGen.contains(circ.assignedAtsId) || (circ.assignedAtsId == "ATS-01" && item.generatorId == "GEN-01")
-                        } else {
-                            circ.generatorIncluded && item.generatorId == "GEN-01"
-                        }
-                    } ?: emptyList()
+            // Card 3: Connected Loads Card
+            item {
+                val atsList = successState?.atsList ?: emptyList()
+                val atsFeedingThisGen = atsList.filter {
+                    it.emergencySourceId == activeGen.generatorId || (it.emergencySourceId.isNullOrBlank() && activeGen.generatorId == "GEN-01")
+                }.map { it.atsId }.toSet()
 
-                    val mismatchedAtsCircuits = connectedLoads.filter { circ ->
-                        if (circ.assignedAtsId != null) {
-                            val ats = atsList.find { it.atsId == circ.assignedAtsId }
-                            ats != null && ats.emergencySourceId != null && ats.emergencySourceId != item.generatorId
-                        } else false
-                    }
-                    if (mismatchedAtsCircuits.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "ℹ️ Note: Direct assignment to ${item.generatorId} takes priority for generator sizing. ${mismatchedAtsCircuits.size} circuit(s) specify ATS sources routing to a different generator.",
-                            color = SleekWarning,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    val aggregatedKW = connectedLoads.sumOf { it.loadKVA * it.pf }
-                    if (aggregatedKW > 0.0 && item.additionalEssentialLoadKW > 0.0) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "ℹ️ Note: Manual additional load (${"%.2f".format(item.additionalEssentialLoadKW)} kW) is added on top of ${"%.2f".format(aggregatedKW)} kW aggregated from assigned circuits. Ensure this manual value does not double-count already-assigned circuits.",
-                            color = SleekWarning,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("CONNECTED LOADS", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
-                    HorizontalDivider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
-                    if (connectedLoads.isEmpty()) {
-                        Text("No loads selected", color = SlateTextSecondary, fontSize = 12.sp)
+                val connectedLoads = successState?.circuits?.filter { circ ->
+                    if (circ.assignedGeneratorId != null) {
+                        circ.assignedGeneratorId == activeGen.generatorId
+                    } else if (circ.assignedAtsId != null) {
+                        atsFeedingThisGen.contains(circ.assignedAtsId) || (circ.assignedAtsId == "ATS-01" && activeGen.generatorId == "GEN-01")
                     } else {
-                        connectedLoads.forEach { circ ->
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text(circ.circuitName, color = ThemeTextColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("${String.format("%.2f", circ.loadKVA)} kVA", color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
+                        circ.generatorIncluded && activeGen.generatorId == "GEN-01"
+                    }
+                } ?: emptyList()
+
+                DsCard {
+                    DsSectionHeader(
+                        title = "Connected Loads",
+                        trailingAction = {
+                            Text(
+                                text = "${connectedLoads.size} Circuits",
+                                style = DsType.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                    if (connectedLoads.isEmpty()) {
+                        Text(
+                            text = "No circuits currently assigned to this generator.",
+                            style = DsType.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        val chunked = connectedLoads.chunked(2)
+                        chunked.forEach { pair ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)
+                            ) {
+                                pair.forEach { circ ->
+                                    DsInfoChip(
+                                        label = circ.circuitName,
+                                        trailingValue = "%.2f kVA".format(circ.loadKVA),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                if (pair.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
                             }
+                            Spacer(modifier = Modifier.height(DsSpacing.xs))
                         }
                     }
                 }
@@ -429,292 +665,377 @@ fun AtsSettingsPanel(
     val successState = state as? UiState.Success
     val atsList = successState?.atsList ?: listOf(singleSettings)
     val atsResults = successState?.atsResults ?: emptyMap()
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Section Header Row
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "AUTOMATIC TRANSFER SWITCH (ATS) (${atsList.size})",
-                fontSize = 16.sp,
-                color = ThemeTextColor,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            OutlinedButton(
-                onClick = onAddAts,
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, SleekPrimary)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = SleekPrimary)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("+ Add ATS", fontSize = 12.sp, color = SleekPrimary, maxLines = 1)
-            }
-        }
-
-        if (atsList.isEmpty()) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = DarkCardBg),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(Icons.Default.Inbox, contentDescription = null, tint = SleekPrimary, modifier = Modifier.size(36.dp))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("No ATS Units Configured", color = ThemeTextColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Click '+ Add ATS' above to create an Automatic Transfer Switch.", color = SlateTextSecondary, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(onClick = onAddAts, colors = ButtonDefaults.buttonColors(containerColor = SleekPrimary)) {
-                        Text("+ Add ATS")
-                    }
-                }
-            }
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                itemsIndexed(atsList, key = { _, item -> item.atsId }) { index, item ->
-                    val defaultExpanded = atsList.size == 1 || index == 0
-                    val instanceResult = atsResults[item.atsId] ?: successState?.atsResult
-                    AtsInstanceCard(
-                        item = item,
-                        result = instanceResult,
-                        state = state,
-                        defaultExpanded = defaultExpanded,
-                        onSave = onSave,
-                        onDelete = { onDeleteAts(item.atsId) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun AtsInstanceCard(
-    item: AtsEntity,
-    result: AtsResult?,
-    state: UiState,
-    defaultExpanded: Boolean,
-    onSave: (AtsEntity) -> Unit,
-    onDelete: () -> Unit
-) {
-    var isExpanded by remember { mutableStateOf(defaultExpanded) }
-
-    var normalSource by remember { mutableStateOf(item.normalSourceId ?: "") }
-    var emergencySource by remember { mutableStateOf(item.emergencySourceId ?: "") }
-    var outputBoardId by remember { mutableStateOf(item.outputBoardId) }
-
-    LaunchedEffect(item.normalSourceId) { normalSource = item.normalSourceId ?: "" }
-    LaunchedEffect(item.emergencySourceId) { emergencySource = item.emergencySourceId ?: "" }
-    LaunchedEffect(item.outputBoardId) { outputBoardId = item.outputBoardId }
-
-    val successState = state as? UiState.Success
     val circuits = successState?.circuits ?: emptyList()
     val generators = successState?.generators ?: emptyList()
 
-    val normalSourceOptions = listOf("Transformer", "Generator", "Grid") + circuits.map { it.circuitName }.distinct()
-
-    val generatorLabelMap = generators.associate { gen ->
-        val label = if (generators.count { it.generatorName.trim().equals(gen.generatorName.trim(), ignoreCase = true) } > 1) {
-            "${gen.generatorName} (${gen.generatorId})"
-        } else {
-            gen.generatorName
-        }
-        label to gen.generatorId
-    }
-
-    val generatorOptionLabels = generatorLabelMap.keys.toList()
-    val emergencySourceOptions = if (generatorOptionLabels.isNotEmpty()) {
-        generatorOptionLabels + listOf("Transformer", "Grid") + circuits.map { it.circuitName }.distinct()
+    var selectedAtsId by rememberSaveable { mutableStateOf("") }
+    val activeAtsId = if (selectedAtsId.isNotEmpty() && atsList.any { it.atsId == selectedAtsId }) {
+        selectedAtsId
     } else {
-        listOf("Generator", "Transformer", "Grid") + circuits.map { it.circuitName }.distinct()
+        atsList.firstOrNull()?.atsId ?: singleSettings.atsId
     }
+    val activeAts = atsList.firstOrNull { it.atsId == activeAtsId }
 
-    fun resolveEmergencySourceDisplay(storedValue: String): String {
-        if (storedValue.isBlank()) return ""
-        val matchedById = generators.firstOrNull { it.generatorId.equals(storedValue, ignoreCase = true) }
-        if (matchedById != null) {
-            return generatorLabelMap.entries.firstOrNull { it.value == matchedById.generatorId }?.key ?: matchedById.generatorName
-        }
-        val matchedByName = generators.filter { it.generatorName.trim().equals(storedValue.trim(), ignoreCase = true) }
-        if (matchedByName.size == 1) {
-            return generatorLabelMap.entries.firstOrNull { it.value == matchedByName.single().generatorId }?.key ?: matchedByName.single().generatorName
-        }
-        return storedValue
-    }
-
-    val outputBoardCandidates = circuits.filter {
-        (it.panelType == "MDB" || it.panelType == "SMDB" || it.panelType == "DB" || it.circuitName.contains("Board", true) || it.circuitName.contains("MDB", true) || it.circuitName.contains("DB", true))
-        && it.circuitName != normalSource
-    }
-    val outputBoardOptions = listOf("None") + outputBoardCandidates.map { it.circuitName }
-    val currentOutputBoardName = outputBoardCandidates.find { it.id == outputBoardId }?.circuitName ?: "None"
-
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable { isExpanded = !isExpanded },
-        colors = CardDefaults.cardColors(containerColor = DarkCardBg),
-        shape = RoundedCornerShape(10.dp)
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(DsSpacing.md),
+        contentPadding = PaddingValues(bottom = 80.dp),
+        modifier = Modifier.fillMaxSize()
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            // Collapsed Summary Line
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "${item.atsName} (${item.atsId})",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = ThemeTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    Text(
-                        text = "Rating: ${result?.finalRating ?: "Auto"} A • Normal: ${item.normalSourceId ?: "Grid"} → Emerg: ${resolveEmergencySourceDisplay(item.emergencySourceId ?: "").ifBlank { "Gen" }}",
-                        fontSize = 12.sp,
-                        color = SlateTextSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+        // 1. Selector Row with Add Button
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)
+            ) {
+                atsList.forEach { ats ->
+                    val isSelected = ats.atsId == activeAtsId
+                    val res = atsResults[ats.atsId] ?: successState?.atsResult
+                    val ratingText = res?.finalRating?.let { " (${formatRatingVal(it)} A)" } ?: ""
+                    DsSelectableChip(
+                        text = "${ats.atsName}$ratingText",
+                        selected = isSelected,
+                        onClick = { selectedAtsId = ats.atsId }
                     )
                 }
-                IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete ATS", tint = SleekWarning, modifier = Modifier.size(16.dp))
-                }
-                IconButton(onClick = { isExpanded = !isExpanded }, modifier = Modifier.size(28.dp)) {
+
+                FilledTonalIconButton(
+                    onClick = onAddAts,
+                    modifier = Modifier.size(36.dp),
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
                     Icon(
-                        if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Toggle",
-                        tint = SleekPrimary,
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add ATS",
                         modifier = Modifier.size(18.dp)
                     )
                 }
             }
+        }
 
-            val reduceMotion = LocalReduceMotion.current
-            AnimatedVisibility(
-                visible = isExpanded,
-                enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
-                exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
-            ) {
-                Column(modifier = Modifier.padding(top = 12.dp)) {
-                    HorizontalDivider(color = BorderColor, modifier = Modifier.padding(bottom = 12.dp))
-
-                    // Group 1: Source Configuration
-                    Text("SOURCE CONFIGURATION", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    com.example.ui.components.VoltAtlasDropdown(
-                        value = normalSource,
-                        options = normalSourceOptions,
-                        onSelect = {
-                            normalSource = it
-                            onSave(item.copy(normalSourceId = it.takeIf { s -> s.isNotBlank() }))
-                        },
-                        label = "Normal Source"
-                    )
-                    com.example.ui.components.VoltAtlasDropdown(
-                        value = resolveEmergencySourceDisplay(emergencySource),
-                        options = emergencySourceOptions,
-                        onSelect = { selectedLabel ->
-                            val persistedId = generatorLabelMap[selectedLabel] ?: selectedLabel
-                            emergencySource = persistedId
-                            onSave(item.copy(emergencySourceId = persistedId.takeIf { s -> s.isNotBlank() }))
-                        },
-                        label = "Emergency Source"
-                    )
-                    com.example.ui.components.VoltAtlasDropdown(
-                        value = currentOutputBoardName,
-                        options = outputBoardOptions,
-                        onSelect = { selectedName ->
-                            val selectedId = if (selectedName == "None") null else outputBoardCandidates.find { it.circuitName == selectedName }?.id
-                            outputBoardId = selectedId
-                            onSave(item.copy(outputBoardId = selectedId))
-                        },
-                        label = "Downstream Output Board"
-                    )
-
-                    // Group 2: Ratings & Compliance Results
-                    if (result != null) {
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Text("RATINGS & COMPLIANCE", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text("Status: ${formatStatusString(result.status)}", color = SleekPrimary, fontWeight = FontWeight.Bold, maxLines = 1)
-                        Text("Selected Load: ${String.format("%.2f", result.selectedLoad)} kVA", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                        Text("Governing Current: ${String.format("%.1f", result.governingCurrent)} A", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                        if (result.finalRating != null) {
-                            Text("Recommended Rating: ${result.finalRating} A", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
-                            Text("Construction: ${result.construction}", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                            Text("Poles: ${result.poles}", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                            Text("Required Icw: ${String.format("%.2f", result.requiredIcw)} kA", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                            Text("Required Icm: ${String.format("%.2f", result.requiredIcm)} kA", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                            Text("Transfer Status: ${result.transferStatus}", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
+        // 2. Empty State or Active ATS Cards
+        if (activeAts == null || atsList.isEmpty()) {
+            item {
+                DsCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = DsSpacing.xl),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Inbox,
+                            contentDescription = "No ATS",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Spacer(modifier = Modifier.height(DsSpacing.md))
+                        Text(
+                            text = "No ATS Units Configured",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Bold,
+                            style = DsType.titleMedium
+                        )
+                        Spacer(modifier = Modifier.height(DsSpacing.xs))
+                        Text(
+                            text = "Click '+' above to create an Automatic Transfer Switch.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = DsType.bodySmall,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(DsSpacing.md))
+                        Button(
+                            onClick = onAddAts,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            shape = DsShape.pill
+                        ) {
+                            Text("+ Add ATS", style = DsType.labelMedium, fontWeight = FontWeight.Bold)
                         }
-                        if (result.messages.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            result.messages.forEach { msg ->
-                                Text(msg, color = SleekWarning, fontSize = 12.sp)
+                    }
+                }
+            }
+        } else {
+            val result = atsResults[activeAts.atsId] ?: successState?.atsResult
+
+            val generatorLabelMap = generators.associate { gen ->
+                val label = if (generators.count { it.generatorName.trim().equals(gen.generatorName.trim(), ignoreCase = true) } > 1) {
+                    "${gen.generatorName} (${gen.generatorId})"
+                } else {
+                    gen.generatorName
+                }
+                label to gen.generatorId
+            }
+            val generatorOptionLabels = generatorLabelMap.keys.toList()
+            val emergencySourceOptions = if (generatorOptionLabels.isNotEmpty()) {
+                generatorOptionLabels + listOf("Transformer", "Grid") + circuits.map { it.circuitName }.distinct()
+            } else {
+                listOf("Generator", "Transformer", "Grid") + circuits.map { it.circuitName }.distinct()
+            }
+
+            fun resolveEmergencySourceDisplay(storedValue: String): String {
+                if (storedValue.isBlank()) return ""
+                val matchedById = generators.firstOrNull { it.generatorId.equals(storedValue, ignoreCase = true) }
+                if (matchedById != null) {
+                    return generatorLabelMap.entries.firstOrNull { it.value == matchedById.generatorId }?.key ?: matchedById.generatorName
+                }
+                val matchedByName = generators.filter { it.generatorName.trim().equals(storedValue.trim(), ignoreCase = true) }
+                if (matchedByName.size == 1) {
+                    return generatorLabelMap.entries.firstOrNull { it.value == matchedByName.single().generatorId }?.key ?: matchedByName.single().generatorName
+                }
+                return storedValue
+            }
+
+            val normalSourceOptions = listOf("Transformer", "Generator", "Grid") + circuits.map { it.circuitName }.distinct()
+            val outputBoardCandidates = circuits.filter {
+                (it.panelType == "MDB" || it.panelType == "SMDB" || it.panelType == "DB" || it.circuitName.contains("Board", true) || it.circuitName.contains("MDB", true) || it.circuitName.contains("DB", true))
+                && it.circuitName != activeAts.normalSourceId
+            }
+            val outputBoardOptions = listOf("None") + outputBoardCandidates.map { it.circuitName }
+            val currentOutputBoardName = outputBoardCandidates.find { it.id == activeAts.outputBoardId }?.circuitName ?: "None"
+
+            // Card 1: Hero Sizing & Telemetry Card
+            item {
+                DsCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = activeAts.atsName,
+                                color = MaterialTheme.colorScheme.primary,
+                                style = DsType.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${activeAts.atsId} • ${activeAts.atsClass}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = DsType.labelSmall,
+                                maxLines = 1
+                            )
+                            Spacer(modifier = Modifier.height(DsSpacing.xs))
+                            DsStatusBadge(
+                                text = formatStatusString(result?.status ?: "VALID_SIZED"),
+                                variant = engineStatusToVariant(result?.status ?: "")
+                            )
+                        }
+
+                        if (atsList.size > 1) {
+                            IconButton(
+                                onClick = { onDeleteAts(activeAts.atsId) },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete ATS",
+                                    tint = MaterialTheme.dsExtendedColors.danger,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
                     }
 
-                    // Group 3: Manual Override Controls
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text("MANUAL OVERRIDE", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Enable Manual Rating Override", fontSize = 13.sp, color = ThemeTextColor, modifier = Modifier.weight(1f))
-                        Switch(
-                            checked = item.enableManualOverride,
-                            onCheckedChange = { onSave(item.copy(enableManualOverride = it)) }
-                        )
-                    }
-                    if (item.enableManualOverride) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        var textBuffer by remember(item.id, item.manualSizeAmp) {
-                            mutableStateOf(item.manualSizeAmp?.let { formatRatingVal(it) } ?: "")
-                        }
-                        var dropdownExpanded by remember { mutableStateOf(false) }
+                    if (result != null) {
+                        Spacer(modifier = Modifier.height(DsSpacing.md))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(modifier = Modifier.height(DsSpacing.sm))
 
+                        // 2x2 Compact KPI Grid
+                        Column(verticalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                                CompactKpiTile(
+                                    label = "Recommended Rating",
+                                    value = result.finalRating?.let { formatRatingVal(it) } ?: "Auto",
+                                    unit = "A",
+                                    modifier = Modifier.weight(1f)
+                                )
+                                CompactKpiTile(
+                                    label = "Governing Current",
+                                    value = String.format("%.1f", result.governingCurrent),
+                                    unit = "A",
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                                CompactKpiTile(
+                                    label = "Required Icw",
+                                    value = String.format("%.2f", result.requiredIcw),
+                                    unit = "kA",
+                                    modifier = Modifier.weight(1f)
+                                )
+                                CompactKpiTile(
+                                    label = "Required Icm",
+                                    value = String.format("%.2f", result.requiredIcm),
+                                    unit = "kA",
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                        // Technical Specs Section (Key-Value rows in surfaceContainerHigh)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(DsShape.card)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .padding(horizontal = DsSpacing.md, vertical = DsSpacing.sm),
+                            verticalArrangement = Arrangement.spacedBy(DsSpacing.xs)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Construction", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(result.construction, style = DsType.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Poles Configuration", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(result.poles, style = DsType.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Transfer Status", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(result.transferStatus, style = DsType.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+
+                        if (result.messages.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(DsSpacing.sm))
+                            result.messages.forEach { msg ->
+                                Text(
+                                    text = msg,
+                                    color = MaterialTheme.dsExtendedColors.warning,
+                                    style = DsType.labelSmall
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Card 2: Source Routing & Override Card
+            item {
+                DsCard {
+                    DsSectionHeader(title = "Source Routing & Overrides")
+                    Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                    VoltAtlasDropdown(
+                        value = activeAts.normalSourceId ?: "",
+                        options = normalSourceOptions,
+                        onSelect = { onSave(activeAts.copy(normalSourceId = it.takeIf { s -> s.isNotBlank() })) },
+                        label = "Normal Source"
+                    )
+                    Spacer(modifier = Modifier.height(DsSpacing.xs))
+
+                    VoltAtlasDropdown(
+                        value = resolveEmergencySourceDisplay(activeAts.emergencySourceId ?: ""),
+                        options = emergencySourceOptions,
+                        onSelect = { selectedLabel ->
+                            val persistedId = generatorLabelMap[selectedLabel] ?: selectedLabel
+                            onSave(activeAts.copy(emergencySourceId = persistedId.takeIf { s -> s.isNotBlank() }))
+                        },
+                        label = "Emergency Source"
+                    )
+                    Spacer(modifier = Modifier.height(DsSpacing.xs))
+
+                    VoltAtlasDropdown(
+                        value = currentOutputBoardName,
+                        options = outputBoardOptions,
+                        onSelect = { selectedName ->
+                            val selectedId = if (selectedName == "None") null else outputBoardCandidates.find { it.circuitName == selectedName }?.id
+                            onSave(activeAts.copy(outputBoardId = selectedId))
+                        },
+                        label = "Downstream Output Board"
+                    )
+
+                    Spacer(modifier = Modifier.height(DsSpacing.md))
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(DsShape.card)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(DsSpacing.md)
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            ExposedDropdownMenuBox(
-                                expanded = dropdownExpanded,
-                                onExpandedChange = { dropdownExpanded = !dropdownExpanded },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                OutlinedTextField(
-                                    value = if (item.manualSizeAmp != null) "${formatRatingVal(item.manualSizeAmp!!)} A" else "Standard Frame",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Standard Frame") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
-                                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Manual Rating Override",
+                                    style = DsType.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Bold
                                 )
-                                ExposedDropdownMenu(
-                                    expanded = dropdownExpanded,
-                                    onDismissRequest = { dropdownExpanded = false }
-                                ) {
-                                    STANDARD_ATS_SIZES_AMP.forEach { size ->
-                                        DropdownMenuItem(
-                                            text = { Text("${formatRatingVal(size)} A") },
-                                            onClick = {
-                                                dropdownExpanded = false
-                                                textBuffer = formatRatingVal(size)
-                                                onSave(item.copy(manualSizeAmp = size))
-                                            }
-                                        )
-                                    }
+                                Text(
+                                    text = "Select standard IEC breaker frame (A) or enter custom",
+                                    style = DsType.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = activeAts.enableManualOverride,
+                                onCheckedChange = { onSave(activeAts.copy(enableManualOverride = it)) }
+                            )
+                        }
+
+                        if (activeAts.enableManualOverride) {
+                            Spacer(modifier = Modifier.height(DsSpacing.sm))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                            Text(
+                                text = "Available IEC Breaker Frames (A):",
+                                style = DsType.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(DsSpacing.xs))
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(DsSpacing.xs)
+                            ) {
+                                STANDARD_ATS_SIZES_AMP.forEach { size ->
+                                    val isSelected = activeAts.manualSizeAmp != null && abs(activeAts.manualSizeAmp!! - size) < 0.01
+                                    val isRec = result?.finalRating != null && abs(result.finalRating - size) < 0.01
+                                    DsSelectableChip(
+                                        text = if (isRec) "${formatRatingVal(size)} A (Rec)" else "${formatRatingVal(size)} A",
+                                        selected = isSelected,
+                                        onClick = { onSave(activeAts.copy(manualSizeAmp = size)) }
+                                    )
                                 }
+                            }
+
+                            Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                            var textBuffer by remember(activeAts.id, activeAts.manualSizeAmp) {
+                                mutableStateOf(activeAts.manualSizeAmp?.let { formatRatingVal(it) } ?: "")
                             }
 
                             OutlinedTextField(
@@ -723,38 +1044,75 @@ fun AtsInstanceCard(
                                     textBuffer = newText
                                     val trimmed = newText.trim()
                                     if (trimmed.isEmpty()) {
-                                        onSave(item.copy(manualSizeAmp = null))
+                                        onSave(activeAts.copy(manualSizeAmp = null))
                                     } else {
                                         trimmed.toDoubleOrNull()?.let { parsed ->
-                                            onSave(item.copy(manualSizeAmp = parsed))
+                                            onSave(activeAts.copy(manualSizeAmp = parsed))
                                         }
                                     }
                                 },
-                                label = { Text("Custom (Amps)") },
-                                modifier = Modifier.weight(1f)
+                                label = { Text("Custom Rating (Amps)", style = DsType.bodySmall) },
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                shape = DsShape.card,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                )
                             )
                         }
                     }
+                }
+            }
 
-                    val connectedLoads = (state as? UiState.Success)?.circuits?.filter { circ ->
-                        if (circ.assignedAtsId != null) {
-                            circ.assignedAtsId == item.atsId
-                        } else {
-                            circ.atsIncluded && item.atsId == "ATS-01"
-                        }
-                    } ?: emptyList()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("CONNECTED LOADS", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
-                    HorizontalDivider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
-                    if (connectedLoads.isEmpty()) {
-                        Text("No loads selected", color = SlateTextSecondary, fontSize = 12.sp)
+            // Card 3: Connected Loads Card
+            item {
+                val connectedLoads = circuits.filter { circ ->
+                    if (circ.assignedAtsId != null) {
+                        circ.assignedAtsId == activeAts.atsId
                     } else {
-                        connectedLoads.forEach { circ ->
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text(circ.circuitName, color = ThemeTextColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("${String.format("%.2f", circ.loadKVA)} kVA", color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
+                        circ.atsIncluded && activeAts.atsId == "ATS-01"
+                    }
+                }
+
+                DsCard {
+                    DsSectionHeader(
+                        title = "Connected Essential Loads",
+                        trailingAction = {
+                            Text(
+                                text = "${connectedLoads.size} Circuits",
+                                style = DsType.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                    if (connectedLoads.isEmpty()) {
+                        Text(
+                            text = "No circuits currently assigned to this ATS unit.",
+                            style = DsType.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        val chunked = connectedLoads.chunked(2)
+                        chunked.forEach { pair ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)
+                            ) {
+                                pair.forEach { circ ->
+                                    DsInfoChip(
+                                        label = circ.circuitName,
+                                        trailingValue = "%.2f kVA".format(circ.loadKVA),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                if (pair.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
                             }
+                            Spacer(modifier = Modifier.height(DsSpacing.xs))
                         }
                     }
                 }
@@ -774,200 +1132,357 @@ fun UpsSettingsPanel(
     val successState = state as? UiState.Success
     val upsList = successState?.upsList ?: listOf(singleSettings)
     val upsResults = successState?.upsResults ?: emptyMap()
+    val circuits = successState?.circuits ?: emptyList()
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Section Header Row
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "UPS SIZING ENGINE (${upsList.size})",
-                fontSize = 16.sp,
-                color = ThemeTextColor,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            OutlinedButton(
-                onClick = onAddUps,
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, SleekPrimary)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = SleekPrimary)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("+ Add UPS", fontSize = 12.sp, color = SleekPrimary, maxLines = 1)
-            }
-        }
-
-        if (upsList.isEmpty()) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = DarkCardBg),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(Icons.Default.Inbox, contentDescription = null, tint = SleekPrimary, modifier = Modifier.size(36.dp))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("No UPS Units Configured", color = ThemeTextColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Click '+ Add UPS' above to create an Uninterruptible Power Supply.", color = SlateTextSecondary, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(onClick = onAddUps, colors = ButtonDefaults.buttonColors(containerColor = SleekPrimary)) {
-                        Text("+ Add UPS")
-                    }
-                }
-            }
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                itemsIndexed(upsList, key = { _, item -> item.upsId }) { index, item ->
-                    val defaultExpanded = upsList.size == 1 || index == 0
-                    val instanceResult = upsResults[item.upsId] ?: successState?.upsResult
-                    UpsInstanceCard(
-                        item = item,
-                        result = instanceResult,
-                        state = state,
-                        defaultExpanded = defaultExpanded,
-                        onSave = onSave,
-                        onDelete = { onDeleteUps(item.upsId) }
-                    )
-                }
-            }
-        }
+    var selectedUpsId by rememberSaveable { mutableStateOf("") }
+    val activeUpsId = if (selectedUpsId.isNotEmpty() && upsList.any { it.upsId == selectedUpsId }) {
+        selectedUpsId
+    } else {
+        upsList.firstOrNull()?.upsId ?: singleSettings.upsId
     }
-}
+    val activeUps = upsList.firstOrNull { it.upsId == activeUpsId }
 
-@Composable
-fun UpsInstanceCard(
-    item: UpsEntity,
-    result: UpsResult?,
-    state: UiState,
-    defaultExpanded: Boolean,
-    onSave: (UpsEntity) -> Unit,
-    onDelete: () -> Unit
-) {
-    var isExpanded by remember { mutableStateOf(defaultExpanded) }
-
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable { isExpanded = !isExpanded },
-        colors = CardDefaults.cardColors(containerColor = DarkCardBg),
-        shape = RoundedCornerShape(10.dp)
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(DsSpacing.md),
+        contentPadding = PaddingValues(bottom = 80.dp),
+        modifier = Modifier.fillMaxSize()
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            // Collapsed Summary Line
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "${item.upsName} (${item.upsId})",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = ThemeTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    Text(
-                        text = "Rec. Size: ${result?.recommendedSize ?: "Auto"} kVA • Battery: ${item.autonomyMinutes} min (${item.batteryType})",
-                        fontSize = 12.sp,
-                        color = SlateTextSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+        // 1. Selector Row with Add Button
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)
+            ) {
+                upsList.forEach { ups ->
+                    val isSelected = ups.upsId == activeUpsId
+                    val res = upsResults[ups.upsId] ?: successState?.upsResult
+                    val sizeText = res?.recommendedSize?.let { " (${formatRatingVal(it)} kVA)" } ?: ""
+                    DsSelectableChip(
+                        text = "${ups.upsName}$sizeText",
+                        selected = isSelected,
+                        onClick = { selectedUpsId = ups.upsId }
                     )
                 }
-                IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete UPS", tint = SleekWarning, modifier = Modifier.size(16.dp))
-                }
-                IconButton(onClick = { isExpanded = !isExpanded }, modifier = Modifier.size(28.dp)) {
+
+                FilledTonalIconButton(
+                    onClick = onAddUps,
+                    modifier = Modifier.size(36.dp),
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
                     Icon(
-                        if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Toggle",
-                        tint = SleekPrimary,
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add UPS",
                         modifier = Modifier.size(18.dp)
                     )
                 }
             }
+        }
 
-            val reduceMotion = LocalReduceMotion.current
-            AnimatedVisibility(
-                visible = isExpanded,
-                enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeIn(animationSpec = VoltAtlasMotion.fadeEnterSpec) + expandVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow)),
-                exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.instantFadeSpec) else fadeOut(animationSpec = VoltAtlasMotion.fadeExitSpec) + shrinkVertically(animationSpec = spring(stiffness = VoltAtlasMotion.SpringStiffnessLow))
-            ) {
-                Column(modifier = Modifier.padding(top = 12.dp)) {
-                    HorizontalDivider(color = BorderColor, modifier = Modifier.padding(bottom = 12.dp))
-                    if (result != null) {
-                        Text("Status: ${formatStatusString(result.status)}", color = SleekPrimary, fontWeight = FontWeight.Bold, maxLines = 1)
-                        Text("Critical Load: ${String.format("%.2f", result.totalCriticalLoadKVA)} kVA", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                        Text("Design Capacity: ${String.format("%.2f", result.designUpsKVA)} kVA", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                        if (result.recommendedSize != null) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("Recommended Size: ${result.recommendedSize} kVA", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
-                            Text("Battery Bank: ${result.batteryBankRequired}", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                            Text("Autonomy: ${result.autonomyAtFullLoad}", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
+        // 2. Empty State or Active UPS Cards
+        if (activeUps == null || upsList.isEmpty()) {
+            item {
+                DsCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = DsSpacing.xl),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Inbox,
+                            contentDescription = "No UPS",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Spacer(modifier = Modifier.height(DsSpacing.md))
+                        Text(
+                            text = "No UPS Units Configured",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Bold,
+                            style = DsType.titleMedium
+                        )
+                        Spacer(modifier = Modifier.height(DsSpacing.xs))
+                        Text(
+                            text = "Click '+' above to create an Uninterruptible Power Supply.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = DsType.bodySmall,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(DsSpacing.md))
+                        Button(
+                            onClick = onAddUps,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            shape = DsShape.pill
+                        ) {
+                            Text("+ Add UPS", style = DsType.labelMedium, fontWeight = FontWeight.Bold)
                         }
-                        if (result.messages.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            result.messages.forEach { msg ->
-                                Text(msg, color = SleekWarning, fontSize = 12.sp)
+                    }
+                }
+            }
+        } else {
+            val result = upsResults[activeUps.upsId] ?: successState?.upsResult
+
+            // Card 1: Hero Sizing & Telemetry Card
+            item {
+                DsCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = activeUps.upsName,
+                                color = MaterialTheme.colorScheme.primary,
+                                style = DsType.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${activeUps.upsId} • Online Double-Conversion",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = DsType.labelSmall,
+                                maxLines = 1
+                            )
+                            Spacer(modifier = Modifier.height(DsSpacing.xs))
+                            DsStatusBadge(
+                                text = formatStatusString(result?.status ?: "OPTIMAL"),
+                                variant = engineStatusToVariant(result?.status ?: "", result?.loadingPct)
+                            )
+                        }
+
+                        if (upsList.size > 1) {
+                            IconButton(
+                                onClick = { onDeleteUps(activeUps.upsId) },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete UPS",
+                                    tint = MaterialTheme.dsExtendedColors.danger,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
                     }
 
-                    // Manual Override Controls
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Enable Manual Size Override", fontSize = 13.sp, color = ThemeTextColor, modifier = Modifier.weight(1f))
-                        Switch(
-                            checked = item.enableManualOverride,
-                            onCheckedChange = { onSave(item.copy(enableManualOverride = it)) }
-                        )
-                    }
-                    if (item.enableManualOverride) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        var textBuffer by remember(item.id, item.manualSizeKVA) {
-                            mutableStateOf(item.manualSizeKVA?.let { formatRatingVal(it) } ?: "")
-                        }
-                        var dropdownExpanded by remember { mutableStateOf(false) }
+                    if (result != null) {
+                        Spacer(modifier = Modifier.height(DsSpacing.md))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(modifier = Modifier.height(DsSpacing.sm))
 
+                        // Loading Row
+                        val bandColor = engineLoadingBandColor(result.status, result.loadingPct)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            ExposedDropdownMenuBox(
-                                expanded = dropdownExpanded,
-                                onExpandedChange = { dropdownExpanded = !dropdownExpanded },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                OutlinedTextField(
-                                    value = if (item.manualSizeKVA != null) "${formatRatingVal(item.manualSizeKVA!!)} kVA" else "Standard Size",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Standard Size") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
-                                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+                            Text("UPS Loading", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.labelSmall)
+                            Text(
+                                text = "${String.format("%.1f", result.loadingPct ?: 0.0)}%",
+                                color = bandColor,
+                                fontWeight = FontWeight.Bold,
+                                style = DsType.titleMedium,
+                                maxLines = 1
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(DsSpacing.xs))
+                        LinearProgressIndicator(
+                            progress = { ((result.loadingPct ?: 0.0) / 100.0).toFloat().coerceIn(0f, 1f) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(DsShape.pill),
+                            color = bandColor,
+                            trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            strokeCap = StrokeCap.Round
+                        )
+
+                        Spacer(modifier = Modifier.height(DsSpacing.md))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                        // 2x2 Compact KPI Grid
+                        Column(verticalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                                CompactKpiTile(
+                                    label = "Recommended Capacity",
+                                    value = result.recommendedSize?.let { formatRatingVal(it) } ?: "Auto",
+                                    unit = "kVA",
+                                    modifier = Modifier.weight(1f)
                                 )
-                                ExposedDropdownMenu(
-                                    expanded = dropdownExpanded,
-                                    onDismissRequest = { dropdownExpanded = false }
-                                ) {
-                                    STANDARD_UPS_SIZES_KVA.forEach { size ->
-                                        DropdownMenuItem(
-                                            text = { Text("${formatRatingVal(size)} kVA") },
-                                            onClick = {
-                                                dropdownExpanded = false
-                                                textBuffer = formatRatingVal(size)
-                                                onSave(item.copy(manualSizeKVA = size))
-                                            }
-                                        )
-                                    }
+                                CompactKpiTile(
+                                    label = "Design Capacity",
+                                    value = String.format("%.2f", result.designUpsKVA),
+                                    unit = "kVA",
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                                CompactKpiTile(
+                                    label = "Critical Load",
+                                    value = String.format("%.2f", result.totalCriticalLoadKVA),
+                                    unit = "kVA",
+                                    modifier = Modifier.weight(1f)
+                                )
+                                CompactKpiTile(
+                                    label = "Autonomy Backup",
+                                    value = "${activeUps.autonomyMinutes}",
+                                    unit = "min",
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                        // Battery Bank Telemetry Section (Key-Value rows in surfaceContainerHigh)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(DsShape.card)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .padding(horizontal = DsSpacing.md, vertical = DsSpacing.sm),
+                            verticalArrangement = Arrangement.spacedBy(DsSpacing.xs)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Battery Bank Required", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(result.batteryBankRequired, style = DsType.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Full Load Autonomy", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(result.autonomyAtFullLoad, style = DsType.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+
+                        if (result.messages.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(DsSpacing.sm))
+                            result.messages.forEach { msg ->
+                                Text(
+                                    text = msg,
+                                    color = MaterialTheme.dsExtendedColors.warning,
+                                    style = DsType.labelSmall
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Card 2: Configuration & Override Card
+            item {
+                DsCard {
+                    DsSectionHeader(title = "Configuration & Overrides")
+                    Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(DsShape.card)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(horizontal = DsSpacing.md, vertical = DsSpacing.sm),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Battery Type", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(activeUps.batteryType, style = DsType.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Column {
+                            Text("UPS PF", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${activeUps.upsPf}", style = DsType.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Column {
+                            Text("Efficiency", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${activeUps.upsEfficiency}%", style = DsType.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(DsSpacing.md))
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(DsShape.card)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(DsSpacing.md)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Manual Size Override",
+                                    style = DsType.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Select commercial UPS rating (kVA) or enter custom",
+                                    style = DsType.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = activeUps.enableManualOverride,
+                                onCheckedChange = { onSave(activeUps.copy(enableManualOverride = it)) }
+                            )
+                        }
+
+                        if (activeUps.enableManualOverride) {
+                            Spacer(modifier = Modifier.height(DsSpacing.sm))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                            Text(
+                                text = "Commercial UPS Sizes (kVA):",
+                                style = DsType.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(DsSpacing.xs))
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(DsSpacing.xs)
+                            ) {
+                                STANDARD_UPS_SIZES_KVA.forEach { size ->
+                                    val isSelected = activeUps.manualSizeKVA != null && abs(activeUps.manualSizeKVA!! - size) < 0.01
+                                    val isRec = result?.recommendedSize != null && abs(result.recommendedSize - size) < 0.01
+                                    DsSelectableChip(
+                                        text = if (isRec) "${formatRatingVal(size)} kVA (Rec)" else "${formatRatingVal(size)} kVA",
+                                        selected = isSelected,
+                                        onClick = { onSave(activeUps.copy(manualSizeKVA = size)) }
+                                    )
                                 }
+                            }
+
+                            Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                            var textBuffer by remember(activeUps.id, activeUps.manualSizeKVA) {
+                                mutableStateOf(activeUps.manualSizeKVA?.let { formatRatingVal(it) } ?: "")
                             }
 
                             OutlinedTextField(
@@ -976,38 +1491,75 @@ fun UpsInstanceCard(
                                     textBuffer = newText
                                     val trimmed = newText.trim()
                                     if (trimmed.isEmpty()) {
-                                        onSave(item.copy(manualSizeKVA = null))
+                                        onSave(activeUps.copy(manualSizeKVA = null))
                                     } else {
                                         trimmed.toDoubleOrNull()?.let { parsed ->
-                                            onSave(item.copy(manualSizeKVA = parsed))
+                                            onSave(activeUps.copy(manualSizeKVA = parsed))
                                         }
                                     }
                                 },
-                                label = { Text("Custom (kVA)") },
-                                modifier = Modifier.weight(1f)
+                                label = { Text("Custom Capacity (kVA)", style = DsType.bodySmall) },
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                shape = DsShape.card,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                )
                             )
                         }
                     }
+                }
+            }
 
-                    val connectedLoads = (state as? UiState.Success)?.circuits?.filter { circ ->
-                        if (circ.assignedUpsId != null) {
-                            circ.assignedUpsId == item.upsId
-                        } else {
-                            circ.upsBacked && item.upsId == "UPS-01"
-                        }
-                    } ?: emptyList()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("CONNECTED LOADS", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
-                    HorizontalDivider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
-                    if (connectedLoads.isEmpty()) {
-                        Text("No loads selected", color = SlateTextSecondary, fontSize = 12.sp)
+            // Card 3: Connected Loads Card
+            item {
+                val connectedLoads = circuits.filter { circ ->
+                    if (circ.assignedUpsId != null) {
+                        circ.assignedUpsId == activeUps.upsId
                     } else {
-                        connectedLoads.forEach { circ ->
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text(circ.circuitName, color = ThemeTextColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("${String.format("%.2f", circ.loadKVA)} kVA", color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
+                        circ.upsBacked && activeUps.upsId == "UPS-01"
+                    }
+                }
+
+                DsCard {
+                    DsSectionHeader(
+                        title = "Critical Connected Loads",
+                        trailingAction = {
+                            Text(
+                                text = "${connectedLoads.size} Circuits",
+                                style = DsType.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                    if (connectedLoads.isEmpty()) {
+                        Text(
+                            text = "No circuits currently assigned to this UPS unit.",
+                            style = DsType.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        val chunked = connectedLoads.chunked(2)
+                        chunked.forEach { pair ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)
+                            ) {
+                                pair.forEach { circ ->
+                                    DsInfoChip(
+                                        label = circ.circuitName,
+                                        trailingValue = "%.2f kVA".format(circ.loadKVA),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                if (pair.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
                             }
+                            Spacer(modifier = Modifier.height(DsSpacing.xs))
                         }
                     }
                 }
@@ -1018,31 +1570,315 @@ fun UpsInstanceCard(
 
 @Composable
 fun PfCorrectionPanel(
-    state: UiState, 
-    globalSettings: PfGlobalEntity, 
-    transformerSettings: List<PfTransformerEntity>, 
-    onSaveGlobal: (PfGlobalEntity) -> Unit, 
+    state: UiState,
+    globalSettings: PfGlobalEntity,
+    transformerSettings: List<PfTransformerEntity>,
+    onSaveGlobal: (PfGlobalEntity) -> Unit,
     onSaveTx: (PfTransformerEntity) -> Unit
 ) {
     val results = (state as? UiState.Success)?.pfCorrectionResults ?: emptyList()
-    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-        Text("PF Correction Engine", fontSize = 18.sp, color = ThemeTextColor, fontWeight = FontWeight.Bold, maxLines = 1)
-        Spacer(modifier = Modifier.height(12.dp))
-        
-        results.forEach { result ->
-            Card(colors = CardDefaults.cardColors(containerColor = DarkCardBg), modifier = Modifier.padding(bottom = 12.dp).fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Transformer: ${result.transformerId}", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
-                    Text("Status: ${result.status}", color = SleekPrimary, fontWeight = FontWeight.Bold, maxLines = 1)
-                    Text("Existing PF: ${result.existingPF} -> Target PF: ${result.targetPf}", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                    Text("Existing Load: ${String.format("%.2f", result.existingKW)} kW", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                    Text("Required KVAR: ${String.format("%.2f", result.requiredKvar)}", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                    Text("Recommended Bank: ${result.bankCapacity} KVAR", color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1)
-                    Text("Corrected PF: ${String.format("%.4f", result.correctedPF)} (${result.pfState})", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
-                    Text("Corrected Apparent Power: ${String.format("%.2f", result.correctedKVA)} kVA", color = ThemeTextColor, fontSize = 13.sp, maxLines = 1)
+    val transformers = (state as? UiState.Success)?.transformers ?: emptyList()
+
+    var selectedTxId by rememberSaveable { mutableStateOf("") }
+    val availableTxIds = if (results.isNotEmpty()) results.map { it.transformerId } else transformers.map { it.transformerId }
+    val activeTxId = if (selectedTxId.isNotEmpty() && availableTxIds.contains(selectedTxId)) {
+        selectedTxId
+    } else {
+        availableTxIds.firstOrNull() ?: ""
+    }
+    val activeResult = results.firstOrNull { it.transformerId == activeTxId } ?: results.firstOrNull()
+
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(DsSpacing.md),
+        contentPadding = PaddingValues(bottom = 80.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // 1. Selector Row for Transformers
+        if (availableTxIds.size > 1) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(DsSpacing.xs)
+                    ) {
+                        availableTxIds.forEach { txId ->
+                            DsSelectableChip(
+                                text = txId,
+                                selected = txId == activeTxId,
+                                onClick = { selectedTxId = txId }
+                            )
+                        }
+                    }
                 }
             }
         }
-        Spacer(modifier = Modifier.height(32.dp))
+
+        // 2. Empty State or Active PF Correction Cards
+        if (activeResult == null) {
+            item {
+                DsCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = DsSpacing.xl),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Speed,
+                            contentDescription = "No PF Results",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Spacer(modifier = Modifier.height(DsSpacing.md))
+                        Text(
+                            text = "No PF Correction Data Available",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Bold,
+                            style = DsType.titleMedium
+                        )
+                        Spacer(modifier = Modifier.height(DsSpacing.xs))
+                        Text(
+                            text = "Add transformers and assign circuit loads to calculate required power factor compensation.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = DsType.bodySmall,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            // Card 1: Power Factor Telemetry Flow & Status Card
+            item {
+                DsCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "PF Correction • ${activeResult.transformerId}",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = DsType.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Automatic Capacitor Bank Sizing",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = DsType.labelSmall,
+                                maxLines = 1
+                            )
+                            Spacer(modifier = Modifier.height(DsSpacing.xs))
+                            DsStatusBadge(
+                                text = activeResult.status.ifBlank { "VALID" },
+                                variant = engineStatusToVariant(activeResult.status)
+                            )
+                        }
+                    }
+
+                    if (activeResult.status.contains("REVIEW", true) || activeResult.pfState.contains("LEADING", true)) {
+                        Spacer(modifier = Modifier.height(DsSpacing.sm))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(DsShape.card)
+                                .background(MaterialTheme.dsExtendedColors.warning.copy(alpha = 0.12f))
+                                .padding(DsSpacing.md)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = "Warning",
+                                    tint = MaterialTheme.dsExtendedColors.warning,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Bank capacity (${formatRatingVal(activeResult.bankCapacity)} kVAR) exceeds required (${String.format("%.2f", activeResult.requiredKvar)} kVAR). Check for leading power factor.",
+                                    style = DsType.bodySmall,
+                                    color = MaterialTheme.dsExtendedColors.warning
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(DsSpacing.md))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                    // Power Factor Telemetry Flow
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(DsShape.card)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(DsSpacing.md)
+                    ) {
+                        Text("POWER FACTOR TELEMETRY", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(DsSpacing.xs))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Existing PF", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(String.format("%.2f", activeResult.existingPF), style = DsType.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            }
+                            Text("➔", style = DsType.titleMedium, color = MaterialTheme.colorScheme.primary)
+                            Column {
+                                Text("Target PF", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(String.format("%.2f", activeResult.targetPf), style = DsType.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Text("➔", style = DsType.titleMedium, color = MaterialTheme.colorScheme.primary)
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Corrected PF", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = "${String.format("%.4f", activeResult.correctedPF)} (${activeResult.pfState})",
+                                    style = DsType.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (activeResult.pfState.contains("LEADING", true)) MaterialTheme.dsExtendedColors.warning else MaterialTheme.dsExtendedColors.success
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(DsSpacing.md))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                    // 2x2 Compact KPI Grid
+                    Column(verticalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                            CompactKpiTile(
+                                label = "Existing Active Load",
+                                value = String.format("%.2f", activeResult.existingKW),
+                                unit = "kW",
+                                modifier = Modifier.weight(1f)
+                            )
+                            CompactKpiTile(
+                                label = "Required KVAR",
+                                value = String.format("%.2f", activeResult.requiredKvar),
+                                unit = "kVAR",
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                            CompactKpiTile(
+                                label = "Recommended Bank",
+                                value = formatRatingVal(activeResult.bankCapacity),
+                                unit = "kVAR",
+                                modifier = Modifier.weight(1f)
+                            )
+                            CompactKpiTile(
+                                label = "Corrected Apparent",
+                                value = String.format("%.2f", activeResult.correctedKVA),
+                                unit = "kVA",
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Card 2: Step Selection & Configuration Card
+            item {
+                DsCard {
+                    DsSectionHeader(title = "Capacitor Step Configuration")
+                    Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(DsShape.card)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(horizontal = DsSpacing.md, vertical = DsSpacing.sm),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("System Voltage", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${globalSettings.systemVoltage} V", style = DsType.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Column {
+                            Text("Annual Hours", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${globalSettings.annualOperatingHours} h", style = DsType.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Column {
+                            Text("Loss Reduction", style = DsType.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${(globalSettings.lossReductionPct * 100).toInt()}%", style = DsType.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(DsSpacing.md))
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(DsShape.card)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(DsSpacing.md)
+                    ) {
+                        Text(
+                            text = "Standard Capacitor Step Size (kVAR):",
+                            style = DsType.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(DsSpacing.xs))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(DsSpacing.xs)
+                        ) {
+                            STANDARD_PFC_STEP_SIZES_KVAR.forEach { stepSize ->
+                                val isSelected = abs(globalSettings.kvarStepSize - stepSize) < 0.01
+                                DsSelectableChip(
+                                    text = "${formatRatingVal(stepSize)} kVAR",
+                                    selected = isSelected,
+                                    onClick = { onSaveGlobal(globalSettings.copy(kvarStepSize = stepSize)) }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(DsSpacing.md))
+
+                        var targetPfText by remember(globalSettings.targetPf) {
+                            mutableStateOf(String.format("%.2f", globalSettings.targetPf))
+                        }
+
+                        OutlinedTextField(
+                            value = targetPfText,
+                            onValueChange = { newText ->
+                                targetPfText = newText
+                                newText.toDoubleOrNull()?.let { parsed ->
+                                    if (parsed in 0.7..1.0) {
+                                        onSaveGlobal(globalSettings.copy(targetPf = parsed))
+                                    }
+                                }
+                            },
+                            label = { Text("Target Power Factor (0.70 – 1.00)", style = DsType.bodySmall) },
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            shape = DsShape.card,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                            )
+                        )
+                    }
+                }
+            }
+        }
     }
 }
