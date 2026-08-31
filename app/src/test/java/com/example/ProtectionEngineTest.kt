@@ -138,4 +138,70 @@ class ProtectionEngineTest {
         assertEquals("WARNING", result.selectivityStatus)
         assertEquals("WARNING", result.finalStatus)
     }
+
+    // ------------------------------------------------------------------
+    // P0 CRITICAL-1 regression tests — strict trip-curve parsing (IEC 60364-4-41 §411.4.4)
+    // Legacy bug: `overrideType.contains("B")` matched "MCB"/"MCCB"/"ACB" and forced
+    // every overridden device onto the B-curve MAX_ZS_TABLE limits.
+    // ------------------------------------------------------------------
+
+    @Test
+    fun testMccbIsNeverEvaluatedAsCurveB() {
+        // "MCCB" must resolve to NULL curve (family string, not a curve) and must NOT
+        // use the MCB table. Assumed 10×In pick-up → Zs_max = 0.95·230/(160×10) = 0.137 Ω
+        // (legacy bug would have produced the B-curve value 0.95·230/(160×5) = 0.273 Ω)
+        val circuit = CircuitEntity(id = 6, circuitName = "MCCB-FEEDER", loadKVA = 100.0, overrideDeviceType = "MCCB")
+        val sizing = createDummySizing(ib = 144.3, inRating = 160.0, iz = 246.0, icu = 36.0)
+
+        val ads = ProtectionEngine.calculateAds(circuit, sizing, ze_ohm = 0.01)
+
+        assertEquals(0.137, ads.maxZsAllowed, 0.0005)
+        assertTrue(
+            "Non-MCB device must produce an assumption warning",
+            ads.warnings.any { it.contains("not an MCB") }
+        )
+        // Legacy bug assertion: 0.273 Ω (B-curve for 160 A) must NOT appear
+        assertTrue(ads.maxZsAllowed < 0.2)
+    }
+
+    @Test
+    fun testMCBCurveD_usesD_CurveMultipliers() {
+        // Explicit curve token "MCB Curve D" → D-curve table → Zs_max for 32 A = 0.34 Ω
+        val circuit = CircuitEntity(id = 7, circuitName = "D-CURVE-MCB", loadKVA = 100.0, overrideDeviceType = "MCB Curve D")
+        val sizing = createDummySizing(ib = 25.0, inRating = 32.0, iz = 40.0, icu = 10.0)
+
+        val ads = ProtectionEngine.calculateAds(circuit, sizing, ze_ohm = 0.01)
+
+        assertEquals(0.34, ads.maxZsAllowed, 0.0005)
+        assertEquals(ProtectionEngine.TripCurve.D, ProtectionEngine.parseTripCurve("MCB Curve D"))
+    }
+
+    @Test
+    fun testMCBCurveB_exactToken_usesB_CurveTable() {
+        // MCB with explicit curve token "MCB Curve B" → B-curve table → Zs_max for 32 A = 1.37 Ω
+        // No assumption warning expected (curve was explicitly designated)
+        // NOTE: a bare "B" is NOT an MCB family string and correctly routes to the
+        // non-MCB assumption path — family and curve are strictly separated.
+        val circuit = CircuitEntity(id = 8, circuitName = "B-CURVE-MCB", loadKVA = 100.0, overrideDeviceType = "MCB Curve B")
+        val sizing = createDummySizing(ib = 25.0, inRating = 32.0, iz = 40.0, icu = 10.0)
+
+        val ads = ProtectionEngine.calculateAds(circuit, sizing, ze_ohm = 0.01)
+
+        assertEquals(1.37, ads.maxZsAllowed, 0.0005)
+        assertTrue("Explicit curve should not trigger assumption warning", ads.warnings.isEmpty())
+    }
+
+    @Test
+    fun testParseTripCurve_strictFamilyVsCurveSeparation() {
+        // Device FAMILIES are never curves; only explicit curve designations resolve
+        assertNull(ProtectionEngine.parseTripCurve("MCB"))
+        assertNull(ProtectionEngine.parseTripCurve("MCCB"))
+        assertNull(ProtectionEngine.parseTripCurve("ACB"))
+        assertNull(ProtectionEngine.parseTripCurve("Load Break Switch (LBS)"))
+        assertEquals(ProtectionEngine.TripCurve.B, ProtectionEngine.parseTripCurve("B"))
+        assertEquals(ProtectionEngine.TripCurve.C, ProtectionEngine.parseTripCurve("c"))
+        assertEquals(ProtectionEngine.TripCurve.D, ProtectionEngine.parseTripCurve("Type D"))
+        assertNull(ProtectionEngine.parseTripCurve(null))
+        assertNull(ProtectionEngine.parseTripCurve(""))
+    }
 }

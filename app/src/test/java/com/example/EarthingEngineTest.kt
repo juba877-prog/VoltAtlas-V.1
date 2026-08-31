@@ -9,8 +9,12 @@ class EarthingEngineTest {
 
     @Test
     fun testTcEarth01ReferenceCase() {
-        // TC-EARTH-01 (Workbook sheet case):
-        // ρ = 19.16 Ω·m, L = 3 m, d = 17 mm, Isc = 6.5623 kA, t = 0.4 s, breaker = 630 A
+        // TC-EARTH-01 (Workbook sheet case) — UPDATED after IEC remediation (P0 CRITICAL-2/3):
+        //  ρ = 19.16 Ω·m, L = 3 m, d = 17 mm, Isc = 6.5623 kA, t = 0.4 s, breaker In = 630 A (curve C default)
+        //  - correctedFault_A: no longer ×0.8 — full prospective current per IEC 60364-5-54 §54.2.2 → 6562.30 A
+        //  - earthConductorExact: 6562.3·√0.4/159 = 26.10 mm² → std 35 mm²
+        //  - zsMax: (0.95·230)/(10×630) = 0.0347 Ω (trip multiplier, not the 630 A continuous rating)
+        //  - loop: Zs = 230/6562.3 = 0.0350 Ω > 0.0347 Ω → FAIL (correct, marginal — assumption is flagged)
         val input = EarthingInput(
             soilResistivity_ohmM = 19.16,
             rodLength_m = 3.0,
@@ -32,16 +36,61 @@ class EarthingEngineTest {
 
         assertEquals("Low Resistivity", result.soilClass)
         assertEquals(6.36, result.singleRodResistance_ohm, 0.5)
-        assertEquals(5249.85, result.correctedFault_A, 0.5)
-        assertEquals(20.88, result.earthConductorExact_mm2, 0.5)
-        assertEquals(25.0, result.earthConductorStandard_mm2, 0.01)
-        assertEquals(25.0, result.equipotentialBonding_mm2, 0.01)
+        assertEquals(6562.30, result.correctedFault_A, 0.5)
+        assertEquals(26.10, result.earthConductorExact_mm2, 0.5)
+        assertEquals(35.0, result.earthConductorStandard_mm2, 0.01)
+        assertEquals(35.0, result.equipotentialBonding_mm2, 0.01)
         assertEquals(0.0350, result.zs_ohm, 0.005)
-        assertEquals(0.3651, result.zsMax_ohm, 0.005)
-        assertEquals("PASS", result.loopCheck)
-        assertTrue("Achieved R <= 2.0", result.achievedResistance_ohm <= 2.0)
-        assertTrue("Overall Compliant", result.overallCompliant)
-        assertEquals("✅ COMPLIANT", result.status)
+        assertEquals(0.0347, result.zsMax_ohm, 0.005)
+        assertEquals("FAIL", result.loopCheck)
+        assertFalse(result.overallCompliant)
+        assertEquals("❌ REVIEW REQUIRED", result.status)
+        // Trip-multiplier assumption must be explicitly flagged
+        assertTrue(
+            "Assumed trip multiplier must be warned",
+            result.messages.any { it.contains("assumed trip multiplier") }
+        )
+    }
+
+    @Test
+    fun testZsMaxWorkedExample_B32_CurveB() {
+        // IEC 60364-4-41 §411.4.4 worked example:
+        // B32 MCB → Ia = 5 × 32 = 160 A → Zs_max = (0.95 × 230)/160 = 1.3656 Ω
+        // (NOT 230/32 = 7.19 Ω as the legacy continuous-rating code produced)
+        val input = EarthingInput(
+            soilResistivity_ohmM = 50.0,
+            faultCurrent_kA = 5.0,
+            mainBreakerRating_A = 32.0,
+            mainBreakerCurve = "B"
+        )
+
+        val result = EarthingEngine.calculate(input)
+
+        assertEquals(1.3656, result.zsMax_ohm, 0.005)
+        assertEquals("PASS", result.loopCheck) // Zs = 230/5000 = 0.046 Ω <= 1.3656 Ω
+        assertTrue(result.overallCompliant)
+    }
+
+    @Test
+    fun testEarthConductorUsesMaxLEFaultCurrentWhenProvided() {
+        // IEC 60364-5-54 §54.2.2: sizing uses the maximum prospective LINE-TO-EARTH fault
+        // current Ik1 when supplied, not a reduced 3-phase value and not ×0.8.
+        val input = EarthingInput(
+            soilResistivity_ohmM = 50.0,
+            faultCurrent_kA = 10.0,
+            earthFaultCurrent_kA = 6.56,
+            kFactor = 159.0,
+            disconnectionTime_s = 0.4
+        )
+
+        val result = EarthingEngine.calculate(input)
+
+        assertEquals(6560.0, result.correctedFault_A, 0.5)
+        assertEquals(26.09, result.earthConductorExact_mm2, 0.05) // 6560·√0.4/159
+        assertFalse(
+            "No 3-phase fallback warning expected when Ik1 provided",
+            result.messages.any { it.contains("3-phase Isc") }
+        )
     }
 
     @Test
@@ -59,9 +108,10 @@ class EarthingEngineTest {
         val result = EarthingEngine.calculate(input)
 
         assertEquals("High", result.soilClass)
-        // I_corr = 8000 A -> S = (8000 * sqrt(0.4))/159 = 31.82 mm² -> std 35 mm²
-        assertEquals(31.82, result.earthConductorExact_mm2, 0.5)
-        assertEquals(35.0, result.earthConductorStandard_mm2, 0.01)
+        // I_corr = 10000 A (no ×0.8 reduction — IEC 60364-5-54 §54.2.2)
+        // S = (10000 * sqrt(0.4))/159 = 39.78 mm² -> std 50 mm²
+        assertEquals(39.78, result.earthConductorExact_mm2, 0.5)
+        assertEquals(50.0, result.earthConductorStandard_mm2, 0.01)
         assertTrue("Rods required > 1", result.requiredRods >= 1)
         assertFalse("Calculated values should not be NaN", result.singleRodResistance_ohm.isNaN())
     }

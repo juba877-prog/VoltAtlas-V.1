@@ -14,7 +14,8 @@ data class AdsResult(
     val r1_ohm_km: Double,
     val r2_ohm_km: Double,
     val length_m: Double,
-    val tempFactor: Double = 1.20
+    val tempFactor: Double = 1.20,
+    val warnings: List<String> = emptyList()
 )
 
 data class ProtectionResult(
@@ -34,6 +35,62 @@ data class ProtectionResult(
 )
 
 object ProtectionEngine {
+
+    /**
+     * MCB trip curve characteristics per IEC 60364-4-41 Table 41.1:
+     * the instantaneous (magnetic) trip current that causes automatic disconnection
+     * within the stipulated time, expressed as a multiple of the rated current In.
+     * B = 5xIn, C = 10xIn, D = 20xIn.
+     */
+    enum class TripCurve(val timesIn: Double) {
+        B(5.0),
+        C(10.0),
+        D(20.0)
+    }
+
+    /**
+     * STRICT trip-curve parser. Only explicit curve designations resolve to a curve:
+     *  - exact single-letter strings: "B", "C", "D"
+     *  - explicit tokens inside the string: "MCB Curve C", "Type D", "C-curve"
+     *
+     * Device-family strings such as "MCB", "MCCB", "ACB" resolve to NULL — they are
+     * FAMILIES, not curves. (Legacy bug: `contains("B")` matched "MCB"/"MCCB"/"ACB"
+     * and forced every overridden device onto the B-curve Zs limits.)
+     */
+    fun parseTripCurve(deviceType: String?): TripCurve? {
+        if (deviceType.isNullOrBlank()) return null
+        val s = deviceType.trim()
+        TripCurve.values().firstOrNull { it.name.equals(s, ignoreCase = true) }?.let { return it }
+        val match = Regex(
+            """(?:curve|type|char(?:acteristic)?)\s*[:-]?\s*([BCD])\b""",
+            RegexOption.IGNORE_CASE
+        ).find(s) ?: return null
+        return TripCurve.values().firstOrNull { it.name.equals(match.groupValues[1], ignoreCase = true) }
+    }
+
+    /**
+     * True only for the MCB family (or unclassified/blank, which is conservatively
+     * handled by the MCB path with an explicit assumption warning).
+     * NOTE: "MCCB" does NOT contain the substring "MCB" — verified: M-C-C-B.
+     */
+    fun isMcbFamily(deviceType: String?): Boolean {
+        if (deviceType.isNullOrBlank()) return true
+        return deviceType.uppercase().contains("MCB")
+    }
+
+    /**
+     * IEC 60364-4-41 §411.4.4 — the disconnection current Ia: the current causing
+     * automatic disconnection of the circuit-breaking device within the stipulated time.
+     * Single source of truth for the B/C/D multiplier convention (also used by
+     * EarthingEngine — do not duplicate multipliers elsewhere).
+     */
+    fun disconnectionCurrent(in_A: Double, curve: TripCurve): Double = in_A * curve.timesIn
+
+    /**
+     * IEC 60364-4-41 §411.4.4 — Zs_max = (Cmin * U0) / Ia, with Cmin = 0.95.
+     */
+    fun maxZsAllowed(u0_V: Double, ia_A: Double, cmin: Double = 0.95): Double =
+        if (ia_A > 0.0) (cmin * u0_V) / ia_A else Double.POSITIVE_INFINITY
 
     /**
      * Max Zs values from IEC 60364-4-41 Table 41.3 for 230V systems.
@@ -77,16 +134,44 @@ object ProtectionEngine {
         val l_m = circuit.length_m
         val calculatedZs = ze_ohm + ((r1 + r2) * l_m * tempFactor) / 1000.0
         
-        val overrideType = circuit.overrideDeviceType ?: "C"
-        val typeKey = when {
-            overrideType.contains("B") -> "B"
-            overrideType.contains("D") -> "D"
-            else -> "C"
-        }
-        
+        // IEC 60364-4-41 §411.4.4: Zs_max = (Cmin · U0) / Ia. The trip CURVE must be parsed
+        // strictly from explicit curve tokens — NEVER by substring-matching the device
+        // family ("MCB", "MCCB", "ACB" all contain the letter "B").
+        val deviceFamily = (circuit.overrideDeviceType ?: sizingResult.deviceType ?: "").trim()
+        val u0Ads = 230.0
         val rating = sizingResult.deviceSize_A
-        val maxZs = MAX_ZS_TABLE[typeKey]?.get(rating) 
-            ?: (230.0 * 0.95) / (rating * (if (typeKey == "B") 5.0 else if (typeKey == "D") 20.0 else 10.0))
+        val warnings = mutableListOf<String>()
+        val parsedCurve = parseTripCurve(deviceFamily)
+        val isMcb = isMcbFamily(deviceFamily)
+
+        val maxZs: Double
+        when {
+            parsedCurve != null && isMcb -> {
+                // MCB with an explicit curve designation (e.g. "MCB Curve D") -> table/fallback by curve
+                maxZs = MAX_ZS_TABLE[parsedCurve.name]?.get(rating)
+                    ?: maxZsAllowed(u0Ads, disconnectionCurrent(rating, parsedCurve))
+            }
+            isMcb -> {
+                // MCB without an explicit curve token -> assume C (10×In), flagged as assumption
+                warnings.add(
+                    "Trip curve not specified for MCB '${deviceFamily.ifBlank { "MCB" }}' — " +
+                        "assumed C-curve (10×In). Verify the device characteristic (IEC 60898)."
+                )
+                maxZs = MAX_ZS_TABLE["C"]?.get(rating)
+                    ?: maxZsAllowed(u0Ads, disconnectionCurrent(rating, TripCurve.C))
+            }
+            else -> {
+                // MCCB / ACB / LBS and other families must NOT be evaluated against the
+                // MCB MAX_ZS_TABLE multipliers. Without a configured magnetic setting,
+                // assume an instantaneous/short-time pick-up of 10×In and flag it.
+                warnings.add(
+                    "Device '$deviceFamily' is not an MCB — MCB Zs table not applied. " +
+                        "Assuming instantaneous pick-up Ii = 10×In (${rating * 10.0} A) for Zs_max. " +
+                        "Configure the actual Ii/Isd setting."
+                )
+                maxZs = maxZsAllowed(u0Ads, disconnectionCurrent(rating, TripCurve.C))
+            }
+        }
 
         val isPass = calculatedZs <= maxZs
         
@@ -99,7 +184,8 @@ object ProtectionEngine {
             disconnectionTime = if (isPass) "< 0.4s" else "> 0.4s",
             r1_ohm_km = r1,
             r2_ohm_km = r2,
-            length_m = l_m
+            length_m = l_m,
+            warnings = warnings
         )
     }
 

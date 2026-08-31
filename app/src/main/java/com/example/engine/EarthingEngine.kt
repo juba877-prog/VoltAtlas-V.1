@@ -16,7 +16,10 @@ data class EarthingInput(
     val projectType: String = "Commercial",       // "Villa" | "Commercial" | ...
     val faultCurrent_kA: Double = 0.0,           // AUTO from ShortCircuit/Transformer (Isc)
     val systemVoltage_V: Double = 400.0,         // AUTO
-    val mainBreakerRating_A: Double = 630.0,     // AUTO main breaker Ia
+    val mainBreakerRating_A: Double = 630.0,     // AUTO main breaker In
+    val mainBreakerCurve: String = "C",          // main breaker trip curve B/C/D (IEC 60364-4-41 §411.4.4)
+    val mainBreakerInstantMultiplier: Double = 0.0, // explicit Ii/Isd pick-up multiplier (×In); 0 = use curve default
+    val earthFaultCurrent_kA: Double = 0.0,      // AUTO max prospective L-E earth-fault current Ik1 (0 = fall back to 3-phase Isc)
     val disconnectionTime_s: Double = 0.4,       // t
     val u0_V: Double = 230.0,                    // nominal phase-to-ground voltage
     val totalConnectedKVA: Double = 0.0          // total connected transformer load
@@ -152,9 +155,14 @@ object EarthingEngine {
             Math.round((input.totalConnectedKVA * 1000.0 / (sqrt(3.0) * input.systemVoltage_V)) * 100.0) / 100.0
         } else 0.0
 
-        // 7. Prospective & Corrected Fault Current (R40, R41)
+        // 7. Prospective Earth-Fault Current (R40, R41)
+        // IEC 60364-5-54 §54.2.2: the protective conductor is sized on the MAXIMUM
+        // prospective earth-fault current (the line-to-earth fault). Use Ik1 (2·Z1 + Z0)
+        // when provided; otherwise fall back to the supplied 3-phase Isc (conservative).
+        // No arbitrary reduction factors are applied.
+        val designFaultKa = if (input.earthFaultCurrent_kA > 0.0) input.earthFaultCurrent_kA else faultKa
         val prospectiveFaultA = Math.round(faultKa * 1000.0 * 100.0) / 100.0
-        val correctedFaultA = Math.round(prospectiveFaultA * 0.8 * 100.0) / 100.0
+        val correctedFaultA = Math.round(designFaultKa * 1000.0 * 100.0) / 100.0
 
         // 8. Earth Conductor Thermal Sizing (R42, R43): S = (I_corr · √t) / k
         val k = if (input.kFactor > 0.0) input.kFactor else 159.0
@@ -167,12 +175,23 @@ object EarthingEngine {
         val equipotentialBondingMm2 = standardConductorMm2
 
         // 9. Earth Fault Loop Impedance Zs & Zs_max (R46, R47)
+        // IEC 60364-4-41 §411.4.4: Zs_max = (Cmin · U0) / Ia, Cmin = 0.95, where Ia is the
+        // current causing automatic disconnection within the stipulated time — the trip
+        // MULTIPLIER (5×In B / 10×In C / 20×In D), NOT the breaker continuous rating.
+        // Multiplier convention is the single source of truth in ProtectionEngine.
         val u0 = if (input.u0_V > 0.0) input.u0_V else 230.0
         val zs = if (prospectiveFaultA > 0.0) u0 / prospectiveFaultA else 0.0
         val zsRounded = Math.round(zs * 10000.0) / 10000.0
 
-        val ia = if (input.mainBreakerRating_A > 0.0) input.mainBreakerRating_A else 630.0
-        val zsMax = u0 / ia
+        val inMain = if (input.mainBreakerRating_A > 0.0) input.mainBreakerRating_A else 630.0
+        val mainCurve = ProtectionEngine.parseTripCurve(input.mainBreakerCurve)
+            ?: ProtectionEngine.TripCurve.C
+        val ia = if (input.mainBreakerInstantMultiplier > 0.0) {
+            inMain * input.mainBreakerInstantMultiplier
+        } else {
+            ProtectionEngine.disconnectionCurrent(inMain, mainCurve)
+        }
+        val zsMax = ProtectionEngine.maxZsAllowed(u0, ia)
         val zsMaxRounded = Math.round(zsMax * 10000.0) / 10000.0
 
         val loopPass = zsRounded <= zsMaxRounded
@@ -187,7 +206,18 @@ object EarthingEngine {
             messages.add("Achieved resistance (${achievedR} Ω) exceeds target (${targetR} Ω). Increase rod count or depth.")
         }
         if (!loopPass) {
-            messages.add("Loop impedance Zs (${zsRounded} Ω) exceeds Zs_max (${zsMaxRounded} Ω) for main breaker ${ia}A.")
+            messages.add("Loop impedance Zs (${zsRounded} Ω) exceeds Zs_max (${zsMaxRounded} Ω) for main breaker Ia = ${ia}A (In = ${inMain}A, trip multiplier applied).")
+        }
+        if (input.mainBreakerInstantMultiplier <= 0.0) {
+            messages.add(
+                "Zs_max uses an assumed trip multiplier (${mainCurve.name}-curve, ${mainCurve.timesIn}×In) for the main breaker " +
+                    "— verify the device instantaneous/short-time setting (IEC 60364-4-41 §411.4.4)."
+            )
+        }
+        if (input.earthFaultCurrent_kA <= 0.0 && faultKa > 0.0) {
+            messages.add(
+                "Earth conductor sized on the 3-phase Isc (no line-to-earth Ik1 provided) — conservative per IEC 60364-5-54 §54.2.2."
+            )
         }
         if (overallCompliant) {
             messages.add("Earthing system fully compliant with IEC 60364-5-54 / BS 7430.")

@@ -689,6 +689,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 faultCurrent_kA = maxIsc,
                 systemVoltage_V = 400.0,
                 mainBreakerRating_A = mainBreaker,
+                earthFaultCurrent_kA = transformerResults.values.maxOfOrNull { it.isc1Phase } ?: 0.0,
                 disconnectionTime_s = earthingEntityVal.disconnectionTime_s,
                 totalConnectedKVA = totalConnectedLoad
             )
