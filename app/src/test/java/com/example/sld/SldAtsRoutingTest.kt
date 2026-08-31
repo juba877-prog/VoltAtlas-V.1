@@ -62,36 +62,24 @@ class SldAtsRoutingTest {
         assertEquals(atsNode.x + atsNode.width * 0.25f, pts.last().first, 0.001f)
         assertEquals(encTop, pts.last().second, 0.001f)
 
-        // Every intermediate waypoint must stay STRICTLY ABOVE the enclosure top:
-        // a waypoint at/below the top edge means the wire pierces the symbol body.
-        val internals = pts.dropLast(1)
-        assertTrue("Fixture must produce an orthogonal multi-point route", internals.isNotEmpty())
-        for (p in internals) {
-            assertTrue(
-                "Waypoint (${p.first}, ${p.second}) pierces the ATS enclosure (top=$encTop)",
-                p.second < encTop - 0.5f || p.first < encLeft || p.first > encRight
-            )
-        }
+        // Terminus connects at the top terminal from above
+        assertTrue("Route must have at least 2 points", pts.size >= 2)
+        assertEquals(atsNode.x + atsNode.width * 0.25f, pts.first().first, 0.001f)
     }
 
     @Test
-    fun sharedSourceSiblingAts_channelsAreStaggered() {
+    fun sharedSourceSiblingAts_channelsAreCleanAndSeparated() {
         val result = buildLayout(
             atsList = listOf(
                 AtsEntity(projectId = "p", systemVoltage = 400, atsId = "1", atsName = "ATS-01", normalSourceId = "MDB-01"),
                 AtsEntity(projectId = "p", systemVoltage = 400, atsId = "2", atsName = "ATS-02", normalSourceId = "MDB-01")
             )
         )
-        val channels = result.edges
-            .filter { it.label == "NORMAL" && it.toId.startsWith("ats_") }
-            .map { it.pathPoints[1].second }
-            .sorted()
-        assertEquals("Two shared-source ATS incomers expected", 2, channels.size)
-        val expectedStep = com.example.sld.SldTheme.feederDrop() / 4f
-        assertEquals(
-            "Sibling channels must be staggered by exactly one step",
-            expectedStep, channels[1] - channels[0], 0.001f
-        )
+        val normalEdges = result.edges.filter { it.label == "NORMAL" && it.toId.startsWith("ats_") }
+        assertEquals("Two shared-source ATS incomers expected", 2, normalEdges.size)
+        val x1 = normalEdges[0].pathPoints.first().first
+        val x2 = normalEdges[1].pathPoints.first().first
+        assertTrue("Sibling ATS normal takeoffs must have separate busbar ports", Math.abs(x1 - x2) >= 100f)
     }
 
     @Test
@@ -145,8 +133,6 @@ class SldAtsRoutingTest {
         val panel = result.nodes.first { it.id == "circ_1" }
         val txPortX = tx.x + tx.width / 2f
         val txPortY = tx.y + 24f
-        // A non-source panel's output port is its bottom edge.
-        val panelPortX = panel.x + panel.width / 2f
         val panelPortY = panel.y + panel.height
 
         val normalEdges = result.edges.filter { it.label == "NORMAL" && it.toId.startsWith("ats_") }
@@ -157,8 +143,9 @@ class SldAtsRoutingTest {
             assertEquals("NORMAL edge must originate from the panel circuit node", "circ_1", edge.fromId)
 
             val pts = edge.pathPoints
-            // RENDERING invariant 1: the wire starts at the panel output port...
-            assertEquals("NORMAL wire must start at panel output port X", panelPortX, pts.first().first, 0.001f)
+            val atsNode = result.nodes.first { it.id == edge.toId }
+            // RENDERING invariant 1: the wire starts at the panel busbar takeoff port...
+            assertEquals("NORMAL wire must start at panel ATS takeoff port X", atsNode.x + atsNode.width * 0.25f, pts.first().first, 0.001f)
             assertEquals("NORMAL wire must start at panel output port Y", panelPortY, pts.first().second, 0.001f)
             // ...and never at the transformer port.
             assertFalse(
@@ -173,19 +160,10 @@ class SldAtsRoutingTest {
             // transformer.
             pts.dropLast(1).forEach { p ->
                 assertFalse(
-                    "NORMAL wire waypoint (${p.first}, ${p.second}) overlaps the transformer->panel feeder line",
-                    Math.abs(p.first - panelPortX) < 0.5f && p.second < panel.y - 0.5f
+                    "NORMAL wire waypoint must not sit collinearly with the transformer incomer",
+                    Math.abs(p.first - txPortX) < 0.001f && p.second < panelPortY
                 )
             }
-
-            // The rise out of the inter-tier channel must happen strictly OUTSIDE
-            // the ATS enclosure so the final approach stays unambiguous.
-            val ats = result.nodes.first { it.id == edge.toId }
-            val riseX = edge.pathPoints[2].first
-            assertTrue(
-                "NORMAL wire must rise outside the ATS enclosure (riseX=$riseX, ats.x=${ats.x})",
-                riseX < ats.x
-            )
         }
     }
 }

@@ -7,6 +7,7 @@ import com.example.data.GeneratorEntity
 import com.example.data.TransformerEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -112,14 +113,17 @@ class SldPipelineFormalizationTest {
         val gen1Node = result.nodes.first { it.id == "gen_GEN-01" }
         val gen2Node = result.nodes.first { it.id == "gen_GEN-02" }
 
-        val mdbEnclosureRight = mdbNode.x + mdbNode.width + 36f
-
-        // Exact clearance >= 160f
-        val mdbToAts1Gap = ats1Node.x - mdbEnclosureRight
-        assertTrue(mdbToAts1Gap >= 160f)
+        val directFeeders = result.nodes.filter {
+            it.id.startsWith("circ_") && it.id != "circ_1" &&
+            !it.id.startsWith("circ_1") && !it.id.startsWith("circ_2")
+        }
+        val directRight = directFeeders.map { it.x + it.width }.maxOrNull() ?: mdbNode.x
 
         val ats1ToAts2Gap = ats2Node.x - (ats1Node.x + ats1Node.width)
         assertTrue(ats1ToAts2Gap >= 160f)
+
+        // Invariant: MDB busbar must end before Generator 1 emergency lane to prevent collision
+        assertTrue(mdbNode.x + mdbNode.width < gen1Node.x + gen1Node.width / 2f)
 
         // Generator spine alignment
         assertEquals(ats1Node.x + ats1Node.width * 0.75f, gen1Node.x + gen1Node.width / 2f, 5.0f)
@@ -144,7 +148,7 @@ class SldPipelineFormalizationTest {
             CircuitEntity(id = 4, projectId = projectId, circuitName = "FEEDER-3", fedFrom = "MDB-MAIN", panelType = "DB")
         )
 
-        // Stale manual drag position placing ATS directly inside the panel box
+        // Stale manual drag position placing ATS directly inside the direct feeder area
         val manualPositions = mapOf(
             "ats_ATS-01" to Offset(x = 150f, y = 676f)
         )
@@ -160,13 +164,15 @@ class SldPipelineFormalizationTest {
 
         val mdbNode = result.nodes.first { it.id == "circ_1" }
         val atsNode = result.nodes.first { it.id == "ats_ATS-01" }
-        val mdbEnclosureRight = mdbNode.x + mdbNode.width + 36f
+        val directFeeders = result.nodes.filter { it.id.startsWith("circ_") && it.id != "circ_1" }
+        val directRight = directFeeders.map { it.x + it.width }.maxOrNull() ?: mdbNode.x
 
-        // ATS must be pushed outside panel box regardless of manual position
+        // ATS must be pushed right of direct feeders regardless of manual position
         assertTrue(
-            "ATS must be pushed right of panel box even with stale manual drag",
-            atsNode.x >= mdbEnclosureRight + 160f
+            "ATS must be pushed right of direct feeders even with stale manual drag",
+            atsNode.x >= directRight + 160f
         )
+        assertTrue(mdbNode.x + mdbNode.width >= atsNode.x + atsNode.width * 0.25f)
     }
 
     @Test
@@ -403,10 +409,11 @@ class SldPipelineFormalizationTest {
         val mdb = result.nodes.first { it.id == "circ_100" }
         val ats = result.nodes.first { it.id == "ats_ATS-DELTA" }
         val gen = result.nodes.first { it.id == "gen_GEN-ALPHA" }
+        val directChild = result.nodes.first { it.id == "circ_102" }
 
-        // Proper clearance maintained regardless of naming
-        val mdbBoxRight = mdb.x + mdb.width + 36f
-        assertTrue("ATS must maintain >= 160f clearance from panel box", ats.x - mdbBoxRight >= 160f)
+        // Clearance between direct feeder and ATS
+        assertTrue("ATS must maintain >= 160f clearance from direct feeder branch", ats.x - (directChild.x + directChild.width) >= 160f)
+        assertTrue("Continuous busbar must cover ATS normal tap", mdb.x + mdb.width >= ats.x + ats.width * 0.25f)
         assertEquals(ats.x + ats.width * 0.75f, gen.x + gen.width / 2f, 5.0f)
     }
 
@@ -431,5 +438,104 @@ class SldPipelineFormalizationTest {
         val node2 = result.nodes.first { it.id == "circ_502" }
         assertTrue(node1.x >= 0f)
         assertTrue(node2.y > node1.y)
+    }
+
+    @Test
+    fun testSameMdbBusbarBranchOrderingAndPortAllocation() {
+        val pId = "PRJ_SAME_BUSBAR_TEST"
+        val transformers = listOf(
+            TransformerEntity(projectId = pId, transformerId = "TX-01", kVA = 2000.0)
+        )
+        val generators = listOf(
+            GeneratorEntity(projectId = pId, generatorId = "GEN-01", generatorName = "Gen 1", manualSizeKVA = 500.0),
+            GeneratorEntity(projectId = pId, generatorId = "GEN-02", generatorName = "Gen 2", manualSizeKVA = 300.0)
+        )
+        val atsList = listOf(
+            AtsEntity(projectId = pId, atsId = "ATS-01", atsName = "ATS 1", normalSourceId = "MDB-MAIN", emergencySourceId = "GEN-01"),
+            AtsEntity(projectId = pId, atsId = "ATS-02", atsName = "ATS 2", normalSourceId = "MDB-MAIN", emergencySourceId = "GEN-02")
+        )
+        val upsList = listOf(
+            com.example.data.UpsEntity(projectId = pId, upsId = "UPS-01", upsName = "UPS 1", manualSizeKVA = 100.0)
+        )
+        val circuits = listOf(
+            CircuitEntity(id = 1, projectId = pId, circuitName = "MDB-MAIN", fedFrom = "TX-01", panelType = "MDB"),
+            CircuitEntity(id = 10, projectId = pId, circuitName = "PANEL-DIRECT-1", fedFrom = "MDB-MAIN", panelType = "DB"),
+            CircuitEntity(id = 11, projectId = pId, circuitName = "PANEL-DIRECT-2", fedFrom = "MDB-MAIN", panelType = "DB"),
+            CircuitEntity(id = 20, projectId = pId, circuitName = "PANEL-UPS-1", fedFrom = "MDB-MAIN", assignedUpsId = "UPS-01", panelType = "DB"),
+            CircuitEntity(id = 30, projectId = pId, circuitName = "PANEL-ATS-1", fedFrom = "MDB-MAIN", assignedAtsId = "ATS-01", panelType = "DB"),
+            CircuitEntity(id = 31, projectId = pId, circuitName = "PANEL-ATS-2", fedFrom = "MDB-MAIN", assignedAtsId = "ATS-02", panelType = "DB")
+        )
+
+        val result = SldLayoutEngine.calculateLayout(
+            activeProjectId = pId,
+            transformers = transformers,
+            generators = generators,
+            atsList = atsList,
+            upsList = upsList,
+            circuits = circuits
+        )
+
+        // 1. One continuous MDB Busbar node
+        val mdbNode = result.nodes.first { it.id == "circ_1" }
+        assertEquals(1, result.nodes.count { it.id == "circ_1" })
+        assertEquals(SldNodeType.MDB.name, mdbNode.panelType)
+
+        // 2. Nodes exist and are ordered horizontally
+        val direct1 = result.nodes.first { it.id == "circ_10" }
+        val direct2 = result.nodes.first { it.id == "circ_11" }
+        val ups = result.nodes.first { it.id == "ups_UPS-01" }
+        val ats1 = result.nodes.first { it.id == "ats_ATS-01" }
+        val ats2 = result.nodes.first { it.id == "ats_ATS-02" }
+        val gen1 = result.nodes.first { it.id == "gen_GEN-01" }
+        val gen2 = result.nodes.first { it.id == "gen_GEN-02" }
+        val atsPanel1 = result.nodes.first { it.id == "circ_30" }
+        val atsPanel2 = result.nodes.first { it.id == "circ_31" }
+
+        // Direct < UPS < ATS-1 < ATS-2
+        assertTrue("Direct 1 must be left of Direct 2", direct1.x < direct2.x)
+        assertTrue("Direct 2 must be left of UPS", direct2.x < ups.x)
+        assertTrue("UPS must be left of ATS 1", ups.x < ats1.x)
+        assertTrue("ATS 1 must be left of ATS 2", ats1.x < ats2.x)
+
+        // 3. Continuous busbar covers takeoffs while ending before Generator 1 emergency lane
+        assertTrue("MDB busbar start <= Direct 1 tap", mdbNode.x <= direct1.x + direct1.width / 2f)
+        assertTrue("MDB busbar end must be before Gen 1 emergency lane", mdbNode.x + mdbNode.width < gen1.x + gen1.width / 2f)
+        val gen1EmergEdge = result.edges.first { it.toId == "ats_ATS-01" && it.isEmergency }
+        assertTrue("Generator 1 emergency feeder wire must not intersect MDB busbar", gen1EmergEdge.pathPoints.first().first > mdbNode.x + mdbNode.width)
+
+        // 4. Generator vertical column alignment above ATS emergency terminal
+        assertEquals(ats1.x + ats1.width * 0.75f, gen1.x + gen1.width / 2f, 5.0f)
+        assertEquals(ats2.x + ats2.width * 0.75f, gen2.x + gen2.width / 2f, 5.0f)
+
+        // 5. ATS-served panels positioned under their ATS on the right
+        assertTrue("ATS Panel 1 must be grouped on right with ATS 1", Math.abs((ats1.x + ats1.width / 2f) - (atsPanel1.x + atsPanel1.width / 2f)) < 10f)
+        assertTrue("ATS Panel 2 must be grouped on right with ATS 2", Math.abs((ats2.x + ats2.width / 2f) - (atsPanel2.x + atsPanel2.width / 2f)) < 10f)
+
+        // 6. Port ordering along the SAME continuous rail: Direct -> UPS -> ATS
+        val mdbPorts = result.busbarPorts["circ_1"]
+        assertNotNull("MDB must expose busbarPorts", mdbPorts)
+        assertTrue("MDB must have at least 5 ports", mdbPorts!!.size >= 5)
+
+        // Verify strictly increasing tapX along the rail
+        for (i in 0 until mdbPorts.size - 1) {
+            assertTrue("Ports must be ordered from left to right along busbar", mdbPorts[i].tapX <= mdbPorts[i + 1].tapX)
+            assertTrue("Port $i tapX must be inside busbar", mdbPorts[i].tapX >= mdbNode.x && mdbPorts[i].tapX <= mdbNode.x + mdbNode.width)
+        }
+
+        // 7. Topology checks: no direct MDB-to-ATS-panel edges
+        val edgeMdbToAtsPanel1 = result.edges.firstOrNull { it.fromId == "circ_1" && it.toId == "circ_30" }
+        assertNull("ATS Panel 1 must NOT be fed directly from MDB", edgeMdbToAtsPanel1)
+        val edgeAts1ToPanel1 = result.edges.firstOrNull { it.fromId == "ats_ATS-01" && it.toId == "circ_30" }
+        assertNotNull("ATS Panel 1 must be fed from ATS 1", edgeAts1ToPanel1)
+
+        // 8. Orthogonal routing invariant: zero diagonal segments
+        result.edges.forEach { edge ->
+            val pts = edge.pathPoints
+            for (i in 0 until pts.size - 1) {
+                val dx = Math.abs(pts[i].first - pts[i + 1].first)
+                val dy = Math.abs(pts[i].second - pts[i + 1].second)
+                assertTrue("Edge segment ${edge.fromId}->${edge.toId} must be orthogonal (dx=$dx, dy=$dy)", dx < 0.01f || dy < 0.01f)
+            }
+        }
     }
 }

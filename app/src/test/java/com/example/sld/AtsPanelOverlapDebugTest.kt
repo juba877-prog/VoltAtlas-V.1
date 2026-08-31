@@ -162,19 +162,27 @@ private fun dump(title: String, result: SldEngineResult): String {
 
     private fun assertAtsClearance(title: String, result: SldEngineResult, panelId: String, atsIds: List<String>) {
         val panel = result.nodes.first { it.id == panelId }
-        val isMainPanel = panel.panelType.uppercase().contains("MDB") || panel.panelType.uppercase().contains("MAIN")
-        val encPad = if (isMainPanel) RiserLayoutEngine.MAIN_PANEL_ENCLOSURE_PAD else 0f
-        val boxRight = panel.x + panel.width + encPad
+        val directFeeders = result.nodes.filter { it.id in (2..7).map { id -> "circ_$id" } }
+        val directFeedersRight = directFeeders.map { it.x + it.width }.maxOrNull() ?: panel.x
 
         var prevAtsRight = Float.NEGATIVE_INFINITY
         for (atsId in atsIds) {
             val ats = result.nodes.first { it.id == atsId }
-            val minLeft = maxOf(boxRight, prevAtsRight)
+            val minLeft = maxOf(directFeedersRight, prevAtsRight)
             assertTrue(
-                "$title: $atsId at x=${ats.x} must be >= panel box right $boxRight + gap ${RiserLayoutEngine.ATS_TO_PANEL_MIN_GAP}",
+                "$title: $atsId at x=${ats.x} must be >= preceding feeders right $minLeft + gap ${RiserLayoutEngine.ATS_TO_PANEL_MIN_GAP}",
                 ats.x >= minLeft + RiserLayoutEngine.ATS_TO_PANEL_MIN_GAP
             )
-            println("$title OK: $atsId x=${ats.x}, panelBoxRight=$boxRight, gap=${ats.x - boxRight}")
+            // Invariant: continuous busbar must not intersect the ATS emergency feeder
+            val genEdge = result.edges.firstOrNull { it.toId == atsId && it.isEmergency }
+            if (genEdge != null) {
+                val genWireX = genEdge.pathPoints.first().first
+                assertTrue(
+                    "$title: continuous busbar ($panelId right=${panel.x + panel.width}) must not intersect emergency feeder at $genWireX",
+                    panel.x + panel.width < genWireX
+                )
+            }
+            println("$title OK: $atsId x=${ats.x}, minLeft=$minLeft, continuousBusbarRight=${panel.x + panel.width}")
             prevAtsRight = ats.x + ats.width
         }
     }
@@ -195,13 +203,13 @@ private fun dump(title: String, result: SldEngineResult): String {
         assertAtsClearance("NARROW(1 feeder)", narrow, "circ_1", listOf("ats_ATS-01", "ats_ATS-02"))
         assertAtsClearance("WIDE(6 feeders)", wide, "circ_1", listOf("ats_ATS-01", "ats_ATS-02"))
     }
-@Test
+
+    @Test
     fun staleManualAtsPosition_pushedClearOfPanelBox() {
-        // Reproduces the owner-reported symptom exactly: a persisted (stale/dragged)
-        // ATS position that sits ON the panel box because the panel has grown wide
-        // with feeder columns since that position was saved. Before this fix, the
-        // manual override (applied AFTER collision avoidance) re-created the
-        // overlap no matter what the engine computed.
+        // Reproduces the owner-reported symptom: a persisted (stale/dragged)
+        // ATS position that sits ON the direct feeders because the panel has grown wide
+        // with feeder columns since that position was saved. The engine pushes it
+        // safely to the right of all direct and UPS feeders while keeping the busbar continuous.
         val wideFeeders = listOf(
             mccb(2, "Feeder-N1", 40.0, "5x6 mm²", "DB"),
             mccb(3, "Feeder-N2", 40.0, "5x6 mm²", "DB"),
@@ -211,11 +219,14 @@ private fun dump(title: String, result: SldEngineResult): String {
             mccb(7, "Pump-1", 80.0, "5x16 mm²", "LOAD")
         )
         val panel = buildFixture(wideFeeders).nodes.first { it.id == "circ_1" }
-        val encRight = panel.x + panel.width + RiserLayoutEngine.MAIN_PANEL_ENCLOSURE_PAD
+        val directFeeders = buildFixture(wideFeeders).nodes.filter {
+            it.id != "circ_1" && !it.id.startsWith("ats_") && !it.id.startsWith("gen_") && !it.id.startsWith("tx_")
+        }
+        val directRight = directFeeders.map { it.x + it.width }.maxOrNull() ?: panel.x
 
-        // Simulate an old saved position: ATS-01 dragged to x just inside the box.
-        val staleAts1 = androidx.compose.ui.geometry.Offset(encRight - 10f, panel.y)
-        val staleAts2 = androidx.compose.ui.geometry.Offset(encRight - 10f + 220f, panel.y)
+        // Simulate an old saved position: ATS-01 dragged onto direct feeder area.
+        val staleAts1 = androidx.compose.ui.geometry.Offset(directRight - 50f, panel.y)
+        val staleAts2 = androidx.compose.ui.geometry.Offset(directRight - 50f + 220f, panel.y)
 
         val result = buildFixtureWithManual(
             wideFeeders,

@@ -103,8 +103,8 @@ object RiserLayoutEngine {
                 if (parentNode != null && childNode != null) {
                     val isSourceToSource = parentNode.type == SldNodeType.UTILITY_SOURCE && childNode.type == SldNodeType.TRANSFORMER
 
-                    // Do not push Transformer out of Tier 0, and do not relax tier via secondary ATS incomer edges
-                    if (!isSourceToSource && edge.type != SldEdgeType.ATS_EMERGENCY_PATH && edge.type != SldEdgeType.ATS_NORMAL_PATH) {
+                    // Do not push Transformer out of Tier 0, and do not relax tier via secondary ATS emergency edges
+                    if (!isSourceToSource && edge.type != SldEdgeType.ATS_EMERGENCY_PATH) {
                         val parentTier = effectiveTier[edge.fromNodeId] ?: 0
                         val currentChildTier = effectiveTier[edge.toNodeId] ?: 0
                         val minChildTier = parentTier + 1
@@ -171,10 +171,30 @@ object RiserLayoutEngine {
         val parentMap = mutableMapOf<String, String>()
 
         graph.edges.forEach { edge ->
-            if (edge.type != SldEdgeType.ATS_EMERGENCY_PATH && edge.type != SldEdgeType.ATS_NORMAL_PATH) {
+            if (edge.type != SldEdgeType.ATS_EMERGENCY_PATH) {
                 childrenMap.getOrPut(edge.fromNodeId) { mutableListOf() }.add(edge.toNodeId)
                 parentMap[edge.toNodeId] = edge.fromNodeId
             }
+        }
+
+        // Branch category ordering under parent panels: DIRECT -> UPS_BACKED -> ATS_BACKED -> UNRESOLVED
+        childrenMap.forEach { (parentId, children) ->
+            children.sortWith(
+                compareBy(
+                    { childId ->
+                        val childNode = nodeMap[childId]
+                        val edge = graph.edges.firstOrNull { it.fromNodeId == parentId && it.toNodeId == childId }
+                        when {
+                            edge?.type == SldEdgeType.UNRESOLVED_PATH -> 3
+                            childNode?.type == SldNodeType.ATS || edge?.type == SldEdgeType.ATS_NORMAL_PATH -> 2
+                            childNode?.type == SldNodeType.UPS || edge?.type == SldEdgeType.UPS_INPUT -> 1
+                            else -> 0 // DIRECT
+                        }
+                    },
+                    { childId -> nodeMap[childId]?.rawCircuitId ?: 0 },
+                    { childId -> childId }
+                )
+            )
         }
 
         // Recursive subtree width computation
@@ -201,15 +221,22 @@ object RiserLayoutEngine {
         val downstreamRoots = nonSourceNodes.filter { node ->
             val pId = parentMap[node.id]
             pId == null || (effectiveTier[pId] ?: 0) <= 0 || !nodeMap.containsKey(pId)
-        }.sortedBy { node ->
-            when (node.type) {
-                SldNodeType.MDB -> 0
-                SldNodeType.MCC -> 1
-                SldNodeType.ATS -> 2
-                SldNodeType.SMDB -> 3
-                else -> 4
-            }
-        }
+        }.sortedWith(
+            compareBy(
+                { node ->
+                    when (node.type) {
+                        SldNodeType.MDB -> 0
+                        SldNodeType.MCC -> 1
+                        SldNodeType.SMDB -> 2
+                        SldNodeType.DB -> 3
+                        SldNodeType.ATS -> 4
+                        else -> 5
+                    }
+                },
+                { it.rawCircuitId ?: 0 },
+                { it.id }
+            )
+        )
 
         downstreamRoots.forEach { rootNode ->
             computeSubtreeWidth(rootNode.id)
@@ -232,7 +259,7 @@ object RiserLayoutEngine {
             val circ = node.rawCircuitId?.let { circuitMap[it] }
 
             val isNodeSource = isSourceNode(node.type)
-            val nodeHeight = if (isNodeSource) 48f else 16f
+            val nodeHeight = if (isNodeSource || node.type == SldNodeType.ATS || node.type == SldNodeType.UPS) 48f else 16f
 
             positionedNodesMap[node.id] = PositionedSldNode(
                 id = node.id,
@@ -268,11 +295,14 @@ object RiserLayoutEngine {
                 // Expand busbar width for panels with multiple children so it spans across all children's tap positions
                 val isPanel = !isNodeSource || node.type == SldNodeType.MDB || node.type == SldNodeType.SMDB || node.type == SldNodeType.MCC
                 if (children.size >= 2 && isPanel) {
-                    val firstChild = positionedNodesMap[children.first()]
-                    val lastChild = positionedNodesMap[children.last()]
-                    if (firstChild != null && lastChild != null) {
-                        val firstCenter = firstChild.x + firstChild.width / 2f
-                        val lastCenter = lastChild.x + lastChild.width / 2f
+                    val childNodes = children.mapNotNull { positionedNodesMap[it] }
+                    if (childNodes.size >= 2) {
+                        val tapCenters = childNodes.map {
+                            if (it.panelType.uppercase().contains("ATS")) it.x + it.width * 0.25f
+                            else it.x + it.width / 2f
+                        }
+                        val firstCenter = tapCenters.minOrNull() ?: (positionedNodesMap[node.id]!!.x + 40f)
+                        val lastCenter = tapCenters.maxOrNull() ?: (positionedNodesMap[node.id]!!.x + 40f)
                         val margin = 40f
                         val spanWidth = (lastCenter - firstCenter) + margin * 2f
                         val newWidth = maxOf(nWidth, spanWidth)
@@ -302,6 +332,45 @@ object RiserLayoutEngine {
             }
         }
 
+        // Expand continuous busbar rail to cover takeoffs while respecting dedicated emergency lanes
+        fun expandBusbarsAcrossTakeoffs() {
+            positionedNodesMap.values.filter { nodeMap[it.id]?.type in PANEL_BUSBAR_TYPES }.forEach { panel ->
+                val childEntries = (childrenMap[panel.id] ?: emptyList()).mapNotNull { positionedNodesMap[it] }
+                if (childEntries.isNotEmpty()) {
+                    val emergLanes = graph.edges
+                        .filter { it.type == SldEdgeType.ATS_EMERGENCY_PATH }
+                        .mapNotNull { e ->
+                            val genNode = positionedNodesMap[e.fromNodeId]
+                            val atsNode = positionedNodesMap[e.toNodeId]
+                            if (genNode != null && atsNode != null && genNode.y < panel.y + panel.height + 50f) {
+                                atsNode.x + atsNode.width * 0.75f
+                            } else null
+                        }
+                    val minEmergLane = emergLanes.minOrNull() ?: Float.POSITIVE_INFINITY
+                    val maxAllowedRight = if (minEmergLane.isFinite()) minEmergLane - 20f else Float.POSITIVE_INFINITY
+
+                    val allTapCenters = childEntries.map {
+                        if (it.panelType.uppercase().contains("ATS")) it.x + it.width * 0.25f
+                        else it.x + it.width / 2f
+                    }
+                    val minCenter = allTapCenters.minOrNull() ?: (panel.x + panel.width / 2f)
+                    val rawMaxCenter = allTapCenters.maxOrNull() ?: (panel.x + panel.width / 2f)
+                    val margin = BUSBAR_TAP_END_PAD + 20f
+                    val newLeft = minOf(panel.x, minCenter - margin)
+                    var newRight = maxOf(panel.x + panel.width, rawMaxCenter + margin)
+                    if (newRight > maxAllowedRight) {
+                        newRight = maxAllowedRight
+                    }
+                    val finalWidth = maxOf(nodeWidths[panel.id] ?: 140f, newRight - newLeft)
+                    positionedNodesMap[panel.id] = panel.copy(
+                        x = newLeft,
+                        width = finalWidth
+                    )
+                }
+            }
+        }
+        expandBusbarsAcrossTakeoffs()
+
         // Position Tier 0 & Tier -1 Sources (Utility Grid, Transformer, Generator)
         val sourceNodes = graph.nodes.filter { (effectiveTier[it.id] ?: 0) <= 0 }
         var defaultSourceX = MARGIN_X
@@ -324,15 +393,18 @@ object RiserLayoutEngine {
 
             val alignedX = when (node.type) {
                 SldNodeType.TRANSFORMER -> {
-                    // Align Transformer directly above its primary MDB downstream root
-                    val primaryMdb = downstreamRoots.firstOrNull { it.type == SldNodeType.MDB } ?: downstreamRoots.firstOrNull()
-                    val mdbPos = primaryMdb?.let { positionedNodesMap[it.id] }
-                    if (mdbPos != null) mdbPos.x + mdbPos.width / 2f - w / 2f else defaultSourceX
+                    // Align Transformer directly above its specific fed panel / downstream root
+                    val fedPanelEdge = graph.edges.firstOrNull { it.fromNodeId == node.id }
+                    val fedPanelPos = fedPanelEdge?.let { positionedNodesMap[it.toNodeId] }
+                        ?: downstreamRoots.firstOrNull { it.type == SldNodeType.MDB }?.let { positionedNodesMap[it.id] }
+                    if (fedPanelPos != null) fedPanelPos.x + fedPanelPos.width / 2f - w / 2f else defaultSourceX
                 }
                 SldNodeType.UTILITY_SOURCE -> {
-                    // Align Utility Grid directly above Transformer (processed after Transformer)
-                    val txPos = positionedNodesMap.values.firstOrNull { it.panelType.uppercase().contains("TRANSFORMER") }
-                    if (txPos != null) txPos.x + txPos.width / 2f - w / 2f else defaultSourceX
+                    // Align Utility Grid directly above its specific connected Transformer
+                    val fedTxEdge = graph.edges.firstOrNull { it.fromNodeId == node.id }
+                    val fedTxPos = fedTxEdge?.let { positionedNodesMap[it.toNodeId] }
+                        ?: positionedNodesMap.values.firstOrNull { it.panelType.uppercase().contains("TRANSFORMER") }
+                    if (fedTxPos != null) fedTxPos.x + fedTxPos.width / 2f - w / 2f else defaultSourceX
                 }
                 SldNodeType.GENERATOR -> {
                     // Lock Generator directly above its connected ATS emergency port as a vertically aligned column
@@ -407,32 +479,53 @@ object RiserLayoutEngine {
         // position overrides - so a persisted stale/dragged ATS position can
         // never re-introduce an overlap with the panel box outline or with a
         // neighbouring ATS, regardless of how many feeder columns the panel box
-        // spans. It only pushes right (never left), so error-free layouts are
-        // untouched.
-        enforceAtsToPanelClearance(positionedNodesMap, textMeasurer, childrenMap, graph)
+        val rootNodeIds = downstreamRoots.map { it.id }.toSet()
+        enforceAtsToPanelClearance(positionedNodesMap, textMeasurer, childrenMap, graph, rootNodeIds)
 
-        // 3g. Busbar Port Model (Roadmap §2.3): every panel node exposes one
-        // explicit tap port per non-ATS child. The tap is the child's top-center
-        // X, clamped inside the (post-expansion) bar span with an end pad, so a
-        // tap can never land off the rail. ATS children are excluded — they use
-        // their dedicated AtsSymbolGeometry terminals instead. The feeder edge
-        // router already leaves each in-span child at its own center X, so the
-        // modeled tap and the drawn wire origin coincide by construction.
+        // 3g. Busbar Port Model: every panel node exposes ordered tap ports
+        // for direct feeders, UPS input takeoffs, and ATS normal-input takeoffs
+        // along the SAME continuous busbar rail.
         val busbarPorts: Map<String, List<BusbarPort>> = graph.nodes
             .filter { it.type in PANEL_BUSBAR_TYPES }
             .mapNotNull { panelNode ->
                 val panel = positionedNodesMap[panelNode.id] ?: return@mapNotNull null
                 val childEntries = (childrenMap[panelNode.id] ?: emptyList())
                     .mapNotNull { childId -> positionedNodesMap[childId]?.let { childId to it } }
-                    .sortedBy { (_, child) -> child.x + child.width / 2f }
                 if (childEntries.isEmpty()) return@mapNotNull null
-                val ports = childEntries.mapIndexed { index, (childId, child) ->
-                    val childCenterX = child.x + child.width / 2f
-                    val minTap = panel.x + BUSBAR_TAP_END_PAD
-                    val maxTap = panel.x + panel.width - BUSBAR_TAP_END_PAD
-                    val tapX = if (minTap <= maxTap) childCenterX.coerceIn(minTap, maxTap) else panel.x + panel.width / 2f
-                    BusbarPort(portIndex = index, childNodeId = childId, tapX = tapX)
+
+                val minTap = panel.x + BUSBAR_TAP_END_PAD
+                val maxTap = panel.x + panel.width - BUSBAR_TAP_END_PAD
+
+                val rawTaps = childEntries.map { (childId, child) ->
+                    val childTapX = if (child.panelType.uppercase().contains("ATS")) {
+                        child.x + child.width * 0.25f
+                    } else {
+                        child.x + child.width / 2f
+                    }
+                    childId to childTapX
                 }
+                val sortedChildren = rawTaps.sortedBy { it.second }
+                val n = sortedChildren.size
+
+                val ports = if (n == 1) {
+                    val (childId, idealX) = sortedChildren.first()
+                    listOf(BusbarPort(portIndex = 0, childNodeId = childId, tapX = idealX.coerceIn(minTap, maxTap)))
+                } else {
+                    val rawPorts = sortedChildren.mapIndexed { index, (childId, idealX) ->
+                        BusbarPort(portIndex = index, childNodeId = childId, tapX = idealX.coerceIn(minTap, maxTap))
+                    }
+                    val resultList = mutableListOf<BusbarPort>()
+                    var prevX = minTap - 1f
+                    rawPorts.forEachIndexed { idx, p ->
+                        val remaining = rawPorts.size - 1 - idx
+                        val availableMax = maxTap - remaining * 10f
+                        val tapX = maxOf(p.tapX, prevX + 1f).coerceIn(minTap, availableMax)
+                        resultList.add(p.copy(tapX = tapX))
+                        prevX = tapX
+                    }
+                    resultList
+                }
+
                 panelNode.id to ports
             }
             .toMap()
@@ -446,7 +539,8 @@ object RiserLayoutEngine {
     // =========================================================================
     fun routeEdges(
         graph: ElectricalNetworkGraph,
-        positionedNodesMap: Map<String, PositionedSldNode>
+        positionedNodesMap: Map<String, PositionedSldNode>,
+        busbarPorts: Map<String, List<BusbarPort>> = emptyMap()
     ): List<PositionedSldEdge> {
         val nodeMap = graph.nodes.associateBy { it.id }
 
@@ -507,36 +601,57 @@ object RiserLayoutEngine {
                     val portOffsetX = if (edge.type == SldEdgeType.ATS_EMERGENCY_PATH) toNode.width * 0.75f else toNode.width * 0.25f
                     val toXPort = toNode.x + portOffsetX
                     val toYPort = toNode.y - 24f
-                    val fromXPort = fromNode.x + fromNode.width / 2f
                     val fromYPort = fromNode.y + (if (fromNode.isSource) 24f else fromNode.height)
 
+                    val isParentPanel = fromNode.panelType.uppercase().contains("MDB") ||
+                            fromNode.panelType.uppercase().contains("SMDB") ||
+                            fromNode.panelType.uppercase().contains("MCC") ||
+                            fromNode.panelType.uppercase().contains("DB")
+
+                    val fromXPort = if (edge.type == SldEdgeType.ATS_EMERGENCY_PATH) {
+                        toXPort
+                    } else if (isParentPanel) {
+                        val port = busbarPorts[fromNode.id]?.firstOrNull { it.childNodeId == edge.toNodeId }
+                        val minTap = fromNode.x + BUSBAR_TAP_END_PAD
+                        val maxTap = fromNode.x + fromNode.width - BUSBAR_TAP_END_PAD
+                        port?.tapX ?: toXPort.coerceIn(minTap, maxTap)
+                    } else {
+                        fromNode.x + fromNode.width / 2f
+                    }
+
                     val isEmergencyEdge = edge.type == SldEdgeType.ATS_EMERGENCY_PATH
-                    val staggerStep = SldTheme.feederDrop() / 4f
+                    val staggerStep = 20f
                     val siblingIndex = if (isEmergencyEdge) 0
                     else normalAtsIncomerIndex["${edge.fromNodeId}->${edge.toNodeId}"] ?: 0
 
-                    val atsPoints = if (fromNode.y + 50f < toNode.y) {
-                        // Tier-0 sources (transformer/generator) sit a full tier above the
-                        // ATS: their below-source channel already approaches the ATS top
-                        // terminals from above (locked behavior).
-                        val channelY = fromYPort + 95f + siblingIndex * staggerStep
-                        if (Math.abs(fromXPort - toXPort) < 5f) {
-                            listOf(Pair(toXPort, fromYPort), Pair(toXPort, toYPort))
-                        } else {
-                            listOf(
-                                Pair(fromXPort, fromYPort),
-                                Pair(fromXPort, channelY),
-                                Pair(toXPort, channelY),
-                                Pair(toXPort, toYPort)
-                            )
-                        }
-                    } else {
-                        // Same-tier (or below) panel sources (e.g. an MDB sharing the ATS
-                        // tier): the incomer must leave the panel's output port DOWNWARD.
+                    val atsPoints = if (fromNode.y < toNode.y && Math.abs(fromXPort - toXPort) < 5f) {
+                        listOf(Pair(toXPort, fromYPort), Pair(toXPort, toYPort))
+                    } else if (fromNode.isSource && fromNode.y < toNode.y) {
+                        val channelY = fromYPort + 95f
+                        listOf(
+                            Pair(fromXPort, fromYPort),
+                            Pair(fromXPort, channelY),
+                            Pair(toXPort, channelY),
+                            Pair(toXPort, toYPort)
+                        )
+                    } else if (fromNode.y < toNode.y) {
                         val maxBottom = maxOf(fromNode.y + fromNode.height, toNode.y + toNode.height)
-                        val lowChannelY = maxBottom + staggerStep + siblingIndex * staggerStep
-                        val riseX = toNode.x - staggerStep
-                        val highChannelY = toYPort - staggerStep
+                        val lowChannelY = maxBottom + 20f + siblingIndex * staggerStep
+                        val riseX = toNode.x - 20f - siblingIndex * staggerStep
+                        val highChannelY = toYPort - 20f - siblingIndex * staggerStep
+                        listOf(
+                            Pair(fromXPort, fromYPort),
+                            Pair(fromXPort, lowChannelY),
+                            Pair(riseX, lowChannelY),
+                            Pair(riseX, highChannelY),
+                            Pair(toXPort, highChannelY),
+                            Pair(toXPort, toYPort)
+                        )
+                    } else {
+                        val maxBottom = maxOf(fromNode.y + fromNode.height, toNode.y + toNode.height)
+                        val lowChannelY = maxBottom + 20f + siblingIndex * staggerStep
+                        val riseX = toNode.x - 20f - siblingIndex * staggerStep
+                        val highChannelY = toYPort - 20f - siblingIndex * staggerStep
                         listOf(
                             Pair(fromXPort, fromYPort),
                             Pair(fromXPort, lowChannelY),
@@ -609,7 +724,7 @@ object RiserLayoutEngine {
         val coords = assignCoordinates(graph, circuits, layers, boxes, textMeasurer, manualPositions)
 
         // Post-Pass: Orthogonal Polyline Edge Routing
-        val positionedEdges = routeEdges(graph, coords.positionedNodes)
+        val positionedEdges = routeEdges(graph, coords.positionedNodes, coords.busbarPorts)
 
         // Tier Datum Lines
         val tierGap = SldTheme.tierVerticalSpacing()
@@ -839,6 +954,12 @@ object RiserLayoutEngine {
                     val nodeB = allNodes[j]
                     if (nodeA.id == nodeB.id) continue
 
+                    val areConnected = graph.edges.any {
+                        (it.fromNodeId == nodeA.id && it.toNodeId == nodeB.id) ||
+                        (it.fromNodeId == nodeB.id && it.toNodeId == nodeA.id)
+                    }
+                    if (areConnected) continue
+
                     val boxA = getNodeVisualBounds(nodeA, textMeasurer)
                     val boxB = getNodeVisualBounds(nodeB, textMeasurer)
 
@@ -904,7 +1025,8 @@ object RiserLayoutEngine {
         positionedNodesMap: MutableMap<String, PositionedSldNode>,
         textMeasurer: androidx.compose.ui.text.TextMeasurer?,
         childrenMap: Map<String, List<String>>,
-        graph: ElectricalNetworkGraph
+        graph: ElectricalNetworkGraph,
+        rootNodeIds: Set<String>
     ) {
         var changed = true
         var iteration = 0
@@ -924,7 +1046,7 @@ object RiserLayoutEngine {
                 val atsNode = positionedNodesMap[atsId] ?: continue
                 val atsBoxLeft = atsNode.x
 
-                // 1. Minimum left edge required by the NORMAL-source panel box.
+                // 1. Minimum left edge required by the preceding direct/UPS feeder branches of the NORMAL-source panel.
                 val normalSourceId = graph.edges
                     .firstOrNull {
                         it.toNodeId == atsId && it.type == SldEdgeType.ATS_NORMAL_PATH
@@ -933,14 +1055,15 @@ object RiserLayoutEngine {
                 val minLeftFromPanel = if (normalSourceId != null) {
                     val panel = positionedNodesMap[normalSourceId]
                     if (panel != null) {
-                        val isMainPanel = panel.panelType.uppercase().contains("MDB") ||
-                            panel.panelType.uppercase().contains("MAIN")
-                        val encPad = if (isMainPanel) MAIN_PANEL_ENCLOSURE_PAD else 0f
-                        val boxRight = panel.x + panel.width + encPad
-                        // Use the panel's visual right (includes the widest feeder
-                        // callout text anchor) so callout labels never print on the ATS.
-                        val visualRight = maxOf(boxRight, getNodeVisualBounds(panel, textMeasurer).right)
-                        visualRight + ATS_TO_PANEL_MIN_GAP
+                        val directAndUpsChildren = (childrenMap[panel.id] ?: emptyList()).filter {
+                            it != atsId && positionedNodesMap[it]?.panelType?.uppercase()?.contains("ATS") != true
+                        }
+                        val directAndUpsRight = if (directAndUpsChildren.isNotEmpty()) {
+                            directAndUpsChildren.mapNotNull { childId ->
+                                positionedNodesMap[childId]?.let { getNodeVisualBounds(it, textMeasurer).right }
+                            }.maxOrNull() ?: (panel.x + panel.width)
+                        } else (panel.x + panel.width)
+                        directAndUpsRight + ATS_TO_PANEL_MIN_GAP
                     } else 0f
                 } else 0f
 
@@ -951,33 +1074,104 @@ object RiserLayoutEngine {
                 val requiredLeft = maxOf(minLeftFromPanel, minLeftFromPrevAts, atsBoxLeft)
                 val shiftDelta = requiredLeft - atsBoxLeft
                 if (shiftDelta > 0f) {
-                    // Shift the ATS + its downstream subtree, and co-shift the
-                    // connected emergency generator so the vertical alignment and
-                    // routed terminals stay intact.
+                    // Shift the ATS + its downstream subtree
                     shiftSubtree(atsId, shiftDelta, positionedNodesMap, childrenMap)
-                    val shiftedAts = positionedNodesMap[atsId]
-                    val genEdge = graph.edges.firstOrNull {
-                        it.toNodeId == atsId && it.type == SldEdgeType.ATS_EMERGENCY_PATH
-                    }
-                    genEdge?.let { e ->
-                        val genNode = positionedNodesMap[e.fromNodeId]
-                        if (genNode != null && shiftedAts != null) {
-                            // RE-ANCHOR (not just += delta): a stale manual ATS
-                            // position may have moved the ATS without moving its
-                            // generator, so a relative shift would keep the pair
-                            // misaligned. Anchor the generator to the ATS's final
-                            // emergency terminal like the source-positioning step.
-                            val idealGenX = (shiftedAts.x + shiftedAts.width * 0.75f) - genNode.width / 2f
-                            positionedNodesMap[genNode.id] = genNode.copy(x = idealGenX)
-                        }
-                    }
                     changed = true
+                }
+
+                // Always align connected emergency generator above ATS emergency terminal
+                val finalAts = positionedNodesMap[atsId] ?: atsNode
+                val genEdge = graph.edges.firstOrNull {
+                    it.toNodeId == atsId && it.type == SldEdgeType.ATS_EMERGENCY_PATH
+                }
+                genEdge?.let { e ->
+                    val genNode = positionedNodesMap[e.fromNodeId]
+                    if (genNode != null) {
+                        val idealGenX = (finalAts.x + finalAts.width * 0.75f) - genNode.width / 2f
+                        positionedNodesMap[genNode.id] = genNode.copy(x = idealGenX)
+                    }
                 }
 
                 val updated = positionedNodesMap[atsId] ?: atsNode
                 prevAtsRight = updated.x + updated.width
             }
         }
+
+        val graphNodeMap = graph.nodes.associateBy { it.id }
+        fun expandBusbars() {
+            for ((pId, pNode) in positionedNodesMap) {
+                if (graphNodeMap[pId]?.type in PANEL_BUSBAR_TYPES) {
+                    val childEntries = (childrenMap[pId] ?: emptyList()).mapNotNull { positionedNodesMap[it] }
+                    if (childEntries.isNotEmpty()) {
+                        val emergLanes = graph.edges
+                            .filter { it.type == SldEdgeType.ATS_EMERGENCY_PATH }
+                            .mapNotNull { e ->
+                                val genNode = positionedNodesMap[e.fromNodeId]
+                                val atsNode = positionedNodesMap[e.toNodeId]
+                                if (genNode != null && atsNode != null && genNode.y < pNode.y + pNode.height + 50f) {
+                                    atsNode.x + atsNode.width * 0.75f
+                                } else null
+                            }
+                        val minEmergLane = emergLanes.minOrNull() ?: Float.POSITIVE_INFINITY
+                        val maxAllowedRight = if (minEmergLane.isFinite()) minEmergLane - 20f else Float.POSITIVE_INFINITY
+
+                        val allTapCenters = childEntries.map {
+                            if (it.panelType.uppercase().contains("ATS")) it.x + it.width * 0.25f
+                            else it.x + it.width / 2f
+                        }
+                        val minCenter = allTapCenters.minOrNull() ?: (pNode.x + pNode.width / 2f)
+                        val rawMaxCenter = allTapCenters.maxOrNull() ?: (pNode.x + pNode.width / 2f)
+                        val margin = BUSBAR_TAP_END_PAD + 20f
+                        val newLeft = minOf(pNode.x, minCenter - margin)
+                        var newRight = maxOf(pNode.x + pNode.width, rawMaxCenter + margin)
+                        if (newRight > maxAllowedRight) {
+                            newRight = maxAllowedRight
+                        }
+                        val finalWidth = maxOf(140f, newRight - newLeft)
+                        positionedNodesMap[pId] = pNode.copy(
+                            x = newLeft,
+                            width = finalWidth
+                        )
+                    }
+                }
+            }
+        }
+
+        // 1. Expand continuous busbar rails across initial ATS positions
+        expandBusbars()
+
+        // 2. Ensure sibling downstream root panels stay clear of expanded busbar rails
+        val siblingRoots = positionedNodesMap.values
+            .filter { it.id in rootNodeIds }
+            .sortedBy { it.x }
+        var currentRootRight = Float.NEGATIVE_INFINITY
+        for (root in siblingRoots) {
+            val rootBox = getNodeVisualBounds(root, textMeasurer)
+            if (currentRootRight.isFinite() && rootBox.left < currentRootRight + MIN_HORIZONTAL_GAP) {
+                val shiftDelta = (currentRootRight + MIN_HORIZONTAL_GAP) - rootBox.left
+                shiftSubtree(root.id, shiftDelta, positionedNodesMap, childrenMap)
+                // Re-align any transformer feeding this root panel
+                val txEdge = graph.edges.firstOrNull { it.toNodeId == root.id && it.type == SldEdgeType.SOURCE_CONNECTION }
+                val txNode = txEdge?.let { positionedNodesMap[it.fromNodeId] }
+                val updatedRoot = positionedNodesMap[root.id] ?: root
+                if (txNode != null) {
+                    val idealTxX = updatedRoot.x + updatedRoot.width / 2f - txNode.width / 2f
+                    positionedNodesMap[txNode.id] = txNode.copy(x = idealTxX)
+                    // Re-align grid source feeding this transformer
+                    val gridEdge = graph.edges.firstOrNull { it.toNodeId == txNode.id }
+                    val gridNode = gridEdge?.let { positionedNodesMap[it.fromNodeId] }
+                    if (gridNode != null) {
+                        val idealGridX = idealTxX + txNode.width / 2f - gridNode.width / 2f
+                        positionedNodesMap[gridNode.id] = gridNode.copy(x = idealGridX)
+                    }
+                }
+            }
+            val updated = positionedNodesMap[root.id] ?: root
+            currentRootRight = getNodeVisualBounds(updated, textMeasurer).right
+        }
+
+        // 3. Re-expand continuous busbar rails across any shifted subtrees in final positions
+        expandBusbars()
     }
 
     private fun measureLabelWidth(node: PositionedSldNode, textMeasurer: androidx.compose.ui.text.TextMeasurer?): Float {

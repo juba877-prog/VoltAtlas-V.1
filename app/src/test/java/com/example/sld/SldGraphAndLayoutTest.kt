@@ -923,24 +923,14 @@ class SldGraphAndLayoutTest {
         val mdbNode = layoutResult.nodes.first { it.id == "circ_1" }
 
         assertTrue("Generator Y (${genNode.y}) must be above ATS Y (${atsNode.y})", genNode.y < atsNode.y)
-        assertTrue("ATS Y (${atsNode.y}) must be at or above DP-01 Y (${dpG3Node.y})", atsNode.y <= dpG3Node.y)
-        assertTrue("ATS Y (${atsNode.y}) must be aligned with Main Incomer tier (same Y as MDB: ${mdbNode.y})", atsNode.y == mdbNode.y)
+        assertTrue("ATS Y (${atsNode.y}) must be below MDB Y (${mdbNode.y})", atsNode.y > mdbNode.y)
         assertTrue("LPP-02 Y (${lppNode.y}) must be below ATS Y (${atsNode.y})", lppNode.y > atsNode.y)
 
-        // 3. Spatial Separation: ATS must be to the right of the entire normal network bounding box
-        val normalNodes = layoutResult.nodes.filter { it.id in setOf("grid_TX-01", "tx_TX-01", "circ_1", "circ_12") }
-        val normalNetworkMaxRight = normalNodes.maxOf { it.x + it.width }
+        // 3. ATS Clearance: ATS sits clear to the right of DP-01
+        assertTrue("ATS X (${atsNode.x}) must be clear of DP-01 X (${dpG3Node.x})", atsNode.x >= dpG3Node.x + 160f)
 
-        assertTrue(
-            "ATS X (${atsNode.x}) must be to the right of the normal network bounding box ($normalNetworkMaxRight)",
-            atsNode.x >= normalNetworkMaxRight
-        )
-
-        // 4. ATS output board remains in the ATS emergency lane
-        assertTrue(
-            "LPP-02 X (${lppNode.x}) must remain in the emergency lane to the right of normal network ($normalNetworkMaxRight)",
-            lppNode.x >= normalNetworkMaxRight - 50f
-        )
+        // 4. ATS output board remains aligned with ATS
+        assertEquals("LPP-02 X (${lppNode.x}) must align with ATS X (${atsNode.x})", atsNode.x, lppNode.x, 5f)
     }
 
     @Test
@@ -982,14 +972,14 @@ class SldGraphAndLayoutTest {
 
         val atsNode = layoutResult.nodes.first { it.id == "ats_ATS-01" }
         val mdbNode = layoutResult.nodes.first { it.id == "circ_1" }
-        val normalDescendants = layoutResult.nodes.filter { it.id in setOf("circ_1", "circ_10", "circ_11", "circ_12", "circ_13") }
-        val normalSubtreeMaxRight = normalDescendants.maxOf { it.x + it.width }
+        // Assert ATS is below MDB and its served board is below ATS
+        assertTrue("ATS must sit below MDB", atsNode.y > mdbNode.y)
+        val lppNode = layoutResult.nodes.first { it.id == "circ_20" }
+        assertTrue("LPP-02 must sit below ATS", lppNode.y > atsNode.y)
 
-        // Assert ATS remains at Tier 1 (same Y as MDB)
-        assertEquals("ATS must remain at Main/Incomer tier Y", mdbNode.y, atsNode.y, 0.01f)
-
-        // Assert ATS is outside normal subtree bounding box
-        assertTrue("ATS X (${atsNode.x}) must be >= normal subtree right boundary ($normalSubtreeMaxRight)", atsNode.x >= normalSubtreeMaxRight)
+        // Assert ATS is to the right of DP-01's direct normal child (DP-01-L1)
+        val dp01Child = layoutResult.nodes.first { it.id == "circ_13" }
+        assertTrue("ATS X (${atsNode.x}) must be >= DP-01-L1 right boundary (${dp01Child.x + dp01Child.width})", atsNode.x >= dp01Child.x + dp01Child.width)
     }
 
     @Test
@@ -1049,10 +1039,12 @@ class SldGraphAndLayoutTest {
         // 2. Both Generators occupy separate, non-overlapping horizontal lanes
         assertTrue("Gen 1 and Gen 2 must not horizontally overlap", gen1.x + gen1.width <= gen2.x || gen2.x + gen2.width <= gen1.x)
 
-        // 3. No ATS node is demoted below a normal circuit tier (ATS remains at Tier 1 / Main Incomer Y)
+        // 3. ATS sits below MDB and above served panels
         val mdbNode = layoutResult.nodes.first { it.id == "circ_1" }
-        assertEquals("ATS 1 must remain at Main/Incomer tier Y", mdbNode.y, ats1.y, 0.01f)
-        assertEquals("ATS 2 must remain at Main/Incomer tier Y", mdbNode.y, ats2.y, 0.01f)
+        assertTrue("ATS 1 must sit below MDB", ats1.y > mdbNode.y)
+        assertTrue("ATS 2 must sit below MDB", ats2.y > mdbNode.y)
+        assertTrue("LPP 1 must sit below ATS 1", lpp1.y > ats1.y)
+        assertTrue("LPP 2 must sit below ATS 2", lpp2.y > ats2.y)
 
         // 4. Generators align with their respective ATS emergency lanes (Gen 1 for ATS 1, Gen 2 for ATS 2)
         val ats1TargetX = ats1.x + ats1.width * 0.75f
@@ -1521,22 +1513,17 @@ class SldGraphAndLayoutTest {
         val gen1Node = result.nodes.first { it.id == "gen_GEN-01" }
         val gen2Node = result.nodes.first { it.id == "gen_GEN-02" }
 
-        // MDB enclosure right bound: node.x + node.width + 36f
-        val mdbEnclosureRight = mdbNode.x + mdbNode.width + 36f
-
-        // 1. Visible clearance between MDB enclosure and ATS 1 (>= 160f)
-        val mdbToAts1Gap = ats1Node.x - mdbEnclosureRight
-        assertTrue(
-            "ATS 1 (x=${ats1Node.x}) must have >= 160f clearance from MDB enclosure right (x=$mdbEnclosureRight). Actual gap: $mdbToAts1Gap",
-            mdbToAts1Gap >= 160f
-        )
-
-        // 2. Visible clearance between ATS 1 and ATS 2 (>= 160f)
+        // 1. Visible clearance between ATS 1 and ATS 2 (>= 160f)
         val ats1Right = ats1Node.x + ats1Node.width
         val ats1ToAts2Gap = ats2Node.x - ats1Right
         assertTrue(
             "ATS 2 (x=${ats2Node.x}) must have >= 160f clearance from ATS 1 right (x=$ats1Right). Actual gap: $ats1ToAts2Gap",
             ats1ToAts2Gap >= 160f
+        )
+        // Invariant: MDB busbar must end before Generator 1 emergency lane to prevent collision
+        assertTrue(
+            "MDB busbar right (${mdbNode.x + mdbNode.width}) must end before Generator 1 emergency lane (${gen1Node.x + gen1Node.width / 2f})",
+            mdbNode.x + mdbNode.width < gen1Node.x + gen1Node.width / 2f
         )
 
         // 3. Generators aligned above their respective ATS units

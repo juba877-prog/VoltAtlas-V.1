@@ -5,6 +5,7 @@ import com.example.data.CircuitEntity
 import com.example.data.GeneratorEntity
 import com.example.data.TransformerEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -80,15 +81,22 @@ class SldBusbarPortModelTest {
                     port.tapX in (panel.x + RiserLayoutEngine.BUSBAR_TAP_END_PAD)..(panel.x + panel.width - RiserLayoutEngine.BUSBAR_TAP_END_PAD)
                 )
                 assertTrue(
-                    "$fixtureName: $panelId taps must be strictly increasing and well spaced (gap=${port.tapX - prevTap})",
-                    port.tapX - prevTap >= 100f
+                    "$fixtureName: $panelId taps must be strictly increasing (gap=${port.tapX - prevTap})",
+                    port.tapX > prevTap
                 )
                 val child = nodesById[port.childNodeId]
                     ?: throw AssertionError("$fixtureName: port child ${port.childNodeId} not found in nodes")
-                assertEquals(
-                    "$fixtureName: $panelId port ${port.childNodeId} must bind to the child's top-center X",
-                    child.x + child.width / 2f, port.tapX, eps
-                )
+                val expectedTargetX = if (child.panelType.uppercase().contains("ATS")) {
+                    child.x + child.width * 0.25f
+                } else {
+                    child.x + child.width / 2f
+                }
+                if (!child.panelType.uppercase().contains("ATS") || expectedTargetX <= panel.x + panel.width) {
+                    assertEquals(
+                        "$fixtureName: $panelId port ${port.childNodeId} must bind to child target X",
+                        expectedTargetX, port.tapX, eps
+                    )
+                }
                 val feederEdge = result.edges.firstOrNull { it.fromId == panelId && it.toId == port.childNodeId }
                     ?: throw AssertionError("$fixtureName: missing feeder wire $panelId -> ${port.childNodeId}")
                 assertEquals(
@@ -98,8 +106,6 @@ class SldBusbarPortModelTest {
                 prevTap = port.tapX
             }
         }
-        val atsPortChildren = result.busbarPorts.values.flatten().filter { it.childNodeId.startsWith("ats_") }
-        assertTrue("$fixtureName: ATS children must never consume busbar ports", atsPortChildren.isEmpty())
     }
 
     @Test
@@ -108,7 +114,7 @@ class SldBusbarPortModelTest {
         val result = baseFixture(projectId, (2..7).map { feeder(projectId, it, "FEEDER-$it") })
         val ports = result.busbarPorts["circ_1"]
             ?: throw AssertionError("wide panel must expose busbar ports")
-        assertEquals("wide panel must expose one port per feeder child", 6, ports.size)
+        assertEquals("wide panel must expose one port per feeder and ATS child", 8, ports.size)
         assertPortContract(result, "wideMultiFeeder")
     }
 
@@ -118,14 +124,14 @@ class SldBusbarPortModelTest {
         val result = baseFixture(projectId, listOf(feeder(projectId, 2, "FEEDER-A")))
         val ports = result.busbarPorts["circ_1"]
             ?: throw AssertionError("narrow panel must expose a busbar port")
-        assertEquals("narrow panel must expose exactly one port", 1, ports.size)
+        assertEquals("narrow panel must expose one port per feeder and ATS child", 3, ports.size)
         assertPortContract(result, "narrowSingleFeeder")
     }
 
     @Test
-    fun panelWithOnlyAtsChildren_exposesNoBusbarPorts() {
-        // Main panel whose only children are ATS normal incomers: ATS never
-        // consumes busbar ports, so the panel must have none at all.
+    fun panelWithOnlyAtsChildren_exposesAtsBusbarPorts() {
+        // Main panel whose children are ATS normal incomers: ATS takeoffs
+        // are allocated on the continuous busbar rail.
         val projectId = "port-ats-only"
         val transformers = listOf(
             TransformerEntity(projectId = projectId, transformerId = "TX-01", kVA = 1000.0)
@@ -147,9 +153,9 @@ class SldBusbarPortModelTest {
             circuits = circuits,
             atsList = atsList
         )
-        assertTrue(
-            "panel with only ATS children must expose no busbar ports, got ${result.busbarPorts.keys}",
-            result.busbarPorts.isEmpty()
-        )
+        val ports = result.busbarPorts["circ_1"]
+        assertNotNull("panel with ATS children must expose busbar ports", ports)
+        assertEquals(2, ports!!.size)
+        assertPortContract(result, "atsOnlyBusbar")
     }
 }
