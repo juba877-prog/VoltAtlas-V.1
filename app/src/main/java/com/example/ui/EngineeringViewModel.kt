@@ -622,7 +622,8 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 resolvedCircuits = resolvedList,
                 circuitParents = circuitParents,
                 sizingResults = sizingResults,
-                transformerResults = transformerResults
+                transformerResults = transformerResults,
+                generatorResults = generatorResults
             )
 
             // Look up the localized short-circuit current at the ATS-included circuits
@@ -650,7 +651,8 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
 
             val adsResults = com.example.engine.coordinator.EngineeringCalculationCoordinator.calculateProjectAds(
                 resolvedCircuits = resolvedList,
-                sizingResults = sizingResults
+                sizingResults = sizingResults,
+                transformerResults = transformerResults
             )
 
             val protectionResults = com.example.engine.coordinator.EngineeringCalculationCoordinator.calculateProjectProtection(

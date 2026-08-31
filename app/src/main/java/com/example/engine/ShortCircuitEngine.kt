@@ -30,7 +30,14 @@ object ShortCircuitEngine {
         resolvedCircuits: List<CircuitEntity>,
         circuitParents: Map<Int, Int>,
         sizingResults: Map<Int, SizingResult>,
-        transformerResults: Map<String, TransformerResult>
+        transformerResults: Map<String, TransformerResult>,
+        generatorResults: Map<String, GeneratorResult> = emptyMap(),
+        generatorXdPercent: Double = 12.0,           // ASSUMED subtransient reactance — verify nameplate
+        atsSelectedSource: Map<String, String> = emptyMap(), // atsId -> "NORMAL" | "EMERGENCY"
+        motorContributionEnabled: Boolean = false,   // IEC 60909 §6.10 motor group — default OFF
+        motorGroupKVA: Double = 0.0,
+        motorLoadRatioILR_IR: Double = 5.5,
+        makingCheckFails: Boolean = false            // false = WARNING on Icm < ip; true = FAIL
     ): Map<Int, ShortCircuitResult> {
         val results = mutableMapOf<Int, ShortCircuitResult>()
 
@@ -46,15 +53,23 @@ object ShortCircuitEngine {
                 continue
             }
 
-            // Find the source transformer
-            var txResult: TransformerResult? = null
-            var txName: String = ""
+            // --- Source resolution (IEC 60909-0:2016) — polymorphic by source type (CRITICAL-4) ---
+            //  transformer | grid | ats(NORMAL)  -> transformer positive-sequence impedance
+            //  generator   | ats(EMERGENCY)      -> generator subtransient impedance; the transformer
+            //                                       is NOT in the impedance path unless a real
+            //                                       interposing transformer exists between the
+            //                                       generator and the fault point.
+            var sourceKind = "transformer"   // "transformer" | "generator"
+            var sourceId = ""
             var curr = circuit
             while (true) {
-                val fedLower = curr.fedFrom.lowercase()
+                val fedLower = curr.fedFrom.trim().lowercase()
                 if (fedLower in listOf("transformer", "ats", "generator", "grid")) {
-                    txResult = transformerResults[curr.transformerId]
-                    txName = curr.transformerId
+                    val atsSource = if (fedLower == "ats")
+                        atsSelectedSource[curr.assignedAtsId?.uppercase() ?: "ATS-01"]?.uppercase()
+                    else null
+                    sourceKind = if (fedLower == "generator" || atsSource == "EMERGENCY") "generator" else "transformer"
+                    sourceId = if (sourceKind == "generator") (curr.assignedGeneratorId ?: "GEN-01") else curr.transformerId
                     break
                 }
                 val parentId = circuitParents[curr.id]
@@ -62,22 +77,46 @@ object ShortCircuitEngine {
                 curr = resolvedCircuits.find { it.id == parentId } ?: break
             }
 
-            if (txResult == null) {
-                results[circuit.id] = buildMissingResult(circuit, "DATA MISSING", "Transformer source not found")
-                continue
-            }
-
             val c = 1.05
-            val un = txResult.voltage
-            val txIsc = txResult.isc3Phase
-            
-            if (txIsc <= 0.0) {
-                results[circuit.id] = buildMissingResult(circuit, "DATA MISSING", "Transformer Isc is zero or invalid")
-                continue
-            }
+            val sourceWarnings = mutableListOf<String>()
+            var un = GENERATOR_TERMINAL_V
+            var rTotalOhm = 0.0
+            var xTotalOhm = 0.0
 
-            var rTotalOhm = txResult.rt / 1000.0
-            var xTotalOhm = txResult.xt / 1000.0
+            when (sourceKind) {
+                "generator" -> {
+                    // IEC 60909-0:2016 §6.6/6.7 — generator subtransient impedance from rated kVA:
+                    // Z_G = (x″d/100)·(U_rG²/S_rG); R_G ≈ 0.15·X″d for LV machines
+                    // (X″d = Z_G/√(1 + 0.15²)). x″d is ASSUMED and flagged; K_G assumed 1.0 (flagged).
+                    val genRes = generatorResults[sourceId]
+                        ?: if (generatorResults.size == 1) generatorResults.values.first() else null
+                    val genKVA = genRes?.finalSize ?: genRes?.designCapacity ?: 0.0
+                    if (genRes == null || genKVA <= 0.0) {
+                        results[circuit.id] = buildMissingResult(circuit, "DATA MISSING", "Generator source not found or capacity data unavailable")
+                        continue
+                    }
+                    val zgOhm = (generatorXdPercent / 100.0) * (un * un) / (genKVA * 1000.0)
+                    val xgOhm = zgOhm / sqrt(1.0 + 0.15 * 0.15)
+                    rTotalOhm = 0.15 * xgOhm
+                    xTotalOhm = xgOhm
+                    sourceWarnings.add("Generator subtransient reactance ASSUMED x″d = $generatorXdPercent% — verify nameplate (IEC 60909 §3.6)")
+                    sourceWarnings.add("Generator correction factor K_G assumed 1.0 — verify terminal voltage correction (IEC 60909 §6.6)")
+                }
+                else -> {
+                    val txResult = transformerResults[sourceId]
+                    if (txResult == null) {
+                        results[circuit.id] = buildMissingResult(circuit, "DATA MISSING", "Transformer source not found")
+                        continue
+                    }
+                    if (txResult.isc3Phase <= 0.0) {
+                        results[circuit.id] = buildMissingResult(circuit, "DATA MISSING", "Transformer Isc is zero or invalid")
+                        continue
+                    }
+                    un = txResult.voltage
+                    rTotalOhm = txResult.rt / 1000.0
+                    xTotalOhm = txResult.xt / 1000.0
+                }
+            }
 
             // Walk the chain from this circuit up to transformer
             var step: CircuitEntity? = circuit
@@ -103,20 +142,48 @@ object ShortCircuitEngine {
 
             // IEC 60909 Peak Factor kappa calculation: kappa = 1.02 + 0.98 * e^(-3 * R / X)
             val kappa = if (xTotalOhm > 0.0) 1.02 + 0.98 * exp(-3.0 * (rTotalOhm / xTotalOhm)) else 1.0
-            val ipKA = sqrt(2.0) * kappa * iscKA
+            // IEC 60909-0:2016 Clause 6.10 — LV motor-group contribution (OPTIONAL, default OFF).
+            // Z_M = (1/(I_LR/I_rM))·(U_rM/(√3·I_rM)); contribution I″kM = c·Un/(√3·Z_M)
+            // superimposed on the network I″k. Gated behind a toggle because motor data is
+            // usually assumed; active use is flagged in the result note.
+            var iscTotalKA = iscKA
+            if (motorContributionEnabled && motorGroupKVA > 0.0) {
+                val iRM_A = motorGroupKVA * 1000.0 / (sqrt(3.0) * un)
+                val zMOhm = (1.0 / motorLoadRatioILR_IR) * (un / (sqrt(3.0) * iRM_A))
+                if (zMOhm > 0.0) {
+                    val motorIscKA = (c * un / (sqrt(3.0) * zMOhm)) / 1000.0
+                    iscTotalKA = iscKA + motorIscKA
+                    sourceWarnings.add(
+                        "Motor-group contribution ENABLED: +%.2f kA (motor group %.0f kVA, I_LR/I_rM = %.1f) — verify motor data (IEC 60909 §6.10)"
+                            .format(motorIscKA, motorGroupKVA, motorLoadRatioILR_IR)
+                    )
+                }
+            }
+
+            val ipKA = sqrt(2.0) * kappa * iscTotalKA
 
             // Cable thermal withstand: Iw = (kFactor * S) / sqrt(clearingTime_s) / 1000
             val iwKA = (sizing.kFactor * cableMm2) / sqrt(sizing.clearingTime_s) / 1000.0
 
-            val deviceCheckOk = sizing.deviceBreakingKA >= iscKA
-            val cableCheckOk = iwKA >= iscKA
+            val deviceCheckOk = sizing.deviceBreakingKA >= iscTotalKA
+            val cableCheckOk = iwKA >= iscTotalKA
             
             val deviceCheckStr = if (deviceCheckOk) "PASS" else "FAIL"
             val cableCheckStr = if (cableCheckOk) "PASS" else "FAIL"
 
-            val marginPct = ((iwKA / iscKA) - 1.0) * 100.0
+            val marginPct = ((iwKA / iscTotalKA) - 1.0) * 100.0
             
             val isSwitchingDevice = isSwitchingDevice(sizing.deviceType)
+            // IEC 60947-2 peak making capacity check (CRITICAL-5): Icm >= ip.
+            // Icu (RMS breaking) alone is insufficient — closing onto a fault stresses the device
+            // with the peak (fully-asymmetric) current. Icm is taken from the catalog when
+            // available; otherwise ESTIMATED as 2.2×Icu (IEC 60947-2 n-factor convention,
+            // mirroring the ATS engine's required-Icm = 2.2×Icw rule) and flagged.
+            val icmCatalog = sizing.deviceMakingKA
+            val icmEstimated = icmCatalog <= 0.0
+            val icmEffectiveKA = if (icmEstimated) sizing.deviceBreakingKA * 2.2 else icmCatalog
+            val makingPass = icmEffectiveKA >= ipKA
+
             var note = ""
             var rowStatus = if (deviceCheckOk && cableCheckOk) "PASS" else "FAIL"
 
@@ -127,11 +194,28 @@ object ShortCircuitEngine {
                 note = "Breaking capacity assumed (not from catalog) — verify"
             }
 
+            // Source-type warnings (assumed x″d, K_G, motor contribution) appended first
+            if (sourceWarnings.isNotEmpty()) {
+                note = if (note.isBlank()) sourceWarnings.joinToString(" | ")
+                       else sourceWarnings.joinToString(" | ") + " | " + note
+            }
+            if (!isSwitchingDevice && icmEstimated) {
+                val estNote = "Making capacity Icm estimated as 2.2×Icu — verify catalog (IEC 60947-2)"
+                note = if (note.isBlank()) estNote else note + " | " + estNote
+            }
+            if (!isSwitchingDevice && !makingPass) {
+                val failNote = "Making capacity FAIL: Icm " +
+                    (if (icmEstimated) "estimated 2.2×Icu" else "from catalog") +
+                    " (%.1f kA) < peak make current ip (%.1f kA) — verify device rating (IEC 60947-2)".format(icmEffectiveKA, ipKA)
+                note = if (note.isBlank()) failNote else note + " | " + failNote
+                rowStatus = if (makingCheckFails) "FAIL" else if (rowStatus == "PASS") "WARNING" else rowStatus
+            }
+
             results[circuit.id] = ShortCircuitResult(
                 circuitId = circuit.id,
-                sourceName = txName,
+                sourceName = sourceId,
                 cableMm2 = rawCableStr,
-                iscKA = round(iscKA * 100) / 100.0,
+                iscKA = round(iscTotalKA * 100) / 100.0,
                 iwKA = round(iwKA * 100) / 100.0,
                 deviceKA = sizing.deviceBreakingKA,
                 deviceCheck = if (isSwitchingDevice) "N/A" else deviceCheckStr,
@@ -156,6 +240,9 @@ object ShortCircuitEngine {
                upper.contains("BUS COUPLER") || 
                upper.contains("CHANGE-OVER")
     }
+
+    /** Generator LV terminal voltage used for islanded-source fault calculations (IEC 60909 §6.7). */
+    private const val GENERATOR_TERMINAL_V = 400.0
 
     private fun buildMissingResult(circuit: CircuitEntity, status: String, note: String): ShortCircuitResult {
         return ShortCircuitResult(

@@ -3,6 +3,7 @@ package com.example.engine
 import com.example.data.Catalog
 import com.example.data.CircuitEntity
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 data class AdsResult(
     val circuitId: Int,
@@ -91,6 +92,17 @@ object ProtectionEngine {
      */
     fun maxZsAllowed(u0_V: Double, ia_A: Double, cmin: Double = 0.95): Double =
         if (ia_A > 0.0) (cmin * u0_V) / ia_A else Double.POSITIVE_INFINITY
+
+    /**
+     * H6 — Derive the upstream earth-source impedance Ze from the feeding transformer
+     * result instead of assuming a hardcoded 0.01 Ω:
+     *   Ze = (cmax · Un) / (√3 · I″k,3ph)   [IEC 60909; equals the transformer
+     *   positive-sequence impedance Zt upstream of the circuit cables]
+     * Returns 0.0 when no valid source data exists — callers fall back to the
+     * explicit, labelled default (0.01 Ω) and must emit a warning.
+     */
+    fun deriveZeFromSource(isc3Phase_kA: Double, un_V: Double, cmax: Double = 1.05): Double =
+        if (isc3Phase_kA > 0.0 && un_V > 0.0) (cmax * un_V) / (sqrt(3.0) * isc3Phase_kA * 1000.0) else 0.0
 
     /**
      * Max Zs values from IEC 60364-4-41 Table 41.3 for 230V systems.

@@ -1,6 +1,7 @@
 package com.example.engine.coordinator
 
 import com.example.data.CircuitEntity
+import com.example.engine.GeneratorResult
 import com.example.engine.ShortCircuitEngine
 import com.example.engine.ShortCircuitResult
 import com.example.engine.SizingResult
@@ -21,13 +22,15 @@ object ShortCircuitCalculationService {
         resolvedCircuits: List<CircuitEntity>,
         circuitParents: Map<Int, Int>,
         sizingResults: Map<Int, SizingResult>,
-        transformerResults: Map<String, TransformerResult>
+        transformerResults: Map<String, TransformerResult>,
+        generatorResults: Map<String, GeneratorResult> = emptyMap()
     ): Map<Int, ShortCircuitResult> {
         return ShortCircuitEngine.calculate(
             resolvedCircuits = resolvedCircuits,
             circuitParents = circuitParents,
             sizingResults = sizingResults,
-            transformerResults = transformerResults
+            transformerResults = transformerResults,
+            generatorResults = generatorResults
         )
     }
 
@@ -76,13 +79,15 @@ object ShortCircuitCalculationService {
         resolvedCircuits: List<CircuitEntity>,
         circuitParents: Map<Int, Int>,
         sizingResults: Map<Int, SizingResult>,
-        transformerResults: Map<String, TransformerResult>
+        transformerResults: Map<String, TransformerResult>,
+        generatorResults: Map<String, GeneratorResult> = emptyMap()
     ): Map<Int, ShortCircuitResult> = withContext(Dispatchers.Default) {
         calculateProjectShortCircuit(
             resolvedCircuits = resolvedCircuits,
             circuitParents = circuitParents,
             sizingResults = sizingResults,
-            transformerResults = transformerResults
+            transformerResults = transformerResults,
+            generatorResults = generatorResults
         )
     }
 

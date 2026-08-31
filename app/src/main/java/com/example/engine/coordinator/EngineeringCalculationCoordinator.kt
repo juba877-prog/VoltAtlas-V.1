@@ -4,6 +4,8 @@ import com.example.data.CircuitEntity
 import com.example.data.TransformerEntity
 import com.example.engine.AdsResult
 import com.example.engine.CoordinationResult
+import com.example.engine.GeneratorResult
+import com.example.engine.ProtectionEngine
 import com.example.engine.ProtectionResult
 import com.example.engine.ShortCircuitResult
 import com.example.engine.SizingResult
@@ -867,7 +869,8 @@ object EngineeringCalculationCoordinator {
         resolvedCircuits: List<CircuitEntity>,
         circuitParents: Map<Int, Int>,
         sizingResults: Map<Int, SizingResult>,
-        transformerResults: Map<String, TransformerResult>
+        transformerResults: Map<String, TransformerResult>,
+        generatorResults: Map<String, GeneratorResult> = emptyMap()
     ): Map<Int, ShortCircuitResult> {
         val results = mutableMapOf<Int, ShortCircuitResult>()
         val circuitsToCompute = mutableListOf<CircuitEntity>()
@@ -917,7 +920,8 @@ object EngineeringCalculationCoordinator {
                 resolvedCircuits = resolvedCircuits,
                 circuitParents = circuitParents,
                 sizingResults = sizingResults,
-                transformerResults = transformerResults
+                transformerResults = transformerResults,
+                generatorResults = generatorResults
             )
 
             for (circuit in circuitsToCompute) {
@@ -979,13 +983,15 @@ object EngineeringCalculationCoordinator {
         resolvedCircuits: List<CircuitEntity>,
         circuitParents: Map<Int, Int>,
         sizingResults: Map<Int, SizingResult>,
-        transformerResults: Map<String, TransformerResult>
+        transformerResults: Map<String, TransformerResult>,
+        generatorResults: Map<String, GeneratorResult> = emptyMap()
     ): Map<Int, ShortCircuitResult> = withContext(Dispatchers.Default) {
         calculateProjectShortCircuit(
             resolvedCircuits = resolvedCircuits,
             circuitParents = circuitParents,
             sizingResults = sizingResults,
-            transformerResults = transformerResults
+            transformerResults = transformerResults,
+            generatorResults = generatorResults
         )
     }
 
@@ -1151,12 +1157,23 @@ object EngineeringCalculationCoordinator {
     fun calculateProjectAds(
         resolvedCircuits: List<CircuitEntity>,
         sizingResults: Map<Int, SizingResult>,
-        ze_ohm: Double = 0.01
+        ze_ohm: Double = 0.01,
+        transformerResults: Map<String, TransformerResult> = emptyMap()
     ): Map<Int, AdsResult> {
         val results = mutableMapOf<Int, AdsResult>()
         for (circuit in resolvedCircuits) {
             val sizing = sizingResults[circuit.id] ?: continue
-            val sig = computeAdsSignature(circuit, sizing, ze_ohm)
+
+            // H6 — derive Ze from the feeding transformer (Ze = cmax·Un/(√3·I″k)) instead of
+            // assuming 0.01 Ω. The 0.01 Ω default remains ONLY as an explicit, labelled
+            // fallback when no transformer source data exists (warning emitted).
+            val sourceTx = resolveSourceTransformer(circuit, resolvedCircuits, transformerResults)
+            val derivedZe = if (sourceTx != null)
+                ProtectionEngine.deriveZeFromSource(sourceTx.isc3Phase, sourceTx.voltage)
+            else 0.0
+            val effZe = if (derivedZe > 0.0) derivedZe else ze_ohm
+
+            val sig = computeAdsSignature(circuit, sizing, effZe)
             val adsPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
             val adsKey = ProjectCircuitKey(adsPid, circuit.id)
             val liveRev = getProjectRevision(adsPid)
@@ -1164,13 +1181,36 @@ object EngineeringCalculationCoordinator {
             if (cached != null && cached.signature == sig && cached.projectRevision == liveRev) {
                 results[circuit.id] = cached.result
             } else {
-                val fresh = ProtectionCalculationService.calculateAds(circuit, sizing, ze_ohm)
+                var fresh = ProtectionCalculationService.calculateAds(circuit, sizing, effZe)
+                if (derivedZe <= 0.0 && transformerResults.isNotEmpty()) {
+                    fresh = fresh.copy(
+                        warnings = fresh.warnings +
+                            "Ze assumed $ze_ohm Ω (no transformer source data for this circuit) — verify"
+                    )
+                }
                 val rev = liveRev
                 adsCache[adsKey] = VersionedCacheEntry(sig, fresh, rev)
                 results[circuit.id] = fresh
             }
         }
         return results
+    }
+
+    /**
+     * Walks up the parent chain to find the feeding transformer result for ADS Ze derivation.
+     */
+    private fun resolveSourceTransformer(
+        circuit: CircuitEntity,
+        resolvedCircuits: List<CircuitEntity>,
+        transformerResults: Map<String, TransformerResult>
+    ): TransformerResult? {
+        var curr: CircuitEntity? = circuit
+        var guard = 0
+        while (curr != null && guard++ < 32) {
+            transformerResults[curr.transformerId]?.let { return it }
+            curr = curr.parentId?.let { pid -> resolvedCircuits.find { it.id == pid } }
+        }
+        return null
     }
 
     /**
@@ -1240,9 +1280,10 @@ object EngineeringCalculationCoordinator {
     suspend fun calculateProjectAdsAsync(
         resolvedCircuits: List<CircuitEntity>,
         sizingResults: Map<Int, SizingResult>,
-        ze_ohm: Double = 0.01
+        ze_ohm: Double = 0.01,
+        transformerResults: Map<String, TransformerResult> = emptyMap()
     ): Map<Int, AdsResult> = withContext(Dispatchers.Default) {
-        calculateProjectAds(resolvedCircuits, sizingResults, ze_ohm)
+        calculateProjectAds(resolvedCircuits, sizingResults, ze_ohm, transformerResults)
     }
 
     /**
