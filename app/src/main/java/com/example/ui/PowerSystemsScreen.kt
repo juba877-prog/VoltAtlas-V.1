@@ -153,92 +153,17 @@ fun PowerTopSegmentedBar(
     modifier: Modifier = Modifier
 ) {
     val tabs = listOf(
-        Triple("Generator", Icons.Filled.Bolt, "tab_generator"),
-        Triple("ATS", Icons.AutoMirrored.Filled.AltRoute, "tab_ats"),
-        Triple("UPS", Icons.Filled.BatteryChargingFull, "tab_ups"),
-        Triple("PF Correction", Icons.Filled.Tune, "tab_pf")
+        DsPillTabItem("Generator", Icons.Filled.Bolt, "tab_generator"),
+        DsPillTabItem("ATS", Icons.AutoMirrored.Filled.AltRoute, "tab_ats"),
+        DsPillTabItem("UPS", Icons.Filled.BatteryChargingFull, "tab_ups"),
+        DsPillTabItem("PF Correction", Icons.Filled.Tune, "tab_pf")
     )
-    val scrollState = rememberScrollState()
-
-    Box(
+    DsSegmentedPillTabRow(
+        tabs = tabs,
+        selectedTabIndex = selectedTab,
+        onTabSelected = onTabSelected,
         modifier = modifier
-            .fillMaxWidth()
-            .padding(start = 14.dp, end = 0.dp, top = 8.dp, bottom = 4.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(scrollState),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            tabs.forEachIndexed { index, (title, icon, tag) ->
-                val isActive = selectedTab == index
-                val containerColor = if (isActive) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainer
-                }
-                val contentColor = if (isActive) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
-                val iconTint = if (isActive) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
-
-                Surface(
-                    onClick = { onTabSelected(index) },
-                    shape = RoundedCornerShape(20.dp),
-                    color = containerColor,
-                    contentColor = contentColor,
-                    modifier = Modifier
-                        .height(40.dp)
-                        .testTag(tag)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 13.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            tint = iconTint,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = title,
-                            style = DsType.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = contentColor,
-                            maxLines = 1
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.width(36.dp))
-        }
-
-        // Edge fade gradient on right
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .width(34.dp)
-                .height(40.dp)
-                .background(
-                    brush = Brush.horizontalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            MaterialTheme.colorScheme.background
-                        )
-                    )
-                )
-        )
-    }
+    )
 }
 
 @Composable

@@ -107,6 +107,82 @@ class PowerAndShortCircuitScreenshotTest {
     }
 
     @Test
+    @Config(qualifiers = "w360dp-h800dp-xhdpi")
+    fun protectionScreen_topBar_narrowPortrait_dark() {
+        if (!outputDir.exists()) outputDir.mkdirs()
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = true) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    ProtectionScreen(
+                        state = mockUiState()
+                    )
+                }
+            }
+        }
+        composeTestRule.onRoot().captureRoboImage(File(outputDir, "ProtectionScreen_TopBar_NarrowPortrait_Dark.png").path)
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-xhdpi")
+    fun protectionScreen_topBar_narrowPortrait_light() {
+        if (!outputDir.exists()) outputDir.mkdirs()
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = false) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    ProtectionScreen(
+                        state = mockUiState()
+                    )
+                }
+            }
+        }
+        composeTestRule.onRoot().captureRoboImage(File(outputDir, "ProtectionScreen_TopBar_NarrowPortrait_Light.png").path)
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-xhdpi")
+    fun protectionScreen_topBar_landscape_dark() {
+        if (!outputDir.exists()) outputDir.mkdirs()
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = true) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    ProtectionScreen(
+                        state = mockUiState()
+                    )
+                }
+            }
+        }
+        composeTestRule.onRoot().captureRoboImage(File(outputDir, "ProtectionScreen_TopBar_Landscape_Dark.png").path)
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-xhdpi")
+    fun protectionScreen_topBar_landscape_light() {
+        if (!outputDir.exists()) outputDir.mkdirs()
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = false) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    ProtectionScreen(
+                        state = mockUiState()
+                    )
+                }
+            }
+        }
+        composeTestRule.onRoot().captureRoboImage(File(outputDir, "ProtectionScreen_TopBar_Landscape_Light.png").path)
+    }
+
+    @Test
     @Config(qualifiers = "w380dp-h820dp-xhdpi")
     fun powerScreen_topBar_portrait_dark() {
         if (!outputDir.exists()) outputDir.mkdirs()

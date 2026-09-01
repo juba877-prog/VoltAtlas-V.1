@@ -9,12 +9,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.ElectricalServices
 import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import com.example.ui.designsystem.components.DsPillTabItem
+import com.example.ui.designsystem.components.DsSegmentedPillTabRow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,31 +46,33 @@ fun ProtectionScreen(
     onSaveEarthing: ((com.example.data.EarthingEntity) -> Unit)? = null
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(0) }
-    val tabs = listOf("Full Protection", "Short Circuit", "Coordination", "Earth Fault Loop", "Earthing")
+    val tabs = listOf(
+        DsPillTabItem(label = "Protection", icon = Icons.Filled.Security, testTag = "tab_protection", contentDescription = "Full Protection"),
+        DsPillTabItem(label = "SC", icon = Icons.Filled.Bolt, testTag = "tab_sc", contentDescription = "Short Circuit"),
+        DsPillTabItem(label = "Coord", icon = Icons.AutoMirrored.Filled.AltRoute, testTag = "tab_coord", contentDescription = "Coordination"),
+        DsPillTabItem(label = "EFL", icon = Icons.Filled.Refresh, testTag = "tab_efl", contentDescription = "Earth Fault Loop"),
+        DsPillTabItem(label = "Earthing", icon = Icons.Filled.ElectricalServices, testTag = "tab_earthing", contentDescription = "Earthing")
+    )
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        ScrollableTabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = DarkCardBg,
-            contentColor = ThemeTextColor,
-            edgePadding = 8.dp
-        ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = { Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, softWrap = false) }
-                )
-            }
-        }
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            DsSegmentedPillTabRow(
+                tabs = tabs,
+                selectedTabIndex = selectedTab,
+                onTabSelected = { selectedTab = it }
+            )
 
-        Box(modifier = Modifier.weight(1f).padding(16.dp)) {
-            when (selectedTab) {
-                0 -> FullProtectionPanel(state)
-                1 -> ShortCircuitPanel(state)
-                2 -> CoordinationPanel(state)
-                3 -> EarthFaultPanel(state)
-                4 -> EarthingPanel(state, onSaveEarthing)
+            Box(modifier = Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 8.dp)) {
+                when (selectedTab) {
+                    0 -> FullProtectionPanel(state)
+                    1 -> ShortCircuitPanel(state)
+                    2 -> CoordinationPanel(state)
+                    3 -> EarthFaultPanel(state)
+                    4 -> EarthingPanel(state, onSaveEarthing)
+                }
             }
         }
     }
