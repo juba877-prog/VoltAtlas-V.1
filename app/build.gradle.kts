@@ -67,11 +67,19 @@ android {
         println("[SIGNING RESOLUTION] ---> WARNING: FALLING BACK TO DEBUG KEYSTORE (Reason: fileExists=$fileExists, validPassword=$hasValidPassword)")
         println("==================================================")
         val debugKs = rootProject.file("debug.keystore")
-        if (debugKs.exists()) {
-          storeFile = debugKs
+        val androidDebugKs = File(System.getProperty("user.home"), ".android${File.separator}debug.keystore")
+        val fallbackKs = when {
+          debugKs.exists() -> debugKs
+          androidDebugKs.exists() -> androidDebugKs
+          else -> null
+        }
+        if (fallbackKs != null) {
+          storeFile = fallbackKs
           storePassword = "android"
           keyAlias = "androiddebugkey"
           keyPassword = "android"
+        } else {
+          println("[SIGNING RESOLUTION] ---> ERROR: No debug keystore found. Release build will fail at packaging.")
         }
       }
     }
