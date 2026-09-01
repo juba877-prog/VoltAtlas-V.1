@@ -124,14 +124,17 @@ fun QuickSegmentedControl(
                         .clip(RoundedCornerShape(8.dp))
                         .background(if (isSelected) activeColor else Color.Transparent)
                         .clickable { onSelectIndex(index) }
-                        .padding(vertical = 8.dp),
+                        .padding(vertical = 8.dp, horizontal = 2.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = label,
                         color = if (isSelected) ThemeTextColor else SlateTextSecondary,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 12.sp
+                        fontSize = if (options.size > 3) 11.sp else 12.sp,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
             }
@@ -218,10 +221,21 @@ fun QuickMetricHero(
         colors = CardDefaults.cardColors(containerColor = SurfaceElevated),
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, BorderColor),
-        modifier = modifier
+        modifier = modifier.defaultMinSize(minHeight = 84.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(text = title, color = SlateTextSecondary, fontSize = 11.sp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = title,
+                color = SlateTextSecondary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 0.5.sp
+            )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = value,
@@ -230,8 +244,13 @@ fun QuickMetricHero(
                 fontSize = 18.sp
             )
             if (subtitle != null) {
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(text = subtitle, color = SlateTextSecondary.copy(alpha = 0.8f), fontSize = 10.sp)
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = subtitle,
+                    color = SlateTextSecondary,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp
+                )
             }
         }
     }
@@ -385,28 +404,32 @@ fun QuickCalculationDetailsAccordion(
     }
 }
 
+data class ProvenanceDetailItem(
+    val label: String,
+    val value: String,
+    val isPrimary: Boolean = false
+)
+
 @Composable
 fun QuickProvenanceFooter(
-    rColumn: String,
-    resolvedR: Double,
-    resolvedX: Double,
-    baseAmpacityA: Double?,
     dataSource: String,
-    citation: String
+    citation: String,
+    items: List<ProvenanceDetailItem> = emptyList(),
+    modifier: Modifier = Modifier
 ) {
     Surface(
         color = DarkBackground,
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, BorderColor),
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Verified, contentDescription = null, tint = SleekPrimary, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Data Provenance & Engineering Standards",
                     fontWeight = FontWeight.Bold,
@@ -416,32 +439,80 @@ fun QuickProvenanceFooter(
             }
             HorizontalDivider(color = BorderColor.copy(alpha = 0.5f))
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("AC Resistance (R):", color = SlateTextSecondary, fontSize = 11.sp)
-                Text("${String.format(java.util.Locale.US, "%.4f", resolvedR)} Ω/km ($rColumn)", color = ThemeTextColor, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Reactance (X):", color = SlateTextSecondary, fontSize = 11.sp)
-                Text("${String.format(java.util.Locale.US, "%.4f", resolvedX)} Ω/km (50 Hz)", color = ThemeTextColor, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-            }
-            if (baseAmpacityA != null) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Base Rating (Iz):", color = SlateTextSecondary, fontSize = 11.sp)
-                    Text("${String.format(java.util.Locale.US, "%.1f", baseAmpacityA)} A", color = ThemeTextColor, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            items.forEach { item ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = item.label,
+                        color = SlateTextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = item.value,
+                        color = if (item.isPrimary) SleekPrimary else ThemeTextColor,
+                        fontSize = 11.sp,
+                        fontWeight = if (item.isPrimary) FontWeight.Bold else FontWeight.SemiBold
+                    )
                 }
             }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Data Source:", color = SlateTextSecondary, fontSize = 11.sp)
-                Text(dataSource, color = SleekPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Data Source:",
+                    color = SlateTextSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = dataSource,
+                    color = SleekPrimary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
+
             Text(
                 text = citation,
-                color = SlateTextSecondary.copy(alpha = 0.8f),
-                fontSize = 10.sp,
+                color = SlateTextSecondary.copy(alpha = 0.9f),
+                fontSize = 10.5.sp,
+                lineHeight = 14.sp,
                 modifier = Modifier.padding(top = 2.dp)
             )
         }
     }
+}
+
+@Composable
+fun QuickProvenanceFooter(
+    rColumn: String,
+    resolvedR: Double,
+    resolvedX: Double,
+    baseAmpacityA: Double?,
+    dataSource: String,
+    citation: String,
+    modifier: Modifier = Modifier
+) {
+    val items = buildList {
+        add(ProvenanceDetailItem("AC Resistance (R):", "${String.format(java.util.Locale.US, "%.4f", resolvedR)} Ω/km ($rColumn)"))
+        add(ProvenanceDetailItem("Reactance (X):", "${String.format(java.util.Locale.US, "%.4f", resolvedX)} Ω/km (50 Hz)"))
+        if (baseAmpacityA != null) {
+            add(ProvenanceDetailItem("Base Rating (Iz):", "${String.format(java.util.Locale.US, "%.1f", baseAmpacityA)} A"))
+        }
+    }
+    QuickProvenanceFooter(
+        dataSource = dataSource,
+        citation = citation,
+        items = items,
+        modifier = modifier
+    )
 }
 
 private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)

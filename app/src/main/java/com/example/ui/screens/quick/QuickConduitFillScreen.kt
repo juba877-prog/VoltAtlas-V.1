@@ -130,8 +130,8 @@ fun QuickConduitFillScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(top = 10.dp, bottom = 36.dp)
         ) {
             // ── 1. Conduit Type & Standard Rules ──
             item {
@@ -247,12 +247,18 @@ fun QuickConduitFillScreen(
                             modifier = Modifier.weight(1f),
                             accentColor = SleekPrimary
                         )
+
+                        val spareColor = when {
+                            result.spareCapacityPercent >= 20.0 -> SleekPass
+                            result.spareCapacityPercent >= 0.0 -> SleekWarning
+                            else -> SleekFail
+                        }
                         QuickMetricHero(
                             title = "SPARE CROSS-SECTION",
                             value = "${String.format(Locale.US, "%.1f", result.remainingSpareAreaMm2)} mm²",
                             subtitle = "${String.format(Locale.US, "%.1f", result.spareCapacityPercent)}% spare area",
                             modifier = Modifier.weight(1f),
-                            accentColor = SleekWarning
+                            accentColor = spareColor
                         )
                     }
                 }
@@ -269,12 +275,16 @@ fun QuickConduitFillScreen(
             // ── 6. Provenance Footer ──
             item {
                 QuickProvenanceFooter(
-                    rColumn = "Conduit Type: ${conduitType.label}",
-                    resolvedR = result.internalDiameterMm,
-                    resolvedX = result.totalInternalAreaMm2,
-                    baseAmpacityA = null,
-                    dataSource = "NEC Chapter 9 Table 1 & IEC 61386 Catalog",
-                    citation = "IEC 61386-1 Conduit systems for cable management & NEC Chapter 9 Table 1 (1-wire: 53%, 2-wire: 31%, 3+ wire: 40%)."
+                    dataSource = "NEC Chapter 9 Table 1 & IEC 61386 Conduit Data",
+                    citation = "IEC 61386-1 Conduit systems for cable management & NEC Chapter 9 Table 1 (1-wire: 53%, 2-wire: 31%, 3+ wire: 40%).",
+                    items = listOf(
+                        ProvenanceDetailItem("Conduit Standard & Type:", "${conduitType.label} (IEC 61386)"),
+                        ProvenanceDetailItem("Internal Diameter (ID):", "${result.internalDiameterMm} mm"),
+                        ProvenanceDetailItem("Conduit Internal Area:", "${String.format(Locale.US, "%.1f", result.totalInternalAreaMm2)} mm²"),
+                        ProvenanceDetailItem("Total Cable Area:", "${String.format(Locale.US, "%.1f", result.totalCableAreaMm2)} mm² (${input.mainCableCount}x Main + ${input.cpcCableCount}x CPC)"),
+                        ProvenanceDetailItem("Max Allowed Fill Limit:", "${String.format(Locale.US, "%.0f", result.allowedFillPercent)}% (NEC Table 1)"),
+                        ProvenanceDetailItem("Remaining Spare Area:", "${String.format(Locale.US, "%.1f", result.remainingSpareAreaMm2)} mm² (${String.format(Locale.US, "%.1f", result.spareCapacityPercent)}% spare)", isPrimary = true)
+                    )
                 )
             }
         }

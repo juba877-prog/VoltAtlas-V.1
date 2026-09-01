@@ -136,13 +136,13 @@ fun QuickBreakerSelectScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(top = 10.dp, bottom = 36.dp)
         ) {
             // ── 1. Circuit Operating Parameters ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Circuit Parameters & Protection Demand", accentColor = Color(0xFFEF4444), badgeText = "IEC 60947-2", badgeColor = Color(0xFFEF4444))
+                    QuickSectionTitle(title = "Circuit Parameters & Protection Demand", accentColor = SleekPrimary, badgeText = "IEC 60947-2", badgeColor = SleekPrimary)
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
@@ -168,7 +168,7 @@ fun QuickBreakerSelectScreen(
                         options = listOf("3P", "4P (3P+N)", "1P+N"),
                         selectedIndex = polesIndex,
                         onSelectIndex = { polesIndex = it },
-                        activeColor = Color(0xFFEF4444)
+                        activeColor = SleekPrimary
                     )
 
                     Text("Device Category:", color = SlateTextSecondary, fontSize = 12.sp)
@@ -176,7 +176,7 @@ fun QuickBreakerSelectScreen(
                         options = listOf("Auto (Optimal)", "MCB (≤63A)", "MCCB", "ACB (≥800A)"),
                         selectedIndex = deviceTypeIndex,
                         onSelectIndex = { deviceTypeIndex = it },
-                        activeColor = Color(0xFFEF4444)
+                        activeColor = SleekPrimary
                     )
                 }
             }
@@ -184,7 +184,7 @@ fun QuickBreakerSelectScreen(
             // ── 2. Upstream Selectivity Screening Card ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Upstream Device for Selectivity Check", accentColor = Color(0xFFEF4444))
+                    QuickSectionTitle(title = "Upstream Device for Selectivity Check", accentColor = SleekPrimary)
 
                     OutlinedTextField(
                         value = upstreamRatingText,
@@ -200,16 +200,16 @@ fun QuickBreakerSelectScreen(
             // ── 3. Engineering Disclaimer Badge ──
             item {
                 Surface(
-                    color = Color(0xFFEF4444).copy(alpha = 0.10f),
+                    color = SleekPrimary.copy(alpha = 0.08f),
                     shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f)),
+                    border = BorderStroke(1.dp, SleekPrimary.copy(alpha = 0.25f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.Info, contentDescription = null, tint = SleekPrimary, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = "Screening rule-of-thumb applied; consult manufacturer energy discrimination (I²t) and cascading tables for total selectivity confirmation.",
@@ -250,7 +250,7 @@ fun QuickBreakerSelectScreen(
                             value = "${result.breakingCapacityIcu_kA} kA",
                             subtitle = "Ics = ${result.serviceCapacityIcs_kA} kA (+${result.breakingMarginPct}%)",
                             modifier = Modifier.weight(1f),
-                            accentColor = Color(0xFFEF4444)
+                            accentColor = if (result.breakingCapacityIcu_kA >= input.prospectiveFault_kA) SleekPass else SleekFail
                         )
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -284,12 +284,17 @@ fun QuickBreakerSelectScreen(
             // ── 7. Provenance Footer ──
             item {
                 QuickProvenanceFooter(
-                    rColumn = "Breaker: ${result.frameDescription}",
-                    resolvedR = result.continuousRating_A,
-                    resolvedX = result.breakingCapacityIcu_kA,
-                    baseAmpacityA = result.serviceCapacityIcs_kA,
-                    dataSource = "Schneider Acti9 / ComPacT NSX / MasterPact Catalog",
-                    citation = "IEC 60947-2 (Low-voltage switchgear and controlgear - Circuit-breakers) & IEC 60898-1."
+                    dataSource = "Schneider Acti9 & ComPacT NSX / Siemens Sentron / ABB Smax Catalog",
+                    citation = "IEC 60947-2 (Low-voltage switchgear and controlgear - Circuit-breakers) & IEC 60898-1.",
+                    items = listOf(
+                        ProvenanceDetailItem("Selected Breaker Frame:", "${result.frameDescription} (${result.continuousRating_A.toInt()} A)"),
+                        ProvenanceDetailItem("Ultimate Breaking Capacity (Icu):", "${result.breakingCapacityIcu_kA} kA @ 400V (Margin: +${result.breakingMarginPct}%)"),
+                        ProvenanceDetailItem("Service Breaking Capacity (Ics):", "${result.serviceCapacityIcs_kA} kA (${if (result.breakingCapacityIcu_kA > 0) ((result.serviceCapacityIcs_kA / result.breakingCapacityIcu_kA) * 100).toInt() else 100}% Icu)"),
+                        ProvenanceDetailItem("Rated Making Capacity (Icm):", "${result.makingCapacityIcm_kA} kA peak"),
+                        ProvenanceDetailItem("Thermal Selectivity Screening:", result.thermalSelectivityRatio?.let { "Ratio $it:1 (${if (result.isThermalSelectivityOk) "Pass ≥1.6" else "Fail <1.6"})" } ?: "N/A"),
+                        ProvenanceDetailItem("Magnetic Selectivity Screening:", result.magneticSelectivityRatio?.let { "Ratio $it:1 (${if (result.isMagneticSelectivityOk) "Pass ≥2.0" else "Warning <2.0"})" } ?: "N/A"),
+                        ProvenanceDetailItem("Catalog Ordering Code:", result.orderingCode, isPrimary = true)
+                    )
                 )
             }
         }

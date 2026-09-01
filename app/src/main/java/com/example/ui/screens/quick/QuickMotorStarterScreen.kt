@@ -139,13 +139,13 @@ fun QuickMotorStarterScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(top = 10.dp, bottom = 36.dp)
         ) {
             // ── 1. Motor Nameplate Parameters ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Motor Nameplate Ratings", accentColor = Color(0xFF10B981), badgeText = "IEC 60034", badgeColor = Color(0xFF10B981))
+                    QuickSectionTitle(title = "Motor Nameplate Ratings", accentColor = SleekPrimary, badgeText = "IEC 60034", badgeColor = SleekPrimary)
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
@@ -171,7 +171,7 @@ fun QuickMotorStarterScreen(
                         options = listOf("3-Phase (400V)", "1-Phase (230V)"),
                         selectedIndex = phaseIndex,
                         onSelectIndex = { phaseIndex = it },
-                        activeColor = Color(0xFF10B981)
+                        activeColor = SleekPrimary
                     )
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -198,22 +198,22 @@ fun QuickMotorStarterScreen(
             // ── 2. Starter & Overload Technology ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Starter Method & Protection Class", accentColor = Color(0xFF10B981), badgeText = "IEC 60947-4-1", badgeColor = Color(0xFF10B981))
+                    QuickSectionTitle(title = "Starter Method & Protection Class", accentColor = SleekPrimary, badgeText = "IEC 60947-4-1", badgeColor = SleekPrimary)
 
                     Text("Starting Method:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("DOL (6.5×)", "Y-Δ (2.2×)", "Soft-Start (2.5×)", "VFD (1.15×)"),
+                        options = listOf("DOL (6.5×)", "Y-Δ (2.2×)", "Soft (2.5×)", "VFD (1.15×)"),
                         selectedIndex = starterMethodIndex,
                         onSelectIndex = { starterMethodIndex = it },
-                        activeColor = Color(0xFF10B981)
+                        activeColor = SleekPrimary
                     )
 
                     Text("Thermal Overload Trip Class:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("Class 10 (Standard <10s)", "Class 20 (Heavy Inertia <20s)"),
+                        options = listOf("Class 10 (Standard <10s)", "Class 20 (Heavy <20s)"),
                         selectedIndex = tripClassIndex,
                         onSelectIndex = { tripClassIndex = it },
-                        activeColor = Color(0xFF10B981)
+                        activeColor = SleekPrimary
                     )
                 }
             }
@@ -246,7 +246,7 @@ fun QuickMotorStarterScreen(
                             value = "${result.startingCurrent_A} A",
                             subtitle = "${String.format(Locale.US, "%.2f", starterMethod.startMultiplier)}× Inrush (${starterMethod.label})",
                             modifier = Modifier.weight(1f),
-                            accentColor = Color(0xFFEF4444)
+                            accentColor = SleekPrimary
                         )
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -255,14 +255,14 @@ fun QuickMotorStarterScreen(
                             value = "${result.mainContactorKm1_A.toInt()} A",
                             subtitle = "AC-3 Rating (${if (result.deltaContactorKm2_A != null) "Line 0.58·In" else "Main 1.0·In"})",
                             modifier = Modifier.weight(1f),
-                            accentColor = SleekPrimary
+                            accentColor = SleekPass
                         )
                         QuickMetricHero(
                             title = "TOR DIAL RANGE",
                             value = "${result.torSettingCurrent_A} A",
                             subtitle = "[${result.torDialMin_A} A – ${result.torDialMax_A} A, ${result.tripClass}]",
                             modifier = Modifier.weight(1f),
-                            accentColor = SleekWarning
+                            accentColor = ThemeTextColor
                         )
                     }
                 }
@@ -271,7 +271,7 @@ fun QuickMotorStarterScreen(
             // ── 5. Coordination & Backup Protection Card ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Short-Circuit & Feeder Coordination", accentColor = Color(0xFF10B981))
+                    QuickSectionTitle(title = "Short-Circuit & Feeder Coordination", accentColor = SleekPrimary)
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Column(modifier = Modifier.weight(1f)) {
@@ -327,12 +327,16 @@ fun QuickMotorStarterScreen(
             // ── 7. Provenance Footer ──
             item {
                 QuickProvenanceFooter(
-                    rColumn = "Method: ${starterMethod.label} | Class: ${result.tripClass}",
-                    resolvedR = result.fullLoadCurrent_A,
-                    resolvedX = result.startingCurrent_A,
-                    baseAmpacityA = result.mainContactorKm1_A,
                     dataSource = "IEC 60947-4-1 AC-3 / IEC 60034-1 Ratings",
-                    citation = "IEC 60947-4-1 Contactors and motor-starters - Electromechanical contactors and motor-starters & IEC 60034-1 Rotating electrical machines."
+                    citation = "IEC 60947-4-1 Contactors and motor-starters - Electromechanical contactors and motor-starters & IEC 60034-1 Rotating electrical machines.",
+                    items = listOf(
+                        ProvenanceDetailItem("Motor Nameplate Power:", "${input.motorPowerKW} kW @ ${input.voltageV.toInt()}V (${if (input.isThreePhase) "3-Phase" else "1-Phase"})"),
+                        ProvenanceDetailItem("Efficiency & Power Factor:", "η = ${input.efficiencyPct}%, cos φ = ${input.powerFactor}"),
+                        ProvenanceDetailItem("Starting Method & Inrush:", "${starterMethod.label} (${String.format(Locale.US, "%.2f", starterMethod.startMultiplier)}× In = ${result.startingCurrent_A} A)"),
+                        ProvenanceDetailItem("TOR Trip Class & Location:", "${result.tripClass} • ${result.torLocation}"),
+                        ProvenanceDetailItem("Backup Short-Circuit Sizing:", "MPCB ${result.recommendedMpcb_A.toInt()}A | aM ${result.recommendedAmFuse_A.toInt()}A | gG ${result.recommendedGgFuse_A.toInt()}A"),
+                        ProvenanceDetailItem("Min Feeder Cable Ampacity:", "Iz ≥ ${result.minCableAmpacity_A} A (125% Rule)", isPrimary = true)
+                    )
                 )
             }
         }

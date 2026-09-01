@@ -64,6 +64,7 @@ fun QuickUpsScreen(
     }
 
     val copySummaryAction: () -> Unit = {
+        val stringWord = if (result.batteryStringsEstimate100Ah == 1) "String" else "Strings"
         val summary = """
             ⚡ VoltAtlas UPS & Battery Sizing Summary (IEC 62040-3 / IEEE 485)
             • Critical Load: ${input.criticalLoadKVA} kVA / ${result.criticalLoadKW} kW (PF ${input.powerFactor})
@@ -72,7 +73,7 @@ fun QuickUpsScreen(
             • Autonomy Time: ${input.autonomyMinutes} minutes (DoD: ${(input.depthOfDischarge * 100).toInt()}%)
             • Required Battery Energy: ${result.requiredEnergyKWh} kWh
             • Required Battery Capacity: ${result.requiredCapacityAh} Ah @ ${input.batteryVoltageDC.toInt()}V DC
-            • Estimated Battery Strings: ${result.batteryStringsEstimate100Ah}x 100Ah String(s)
+            • Estimated Battery Strings: ${result.batteryStringsEstimate100Ah}x 100Ah $stringWord
         """.trimIndent()
 
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -126,13 +127,13 @@ fun QuickUpsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(top = 10.dp, bottom = 36.dp)
         ) {
             // ── 1. Critical Load Parameters ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Critical Load & Power Demand", accentColor = Color(0xFF06B6D4), badgeText = "IEC 62040", badgeColor = Color(0xFF06B6D4))
+                    QuickSectionTitle(title = "Critical Load & Power Demand", accentColor = SleekPrimary, badgeText = "IEC 62040", badgeColor = SleekPrimary)
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
@@ -158,7 +159,7 @@ fun QuickUpsScreen(
             // ── 2. Battery & Inverter Specifications ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Autonomy & Battery DC Bus", accentColor = Color(0xFF06B6D4))
+                    QuickSectionTitle(title = "Autonomy & Battery DC Bus", accentColor = SleekPrimary)
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
@@ -202,9 +203,10 @@ fun QuickUpsScreen(
 
             // ── 3. Status Banner ──
             item {
+                val stringWord = if (result.batteryStringsEstimate100Ah == 1) "string" else "strings"
                 val bannerStatus = VoltageDropComplianceStatus.PASS
                 val headline = "Recommended UPS Size: ${result.recommendedUpsSizeKVA.toInt()} kVA (Loading: ${result.upsLoadingPercent}%)"
-                val subText = "Required Battery: ${result.requiredCapacityAh} Ah @ ${input.batteryVoltageDC.toInt()}V DC (${result.batteryStringsEstimate100Ah}x 100Ah strings) • Stored Energy: ${result.requiredEnergyKWh} kWh"
+                val subText = "Required Battery: ${result.requiredCapacityAh} Ah @ ${input.batteryVoltageDC.toInt()}V DC (${result.batteryStringsEstimate100Ah}x 100Ah $stringWord) • Stored Energy: ${result.requiredEnergyKWh} kWh"
                 QuickStatusBanner(status = bannerStatus, headline = headline, subText = subText)
             }
 
@@ -224,7 +226,7 @@ fun QuickUpsScreen(
                             value = "${String.format(Locale.US, "%.1f", result.requiredCapacityAh)} Ah",
                             subtitle = "@ ${input.batteryVoltageDC.toInt()}V DC bus",
                             modifier = Modifier.weight(1f),
-                            accentColor = Color(0xFF06B6D4)
+                            accentColor = SleekPrimary
                         )
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -235,12 +237,13 @@ fun QuickUpsScreen(
                             modifier = Modifier.weight(1f),
                             accentColor = SleekPrimary
                         )
+                        val stringWord = if (result.batteryStringsEstimate100Ah == 1) "String" else "Strings"
                         QuickMetricHero(
                             title = "BATTERY STRINGS",
-                            value = "${result.batteryStringsEstimate100Ah} String(s)",
+                            value = "${result.batteryStringsEstimate100Ah} $stringWord",
                             subtitle = "100Ah monobloc basis",
                             modifier = Modifier.weight(1f),
-                            accentColor = SleekWarning
+                            accentColor = ThemeTextColor
                         )
                     }
                 }
@@ -256,13 +259,18 @@ fun QuickUpsScreen(
 
             // ── 6. Provenance Footer ──
             item {
+                val stringWord = if (result.batteryStringsEstimate100Ah == 1) "String" else "Strings"
                 QuickProvenanceFooter(
-                    rColumn = "Inverter η = ${input.inverterEfficiencyPct}% | DoD = ${input.depthOfDischarge}",
-                    resolvedR = result.criticalLoadKVA,
-                    resolvedX = result.requiredCapacityAh,
-                    baseAmpacityA = null,
                     dataSource = "IEC 62040-3 & IEEE 485 Battery Sizing Method",
-                    citation = "IEC 62040-3 Uninterruptible power systems (UPS) & IEEE 485 Recommended Practice for Sizing Lead-Acid Batteries."
+                    citation = "IEC 62040-3 Uninterruptible power systems (UPS) & IEEE 485 Recommended Practice for Sizing Lead-Acid Batteries.",
+                    items = listOf(
+                        ProvenanceDetailItem("Critical Load Demand:", "${input.criticalLoadKVA} kVA / ${result.criticalLoadKW} kW (PF ${input.powerFactor})"),
+                        ProvenanceDetailItem("Inverter Efficiency (η):", "${input.inverterEfficiencyPct}% (DC Input: ${String.format(Locale.US, "%.1f", result.inverterDcLoadKW)} kW)"),
+                        ProvenanceDetailItem("Battery DC Bus Voltage:", "${input.batteryVoltageDC.toInt()} V DC"),
+                        ProvenanceDetailItem("Depth of Discharge (DoD):", "${(input.depthOfDischarge * 100).toInt()}% (Design Margin: 1.25 Aging)"),
+                        ProvenanceDetailItem("Autonomy Duration:", "${input.autonomyMinutes.toInt()} minutes @ full rated load"),
+                        ProvenanceDetailItem("Required Stored Energy:", "${String.format(Locale.US, "%.1f", result.requiredEnergyKWh)} kWh (${result.batteryStringsEstimate100Ah} $stringWord @ 100Ah)", isPrimary = true)
+                    )
                 )
             }
         }

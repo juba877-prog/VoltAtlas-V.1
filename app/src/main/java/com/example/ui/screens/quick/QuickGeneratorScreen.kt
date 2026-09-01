@@ -42,7 +42,7 @@ fun QuickGeneratorScreen(
     var powerFactorText by rememberSaveable { mutableStateOf("0.80") }
     var demandFactorText by rememberSaveable { mutableStateOf("1.0") }
     var largestMotorKwText by rememberSaveable { mutableStateOf("30.0") }
-    var startMethodIndex by rememberSaveable { mutableIntStateOf(0) } // 0=DOL(6x), 1=SD(2.5x), 2=SoftStart(1.8x), 3=VFD(1.2x)
+    var startMethodIndex by rememberSaveable { mutableIntStateOf(0) } // 0=DOL(6x), 1=SD(2.5x), 2=Soft(1.8x), 3=VFD(1.2x)
     var maxDipPctText by rememberSaveable { mutableStateOf("15.0") }
     var xdPctText by rememberSaveable { mutableStateOf("15.0") }
 
@@ -130,13 +130,13 @@ fun QuickGeneratorScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(top = 10.dp, bottom = 36.dp)
         ) {
             // ── 1. Steady-State Load Parameters ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Continuous Steady-State Load", accentColor = Color(0xFF06B6D4), badgeText = "ISO 8528", badgeColor = Color(0xFF06B6D4))
+                    QuickSectionTitle(title = "Continuous Steady-State Load", accentColor = SleekPrimary, badgeText = "ISO 8528", badgeColor = SleekPrimary)
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
@@ -162,7 +162,7 @@ fun QuickGeneratorScreen(
             // ── 2. Motor Starting & Alternator Characteristics ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Motor Starting & Alternator Dynamics", accentColor = Color(0xFF06B6D4))
+                    QuickSectionTitle(title = "Motor Starting & Alternator Dynamics", accentColor = SleekPrimary)
 
                     OutlinedTextField(
                         value = largestMotorKwText,
@@ -175,10 +175,10 @@ fun QuickGeneratorScreen(
 
                     Text("Motor Starting Method:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("DOL (6.0×)", "Y-Δ (2.5×)", "Soft-Start (1.8×)", "VFD (1.2×)"),
+                        options = listOf("DOL (6.0×)", "Y-Δ (2.5×)", "Soft (1.8×)", "VFD (1.2×)"),
                         selectedIndex = startMethodIndex,
                         onSelectIndex = { startMethodIndex = it },
-                        activeColor = Color(0xFF06B6D4)
+                        activeColor = SleekPrimary
                     )
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -235,7 +235,7 @@ fun QuickGeneratorScreen(
                             value = "${result.motorStartingKVA} kVA",
                             subtitle = startMethod.label,
                             modifier = Modifier.weight(1f),
-                            accentColor = Color(0xFF06B6D4)
+                            accentColor = SleekPrimary
                         )
                         QuickMetricHero(
                             title = "VOLTAGE DIP",
@@ -259,12 +259,15 @@ fun QuickGeneratorScreen(
             // ── 6. Provenance Footer ──
             item {
                 QuickProvenanceFooter(
-                    rColumn = "Alternator Subtransient Reactance X\"d = ${input.subtransientReactanceXdPct}%",
-                    resolvedR = result.continuousLoadKVA,
-                    resolvedX = result.motorStartingKVA,
-                    baseAmpacityA = null,
                     dataSource = "ISO 8528-1/5 Prime Power Ratings & IEC 60034-1",
-                    citation = "ISO 8528-1 Reciprocating internal combustion engine driven alternating current generating sets & ISO 8528-5."
+                    citation = "ISO 8528-1 Reciprocating internal combustion engine driven alternating current generating sets & ISO 8528-5.",
+                    items = listOf(
+                        ProvenanceDetailItem("Alternator Subtransient Reactance (X\"d):", "${input.subtransientReactanceXdPct}%"),
+                        ProvenanceDetailItem("Continuous Steady-State Demand:", "${input.continuousLoadKW} kW (${result.continuousLoadKVA} kVA @ PF ${input.powerFactor})"),
+                        ProvenanceDetailItem("Largest Motor Starting Demand:", "${result.motorStartingKVA} kVA (${startMethod.label})"),
+                        ProvenanceDetailItem("Prime Power (PRP) Loading:", "${String.format(Locale.US, "%.1f", result.continuousLoadingPercent)}% (Limit: ≤80% per ISO 8528)"),
+                        ProvenanceDetailItem("Transient Voltage Dip:", "${String.format(Locale.US, "%.1f", result.estimatedVoltageDipPercent)}% (Limit: ≤${input.maxPermittedVoltageDipPct}%)", isPrimary = true)
+                    )
                 )
             }
         }

@@ -38,7 +38,7 @@ fun QuickEarthingScreen(
     val context = LocalContext.current
 
     // State declarations
-    var soilTypeIndex by rememberSaveable { mutableIntStateOf(1) } // 0=Marshy, 1=Clay(50), 2=Sand, 3=Rocky, 4=Custom
+    var soilTypeIndex by rememberSaveable { mutableIntStateOf(1) } // 0=Marshy, 1=Clay(50), 2=Sand(250), 3=Rock(1000), 4=Custom
     var customSoilResText by rememberSaveable { mutableStateOf("50.0") }
     var targetRText by rememberSaveable { mutableStateOf("2.0") }
     var faultKaText by rememberSaveable { mutableStateOf("16.0") }
@@ -141,22 +141,22 @@ fun QuickEarthingScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(top = 10.dp, bottom = 36.dp)
         ) {
             // ── 1. Soil & Target Card ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Soil & Target Resistance", accentColor = Color(0xFFEF4444), badgeText = "IEC 60364-5-54", badgeColor = Color(0xFFEF4444))
+                    QuickSectionTitle(title = "Soil & Target Resistance", accentColor = SleekPrimary, badgeText = "IEC 60364-5-54", badgeColor = SleekPrimary)
 
                     Text("Soil Classification & Resistivity (ρ):", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("Clay (50)", "Sand (250)", "Rock (1k)", "Custom"),
+                        options = listOf("Clay (50)", "Sand (250)", "Rock (1000)", "Custom"),
                         selectedIndex = when (soilTypeIndex) { 1 -> 0; 2 -> 1; 3 -> 2; else -> 3 },
                         onSelectIndex = { idx ->
                             soilTypeIndex = when (idx) { 0 -> 1; 1 -> 2; 2 -> 3; else -> 4 }
                         },
-                        activeColor = Color(0xFFEF4444)
+                        activeColor = SleekPrimary
                     )
 
                     if (soilType == EarthSoilType.CUSTOM) {
@@ -194,7 +194,7 @@ fun QuickEarthingScreen(
             // ── 2. Conductor Material & Rod Geometry ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Conductor & Rod Configuration", accentColor = Color(0xFFEF4444))
+                    QuickSectionTitle(title = "Conductor & Rod Configuration", accentColor = SleekPrimary)
 
                     Text("Protective Conductor Insulation / k-factor:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
@@ -203,7 +203,7 @@ fun QuickEarthingScreen(
                         onSelectIndex = { idx ->
                             materialIndex = when (idx) { 0 -> 0; 1 -> 1; 2 -> 2; else -> 5 }
                         },
-                        activeColor = Color(0xFFEF4444)
+                        activeColor = SleekPrimary
                     )
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -270,7 +270,7 @@ fun QuickEarthingScreen(
                             value = "${result.requiredRods} Pits",
                             subtitle = "Single Rod R₁ = ${String.format(Locale.US, "%.2f", result.singleRodResistance_ohm)} Ω",
                             modifier = Modifier.weight(1f),
-                            accentColor = Color(0xFFEF4444)
+                            accentColor = ThemeTextColor
                         )
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -286,7 +286,7 @@ fun QuickEarthingScreen(
                             value = "${(result.groupEfficiency * 100).toInt()}%",
                             subtitle = "Spacing s/L = ${String.format(Locale.US, "%.2f", input.rodSpacing_m / input.rodLength_m)}",
                             modifier = Modifier.weight(1f),
-                            accentColor = SleekWarning
+                            accentColor = SleekPass
                         )
                     }
                 }
@@ -303,12 +303,16 @@ fun QuickEarthingScreen(
             // ── 6. Provenance Footer ──
             item {
                 QuickProvenanceFooter(
-                    rColumn = "Soil Resistivity ρ = ${input.soilResistivity_ohmM} Ω·m",
-                    resolvedR = result.achievedResistance_ohm,
-                    resolvedX = 0.0,
-                    baseAmpacityA = null,
                     dataSource = "Dwight (1936) & BS 7430:2011 Table 3",
-                    citation = "IEC 60364-5-54 §54.2.2 (Protective earthing conductor sizing) and BS 7430 (Earthing design & rod array efficiency)."
+                    citation = "IEC 60364-5-54 §54.2.2 (Protective earthing conductor sizing) and BS 7430 (Earthing design & rod array efficiency).",
+                    items = listOf(
+                        ProvenanceDetailItem("Soil Resistivity (ρ):", "${input.soilResistivity_ohmM} Ω·m (${soilType.label})"),
+                        ProvenanceDetailItem("Single Rod Resistance (R₁):", "${String.format(Locale.US, "%.2f", result.singleRodResistance_ohm)} Ω"),
+                        ProvenanceDetailItem("Array Spacing Ratio (s/L):", "${String.format(Locale.US, "%.2f", input.rodSpacing_m / input.rodLength_m)} (s = ${input.rodSpacing_m}m, L = ${input.rodLength_m}m)"),
+                        ProvenanceDetailItem("Array Grouping Efficiency (η):", "${(result.groupEfficiency * 100).toInt()}% (BS 7430 Fig. 3)"),
+                        ProvenanceDetailItem("Protective Conductor Material:", "${material.label} (k = ${material.kFactor.toInt()})"),
+                        ProvenanceDetailItem("Target Grid Resistance:", "≤ ${input.targetResistance_ohm} Ω", isPrimary = true)
+                    )
                 )
             }
         }

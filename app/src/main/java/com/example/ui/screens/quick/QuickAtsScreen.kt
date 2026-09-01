@@ -75,7 +75,7 @@ fun QuickAtsScreen(
         val summary = """
             ⚡ VoltAtlas ATS Sizing & Withstand Summary (IEC 60947-6-1 / NFPA 110)
             • Governing Load Current: ${result.governingCurrent_A.toInt()} A (Mains ${input.mainsCurrent_A}A, Gen ${input.generatorFLC_A}A)
-            • Recommended ATS Rating: ${result.recommendedRating_A.toInt()} A (${result.recommendedConstruction})
+            • Recommended ATS Rating: ${result.recommendedRating_A.toInt()} A • ${result.recommendedConstruction}
             • Continuous Loading: ${result.atsLoadingPercent}%
             • Short-Time Withstand (Icw): ${result.shortTimeWithstandIcw_kA} kA @ 1.0s
             • Peak Making Capacity (Icm): ${result.peakMakingCapacityIcm_kA} kA (IEC 60947-6-1 Table 7)
@@ -134,13 +134,13 @@ fun QuickAtsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(top = 10.dp, bottom = 36.dp)
         ) {
             // ── 1. Source Currents & Short-Circuit ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Dual Source Demand & Short-Circuit", accentColor = Color(0xFF06B6D4), badgeText = "IEC 60947-6-1", badgeColor = Color(0xFF06B6D4))
+                    QuickSectionTitle(title = "Dual Source Demand & Short-Circuit", accentColor = SleekPrimary, badgeText = "IEC 60947-6-1", badgeColor = SleekPrimary)
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
@@ -174,10 +174,10 @@ fun QuickAtsScreen(
 
                     Text("Utilization Category:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("AC-33B (Motor/Mixed)", "AC-33A (Frequent)", "AC-31B (Resistive)"),
+                        options = listOf("AC-33B (Motor)", "AC-33A (Frequent)", "AC-31B (Resistive)"),
                         selectedIndex = categoryIndex,
                         onSelectIndex = { categoryIndex = it },
-                        activeColor = Color(0xFF06B6D4)
+                        activeColor = SleekPrimary
                     )
                 }
             }
@@ -185,7 +185,7 @@ fun QuickAtsScreen(
             // ── 2. Transition & Timing Delays ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Transfer Timing & NFPA 110 Type 10", accentColor = Color(0xFF06B6D4))
+                    QuickSectionTitle(title = "Transfer Timing & NFPA 110 Type 10", accentColor = SleekPrimary)
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
@@ -219,7 +219,7 @@ fun QuickAtsScreen(
             // ── 3. Status Banner ──
             item {
                 val bannerStatus = if (result.isNfpa110Compliant) VoltageDropComplianceStatus.PASS else VoltageDropComplianceStatus.WARNING
-                val headline = "Recommended ATS Rating: ${result.recommendedRating_A.toInt()} A (${result.recommendedConstruction})"
+                val headline = "Recommended ATS: ${result.recommendedRating_A.toInt()} A • ${result.recommendedConstruction}"
                 val subText = "Total Transfer Time: ${result.totalTransferTimeToGen_s} s (${if (result.isNfpa110Compliant) "NFPA 110 Type 10 Pass ≤10s" else "Exceeds 10s"}) • Withstand Icw: ${result.shortTimeWithstandIcw_kA} kA"
                 QuickStatusBanner(status = bannerStatus, headline = headline, subText = subText)
             }
@@ -240,7 +240,7 @@ fun QuickAtsScreen(
                             value = "${result.shortTimeWithstandIcw_kA} kA",
                             subtitle = "1.0s Duration",
                             modifier = Modifier.weight(1f),
-                            accentColor = Color(0xFF06B6D4)
+                            accentColor = SleekPrimary
                         )
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -249,7 +249,7 @@ fun QuickAtsScreen(
                             value = "${String.format(Locale.US, "%.1f", result.peakMakingCapacityIcm_kA)} kA",
                             subtitle = "IEC 60947-6-1 Table 7",
                             modifier = Modifier.weight(1f),
-                            accentColor = SleekWarning
+                            accentColor = SleekPrimary
                         )
                         QuickMetricHero(
                             title = "TRANSFER TIME",
@@ -273,12 +273,16 @@ fun QuickAtsScreen(
             // ── 6. Provenance Footer ──
             item {
                 QuickProvenanceFooter(
-                    rColumn = "Category: ${input.utilizationCategory} | Type: ${result.recommendedConstruction}",
-                    resolvedR = result.governingCurrent_A,
-                    resolvedX = result.peakMakingCapacityIcm_kA,
-                    baseAmpacityA = result.recommendedRating_A,
                     dataSource = "IEC 60947-6-1 Table 7 & NFPA 110 Emergency Power",
-                    citation = "IEC 60947-6-1 Multiple function equipment - Transfer switching equipment & NFPA 110 Standard for Emergency and Standby Power Systems."
+                    citation = "IEC 60947-6-1 Multiple function equipment - Transfer switching equipment & NFPA 110 Standard for Emergency and Standby Power Systems.",
+                    items = listOf(
+                        ProvenanceDetailItem("Governing Load Current:", "${result.governingCurrent_A.toInt()} A (Mains ${input.mainsCurrent_A}A, Gen ${input.generatorFLC_A}A)"),
+                        ProvenanceDetailItem("Utilization Category:", "${input.utilizationCategory} (Transfer Switch Duty)"),
+                        ProvenanceDetailItem("Short-Time Withstand (Icw):", "${result.shortTimeWithstandIcw_kA} kA @ 1.0s"),
+                        ProvenanceDetailItem("Peak Making Capacity (Icm):", "${String.format(Locale.US, "%.1f", result.peakMakingCapacityIcm_kA)} kA peak (IEC Table 7)"),
+                        ProvenanceDetailItem("Transfer Timing Breakdown:", "Detect ${input.mainsFailureDetectDelay_s}s + Start ${input.generatorStartDelay_s}s + Warmup ${input.generatorWarmup_s}s = ${result.totalTransferTimeToGen_s}s"),
+                        ProvenanceDetailItem("NFPA 110 Type 10 Status:", if (result.isNfpa110Compliant) "Compliant (≤10s)" else "Exceeds 10s Limit", isPrimary = true)
+                    )
                 )
             }
         }
