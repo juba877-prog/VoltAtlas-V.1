@@ -120,6 +120,14 @@ fun QuickEngineeringHubScreen(
                 icon = Icons.Default.FlashOn,
                 iconTint = Color(0xFF10B981)
             ),
+            QuickToolItem(
+                id = "motor_starter",
+                category = "POWER",
+                title = "Motor Starter & Overload",
+                description = "Full load current (In), starting inrush, AC-3 contactors & TOR (IEC 60947-4-1)",
+                icon = Icons.Default.ElectricBolt,
+                iconTint = Color(0xFF10B981)
+            ),
 
             // PROTECTION
             QuickToolItem(

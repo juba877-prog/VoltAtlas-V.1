@@ -550,3 +550,155 @@ object QuickAtsEngine {
         )
     }
 }
+
+// =============================================================================
+// 7. MOTOR STARTER & OVERLOAD SIZING ENGINE (IEC 60947-4-1 / IEC 60034-1)
+// =============================================================================
+
+enum class MotorStarterType(val label: String, val startMultiplier: Double) {
+    DOL("Direct-On-Line (DOL)", 6.5),
+    STAR_DELTA("Star-Delta (Y-Δ)", 2.17),
+    SOFT_STARTER("Soft Starter", 2.5),
+    VFD("Variable Frequency Drive (VFD)", 1.15)
+}
+
+data class MotorStarterQuickInput(
+    val motorPowerKW: Double,
+    val voltageV: Double = 400.0,
+    val isThreePhase: Boolean = true,
+    val powerFactor: Double = 0.85,
+    val efficiencyPct: Double = 90.0,
+    val startingMethod: MotorStarterType = MotorStarterType.DOL,
+    val tripClass: String = "Class 10"
+)
+
+data class MotorStarterQuickResult(
+    val fullLoadCurrent_A: Double,
+    val startingCurrent_A: Double,
+    val starterType: MotorStarterType,
+    // Contactor AC-3
+    val mainContactorKm1_A: Double,
+    val deltaContactorKm2_A: Double?,
+    val starContactorKm3_A: Double?,
+    // Thermal Overload Relay
+    val torSettingCurrent_A: Double,
+    val torDialMin_A: Double,
+    val torDialMax_A: Double,
+    val torDialSpanMin_A: Double,
+    val torDialSpanMax_A: Double,
+    val torLocation: String,
+    val tripClass: String,
+    // Short Circuit & Backup Protection
+    val recommendedMpcb_A: Double,
+    val recommendedAmFuse_A: Double,
+    val recommendedGgFuse_A: Double,
+    val minCableAmpacity_A: Double,
+    // Formatted details
+    val formulaStarter: String,
+    val substitutionStarter: String
+)
+
+object QuickMotorStarterEngine {
+    val STANDARD_AC3_CONTACTOR_SIZES = listOf(
+        9.0, 12.0, 18.0, 25.0, 32.0, 38.0, 40.0, 50.0, 65.0, 80.0, 95.0,
+        115.0, 150.0, 185.0, 225.0, 265.0, 330.0, 400.0, 500.0, 630.0
+    )
+
+    val STANDARD_MPCB_SIZES = listOf(
+        0.16, 0.25, 0.40, 0.63, 1.0, 1.6, 2.5, 4.0, 6.3, 10.0, 14.0, 18.0,
+        23.0, 25.0, 32.0, 40.0, 50.0, 63.0, 80.0, 100.0, 125.0, 160.0, 200.0, 250.0, 400.0, 630.0
+    )
+
+    val STANDARD_FUSE_SIZES = listOf(
+        2.0, 4.0, 6.0, 10.0, 16.0, 20.0, 25.0, 32.0, 35.0, 40.0, 50.0, 63.0,
+        80.0, 100.0, 125.0, 160.0, 200.0, 250.0, 315.0, 400.0, 500.0, 630.0
+    )
+
+    fun calculate(input: MotorStarterQuickInput): MotorStarterQuickResult {
+        val pKw = max(input.motorPowerKW, 0.1)
+        val v = max(input.voltageV, 100.0)
+        val pf = input.powerFactor.coerceIn(0.50, 1.0)
+        val eta = (input.efficiencyPct / 100.0).coerceIn(0.50, 1.0)
+
+        // 1. Full Load Current (In)
+        val iFlc = if (input.isThreePhase) {
+            (pKw * 1000.0) / (sqrt(3.0) * v * pf * eta)
+        } else {
+            (pKw * 1000.0) / (v * pf * eta)
+        }
+
+        // 2. Starting Inrush Current (Istart)
+        val iStart = iFlc * input.startingMethod.startMultiplier
+
+        // 3. Contactor AC-3 Sizing
+        val km1Required = if (input.startingMethod == MotorStarterType.STAR_DELTA) iFlc * 0.58 else iFlc
+        val km1 = STANDARD_AC3_CONTACTOR_SIZES.firstOrNull { it >= km1Required } ?: STANDARD_AC3_CONTACTOR_SIZES.last()
+
+        val km2 = if (input.startingMethod == MotorStarterType.STAR_DELTA) {
+            STANDARD_AC3_CONTACTOR_SIZES.firstOrNull { it >= iFlc * 0.58 } ?: STANDARD_AC3_CONTACTOR_SIZES.last()
+        } else null
+
+        val km3 = if (input.startingMethod == MotorStarterType.STAR_DELTA) {
+            STANDARD_AC3_CONTACTOR_SIZES.firstOrNull { it >= iFlc * 0.33 } ?: STANDARD_AC3_CONTACTOR_SIZES.last()
+        } else null
+
+        // 4. Thermal Overload Relay Setting
+        val torIr = if (input.startingMethod == MotorStarterType.STAR_DELTA) iFlc * 0.58 else iFlc
+        val torMin = torIr * 0.95
+        val torMax = torIr * 1.05
+        val torSpanMin = torIr * 0.80
+        val torSpanMax = torIr * 1.20
+        val torLocation = if (input.startingMethod == MotorStarterType.STAR_DELTA) {
+            "In Delta Loop (0.58·In) under KM1/KM2"
+        } else {
+            "In Main Feeder Line (1.0·In)"
+        }
+
+        // 5. Short Circuit & Backup Protection
+        val mpcb = STANDARD_MPCB_SIZES.firstOrNull { it >= iFlc } ?: STANDARD_MPCB_SIZES.last()
+
+        val amFuseReq = if (input.startingMethod == MotorStarterType.STAR_DELTA) iFlc * 1.0 else iFlc * 1.25
+        val amFuse = STANDARD_FUSE_SIZES.firstOrNull { it >= amFuseReq } ?: STANDARD_FUSE_SIZES.last()
+
+        val ggFuseReq = if (input.startingMethod == MotorStarterType.STAR_DELTA) iFlc * 1.25 else iFlc * 1.75
+        val ggFuse = STANDARD_FUSE_SIZES.firstOrNull { it >= ggFuseReq } ?: STANDARD_FUSE_SIZES.last()
+
+        val minCableIz = iFlc * 1.25
+
+        val methodLabel = input.startingMethod.label
+        val formula = if (input.isThreePhase) {
+            "In = P_kW · 1000 / (√3 · V · cos φ · η)  |  I_start = k · In  |  TOR = Ir ±5%  |  Iz ≥ 1.25·In"
+        } else {
+            "In = P_kW · 1000 / (V · cos φ · η)  |  I_start = k · In  |  TOR = Ir ±5%  |  Iz ≥ 1.25·In"
+        }
+
+        val substitution = "In = ${String.format(java.util.Locale.US, "%.1f", pKw)} kW · 1000 / (√3 · ${v.toInt()}V · ${String.format(java.util.Locale.US, "%.2f", pf)} · ${String.format(java.util.Locale.US, "%.2f", eta)}) = ${String.format(java.util.Locale.US, "%.2f", iFlc)} A\n" +
+                "Starting Current: ${String.format(java.util.Locale.US, "%.1f", iStart)} A (${String.format(java.util.Locale.US, "%.2f", input.startingMethod.startMultiplier)}× In, $methodLabel)\n" +
+                "Contactor AC-3: KM1 = ${km1.toInt()} A" + (if (km2 != null && km3 != null) ", KM2 (Delta) = ${km2.toInt()} A, KM3 (Star) = ${km3.toInt()} A" else "") + "\n" +
+                "Thermal Overload Dial: ${String.format(java.util.Locale.US, "%.2f", torIr)} A [Setting range: ${String.format(java.util.Locale.US, "%.2f", torMin)} A – ${String.format(java.util.Locale.US, "%.2f", torMax)} A]\n" +
+                "Backup Protection: MPCB ${mpcb.toInt()} A | aM Fuse ${amFuse.toInt()} A | gG Fuse ${ggFuse.toInt()} A | Min Feeder Cable Iz: ${String.format(java.util.Locale.US, "%.1f", minCableIz)} A"
+
+        return MotorStarterQuickResult(
+            fullLoadCurrent_A = round(iFlc * 100.0) / 100.0,
+            startingCurrent_A = round(iStart * 10.0) / 10.0,
+            starterType = input.startingMethod,
+            mainContactorKm1_A = km1,
+            deltaContactorKm2_A = km2,
+            starContactorKm3_A = km3,
+            torSettingCurrent_A = round(torIr * 100.0) / 100.0,
+            torDialMin_A = round(torMin * 100.0) / 100.0,
+            torDialMax_A = round(torMax * 100.0) / 100.0,
+            torDialSpanMin_A = round(torSpanMin * 100.0) / 100.0,
+            torDialSpanMax_A = round(torSpanMax * 100.0) / 100.0,
+            torLocation = torLocation,
+            tripClass = input.tripClass,
+            recommendedMpcb_A = mpcb,
+            recommendedAmFuse_A = amFuse,
+            recommendedGgFuse_A = ggFuse,
+            minCableAmpacity_A = round(minCableIz * 10.0) / 10.0,
+            formulaStarter = formula,
+            substitutionStarter = substitution
+        )
+    }
+}
+

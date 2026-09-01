@@ -188,6 +188,7 @@ fun MainLayout(
                     "load_current" -> com.example.ui.screens.quick.QuickLoadCurrentScreenV2(onBack = { selectedQuickToolId = null })
                     "power_triangle" -> QuickPowerTriangleScreen(onBack = { selectedQuickToolId = null })
                     "pfc" -> com.example.ui.screens.quick.QuickPfcScreenV2(onBack = { selectedQuickToolId = null })
+                    "motor_starter" -> com.example.ui.screens.quick.QuickMotorStarterScreen(onBack = { selectedQuickToolId = null })
                     "breaker_select" -> com.example.ui.screens.quick.QuickBreakerSelectScreen(onBack = { selectedQuickToolId = null })
                     "earthing" -> com.example.ui.screens.quick.QuickEarthingScreen(onBack = { selectedQuickToolId = null })
                     "generator_quick" -> com.example.ui.screens.quick.QuickGeneratorScreen(onBack = { selectedQuickToolId = null })

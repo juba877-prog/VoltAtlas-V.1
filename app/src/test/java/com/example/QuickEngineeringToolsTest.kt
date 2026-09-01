@@ -220,4 +220,74 @@ class QuickEngineeringToolsTest {
         assertEquals(9.0, result.totalTransferTimeToGen_s, 0.01)
         assertTrue(result.isNfpa110Compliant)
     }
+
+    // =========================================================================
+    // 7. MOTOR STARTER & OVERLOAD SIZING TESTS
+    // =========================================================================
+    @Test
+    fun testQuickMotorStarterDOL() {
+        val input = MotorStarterQuickInput(
+            motorPowerKW = 15.0,
+            voltageV = 400.0,
+            isThreePhase = true,
+            powerFactor = 0.85,
+            efficiencyPct = 90.0,
+            startingMethod = MotorStarterType.DOL,
+            tripClass = "Class 10"
+        )
+
+        val result = QuickMotorStarterEngine.calculate(input)
+
+        // In = 15000 / (sqrt(3) * 400 * 0.85 * 0.90) = 28.28 A
+        assertTrue("In should be ~28.3 A, was ${result.fullLoadCurrent_A}", abs(result.fullLoadCurrent_A - 28.28) < 0.2)
+
+        // Starting inrush = 6.5 * 28.28 = 183.8 A
+        assertTrue("Istart should be ~183.8 A, was ${result.startingCurrent_A}", abs(result.startingCurrent_A - 183.8) < 2.0)
+
+        // Contactor AC-3: KM1 >= 28.28 A -> 32 A
+        assertEquals(32.0, result.mainContactorKm1_A, 0.01)
+        assertNull(result.deltaContactorKm2_A)
+        assertNull(result.starContactorKm3_A)
+
+        // TOR dial: Ir = 28.28 A -> min = 26.87 A, max = 29.69 A
+        assertEquals(result.fullLoadCurrent_A, result.torSettingCurrent_A, 0.01)
+        assertTrue("TOR min should be ~26.87 A, was ${result.torDialMin_A}", abs(result.torDialMin_A - 26.87) < 0.2)
+        assertTrue("TOR max should be ~29.69 A, was ${result.torDialMax_A}", abs(result.torDialMax_A - 29.69) < 0.2)
+
+        // MPCB >= 28.28 A -> 32 A, aM fuse >= 35.35 A -> 40 A, Min cable >= 35.35 A
+        assertEquals(32.0, result.recommendedMpcb_A, 0.01)
+        assertEquals(40.0, result.recommendedAmFuse_A, 0.01)
+        assertTrue(result.minCableAmpacity_A >= 35.0)
+    }
+
+    @Test
+    fun testQuickMotorStarterStarDelta() {
+        val input = MotorStarterQuickInput(
+            motorPowerKW = 45.0,
+            voltageV = 400.0,
+            isThreePhase = true,
+            powerFactor = 0.86,
+            efficiencyPct = 92.0,
+            startingMethod = MotorStarterType.STAR_DELTA,
+            tripClass = "Class 10"
+        )
+
+        val result = QuickMotorStarterEngine.calculate(input)
+
+        // In = 45000 / (sqrt(3) * 400 * 0.86 * 0.92) = 82.17 A
+        assertTrue("In should be ~82.2 A, was ${result.fullLoadCurrent_A}", abs(result.fullLoadCurrent_A - 82.17) < 0.3)
+
+        // Starting inrush = 2.17 * 82.17 = 178.3 A
+        assertTrue("Istart should be ~178.3 A, was ${result.startingCurrent_A}", abs(result.startingCurrent_A - 178.3) < 3.0)
+
+        // KM1 (Line) >= 0.58 * 82.17 = 47.66 A -> 50 A
+        // KM2 (Delta) >= 0.58 * 82.17 = 47.66 A -> 50 A
+        // KM3 (Star) >= 0.33 * 82.17 = 27.12 A -> 32 A
+        assertEquals(50.0, result.mainContactorKm1_A, 0.01)
+        assertEquals(50.0, result.deltaContactorKm2_A ?: 0.0, 0.01)
+        assertEquals(32.0, result.starContactorKm3_A ?: 0.0, 0.01)
+
+        // TOR in delta loop: Ir = 0.58 * In = 47.66 A
+        assertTrue("TOR Ir should be ~47.66 A, was ${result.torSettingCurrent_A}", abs(result.torSettingCurrent_A - 47.66) < 0.3)
+    }
 }
