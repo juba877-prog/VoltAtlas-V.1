@@ -73,6 +73,11 @@ fun BoqProcurementScreen(state: UiState.Success) {
 // 4. BOQ CABLES TAB
 @Composable
 fun BoqCablesScreen(state: UiState.Success) {
+    val kpiResult = remember(state.circuits, state.sizingResults, state.drumAllocations) {
+        BoqEngine.generateBoqResult(state.circuits, state.sizingResults, state.drumAllocations)
+    }
+    val kpi = kpiResult.kpi
+
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(bottom = 32.dp)
@@ -80,9 +85,6 @@ fun BoqCablesScreen(state: UiState.Success) {
         item {
             Text("BILL OF QUANTITIES — CABLES", color = ThemeTextColor, style = SectionTitle)
         }
-
-        val kpiResult = BoqEngine.generateBoqResult(state.circuits, state.sizingResults, state.drumAllocations)
-        val kpi = kpiResult.kpi
 
         item {
             Card(

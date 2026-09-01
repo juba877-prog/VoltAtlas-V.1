@@ -27,7 +27,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.quick.*
 import com.example.ui.theme.*
+import kotlinx.collections.immutable.persistentListOf
 import java.util.Locale
+
+private val LOAD_KNOWN_QUANTITY_OPTIONS = persistentListOf("Apparent S (kVA)", "Active P (kW)", "Current I (A)")
+private val LOAD_PHASE_OPTIONS = persistentListOf("3P (400V)", "1P (230V)")
 
 /**
  * Load Current & Power Conversion V2 Screen.
@@ -299,7 +303,7 @@ private fun LoadCurrentInputsCard(
         // 1. Known Quantity Selector
         Text("Primary Known Quantity", color = SlateTextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         QuickSegmentedControl(
-            options = listOf("Apparent S (kVA)", "Active P (kW)", "Current I (A)"),
+            options = LOAD_KNOWN_QUANTITY_OPTIONS,
             selectedIndex = knownQuantityIndex,
             onSelectIndex = onSelectKnownQuantity
         )
@@ -309,7 +313,7 @@ private fun LoadCurrentInputsCard(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(modifier = Modifier.weight(1.2f)) {
                 QuickSegmentedControl(
-                    options = listOf("3P (400V)", "1P (230V)"),
+                    options = LOAD_PHASE_OPTIONS,
                     selectedIndex = phaseIndex,
                     onSelectIndex = onSelectPhase
                 )

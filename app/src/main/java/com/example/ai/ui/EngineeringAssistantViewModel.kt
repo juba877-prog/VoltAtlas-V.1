@@ -346,16 +346,6 @@ class EngineeringAssistantViewModel(
             )
         }
 
-        val gateway = approvalGateway
-        if (gateway == null) {
-            _uiState.update { state ->
-                state.copy(
-                    approvalExecutionState = ApprovalExecutionUiState.FailedPreCommit("Trusted approval gateway is unavailable.")
-                )
-            }
-            return
-        }
-
         val boundedContext = BoundedProjectContext(
             projectId = proposal.projectId,
             projectName = current.context.projectName,
@@ -367,6 +357,16 @@ class EngineeringAssistantViewModel(
         )
 
         viewModelScope.launch {
+            val gateway = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { approvalGateway }
+            if (gateway == null) {
+                _uiState.update { state ->
+                    state.copy(
+                        approvalExecutionState = ApprovalExecutionUiState.FailedPreCommit("Trusted approval gateway is unavailable.")
+                    )
+                }
+                return@launch
+            }
+
             val gateResult = gateway.processApprovalAndExecute(
                 TrustedApprovalRequest(
                     proposal = proposal,

@@ -27,7 +27,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.quick.*
 import com.example.ui.theme.*
+import kotlinx.collections.immutable.persistentListOf
 import java.util.Locale
+
+private val SOIL_OPTIONS = persistentListOf("Clay (50)", "Sand (250)", "Rock (1000)", "Custom")
+private val CONDUCTOR_OPTIONS = persistentListOf("Cu Bare (159)", "Cu/XLPE (176)", "Cu/PVC (143)", "Steel (58)")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,22 +81,35 @@ fun QuickEarthingScreen(
         QuickEarthingEngine.calculate(input)
     }
 
-    val copySummaryAction: () -> Unit = {
-        val summary = """
-            ⚡ VoltAtlas Earthing & Grounding Summary (IEC 60364-5-54 / BS 7430)
-            • Soil Resistivity: ${input.soilResistivity_ohmM} Ω·m (${soilType.label})
-            • Target Resistance: ≤ ${input.targetResistance_ohm} Ω
-            • Single Rod Resistance (R₁): ${result.singleRodResistance_ohm} Ω
-            • Required Earth Pits / Rods: ${result.requiredRods} (Eff: ${(result.groupEfficiency * 100).toInt()}%)
-            • Achieved Grid Resistance: ${result.achievedResistance_ohm} Ω (${if (result.isResistanceOk) "PASS" else "FAIL"})
-            • Earth Fault Current: ${input.faultCurrent_kA} kA @ ${input.clearingTime_s} s
-            • Protective Earth Conductor: ${result.standardConductorMm2.toInt()} mm² (Calculated: ${result.exactConductorMm2} mm², k=${material.kFactor.toInt()})
-            • Compliance: ${if (result.isResistanceOk) "COMPLIANT" else "NON-COMPLIANT"}
-        """.trimIndent()
+    val copySummaryAction = remember(input, result, soilType, material, context) {
+        {
+            val summary = """
+                ⚡ VoltAtlas Earthing & Grounding Summary (IEC 60364-5-54 / BS 7430)
+                • Soil Resistivity: ${input.soilResistivity_ohmM} Ω·m (${soilType.label})
+                • Target Resistance: ≤ ${input.targetResistance_ohm} Ω
+                • Single Rod Resistance (R₁): ${result.singleRodResistance_ohm} Ω
+                • Required Earth Pits / Rods: ${result.requiredRods} (Eff: ${(result.groupEfficiency * 100).toInt()}%)
+                • Achieved Grid Resistance: ${result.achievedResistance_ohm} Ω (${if (result.isResistanceOk) "PASS" else "FAIL"})
+                • Earth Fault Current: ${input.faultCurrent_kA} kA @ ${input.clearingTime_s} s
+                • Protective Earth Conductor: ${result.standardConductorMm2.toInt()} mm² (Calculated: ${result.exactConductorMm2} mm², k=${material.kFactor.toInt()})
+                • Compliance: ${if (result.isResistanceOk) "COMPLIANT" else "NON-COMPLIANT"}
+            """.trimIndent()
 
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("Earthing Sizing Summary", summary))
-        Toast.makeText(context, "Earthing summary copied to clipboard", Toast.LENGTH_SHORT).show()
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Earthing Sizing Summary", summary))
+            Toast.makeText(context, "Earthing summary copied to clipboard", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val provenanceItems = remember(input, result, soilType, material) {
+        persistentListOf(
+            ProvenanceDetailItem("Soil Resistivity (ρ):", "${input.soilResistivity_ohmM} Ω·m (${soilType.label})"),
+            ProvenanceDetailItem("Single Rod Resistance (R₁):", "${String.format(Locale.US, "%.2f", result.singleRodResistance_ohm)} Ω"),
+            ProvenanceDetailItem("Array Spacing Ratio (s/L):", "${String.format(Locale.US, "%.2f", input.rodSpacing_m / input.rodLength_m)} (s = ${input.rodSpacing_m}m, L = ${input.rodLength_m}m)"),
+            ProvenanceDetailItem("Array Grouping Efficiency (η):", "${(result.groupEfficiency * 100).toInt()}% (BS 7430 Fig. 3)"),
+            ProvenanceDetailItem("Protective Conductor Material:", "${material.label} (k = ${material.kFactor.toInt()})"),
+            ProvenanceDetailItem("Target Grid Resistance:", "≤ ${input.targetResistance_ohm} Ω", isPrimary = true)
+        )
     }
 
     Scaffold(
@@ -151,7 +168,7 @@ fun QuickEarthingScreen(
 
                     Text("Soil Classification & Resistivity (ρ):", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("Clay (50)", "Sand (250)", "Rock (1000)", "Custom"),
+                        options = SOIL_OPTIONS,
                         selectedIndex = when (soilTypeIndex) { 1 -> 0; 2 -> 1; 3 -> 2; else -> 3 },
                         onSelectIndex = { idx ->
                             soilTypeIndex = when (idx) { 0 -> 1; 1 -> 2; 2 -> 3; else -> 4 }
@@ -198,7 +215,7 @@ fun QuickEarthingScreen(
 
                     Text("Protective Conductor Insulation / k-factor:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("Cu Bare (159)", "Cu/XLPE (176)", "Cu/PVC (143)", "Steel (58)"),
+                        options = CONDUCTOR_OPTIONS,
                         selectedIndex = when (materialIndex) { 0 -> 0; 1 -> 1; 2 -> 2; else -> 3 },
                         onSelectIndex = { idx ->
                             materialIndex = when (idx) { 0 -> 0; 1 -> 1; 2 -> 2; else -> 5 }
@@ -305,14 +322,7 @@ fun QuickEarthingScreen(
                 QuickProvenanceFooter(
                     dataSource = "Dwight (1936) & BS 7430:2011 Table 3",
                     citation = "IEC 60364-5-54 §54.2.2 (Protective earthing conductor sizing) and BS 7430 (Earthing design & rod array efficiency).",
-                    items = listOf(
-                        ProvenanceDetailItem("Soil Resistivity (ρ):", "${input.soilResistivity_ohmM} Ω·m (${soilType.label})"),
-                        ProvenanceDetailItem("Single Rod Resistance (R₁):", "${String.format(Locale.US, "%.2f", result.singleRodResistance_ohm)} Ω"),
-                        ProvenanceDetailItem("Array Spacing Ratio (s/L):", "${String.format(Locale.US, "%.2f", input.rodSpacing_m / input.rodLength_m)} (s = ${input.rodSpacing_m}m, L = ${input.rodLength_m}m)"),
-                        ProvenanceDetailItem("Array Grouping Efficiency (η):", "${(result.groupEfficiency * 100).toInt()}% (BS 7430 Fig. 3)"),
-                        ProvenanceDetailItem("Protective Conductor Material:", "${material.label} (k = ${material.kFactor.toInt()})"),
-                        ProvenanceDetailItem("Target Grid Resistance:", "≤ ${input.targetResistance_ohm} Ω", isPrimary = true)
-                    )
+                    items = provenanceItems
                 )
             }
         }

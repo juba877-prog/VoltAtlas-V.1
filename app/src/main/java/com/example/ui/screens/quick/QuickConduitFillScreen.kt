@@ -27,7 +27,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.quick.*
 import com.example.ui.theme.*
+import kotlinx.collections.immutable.persistentListOf
 import java.util.Locale
+
+private val CONDUIT_MATERIAL_OPTIONS = persistentListOf("Rigid PVC", "EMT Steel", "GI Steel")
+private val FILL_LIMIT_OPTIONS = persistentListOf("NEC Std (53/31/40%)", "Custom Limit %")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,22 +70,35 @@ fun QuickConduitFillScreen(
         QuickConduitFillEngine.calculate(input)
     }
 
-    val copySummaryAction: () -> Unit = {
-        val summary = """
-            ⚡ VoltAtlas Conduit Fill & Sizing Summary (IEC 61386 / NEC Ch. 9)
-            • Conduit Type: ${conduitType.label}
-            • Recommended Trade Size: ${result.recommendedTradeSize} (Internal ID: ${result.internalDiameterMm} mm)
-            • Cable Configuration: ${input.mainCableCount}x Main (OD ${input.mainCableOD_mm} mm) + ${input.cpcCableCount}x CPC (OD ${input.cpcCableOD_mm} mm)
-            • Total Cable Area: ${result.totalCableAreaMm2} mm²
-            • Conduit Internal Area: ${result.totalInternalAreaMm2} mm²
-            • Actual Fill: ${result.actualFillPercent}% (Max Allowed: ${result.allowedFillPercent}%)
-            • Remaining Spare Area: ${result.remainingSpareAreaMm2} mm² (${result.spareCapacityPercent}% spare)
-            • Compliance: ${if (result.isCompliant) "PASS" else "EXCEEDS FILL LIMIT"}
-        """.trimIndent()
+    val copySummaryAction = remember(input, result, conduitType, context) {
+        {
+            val summary = """
+                ⚡ VoltAtlas Conduit Fill & Sizing Summary (IEC 61386 / NEC Ch. 9)
+                • Conduit Type: ${conduitType.label}
+                • Recommended Trade Size: ${result.recommendedTradeSize} (Internal ID: ${result.internalDiameterMm} mm)
+                • Cable Configuration: ${input.mainCableCount}x Main (OD ${input.mainCableOD_mm} mm) + ${input.cpcCableCount}x CPC (OD ${input.cpcCableOD_mm} mm)
+                • Total Cable Area: ${result.totalCableAreaMm2} mm²
+                • Conduit Internal Area: ${result.totalInternalAreaMm2} mm²
+                • Actual Fill: ${result.actualFillPercent}% (Max Allowed: ${result.allowedFillPercent}%)
+                • Remaining Spare Area: ${result.remainingSpareAreaMm2} mm² (${result.spareCapacityPercent}% spare)
+                • Compliance: ${if (result.isCompliant) "PASS" else "EXCEEDS FILL LIMIT"}
+            """.trimIndent()
 
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("Conduit Fill Summary", summary))
-        Toast.makeText(context, "Conduit fill summary copied to clipboard", Toast.LENGTH_SHORT).show()
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Conduit Fill Summary", summary))
+            Toast.makeText(context, "Conduit fill summary copied to clipboard", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val provenanceItems = remember(input, result, conduitType) {
+        persistentListOf(
+            ProvenanceDetailItem("Conduit Standard & Type:", "${conduitType.label} (IEC 61386)"),
+            ProvenanceDetailItem("Internal Diameter (ID):", "${result.internalDiameterMm} mm"),
+            ProvenanceDetailItem("Conduit Internal Area:", "${String.format(Locale.US, "%.1f", result.totalInternalAreaMm2)} mm²"),
+            ProvenanceDetailItem("Total Cable Area:", "${String.format(Locale.US, "%.1f", result.totalCableAreaMm2)} mm² (${input.mainCableCount}x Main + ${input.cpcCableCount}x CPC)"),
+            ProvenanceDetailItem("Max Allowed Fill Limit:", "${String.format(Locale.US, "%.0f", result.allowedFillPercent)}% (NEC Table 1)"),
+            ProvenanceDetailItem("Remaining Spare Area:", "${String.format(Locale.US, "%.1f", result.remainingSpareAreaMm2)} mm² (${String.format(Locale.US, "%.1f", result.spareCapacityPercent)}% spare)", isPrimary = true)
+        )
     }
 
     Scaffold(
@@ -133,14 +150,14 @@ fun QuickConduitFillScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(top = 10.dp, bottom = 36.dp)
         ) {
-            // ── 1. Conduit Type & Standard Rules ──
+            // ── 1. Conduit Type & Standard ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Conduit Type & Fill Standard", accentColor = SleekPrimary, badgeText = "IEC 61386", badgeColor = SleekPrimary)
+                    QuickSectionTitle(title = "Conduit Standards & Limits", accentColor = SleekPrimary, badgeText = "IEC 61386", badgeColor = SleekPrimary)
 
                     Text("Conduit Material & Standard:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("Rigid PVC", "EMT Steel", "GI Steel"),
+                        options = CONDUIT_MATERIAL_OPTIONS,
                         selectedIndex = conduitTypeIndex,
                         onSelectIndex = { conduitTypeIndex = it },
                         activeColor = SleekPrimary
@@ -148,7 +165,7 @@ fun QuickConduitFillScreen(
 
                     Text("Fill Capacity Profile:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("NEC Std (53/31/40%)", "Custom Limit %"),
+                        options = FILL_LIMIT_OPTIONS,
                         selectedIndex = fillLimitModeIndex,
                         onSelectIndex = { fillLimitModeIndex = it },
                         activeColor = SleekPrimary
@@ -277,14 +294,7 @@ fun QuickConduitFillScreen(
                 QuickProvenanceFooter(
                     dataSource = "NEC Chapter 9 Table 1 & IEC 61386 Conduit Data",
                     citation = "IEC 61386-1 Conduit systems for cable management & NEC Chapter 9 Table 1 (1-wire: 53%, 2-wire: 31%, 3+ wire: 40%).",
-                    items = listOf(
-                        ProvenanceDetailItem("Conduit Standard & Type:", "${conduitType.label} (IEC 61386)"),
-                        ProvenanceDetailItem("Internal Diameter (ID):", "${result.internalDiameterMm} mm"),
-                        ProvenanceDetailItem("Conduit Internal Area:", "${String.format(Locale.US, "%.1f", result.totalInternalAreaMm2)} mm²"),
-                        ProvenanceDetailItem("Total Cable Area:", "${String.format(Locale.US, "%.1f", result.totalCableAreaMm2)} mm² (${input.mainCableCount}x Main + ${input.cpcCableCount}x CPC)"),
-                        ProvenanceDetailItem("Max Allowed Fill Limit:", "${String.format(Locale.US, "%.0f", result.allowedFillPercent)}% (NEC Table 1)"),
-                        ProvenanceDetailItem("Remaining Spare Area:", "${String.format(Locale.US, "%.1f", result.remainingSpareAreaMm2)} mm² (${String.format(Locale.US, "%.1f", result.spareCapacityPercent)}% spare)", isPrimary = true)
-                    )
+                    items = provenanceItems
                 )
             }
         }

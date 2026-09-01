@@ -8,9 +8,8 @@
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 
 # ------------------------------------------------------------------------------
-# AndroidX & Compose Runtime
+# AndroidX Lifecycle
 # ------------------------------------------------------------------------------
--keep class androidx.compose.** { *; }
 -keepclassmembers class * extends androidx.lifecycle.ViewModel {
     <init>(...);
 }

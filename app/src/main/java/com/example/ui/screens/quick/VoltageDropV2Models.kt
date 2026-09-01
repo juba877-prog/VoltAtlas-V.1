@@ -1,5 +1,6 @@
 package com.example.ui.screens.quick
 
+import androidx.compose.runtime.Immutable
 import com.example.engine.converters.ElectricalConverters
 import com.example.engine.quick.QuickEngineeringDataBridge
 import com.example.engine.quick.ResolvedCableImpedance
@@ -24,6 +25,7 @@ enum class VoltageDropComplianceStatus {
     WARNING
 }
 
+@Immutable
 data class VoltageDropCheckResult(
     val title: String,
     val status: VoltageDropComplianceStatus,
@@ -31,6 +33,7 @@ data class VoltageDropCheckResult(
     val detailText: String
 )
 
+@Immutable
 data class VoltageDropInputState(
     val inputMode: VoltageDropInputMode = VoltageDropInputMode.CURRENT,
     val phase: VoltageDropSystemPhase = VoltageDropSystemPhase.THREE_PHASE,
@@ -50,6 +53,7 @@ data class VoltageDropInputState(
     val manualXOhmPerKm: Double = 0.080
 )
 
+@Immutable
 data class VoltageDropDetailedResult(
     // Primary Metrics
     val voltageDropPct: Double,

@@ -1,5 +1,6 @@
 package com.example.ui.screens.quick
 
+import androidx.compose.runtime.Immutable
 import com.example.engine.converters.CapacitorConnectionType
 import com.example.engine.converters.ElectricalConverters
 import java.util.Locale
@@ -28,6 +29,7 @@ enum class PfcCapacitorConnection(val connectionType: CapacitorConnectionType, v
     SINGLE_PHASE(CapacitorConnectionType.SINGLE_OR_STAR, "Single-Phase")
 }
 
+@Immutable
 data class PfcCalculationStep(
     val title: String,
     val formula: String,
@@ -35,6 +37,7 @@ data class PfcCalculationStep(
     val resultText: String
 )
 
+@Immutable
 data class PfcInputState(
     val inputMode: PfcInputMode = PfcInputMode.ACTIVE_POWER_KW,
     val phase: PfcSystemPhase = PfcSystemPhase.THREE_PHASE,
@@ -48,6 +51,7 @@ data class PfcInputState(
     val connection: PfcCapacitorConnection = PfcCapacitorConnection.DELTA
 )
 
+@Immutable
 data class PfcDetailedResult(
     // Primary Hero Metric
     val requiredQcKvar: Double,

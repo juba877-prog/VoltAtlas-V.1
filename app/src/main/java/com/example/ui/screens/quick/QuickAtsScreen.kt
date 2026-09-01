@@ -27,7 +27,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.quick.*
 import com.example.ui.theme.*
+import kotlinx.collections.immutable.persistentListOf
 import java.util.Locale
+
+private val ATS_CATEGORY_OPTIONS = persistentListOf("AC-33B (Motor)", "AC-33A (Frequent)", "AC-31B (Resistive)")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,21 +74,34 @@ fun QuickAtsScreen(
         QuickAtsEngine.calculate(input)
     }
 
-    val copySummaryAction: () -> Unit = {
-        val summary = """
-            ⚡ VoltAtlas ATS Sizing & Withstand Summary (IEC 60947-6-1 / NFPA 110)
-            • Governing Load Current: ${result.governingCurrent_A.toInt()} A (Mains ${input.mainsCurrent_A}A, Gen ${input.generatorFLC_A}A)
-            • Recommended ATS Rating: ${result.recommendedRating_A.toInt()} A • ${result.recommendedConstruction}
-            • Continuous Loading: ${result.atsLoadingPercent}%
-            • Short-Time Withstand (Icw): ${result.shortTimeWithstandIcw_kA} kA @ 1.0s
-            • Peak Making Capacity (Icm): ${result.peakMakingCapacityIcm_kA} kA (IEC 60947-6-1 Table 7)
-            • Total Transfer Time: ${result.totalTransferTimeToGen_s} s (${if (result.isNfpa110Compliant) "NFPA 110 Type 10 Compliant ≤10s" else "EXCEEDS 10s LIMIT"})
-            • Category: ${input.utilizationCategory}
-        """.trimIndent()
+    val copySummaryAction = remember(input, result, context) {
+        {
+            val summary = """
+                ⚡ VoltAtlas ATS Sizing & Withstand Summary (IEC 60947-6-1 / NFPA 110)
+                • Governing Load Current: ${result.governingCurrent_A.toInt()} A (Mains ${input.mainsCurrent_A}A, Gen ${input.generatorFLC_A}A)
+                • Recommended ATS Rating: ${result.recommendedRating_A.toInt()} A • ${result.recommendedConstruction}
+                • Continuous Loading: ${result.atsLoadingPercent}%
+                • Short-Time Withstand (Icw): ${result.shortTimeWithstandIcw_kA} kA @ 1.0s
+                • Peak Making Capacity (Icm): ${result.peakMakingCapacityIcm_kA} kA (IEC 60947-6-1 Table 7)
+                • Total Transfer Time: ${result.totalTransferTimeToGen_s} s (${if (result.isNfpa110Compliant) "NFPA 110 Type 10 Compliant ≤10s" else "EXCEEDS 10s LIMIT"})
+                • Category: ${input.utilizationCategory}
+            """.trimIndent()
 
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("ATS Sizing Summary", summary))
-        Toast.makeText(context, "ATS summary copied to clipboard", Toast.LENGTH_SHORT).show()
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("ATS Sizing Summary", summary))
+            Toast.makeText(context, "ATS summary copied to clipboard", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val provenanceItems = remember(input, result) {
+        persistentListOf(
+            ProvenanceDetailItem("Governing Load Current:", "${result.governingCurrent_A.toInt()} A (Mains ${input.mainsCurrent_A}A, Gen ${input.generatorFLC_A}A)"),
+            ProvenanceDetailItem("Utilization Category:", "${input.utilizationCategory} (Transfer Switch Duty)"),
+            ProvenanceDetailItem("Short-Time Withstand (Icw):", "${result.shortTimeWithstandIcw_kA} kA @ 1.0s"),
+            ProvenanceDetailItem("Peak Making Capacity (Icm):", "${String.format(Locale.US, "%.1f", result.peakMakingCapacityIcm_kA)} kA peak (IEC Table 7)"),
+            ProvenanceDetailItem("Transfer Timing Breakdown:", "Detect ${input.mainsFailureDetectDelay_s}s + Start ${input.generatorStartDelay_s}s + Warmup ${input.generatorWarmup_s}s = ${result.totalTransferTimeToGen_s}s"),
+            ProvenanceDetailItem("NFPA 110 Type 10 Status:", if (result.isNfpa110Compliant) "Compliant (≤10s)" else "Exceeds 10s Limit", isPrimary = true)
+        )
     }
 
     Scaffold(
@@ -174,7 +190,7 @@ fun QuickAtsScreen(
 
                     Text("Utilization Category:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("AC-33B (Motor)", "AC-33A (Frequent)", "AC-31B (Resistive)"),
+                        options = ATS_CATEGORY_OPTIONS,
                         selectedIndex = categoryIndex,
                         onSelectIndex = { categoryIndex = it },
                         activeColor = SleekPrimary
@@ -275,14 +291,7 @@ fun QuickAtsScreen(
                 QuickProvenanceFooter(
                     dataSource = "IEC 60947-6-1 Table 7 & NFPA 110 Emergency Power",
                     citation = "IEC 60947-6-1 Multiple function equipment - Transfer switching equipment & NFPA 110 Standard for Emergency and Standby Power Systems.",
-                    items = listOf(
-                        ProvenanceDetailItem("Governing Load Current:", "${result.governingCurrent_A.toInt()} A (Mains ${input.mainsCurrent_A}A, Gen ${input.generatorFLC_A}A)"),
-                        ProvenanceDetailItem("Utilization Category:", "${input.utilizationCategory} (Transfer Switch Duty)"),
-                        ProvenanceDetailItem("Short-Time Withstand (Icw):", "${result.shortTimeWithstandIcw_kA} kA @ 1.0s"),
-                        ProvenanceDetailItem("Peak Making Capacity (Icm):", "${String.format(Locale.US, "%.1f", result.peakMakingCapacityIcm_kA)} kA peak (IEC Table 7)"),
-                        ProvenanceDetailItem("Transfer Timing Breakdown:", "Detect ${input.mainsFailureDetectDelay_s}s + Start ${input.generatorStartDelay_s}s + Warmup ${input.generatorWarmup_s}s = ${result.totalTransferTimeToGen_s}s"),
-                        ProvenanceDetailItem("NFPA 110 Type 10 Status:", if (result.isNfpa110Compliant) "Compliant (≤10s)" else "Exceeds 10s Limit", isPrimary = true)
-                    )
+                    items = provenanceItems
                 )
             }
         }

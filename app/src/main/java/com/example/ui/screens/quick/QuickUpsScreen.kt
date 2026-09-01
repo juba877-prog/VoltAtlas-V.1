@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.quick.*
 import com.example.ui.theme.*
+import kotlinx.collections.immutable.persistentListOf
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,22 +64,36 @@ fun QuickUpsScreen(
         QuickUpsEngine.calculate(input)
     }
 
-    val copySummaryAction: () -> Unit = {
-        val stringWord = if (result.batteryStringsEstimate100Ah == 1) "String" else "Strings"
-        val summary = """
-            ⚡ VoltAtlas UPS & Battery Sizing Summary (IEC 62040-3 / IEEE 485)
-            • Critical Load: ${input.criticalLoadKVA} kVA / ${result.criticalLoadKW} kW (PF ${input.powerFactor})
-            • Recommended UPS Frame: ${result.recommendedUpsSizeKVA.toInt()} kVA (Continuous Loading: ${result.upsLoadingPercent}%)
-            • DC Inverter Demand: ${result.inverterDcLoadKW} kW (Inverter η: ${input.inverterEfficiencyPct}%)
-            • Autonomy Time: ${input.autonomyMinutes} minutes (DoD: ${(input.depthOfDischarge * 100).toInt()}%)
-            • Required Battery Energy: ${result.requiredEnergyKWh} kWh
-            • Required Battery Capacity: ${result.requiredCapacityAh} Ah @ ${input.batteryVoltageDC.toInt()}V DC
-            • Estimated Battery Strings: ${result.batteryStringsEstimate100Ah}x 100Ah $stringWord
-        """.trimIndent()
+    val copySummaryAction = remember(input, result, context) {
+        {
+            val stringWord = if (result.batteryStringsEstimate100Ah == 1) "String" else "Strings"
+            val summary = """
+                ⚡ VoltAtlas UPS & Battery Sizing Summary (IEC 62040-3 / IEEE 485)
+                • Critical Load: ${input.criticalLoadKVA} kVA / ${result.criticalLoadKW} kW (PF ${input.powerFactor})
+                • Recommended UPS Frame: ${result.recommendedUpsSizeKVA.toInt()} kVA (Continuous Loading: ${result.upsLoadingPercent}%)
+                • DC Inverter Demand: ${result.inverterDcLoadKW} kW (Inverter η: ${input.inverterEfficiencyPct}%)
+                • Autonomy Time: ${input.autonomyMinutes} minutes (DoD: ${(input.depthOfDischarge * 100).toInt()}%)
+                • Required Battery Energy: ${result.requiredEnergyKWh} kWh
+                • Required Battery Capacity: ${result.requiredCapacityAh} Ah @ ${input.batteryVoltageDC.toInt()}V DC
+                • Estimated Battery Strings: ${result.batteryStringsEstimate100Ah}x 100Ah $stringWord
+            """.trimIndent()
 
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("UPS Sizing Summary", summary))
-        Toast.makeText(context, "UPS summary copied to clipboard", Toast.LENGTH_SHORT).show()
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("UPS Sizing Summary", summary))
+            Toast.makeText(context, "UPS summary copied to clipboard", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val stringWord = if (result.batteryStringsEstimate100Ah == 1) "String" else "Strings"
+    val provenanceItems = remember(input, result) {
+        persistentListOf(
+            ProvenanceDetailItem("Critical Load Demand:", "${input.criticalLoadKVA} kVA / ${result.criticalLoadKW} kW (PF ${input.powerFactor})"),
+            ProvenanceDetailItem("Inverter Efficiency (η):", "${input.inverterEfficiencyPct}% (DC Input: ${String.format(Locale.US, "%.1f", result.inverterDcLoadKW)} kW)"),
+            ProvenanceDetailItem("Battery DC Bus Voltage:", "${input.batteryVoltageDC.toInt()} V DC"),
+            ProvenanceDetailItem("Depth of Discharge (DoD):", "${(input.depthOfDischarge * 100).toInt()}% (Design Margin: 1.25 Aging)"),
+            ProvenanceDetailItem("Autonomy Duration:", "${input.autonomyMinutes.toInt()} minutes @ full rated load"),
+            ProvenanceDetailItem("Required Stored Energy:", "${String.format(Locale.US, "%.1f", result.requiredEnergyKWh)} kWh (${result.batteryStringsEstimate100Ah} $stringWord @ 100Ah)", isPrimary = true)
+        )
     }
 
     Scaffold(
@@ -203,10 +218,10 @@ fun QuickUpsScreen(
 
             // ── 3. Status Banner ──
             item {
-                val stringWord = if (result.batteryStringsEstimate100Ah == 1) "string" else "strings"
+                val bannerWord = if (result.batteryStringsEstimate100Ah == 1) "string" else "strings"
                 val bannerStatus = VoltageDropComplianceStatus.PASS
                 val headline = "Recommended UPS Size: ${result.recommendedUpsSizeKVA.toInt()} kVA (Loading: ${result.upsLoadingPercent}%)"
-                val subText = "Required Battery: ${result.requiredCapacityAh} Ah @ ${input.batteryVoltageDC.toInt()}V DC (${result.batteryStringsEstimate100Ah}x 100Ah $stringWord) • Stored Energy: ${result.requiredEnergyKWh} kWh"
+                val subText = "Required Battery: ${result.requiredCapacityAh} Ah @ ${input.batteryVoltageDC.toInt()}V DC (${result.batteryStringsEstimate100Ah}x 100Ah $bannerWord) • Stored Energy: ${result.requiredEnergyKWh} kWh"
                 QuickStatusBanner(status = bannerStatus, headline = headline, subText = subText)
             }
 
@@ -237,7 +252,6 @@ fun QuickUpsScreen(
                             modifier = Modifier.weight(1f),
                             accentColor = SleekPrimary
                         )
-                        val stringWord = if (result.batteryStringsEstimate100Ah == 1) "String" else "Strings"
                         QuickMetricHero(
                             title = "BATTERY STRINGS",
                             value = "${result.batteryStringsEstimate100Ah} $stringWord",
@@ -259,18 +273,10 @@ fun QuickUpsScreen(
 
             // ── 6. Provenance Footer ──
             item {
-                val stringWord = if (result.batteryStringsEstimate100Ah == 1) "String" else "Strings"
                 QuickProvenanceFooter(
                     dataSource = "IEC 62040-3 & IEEE 485 Battery Sizing Method",
                     citation = "IEC 62040-3 Uninterruptible power systems (UPS) & IEEE 485 Recommended Practice for Sizing Lead-Acid Batteries.",
-                    items = listOf(
-                        ProvenanceDetailItem("Critical Load Demand:", "${input.criticalLoadKVA} kVA / ${result.criticalLoadKW} kW (PF ${input.powerFactor})"),
-                        ProvenanceDetailItem("Inverter Efficiency (η):", "${input.inverterEfficiencyPct}% (DC Input: ${String.format(Locale.US, "%.1f", result.inverterDcLoadKW)} kW)"),
-                        ProvenanceDetailItem("Battery DC Bus Voltage:", "${input.batteryVoltageDC.toInt()} V DC"),
-                        ProvenanceDetailItem("Depth of Discharge (DoD):", "${(input.depthOfDischarge * 100).toInt()}% (Design Margin: 1.25 Aging)"),
-                        ProvenanceDetailItem("Autonomy Duration:", "${input.autonomyMinutes.toInt()} minutes @ full rated load"),
-                        ProvenanceDetailItem("Required Stored Energy:", "${String.format(Locale.US, "%.1f", result.requiredEnergyKWh)} kWh (${result.batteryStringsEstimate100Ah} $stringWord @ 100Ah)", isPrimary = true)
-                    )
+                    items = provenanceItems
                 )
             }
         }

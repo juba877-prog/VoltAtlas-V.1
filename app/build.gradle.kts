@@ -117,6 +117,12 @@ android {
   testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
+composeCompiler {
+  stabilityConfigurationFiles.add(project.layout.projectDirectory.file("compose_compiler_config.conf"))
+  metricsDestination = layout.buildDirectory.dir("compose_metrics")
+  reportsDestination = layout.buildDirectory.dir("compose_reports")
+}
+
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
 // to match the convention used in Web projects.
 secrets {
@@ -157,6 +163,10 @@ dependencies {
   implementation(libs.firebase.ai)
   // Uncomment to use Firestore:
   // implementation(libs.firebase.firestore)
+
+  // Immutable Collections & Baseline Profile Installer for Compose Stability
+  implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.3.7")
+  implementation("androidx.profileinstaller:profileinstaller:1.4.1")
 
   // Firebase Auth with Google Sign-In requires all of the following to be uncommented together.
   // If you are using Firebase Auth with other providers (e.g. Email/Password), you may only need

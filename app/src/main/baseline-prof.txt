@@ -1,0 +1,7 @@
+HSPLcom/example/ui/MainLayoutKt;->**(**)**
+HSPLcom/example/ui/screens/quick/**;->**(**)**
+HSPLcom/example/ui/components/quick/**;->**(**)**
+HSPLcom/example/ui/screens/QuickEngineeringHubScreen**;->**(**)**
+HSPLcom/example/ui/theme/**;->**(**)**
+HSPLcom/example/data/Models**;->**(**)**
+HSPLcom/example/engine/**;->**(**)**

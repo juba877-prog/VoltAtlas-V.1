@@ -31,7 +31,11 @@ import com.example.ui.components.quick.*
 import com.example.ui.formatCatalogCableSizeSafe
 import com.example.ui.screens.QuickDropdown
 import com.example.ui.theme.*
+import kotlinx.collections.immutable.persistentListOf
 import java.util.Locale
+
+private val VD_INPUT_MODE_OPTIONS = persistentListOf("Current Mode (Direct I)", "Power Mode (kW + cosφ)")
+private val VD_PHASE_OPTIONS = persistentListOf("3-Phase (400V)", "1-Phase (230V)")
 
 /**
  * Voltage Drop V2 Pilot Calculator Screen.
@@ -388,14 +392,14 @@ private fun SystemAndOperatingInputsCard(
         // Mode Segmented Toggles
         Text("Input Mode", color = SlateTextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         QuickSegmentedControl(
-            options = listOf("Current Mode (Direct I)", "Power Mode (kW + cosφ)"),
+            options = VD_INPUT_MODE_OPTIONS,
             selectedIndex = inputModeIndex,
             onSelectIndex = onSelectInputMode
         )
 
         Text("System Phase & Topology", color = SlateTextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         QuickSegmentedControl(
-            options = listOf("3-Phase (400V)", "1-Phase (230V)"),
+            options = VD_PHASE_OPTIONS,
             selectedIndex = phaseIndex,
             onSelectIndex = onSelectPhase
         )

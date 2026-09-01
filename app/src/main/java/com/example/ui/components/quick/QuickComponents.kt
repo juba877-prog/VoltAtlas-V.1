@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +29,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.screens.quick.VoltageDropComplianceStatus
 import com.example.ui.theme.*
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 
 @Composable
 fun QuickCard(
@@ -43,10 +47,9 @@ fun QuickCard(
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            content()
-        }
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = content
+        )
     }
 }
 
@@ -59,8 +62,8 @@ fun QuickSectionTitle(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -72,9 +75,9 @@ fun QuickSectionTitle(
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = ThemeTextColor
+                color = ThemeTextColor,
+                fontSize = 14.sp
             )
         }
 
@@ -82,7 +85,7 @@ fun QuickSectionTitle(
             Surface(
                 color = badgeColor.copy(alpha = 0.15f),
                 shape = RoundedCornerShape(6.dp),
-                border = BorderStroke(0.5.dp, badgeColor)
+                border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.3f))
             ) {
                 Text(
                     text = badgeText,
@@ -98,7 +101,7 @@ fun QuickSectionTitle(
 
 @Composable
 fun QuickSegmentedControl(
-    options: List<String>,
+    options: ImmutableList<String>,
     selectedIndex: Int,
     onSelectIndex: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -404,6 +407,7 @@ fun QuickCalculationDetailsAccordion(
     }
 }
 
+@Immutable
 data class ProvenanceDetailItem(
     val label: String,
     val value: String,
@@ -414,7 +418,7 @@ data class ProvenanceDetailItem(
 fun QuickProvenanceFooter(
     dataSource: String,
     citation: String,
-    items: List<ProvenanceDetailItem> = emptyList(),
+    items: ImmutableList<ProvenanceDetailItem> = persistentListOf(),
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -506,7 +510,7 @@ fun QuickProvenanceFooter(
         if (baseAmpacityA != null) {
             add(ProvenanceDetailItem("Base Rating (Iz):", "${String.format(java.util.Locale.US, "%.1f", baseAmpacityA)} A"))
         }
-    }
+    }.toImmutableList()
     QuickProvenanceFooter(
         dataSource = dataSource,
         citation = citation,

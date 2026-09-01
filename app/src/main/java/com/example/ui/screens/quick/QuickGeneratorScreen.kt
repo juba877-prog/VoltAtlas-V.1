@@ -27,7 +27,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.quick.*
 import com.example.ui.theme.*
+import kotlinx.collections.immutable.persistentListOf
 import java.util.Locale
+
+private val GENERATOR_START_OPTIONS = persistentListOf("DOL (6.0×)", "Y-Δ (2.5×)", "Soft (1.8×)", "VFD (1.2×)")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,21 +70,33 @@ fun QuickGeneratorScreen(
         QuickGeneratorEngine.calculate(input)
     }
 
-    val copySummaryAction: () -> Unit = {
-        val summary = """
-            ⚡ VoltAtlas Generator Quick Sizing & Voltage Dip Summary (ISO 8528)
-            • Continuous Essential Load: ${input.continuousLoadKW} kW (${result.continuousLoadKVA} kVA @ PF ${input.powerFactor})
-            • Largest Motor: ${input.largestMotorKW} kW (${startMethod.label})
-            • Motor Starting Demand: ${result.motorStartingKVA} kVA
-            • Recommended Generator Rating: ${result.recommendedSizeKVA.toInt()} kVA (Prime / PRP)
-            • Continuous Loading: ${result.continuousLoadingPercent}% (${if (result.isPrimeLoadingOk) "Optimal ≤80%" else "High >80%"})
-            • Estimated Transient Voltage Dip: ${result.estimatedVoltageDipPercent}% (${if (result.isVoltageDipOk) "PASS ≤${input.maxPermittedVoltageDipPct}%" else "EXCEEDS LIMIT"})
-            • Subtransient Reactance (X"d): ${input.subtransientReactanceXdPct}%
-        """.trimIndent()
+    val copySummaryAction = remember(input, result, startMethod, context) {
+        {
+            val summary = """
+                ⚡ VoltAtlas Generator Quick Sizing & Voltage Dip Summary (ISO 8528)
+                • Continuous Essential Load: ${input.continuousLoadKW} kW (${result.continuousLoadKVA} kVA @ PF ${input.powerFactor})
+                • Largest Motor: ${input.largestMotorKW} kW (${startMethod.label})
+                • Motor Starting Demand: ${result.motorStartingKVA} kVA
+                • Recommended Generator Rating: ${result.recommendedSizeKVA.toInt()} kVA (Prime / PRP)
+                • Continuous Loading: ${result.continuousLoadingPercent}% (${if (result.isPrimeLoadingOk) "Optimal ≤80%" else "High >80%"})
+                • Estimated Transient Voltage Dip: ${result.estimatedVoltageDipPercent}% (${if (result.isVoltageDipOk) "PASS ≤${input.maxPermittedVoltageDipPct}%" else "EXCEEDS LIMIT"})
+                • Subtransient Reactance (X"d): ${input.subtransientReactanceXdPct}%
+            """.trimIndent()
 
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("Generator Sizing Summary", summary))
-        Toast.makeText(context, "Generator summary copied to clipboard", Toast.LENGTH_SHORT).show()
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Generator Sizing Summary", summary))
+            Toast.makeText(context, "Generator summary copied to clipboard", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val provenanceItems = remember(input, result, startMethod) {
+        persistentListOf(
+            ProvenanceDetailItem("Alternator Subtransient Reactance (X\"d):", "${input.subtransientReactanceXdPct}%"),
+            ProvenanceDetailItem("Continuous Steady-State Demand:", "${input.continuousLoadKW} kW (${result.continuousLoadKVA} kVA @ PF ${input.powerFactor})"),
+            ProvenanceDetailItem("Largest Motor Starting Demand:", "${result.motorStartingKVA} kVA (${startMethod.label})"),
+            ProvenanceDetailItem("Prime Power (PRP) Loading:", "${String.format(Locale.US, "%.1f", result.continuousLoadingPercent)}% (Limit: ≤80% per ISO 8528)"),
+            ProvenanceDetailItem("Transient Voltage Dip:", "${String.format(Locale.US, "%.1f", result.estimatedVoltageDipPercent)}% (Limit: ≤${input.maxPermittedVoltageDipPct}%)", isPrimary = true)
+        )
     }
 
     Scaffold(
@@ -175,7 +190,7 @@ fun QuickGeneratorScreen(
 
                     Text("Motor Starting Method:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("DOL (6.0×)", "Y-Δ (2.5×)", "Soft (1.8×)", "VFD (1.2×)"),
+                        options = GENERATOR_START_OPTIONS,
                         selectedIndex = startMethodIndex,
                         onSelectIndex = { startMethodIndex = it },
                         activeColor = SleekPrimary
@@ -261,13 +276,7 @@ fun QuickGeneratorScreen(
                 QuickProvenanceFooter(
                     dataSource = "ISO 8528-1/5 Prime Power Ratings & IEC 60034-1",
                     citation = "ISO 8528-1 Reciprocating internal combustion engine driven alternating current generating sets & ISO 8528-5.",
-                    items = listOf(
-                        ProvenanceDetailItem("Alternator Subtransient Reactance (X\"d):", "${input.subtransientReactanceXdPct}%"),
-                        ProvenanceDetailItem("Continuous Steady-State Demand:", "${input.continuousLoadKW} kW (${result.continuousLoadKVA} kVA @ PF ${input.powerFactor})"),
-                        ProvenanceDetailItem("Largest Motor Starting Demand:", "${result.motorStartingKVA} kVA (${startMethod.label})"),
-                        ProvenanceDetailItem("Prime Power (PRP) Loading:", "${String.format(Locale.US, "%.1f", result.continuousLoadingPercent)}% (Limit: ≤80% per ISO 8528)"),
-                        ProvenanceDetailItem("Transient Voltage Dip:", "${String.format(Locale.US, "%.1f", result.estimatedVoltageDipPercent)}% (Limit: ≤${input.maxPermittedVoltageDipPct}%)", isPrimary = true)
-                    )
+                    items = provenanceItems
                 )
             }
         }

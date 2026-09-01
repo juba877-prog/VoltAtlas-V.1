@@ -9,9 +9,18 @@ import org.json.JSONObject
 
 object ConversionCatalogLoader {
 
+    @Volatile
     private var cachedCategories: List<ConversionCategory>? = null
+    @Volatile
     private var cachedSwgTable: Map<String, SwgGaugeEntry>? = null
+    @Volatile
     private var cachedAwgOptions: List<String>? = null
+
+    suspend fun preload(context: Context) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        loadCategories(context)
+        loadSwgTable(context)
+        loadAwgOptions(context)
+    }
 
     fun getIcon(iconName: String): ImageVector {
         return when (iconName.trim().lowercase()) {

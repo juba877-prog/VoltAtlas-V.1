@@ -1,5 +1,6 @@
 package com.example.ui.screens.quick
 
+import androidx.compose.runtime.Immutable
 import com.example.data.BreakerEntry
 import com.example.data.Catalog
 import com.example.data.ConduitCatalogEntry
@@ -26,6 +27,7 @@ enum class EarthConductorMaterial(val kFactor: Double, val label: String) {
     STEEL_GALVANIZED(58.0, "Galvanized Steel (k = 58)")
 }
 
+@Immutable
 data class EarthingQuickInput(
     val soilResistivity_ohmM: Double = 50.0,
     val targetResistance_ohm: Double = 2.0,
@@ -41,6 +43,7 @@ data class EarthingQuickInput(
     val mainBreakerCurve: String = "C"
 )
 
+@Immutable
 data class EarthingQuickResult(
     val singleRodResistance_ohm: Double,
     val requiredRods: Int,
@@ -140,6 +143,7 @@ enum class ConduitTypeOption(val catalogName: String, val label: String) {
     GI_STEEL("GI Steel (RMC)", "GI Steel / RMC (BS 4568 Class 4)")
 }
 
+@Immutable
 data class ConduitFillQuickInput(
     val conduitType: ConduitTypeOption = ConduitTypeOption.RIGID_PVC,
     val mainCableCount: Int = 4,
@@ -149,6 +153,7 @@ data class ConduitFillQuickInput(
     val customFillLimitPct: Double? = null // null = use standard NEC 1-wire: 53%, 2-wire: 31%, 3+ wire: 40%
 )
 
+@Immutable
 data class ConduitFillQuickResult(
     val recommendedTradeSize: String,
     val internalDiameterMm: Double,
@@ -246,6 +251,7 @@ object QuickConduitFillEngine {
 // 3. CIRCUIT BREAKER SELECTION & SELECTIVITY (IEC 60947-2, IEC 60898-1)
 // =============================================================================
 
+@Immutable
 data class BreakerSelectQuickInput(
     val loadCurrent_A: Double = 45.0,
     val prospectiveFault_kA: Double = 16.0,
@@ -254,6 +260,7 @@ data class BreakerSelectQuickInput(
     val upstreamRating_A: Double? = 100.0
 )
 
+@Immutable
 data class BreakerSelectQuickResult(
     val selectedBreaker: BreakerEntry?,
     val continuousRating_A: Double,
@@ -343,6 +350,7 @@ enum class MotorStartMethod(val multiplier: Double, val label: String) {
     VFD(1.2, "Variable Frequency Drive (VFD, 1.2×)")
 }
 
+@Immutable
 data class GeneratorQuickInput(
     val continuousLoadKW: Double = 120.0,
     val powerFactor: Double = 0.80,
@@ -353,6 +361,7 @@ data class GeneratorQuickInput(
     val subtransientReactanceXdPct: Double = 15.0
 )
 
+@Immutable
 data class GeneratorQuickResult(
     val recommendedSizeKVA: Double,
     val continuousLoadKVA: Double,
@@ -416,6 +425,7 @@ object QuickGeneratorEngine {
 // 5. UPS & BATTERY SIZING (IEC 62040-3, IEEE 485)
 // =============================================================================
 
+@Immutable
 data class UpsQuickInput(
     val criticalLoadKVA: Double = 60.0,
     val powerFactor: Double = 0.80,
@@ -427,6 +437,7 @@ data class UpsQuickInput(
     val tempDeratingFactor: Double = 1.00
 )
 
+@Immutable
 data class UpsQuickResult(
     val recommendedUpsSizeKVA: Double,
     val criticalLoadKVA: Double,
@@ -488,6 +499,7 @@ object QuickUpsEngine {
 // 6. ATS SIZING & SHORT-TIME WITHSTAND (IEC 60947-6-1, NFPA 110 Type 10)
 // =============================================================================
 
+@Immutable
 data class AtsQuickInput(
     val mainsCurrent_A: Double = 380.0,
     val generatorFLC_A: Double = 400.0,
@@ -498,6 +510,7 @@ data class AtsQuickInput(
     val generatorWarmup_s: Double = 4.0
 )
 
+@Immutable
 data class AtsQuickResult(
     val recommendedRating_A: Double,
     val governingCurrent_A: Double,
@@ -562,6 +575,7 @@ enum class MotorStarterType(val label: String, val startMultiplier: Double) {
     VFD("Variable Frequency Drive (VFD)", 1.15)
 }
 
+@Immutable
 data class MotorStarterQuickInput(
     val motorPowerKW: Double,
     val voltageV: Double = 400.0,
@@ -572,6 +586,7 @@ data class MotorStarterQuickInput(
     val tripClass: String = "Class 10"
 )
 
+@Immutable
 data class MotorStarterQuickResult(
     val fullLoadCurrent_A: Double,
     val startingCurrent_A: Double,

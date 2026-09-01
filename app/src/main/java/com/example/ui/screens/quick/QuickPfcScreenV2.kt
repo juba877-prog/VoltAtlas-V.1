@@ -35,7 +35,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.quick.*
 import com.example.ui.theme.*
+import kotlinx.collections.immutable.persistentListOf
 import java.util.Locale
+
+private val PFC_INPUT_MODE_OPTIONS = persistentListOf("Active (kW)", "Apparent (kVA)", "Current (A)")
+private val PFC_PHASE_OPTIONS = persistentListOf("3P (400V)", "1P (230V)")
+private val PFC_FREQ_OPTIONS = persistentListOf("50 Hz", "60 Hz")
+private val PFC_CONN_OPTIONS = persistentListOf("Delta (Δ) Bank", "Star (Y) Bank")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -308,7 +314,7 @@ private fun PfcInputsSection(
 
             Text("Primary Load Quantity", color = SlateTextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             QuickSegmentedControl(
-                options = listOf("Active (kW)", "Apparent (kVA)", "Current (A)"),
+                options = PFC_INPUT_MODE_OPTIONS,
                 selectedIndex = inputModeIndex,
                 onSelectIndex = onSelectInputMode,
                 modifier = Modifier.testTag("pfc_v2_input_mode_tabs")
@@ -318,7 +324,7 @@ private fun PfcInputsSection(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(modifier = Modifier.weight(1.2f)) {
                     QuickSegmentedControl(
-                        options = listOf("3P (400V)", "1P (230V)"),
+                        options = PFC_PHASE_OPTIONS,
                         selectedIndex = phaseIndex,
                         onSelectIndex = onSelectPhase,
                         modifier = Modifier.testTag("pfc_v2_phase_tabs")
@@ -407,7 +413,7 @@ private fun PfcInputsSection(
 
             Text("System Frequency", color = SlateTextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             QuickSegmentedControl(
-                options = listOf("50 Hz", "60 Hz"),
+                options = PFC_FREQ_OPTIONS,
                 selectedIndex = freqIndex,
                 onSelectIndex = onSelectFreq,
                 modifier = Modifier.testTag("pfc_v2_freq_tabs")
@@ -416,7 +422,7 @@ private fun PfcInputsSection(
             if (phaseIndex == 0) {
                 Text("Capacitor Bank Connection", color = SlateTextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 QuickSegmentedControl(
-                    options = listOf("Delta (Δ) Bank", "Star (Y) Bank"),
+                    options = PFC_CONN_OPTIONS,
                     selectedIndex = connectionIndex,
                     onSelectIndex = onSelectConnection,
                     modifier = Modifier.testTag("pfc_v2_conn_tabs")

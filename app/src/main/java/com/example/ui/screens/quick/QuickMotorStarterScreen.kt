@@ -27,7 +27,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.quick.*
 import com.example.ui.theme.*
+import kotlinx.collections.immutable.persistentListOf
 import java.util.Locale
+
+private val PHASE_OPTIONS = persistentListOf("3-Phase (400V)", "1-Phase (230V)")
+private val STARTER_METHOD_OPTIONS = persistentListOf("DOL (6.5×)", "Y-Δ (2.2×)", "Soft (2.5×)", "VFD (1.15×)")
+private val TRIP_CLASS_OPTIONS = persistentListOf("Class 10 (Standard <10s)", "Class 20 (Heavy <20s)")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,29 +73,42 @@ fun QuickMotorStarterScreen(
         QuickMotorStarterEngine.calculate(input)
     }
 
-    val copySummaryAction: () -> Unit = {
-        val contactorStr = if (result.deltaContactorKm2_A != null && result.starContactorKm3_A != null) {
-            "KM1 (Line): ${result.mainContactorKm1_A.toInt()}A, KM2 (Delta): ${result.deltaContactorKm2_A.toInt()}A, KM3 (Star): ${result.starContactorKm3_A.toInt()}A"
-        } else {
-            "KM1 (Main): ${result.mainContactorKm1_A.toInt()}A"
+    val copySummaryAction = remember(input, result, starterMethod, context) {
+        {
+            val contactorStr = if (result.deltaContactorKm2_A != null && result.starContactorKm3_A != null) {
+                "KM1 (Line): ${result.mainContactorKm1_A.toInt()}A, KM2 (Delta): ${result.deltaContactorKm2_A.toInt()}A, KM3 (Star): ${result.starContactorKm3_A.toInt()}A"
+            } else {
+                "KM1 (Main): ${result.mainContactorKm1_A.toInt()}A"
+            }
+
+            val summary = """
+                ⚡ VoltAtlas Motor Starter & Overload Sizing Summary (IEC 60947-4-1)
+                • Motor Rating: ${input.motorPowerKW} kW @ ${input.voltageV.toInt()}V (${if (input.isThreePhase) "3-Phase" else "1-Phase"})
+                • Full Load Current (In): ${result.fullLoadCurrent_A} A (PF ${input.powerFactor}, η ${input.efficiencyPct}%)
+                • Starting Method: ${starterMethod.label}
+                • Starting Inrush Current (Istart): ${result.startingCurrent_A} A (${String.format(Locale.US, "%.2f", starterMethod.startMultiplier)}× In)
+                • Contactor Sizing (AC-3): $contactorStr
+                • Thermal Overload Relay (TOR): ${result.torSettingCurrent_A} A [Range: ${result.torDialMin_A} A – ${result.torDialMax_A} A, ${result.tripClass}] (${result.torLocation})
+                • Motor Circuit Breaker (MPCB): ${result.recommendedMpcb_A.toInt()} A
+                • Backup Fuse: aM ${result.recommendedAmFuse_A.toInt()} A / gG ${result.recommendedGgFuse_A.toInt()} A
+                • Min Feeder Cable (Iz ≥ 1.25·In): ${result.minCableAmpacity_A} A
+            """.trimIndent()
+
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Motor Starter Summary", summary))
+            Toast.makeText(context, "Motor starter summary copied to clipboard", Toast.LENGTH_SHORT).show()
         }
+    }
 
-        val summary = """
-            ⚡ VoltAtlas Motor Starter & Overload Sizing Summary (IEC 60947-4-1)
-            • Motor Rating: ${input.motorPowerKW} kW @ ${input.voltageV.toInt()}V (${if (input.isThreePhase) "3-Phase" else "1-Phase"})
-            • Full Load Current (In): ${result.fullLoadCurrent_A} A (PF ${input.powerFactor}, η ${input.efficiencyPct}%)
-            • Starting Method: ${starterMethod.label}
-            • Starting Inrush Current (Istart): ${result.startingCurrent_A} A (${String.format(Locale.US, "%.2f", starterMethod.startMultiplier)}× In)
-            • Contactor Sizing (AC-3): $contactorStr
-            • Thermal Overload Relay (TOR): ${result.torSettingCurrent_A} A [Range: ${result.torDialMin_A} A – ${result.torDialMax_A} A, ${result.tripClass}] (${result.torLocation})
-            • Motor Circuit Breaker (MPCB): ${result.recommendedMpcb_A.toInt()} A
-            • Backup Fuse: aM ${result.recommendedAmFuse_A.toInt()} A / gG ${result.recommendedGgFuse_A.toInt()} A
-            • Min Feeder Cable (Iz ≥ 1.25·In): ${result.minCableAmpacity_A} A
-        """.trimIndent()
-
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("Motor Starter Summary", summary))
-        Toast.makeText(context, "Motor starter summary copied to clipboard", Toast.LENGTH_SHORT).show()
+    val provenanceItems = remember(input, result, starterMethod) {
+        persistentListOf(
+            ProvenanceDetailItem("Motor Nameplate Power:", "${input.motorPowerKW} kW @ ${input.voltageV.toInt()}V (${if (input.isThreePhase) "3-Phase" else "1-Phase"})"),
+            ProvenanceDetailItem("Efficiency & Power Factor:", "η = ${input.efficiencyPct}%, cos φ = ${input.powerFactor}"),
+            ProvenanceDetailItem("Starting Method & Inrush:", "${starterMethod.label} (${String.format(Locale.US, "%.2f", starterMethod.startMultiplier)}× In = ${result.startingCurrent_A} A)"),
+            ProvenanceDetailItem("TOR Trip Class & Location:", "${result.tripClass} • ${result.torLocation}"),
+            ProvenanceDetailItem("Backup Short-Circuit Sizing:", "MPCB ${result.recommendedMpcb_A.toInt()}A | aM ${result.recommendedAmFuse_A.toInt()}A | gG ${result.recommendedGgFuse_A.toInt()}A"),
+            ProvenanceDetailItem("Min Feeder Cable Ampacity:", "Iz ≥ ${result.minCableAmpacity_A} A (125% Rule)", isPrimary = true)
+        )
     }
 
     Scaffold(
@@ -142,16 +160,16 @@ fun QuickMotorStarterScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(top = 10.dp, bottom = 36.dp)
         ) {
-            // ── 1. Motor Nameplate Parameters ──
+            // ── 1. Motor Nameplate Specifications ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Motor Nameplate Ratings", accentColor = SleekPrimary, badgeText = "IEC 60034", badgeColor = SleekPrimary)
+                    QuickSectionTitle(title = "Motor Nameplate Specifications", accentColor = SleekPrimary, badgeText = "IEC 60034", badgeColor = SleekPrimary)
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
                             value = motorKwText,
                             onValueChange = { motorKwText = it },
-                            label = { Text("Motor Power (kW)") },
+                            label = { Text("Motor Rating (kW)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f),
                             singleLine = true
@@ -168,7 +186,7 @@ fun QuickMotorStarterScreen(
 
                     Text("System Phase Configuration:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("3-Phase (400V)", "1-Phase (230V)"),
+                        options = PHASE_OPTIONS,
                         selectedIndex = phaseIndex,
                         onSelectIndex = { phaseIndex = it },
                         activeColor = SleekPrimary
@@ -202,7 +220,7 @@ fun QuickMotorStarterScreen(
 
                     Text("Starting Method:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("DOL (6.5×)", "Y-Δ (2.2×)", "Soft (2.5×)", "VFD (1.15×)"),
+                        options = STARTER_METHOD_OPTIONS,
                         selectedIndex = starterMethodIndex,
                         onSelectIndex = { starterMethodIndex = it },
                         activeColor = SleekPrimary
@@ -210,7 +228,7 @@ fun QuickMotorStarterScreen(
 
                     Text("Thermal Overload Trip Class:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("Class 10 (Standard <10s)", "Class 20 (Heavy <20s)"),
+                        options = TRIP_CLASS_OPTIONS,
                         selectedIndex = tripClassIndex,
                         onSelectIndex = { tripClassIndex = it },
                         activeColor = SleekPrimary
@@ -329,14 +347,7 @@ fun QuickMotorStarterScreen(
                 QuickProvenanceFooter(
                     dataSource = "IEC 60947-4-1 AC-3 / IEC 60034-1 Ratings",
                     citation = "IEC 60947-4-1 Contactors and motor-starters - Electromechanical contactors and motor-starters & IEC 60034-1 Rotating electrical machines.",
-                    items = listOf(
-                        ProvenanceDetailItem("Motor Nameplate Power:", "${input.motorPowerKW} kW @ ${input.voltageV.toInt()}V (${if (input.isThreePhase) "3-Phase" else "1-Phase"})"),
-                        ProvenanceDetailItem("Efficiency & Power Factor:", "η = ${input.efficiencyPct}%, cos φ = ${input.powerFactor}"),
-                        ProvenanceDetailItem("Starting Method & Inrush:", "${starterMethod.label} (${String.format(Locale.US, "%.2f", starterMethod.startMultiplier)}× In = ${result.startingCurrent_A} A)"),
-                        ProvenanceDetailItem("TOR Trip Class & Location:", "${result.tripClass} • ${result.torLocation}"),
-                        ProvenanceDetailItem("Backup Short-Circuit Sizing:", "MPCB ${result.recommendedMpcb_A.toInt()}A | aM ${result.recommendedAmFuse_A.toInt()}A | gG ${result.recommendedGgFuse_A.toInt()}A"),
-                        ProvenanceDetailItem("Min Feeder Cable Ampacity:", "Iz ≥ ${result.minCableAmpacity_A} A (125% Rule)", isPrimary = true)
-                    )
+                    items = provenanceItems
                 )
             }
         }

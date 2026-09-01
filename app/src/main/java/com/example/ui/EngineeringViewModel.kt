@@ -459,40 +459,42 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
         val project = projects.value.find { it.projectId == activeId } ?: return
 
         _pdfExportState.value = "BuildingSnapshot"
-        
-        val snapshot = com.example.pdf.ProjectReportSnapshot(
-            project = project,
-            circuits = currentState.circuits,
-            transformers = currentState.transformers,
-            sizingResults = currentState.sizingResults,
-            shortCircuitResults = currentState.shortCircuitResults,
-            conduitResults = currentState.conduitResults,
-            conduitProcurement = currentState.conduitProcurement,
-            adsResults = currentState.adsResults,
-            transformerResults = currentState.transformerResults,
-            boq = currentState.boq,
-            procurement = currentState.procurement,
-            drums = currentState.drums,
-            generatorResult = currentState.generatorResult,
-            atsResult = currentState.atsResult,
-            upsResult = currentState.upsResult,
-            pfCorrectionResults = currentState.pfCorrectionResults,
-            earthingResult = currentState.earthingResult,
-            options = options
-        )
-        
-        _pdfExportState.value = "Rendering"
-        
-        try {
-            val service = com.example.pdf.PdfReportService(getApplication())
-            val bytesWritten = service.exportReport(snapshot) { getApplication<android.app.Application>().contentResolver.openOutputStream(uri) }
-            if (bytesWritten > 0L) {
-                _pdfExportState.value = "Success"
-            } else {
-                _pdfExportState.value = "Failed: Zero bytes exported"
+
+        withContext(Dispatchers.IO) {
+            val snapshot = com.example.pdf.ProjectReportSnapshot(
+                project = project,
+                circuits = currentState.circuits,
+                transformers = currentState.transformers,
+                sizingResults = currentState.sizingResults,
+                shortCircuitResults = currentState.shortCircuitResults,
+                conduitResults = currentState.conduitResults,
+                conduitProcurement = currentState.conduitProcurement,
+                adsResults = currentState.adsResults,
+                transformerResults = currentState.transformerResults,
+                boq = currentState.boq,
+                procurement = currentState.procurement,
+                drums = currentState.drums,
+                generatorResult = currentState.generatorResult,
+                atsResult = currentState.atsResult,
+                upsResult = currentState.upsResult,
+                pfCorrectionResults = currentState.pfCorrectionResults,
+                earthingResult = currentState.earthingResult,
+                options = options
+            )
+
+            _pdfExportState.value = "Rendering"
+
+            try {
+                val service = com.example.pdf.PdfReportService(getApplication())
+                val bytesWritten = service.exportReport(snapshot) { getApplication<android.app.Application>().contentResolver.openOutputStream(uri) }
+                if (bytesWritten > 0L) {
+                    _pdfExportState.value = "Success"
+                } else {
+                    _pdfExportState.value = "Failed: Zero bytes exported"
+                }
+            } catch (e: Exception) {
+                _pdfExportState.value = "Failed: ${e.message}"
             }
-        } catch (e: Exception) {
-            _pdfExportState.value = "Failed: ${e.message}"
         }
     }
 

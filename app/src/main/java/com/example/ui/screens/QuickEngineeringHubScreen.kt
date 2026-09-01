@@ -32,6 +32,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,6 +40,7 @@ import com.example.ui.components.VoltAtlasCard
 import com.example.ui.theme.*
 import com.example.ui.designsystem.icons.ElectricalIcons
 
+@Immutable
 data class QuickToolItem(
     val id: String,
     val category: String,
@@ -220,6 +222,10 @@ fun QuickEngineeringHubScreen(
         filteredTools.map { it.category }.distinct()
     }
 
+    val toolsByCategory = remember(filteredTools) {
+        filteredTools.groupBy { it.category }
+    }
+
     // SLICE 8D: capped first-entry stagger for the small tile group (8 tiles).
     // Pre-computed ONCE per filter change — no per-item list scans.
     val categoryBaseOffsets = remember(filteredTools, categories) {
@@ -349,7 +355,7 @@ fun QuickEngineeringHubScreen(
                     }
                 } else {
                     categories.forEach { categoryName ->
-                        val toolsInCategory = filteredTools.filter { it.category == categoryName }
+                        val toolsInCategory = toolsByCategory[categoryName] ?: emptyList()
 
                         // Category Section Header (Full width span)
                         item(key = "header_$categoryName", span = { GridItemSpan(maxLineSpan) }) {

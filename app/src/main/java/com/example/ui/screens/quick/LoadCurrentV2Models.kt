@@ -1,5 +1,6 @@
 package com.example.ui.screens.quick
 
+import androidx.compose.runtime.Immutable
 import com.example.engine.converters.ElectricalConverters
 import java.util.Locale
 
@@ -15,6 +16,7 @@ enum class LoadCurrentSourceType {
     NOT_APPLICABLE
 }
 
+@Immutable
 data class LoadCurrentInputState(
     val knownQuantity: LoadCurrentKnownQuantity = LoadCurrentKnownQuantity.KVA_APPARENT,
     val phase: VoltageDropSystemPhase = VoltageDropSystemPhase.THREE_PHASE,
@@ -27,6 +29,7 @@ data class LoadCurrentInputState(
     val calculateActivePowerWithAmps: Boolean = false
 )
 
+@Immutable
 data class LoadCurrentDetailedResult(
     // Primary Hero Metric
     val primaryLabel: String,

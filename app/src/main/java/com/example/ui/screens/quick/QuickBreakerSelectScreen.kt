@@ -27,7 +27,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.quick.*
 import com.example.ui.theme.*
+import kotlinx.collections.immutable.persistentListOf
 import java.util.Locale
+
+private val POLES_OPTIONS = persistentListOf("3P", "4P (3P+N)", "1P+N")
+private val DEVICE_TYPE_OPTIONS = persistentListOf("Auto (Optimal)", "MCB (≤63A)", "MCCB", "ACB (≥800A)")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,23 +75,37 @@ fun QuickBreakerSelectScreen(
         QuickBreakerSelectEngine.calculate(input)
     }
 
-    val copySummaryAction: () -> Unit = {
-        val summary = """
-            ⚡ VoltAtlas Circuit Breaker Selection & Selectivity Summary (IEC 60947-2)
-            • Load Current (Ib): ${input.loadCurrent_A} A
-            • Prospective Fault (Isc): ${input.prospectiveFault_kA} kA
-            • Selected Breaker: ${result.frameDescription} (${result.continuousRating_A.toInt()}A, ${result.breakingCapacityIcu_kA} kA)
-            • Trip Unit: ${result.tripUnit} • Ordering Code: ${result.orderingCode}
-            • Breaking Margin: ${result.breakingMarginPct}% (Icu ${result.breakingCapacityIcu_kA} kA vs Isc ${input.prospectiveFault_kA} kA)
-            • Service Breaking (Ics): ${result.serviceCapacityIcs_kA} kA • Making Capacity (Icm): ${result.makingCapacityIcm_kA} kA
-            • Thermal Selectivity (≥1.6): ${result.thermalSelectivityRatio?.let { "$it (${if (result.isThermalSelectivityOk) "PASS" else "FAIL"})" } ?: "N/A"}
-            • Magnetic Selectivity (≥2.0): ${result.magneticSelectivityRatio?.let { "$it (${if (result.isMagneticSelectivityOk) "PASS" else "WARNING"})" } ?: "N/A"}
-            • Status: ${result.status}
-        """.trimIndent()
+    val copySummaryAction = remember(input, result, context) {
+        {
+            val summary = """
+                ⚡ VoltAtlas Circuit Breaker Selection & Selectivity Summary (IEC 60947-2)
+                • Load Current (Ib): ${input.loadCurrent_A} A
+                • Prospective Fault (Isc): ${input.prospectiveFault_kA} kA
+                • Selected Breaker: ${result.frameDescription} (${result.continuousRating_A.toInt()}A, ${result.breakingCapacityIcu_kA} kA)
+                • Trip Unit: ${result.tripUnit} • Ordering Code: ${result.orderingCode}
+                • Breaking Margin: ${result.breakingMarginPct}% (Icu ${result.breakingCapacityIcu_kA} kA vs Isc ${input.prospectiveFault_kA} kA)
+                • Service Breaking (Ics): ${result.serviceCapacityIcs_kA} kA • Making Capacity (Icm): ${result.makingCapacityIcm_kA} kA
+                • Thermal Selectivity (≥1.6): ${result.thermalSelectivityRatio?.let { "$it (${if (result.isThermalSelectivityOk) "PASS" else "FAIL"})" } ?: "N/A"}
+                • Magnetic Selectivity (≥2.0): ${result.magneticSelectivityRatio?.let { "$it (${if (result.isMagneticSelectivityOk) "PASS" else "WARNING"})" } ?: "N/A"}
+                • Status: ${result.status}
+            """.trimIndent()
 
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("Breaker Selection Summary", summary))
-        Toast.makeText(context, "Breaker selection summary copied to clipboard", Toast.LENGTH_SHORT).show()
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Breaker Selection Summary", summary))
+            Toast.makeText(context, "Breaker selection summary copied to clipboard", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val provenanceItems = remember(input, result) {
+        persistentListOf(
+            ProvenanceDetailItem("Selected Breaker Frame:", "${result.frameDescription} (${result.continuousRating_A.toInt()} A)"),
+            ProvenanceDetailItem("Ultimate Breaking Capacity (Icu):", "${result.breakingCapacityIcu_kA} kA @ 400V (Margin: +${result.breakingMarginPct}%)"),
+            ProvenanceDetailItem("Service Breaking Capacity (Ics):", "${result.serviceCapacityIcs_kA} kA (${if (result.breakingCapacityIcu_kA > 0) ((result.serviceCapacityIcs_kA / result.breakingCapacityIcu_kA) * 100).toInt() else 100}% Icu)"),
+            ProvenanceDetailItem("Rated Making Capacity (Icm):", "${result.makingCapacityIcm_kA} kA peak"),
+            ProvenanceDetailItem("Thermal Selectivity Screening:", result.thermalSelectivityRatio?.let { "Ratio $it:1 (${if (result.isThermalSelectivityOk) "Pass ≥1.6" else "Fail <1.6"})" } ?: "N/A"),
+            ProvenanceDetailItem("Magnetic Selectivity Screening:", result.magneticSelectivityRatio?.let { "Ratio $it:1 (${if (result.isMagneticSelectivityOk) "Pass ≥2.0" else "Warning <2.0"})" } ?: "N/A"),
+            ProvenanceDetailItem("Catalog Ordering Code:", result.orderingCode, isPrimary = true)
+        )
     }
 
     Scaffold(
@@ -102,7 +120,7 @@ fun QuickBreakerSelectScreen(
                             color = ThemeTextColor
                         )
                         Text(
-                            text = "IEC 60947-2 • IEC 60898-1 • Selectivity Screening",
+                            text = "IEC 60947-2 • IEC 60898-1 • Selectivity Check",
                             style = MaterialTheme.typography.labelSmall,
                             color = SlateTextSecondary
                         )
@@ -139,10 +157,10 @@ fun QuickBreakerSelectScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(top = 10.dp, bottom = 36.dp)
         ) {
-            // ── 1. Circuit Operating Parameters ──
+            // ── 1. Load Current & Short Circuit ──
             item {
                 QuickCard {
-                    QuickSectionTitle(title = "Circuit Parameters & Protection Demand", accentColor = SleekPrimary, badgeText = "IEC 60947-2", badgeColor = SleekPrimary)
+                    QuickSectionTitle(title = "Design Parameters & Short Circuit", accentColor = SleekPrimary, badgeText = "IEC 60947-2", badgeColor = SleekPrimary)
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
@@ -165,7 +183,7 @@ fun QuickBreakerSelectScreen(
 
                     Text("Poles & Technology:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("3P", "4P (3P+N)", "1P+N"),
+                        options = POLES_OPTIONS,
                         selectedIndex = polesIndex,
                         onSelectIndex = { polesIndex = it },
                         activeColor = SleekPrimary
@@ -173,7 +191,7 @@ fun QuickBreakerSelectScreen(
 
                     Text("Device Category:", color = SlateTextSecondary, fontSize = 12.sp)
                     QuickSegmentedControl(
-                        options = listOf("Auto (Optimal)", "MCB (≤63A)", "MCCB", "ACB (≥800A)"),
+                        options = DEVICE_TYPE_OPTIONS,
                         selectedIndex = deviceTypeIndex,
                         onSelectIndex = { deviceTypeIndex = it },
                         activeColor = SleekPrimary
@@ -286,15 +304,7 @@ fun QuickBreakerSelectScreen(
                 QuickProvenanceFooter(
                     dataSource = "Schneider Acti9 & ComPacT NSX / Siemens Sentron / ABB Smax Catalog",
                     citation = "IEC 60947-2 (Low-voltage switchgear and controlgear - Circuit-breakers) & IEC 60898-1.",
-                    items = listOf(
-                        ProvenanceDetailItem("Selected Breaker Frame:", "${result.frameDescription} (${result.continuousRating_A.toInt()} A)"),
-                        ProvenanceDetailItem("Ultimate Breaking Capacity (Icu):", "${result.breakingCapacityIcu_kA} kA @ 400V (Margin: +${result.breakingMarginPct}%)"),
-                        ProvenanceDetailItem("Service Breaking Capacity (Ics):", "${result.serviceCapacityIcs_kA} kA (${if (result.breakingCapacityIcu_kA > 0) ((result.serviceCapacityIcs_kA / result.breakingCapacityIcu_kA) * 100).toInt() else 100}% Icu)"),
-                        ProvenanceDetailItem("Rated Making Capacity (Icm):", "${result.makingCapacityIcm_kA} kA peak"),
-                        ProvenanceDetailItem("Thermal Selectivity Screening:", result.thermalSelectivityRatio?.let { "Ratio $it:1 (${if (result.isThermalSelectivityOk) "Pass ≥1.6" else "Fail <1.6"})" } ?: "N/A"),
-                        ProvenanceDetailItem("Magnetic Selectivity Screening:", result.magneticSelectivityRatio?.let { "Ratio $it:1 (${if (result.isMagneticSelectivityOk) "Pass ≥2.0" else "Warning <2.0"})" } ?: "N/A"),
-                        ProvenanceDetailItem("Catalog Ordering Code:", result.orderingCode, isPrimary = true)
-                    )
+                    items = provenanceItems
                 )
             }
         }

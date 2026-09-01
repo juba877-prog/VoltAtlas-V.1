@@ -5,52 +5,60 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.ai.approval.DefaultTrustedPrincipalProvider
 import com.example.ai.approval.TrustedProposalApprovalGateway
+import com.example.ai.hybrid.ConversationEngine
 import com.example.ai.hybrid.ConversationEngineProvider
 import com.example.ai.proposal.DurableMutationWorkflow
 import com.example.data.AppDatabase
 import com.example.data.Catalog
 import com.example.data.GlobalPreferences
 import com.example.data.catalog.CatalogRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
- * Authoritative production composition for the assistant. UI code receives the
- * finished ViewModel and never creates Room, repositories, or approval services.
+ * Factory for creating [EngineeringAssistantViewModel] with dependencies resolved from context.
  */
-class EngineeringAssistantViewModelFactory private constructor(
-    private val conversationEngineProvider: () -> com.example.ai.hybrid.ConversationEngine,
+class EngineeringAssistantViewModelFactory(
+    private val conversationEngineProvider: () -> ConversationEngine,
     private val approvalGatewayProvider: () -> TrustedProposalApprovalGateway,
     private val proposalCoordinatorProvider: () -> CableProposalPreparationCoordinator
 ) : ViewModelProvider.Factory {
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        require(modelClass.isAssignableFrom(EngineeringAssistantViewModel::class.java))
-        return EngineeringAssistantViewModel(
-            conversationEngine = conversationEngineProvider(),
-            approvalGatewayProvider = approvalGatewayProvider,
-            proposalPreparationCoordinator = proposalCoordinatorProvider()
-        ) as T
+        if (modelClass.isAssignableFrom(EngineeringAssistantViewModel::class.java)) {
+            return EngineeringAssistantViewModel(
+                conversationEngine = conversationEngineProvider(),
+                approvalGatewayProvider = approvalGatewayProvider,
+                proposalPreparationCoordinator = proposalCoordinatorProvider()
+            ) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
     }
 
     companion object {
-        fun production(application: Application): EngineeringAssistantViewModelFactory {
+        fun production(application: Application): EngineeringAssistantViewModelFactory = create(application)
+
+        fun create(application: Application): EngineeringAssistantViewModelFactory {
             val database = AppDatabase.getDatabase(application)
             val preferences = GlobalPreferences.getInstance(application)
-            val principalProvider = DefaultTrustedPrincipalProvider {
+            val principalProvider: () -> String = {
                 preferences.trustedEngineerIdentity.value
             }
             val proposalCoordinator = CableProposalPreparationCoordinator(
                 projectDao = database.projectDao(),
                 circuitDao = database.circuitDao()
             )
-            // Deferred on-demand gateway: asset JSON files are parsed only if an approval is executed
+            // Deferred on-demand gateway: asset JSON files are parsed on Dispatchers.IO
             val gatewayLazy = lazy {
-                val catalogRepository = productionCatalogRepository(application)
-                DurableMutationWorkflow.createGateway(
-                    database = database,
-                    catalogRepository = catalogRepository,
-                    principalProvider = principalProvider
-                )
+                kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+                    val catalogRepository = productionCatalogRepository(application)
+                    DurableMutationWorkflow.createGateway(
+                        database = database,
+                        catalogRepository = catalogRepository,
+                        principalProvider = DefaultTrustedPrincipalProvider(principalProvider)
+                    )
+                }
             }
             return EngineeringAssistantViewModelFactory(
                 conversationEngineProvider = { ConversationEngineProvider.provideConversationEngine() },
@@ -59,17 +67,19 @@ class EngineeringAssistantViewModelFactory private constructor(
             )
         }
 
-        private fun productionCatalogRepository(application: Application): CatalogRepository =
-            CatalogRepository().apply {
-                loadAllFromStrings(
-                    cableCatalogJson = Catalog.readAsset(application, "cable_catalog.json"),
-                    cableTypesDataJson = Catalog.readAsset(application, "cable_types_data.json"),
-                    breakerCatalogJson = Catalog.readAsset(application, "breaker_catalog.json"),
-                    accessoryCatalogJson = Catalog.readAsset(application, "accessory_catalog.json"),
-                    deratingDataJson = Catalog.readAsset(application, "derating_data.json"),
-                    transformersSeedJson = Catalog.readAsset(application, "transformers_seed.json"),
-                    buswayCatalogJson = Catalog.readAsset(application, "busway_catalog.json")
-                )
+        private suspend fun productionCatalogRepository(application: Application): CatalogRepository =
+            withContext(Dispatchers.IO) {
+                CatalogRepository().apply {
+                    loadAllFromStrings(
+                        cableCatalogJson = Catalog.readAsset(application, "cable_catalog.json"),
+                        cableTypesDataJson = Catalog.readAsset(application, "cable_types_data.json"),
+                        breakerCatalogJson = Catalog.readAsset(application, "breaker_catalog.json"),
+                        accessoryCatalogJson = Catalog.readAsset(application, "accessory_catalog.json"),
+                        deratingDataJson = Catalog.readAsset(application, "derating_data.json"),
+                        transformersSeedJson = Catalog.readAsset(application, "transformers_seed.json"),
+                        buswayCatalogJson = Catalog.readAsset(application, "busway_catalog.json")
+                    )
+                }
             }
     }
 }
