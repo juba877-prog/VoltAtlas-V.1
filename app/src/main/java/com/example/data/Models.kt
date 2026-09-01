@@ -74,7 +74,8 @@ data class BreakerEntry(
     val icu_kA: Double,
     val ics_kA: Double,
     val icm_kA: Double,
-    val tripUnit: String
+    val tripUnit: String,
+    val orderingCode: String = ""
 ) {
     val ratingA: Double get() = rating_A
     val icuKa: Double get() = icu_kA
@@ -327,7 +328,8 @@ object Catalog {
                     icu_kA = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("icuKa") ?: obj.opt("icu_kA") ?: obj.opt("Icu@415V (kA)")),
                     ics_kA = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("icsKa") ?: obj.opt("ics_kA") ?: obj.opt("Ics@415V (kA)")),
                     icm_kA = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("icmKa") ?: obj.opt("icm_kA") ?: obj.opt("Icm@415V (kA)")),
-                    tripUnit = obj.optString("tripUnit", obj.optString("Trip Unit", "Thermal-Magnetic"))
+                    tripUnit = obj.optString("tripUnit", obj.optString("Trip Unit", "Thermal-Magnetic")),
+                    orderingCode = obj.optString("orderingCode", obj.optString("Ordering Code", ""))
                 )
             }
 

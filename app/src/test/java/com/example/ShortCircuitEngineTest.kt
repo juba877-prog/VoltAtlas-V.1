@@ -160,4 +160,158 @@ class ShortCircuitEngineTest {
         assertTrue("Short circuit attenuates downstream: MDB ($scMdb kA) > SubBoard ($scSubBoard kA)", scMdb > scSubBoard)
         assertTrue("SubBoard short circuit is positive", scSubBoard > 0.0)
     }
+
+    @Test
+    fun testBreakingCapacity_catalogDevice_notFlaggedAssumed() {
+        val txResult = TransformerResult(
+            connectedLoad = 200.0,
+            circuitsAssigned = 1,
+            realPower = 160.0,
+            demandLoad = 160.0,
+            diversifiedLoad = 160.0,
+            futureLoad = 160.0,
+            designLoad = 160.0,
+            requiredKVA = 200.0,
+            recommendedSize = 200.0,
+            selectedSize = 200.0,
+            loadingPct = 80.0,
+            flc = 288.68,
+            zt = 32.0,
+            rt = 3.18,
+            xt = 31.84,
+            isc3Phase = 7.58,
+            isc1Phase = 6.56,
+            status = "VERIFIED",
+            z0 = 30.4,
+            vectorGroup = "Dyn11",
+            voltage = 400.0
+        )
+
+        val circuit = CircuitEntity(id = 1, circuitName = "MDB-1", loadKVA = 160.0, fedFrom = "Transformer", transformerId = "TX-01", length_m = 50.0)
+        // SizingResult with real catalog provenance for NSX250 (Icu = 36.0 kA, Icm = 75.6 kA)
+        val sizingResult = SizingResult(
+            Ib_A = 230.94,
+            deviceSize_A = 250.0,
+            deviceType = "MCCB",
+            cTotalDerating = 0.95,
+            iRequired_perCable_A = 243.09,
+            productCode = "CX1-T104-G18",
+            cableSize_mm2 = "150 mm²",
+            ratedI_table_A = 322.0,
+            capacity_derated_Iz_A = 305.9,
+            utilizationPct = 75.5,
+            neutral_mm2 = "70 mm²",
+            earthCPC_mm2 = "70 mm²",
+            voltDrop_V = 3.284,
+            vdPct = 0.82,
+            cumulativeVDpct = 0.82,
+            status = "✓ PASS",
+            failReason = "",
+            cableMaterial = "Cu",
+            cableOD_mm = 45.7,
+            deviceBreakingKA = 36.0,
+            deviceMakingKA = 75.6,
+            kFactor = 143.0,
+            clearingTime_s = 0.1,
+            rUsed = 0.149,
+            xUsed = 0.075,
+            resultStatus = SizingResultStatus.PASS,
+            isAmpacityOk = true,
+            isVoltageDropOk = true,
+            primaryFailureCode = null,
+            isDeviceFromCatalog = true,
+            breakerOrderingCode = "C25F3TM250"
+        )
+
+        val scResults = ShortCircuitEngine.calculate(
+            resolvedCircuits = listOf(circuit),
+            circuitParents = mapOf(1 to 0),
+            sizingResults = mapOf(1 to sizingResult),
+            transformerResults = mapOf("TX-01" to txResult)
+        )
+
+        val res = scResults[1]
+        assertNotNull(res)
+        assertFalse(
+            "Genuine catalog breaker with Icu=36.0 kA must NOT be flagged as assumed",
+            res!!.note.contains("Breaking capacity assumed")
+        )
+    }
+
+    @Test
+    fun testBreakingCapacity_fallbackDevice_flaggedAssumed() {
+        val txResult = TransformerResult(
+            connectedLoad = 200.0,
+            circuitsAssigned = 1,
+            realPower = 160.0,
+            demandLoad = 160.0,
+            diversifiedLoad = 160.0,
+            futureLoad = 160.0,
+            designLoad = 160.0,
+            requiredKVA = 200.0,
+            recommendedSize = 200.0,
+            selectedSize = 200.0,
+            loadingPct = 80.0,
+            flc = 288.68,
+            zt = 32.0,
+            rt = 3.18,
+            xt = 31.84,
+            isc3Phase = 7.58,
+            isc1Phase = 6.56,
+            status = "VERIFIED",
+            z0 = 30.4,
+            vectorGroup = "Dyn11",
+            voltage = 400.0
+        )
+
+        val circuit = CircuitEntity(id = 2, circuitName = "CUSTOM-CIRCUIT", loadKVA = 160.0, fedFrom = "Transformer", transformerId = "TX-01", length_m = 50.0)
+        // SizingResult with fallback default breaking capacity (isDeviceFromCatalog = false)
+        val sizingResult = SizingResult(
+            Ib_A = 230.94,
+            deviceSize_A = 250.0,
+            deviceType = "MCCB",
+            cTotalDerating = 0.95,
+            iRequired_perCable_A = 243.09,
+            productCode = "CUSTOM",
+            cableSize_mm2 = "150 mm²",
+            ratedI_table_A = 322.0,
+            capacity_derated_Iz_A = 305.9,
+            utilizationPct = 75.5,
+            neutral_mm2 = "70 mm²",
+            earthCPC_mm2 = "70 mm²",
+            voltDrop_V = 3.284,
+            vdPct = 0.82,
+            cumulativeVDpct = 0.82,
+            status = "✓ PASS",
+            failReason = "",
+            cableMaterial = "Cu",
+            cableOD_mm = 45.7,
+            deviceBreakingKA = 36.0,
+            deviceMakingKA = 0.0,
+            kFactor = 143.0,
+            clearingTime_s = 0.1,
+            rUsed = 0.149,
+            xUsed = 0.075,
+            resultStatus = SizingResultStatus.PASS,
+            isAmpacityOk = true,
+            isVoltageDropOk = true,
+            primaryFailureCode = null,
+            isDeviceFromCatalog = false,
+            breakerOrderingCode = null
+        )
+
+        val scResults = ShortCircuitEngine.calculate(
+            resolvedCircuits = listOf(circuit),
+            circuitParents = mapOf(2 to 0),
+            sizingResults = mapOf(2 to sizingResult),
+            transformerResults = mapOf("TX-01" to txResult)
+        )
+
+        val res = scResults[2]
+        assertNotNull(res)
+        assertTrue(
+            "Fallback breaker without catalog match MUST be flagged as assumed",
+            res!!.note.contains("Breaking capacity assumed (not from catalog) — verify")
+        )
+    }
 }

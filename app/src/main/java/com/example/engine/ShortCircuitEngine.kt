@@ -192,7 +192,7 @@ object ShortCircuitEngine {
             if (isSwitchingDevice) {
                 note = "WARNING: switching device — verify upstream protection"
                 rowStatus = if (cableCheckOk) "WARNING" else "FAIL"
-            } else if (sizing.deviceBreakingKA == 10.0 || sizing.deviceBreakingKA == 36.0 || sizing.deviceBreakingKA == 65.0) {
+            } else if (!sizing.isDeviceFromCatalog) {
                 note = "Breaking capacity assumed (not from catalog) — verify"
             }
 

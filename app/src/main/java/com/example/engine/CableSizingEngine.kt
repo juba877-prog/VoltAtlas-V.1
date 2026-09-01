@@ -58,7 +58,9 @@ data class SizingResult(
     val resultStatus: SizingResultStatus,
     val isAmpacityOk: Boolean,
     val isVoltageDropOk: Boolean,
-    val primaryFailureCode: CableFailureCode?
+    val primaryFailureCode: CableFailureCode?,
+    val isDeviceFromCatalog: Boolean = false,
+    val breakerOrderingCode: String? = null
 )
 
 object CableSizingEngine {
@@ -764,6 +766,8 @@ object CableSizingEngine {
                 .filter { b -> b.rating_A >= deviceSizeA }
                 .minByOrNull { it.rating_A }
 
+        val isDeviceFromCatalog = breaker != null
+        val breakerOrderingCode = breaker?.orderingCode
         val resolvedDeviceType = breaker?.type?.ifEmpty { targetType } ?: targetType
         val deviceBreakingKA = breaker?.icu_kA ?: when (resolvedDeviceType) {
             "MCB" -> 10.0
@@ -857,7 +861,9 @@ object CableSizingEngine {
             resultStatus = resStatus,
             isAmpacityOk = isAmpacityPass,
             isVoltageDropOk = isVdPass,
-            primaryFailureCode = failureCode
+            primaryFailureCode = failureCode,
+            isDeviceFromCatalog = isDeviceFromCatalog,
+            breakerOrderingCode = breakerOrderingCode
         )
     }
 
