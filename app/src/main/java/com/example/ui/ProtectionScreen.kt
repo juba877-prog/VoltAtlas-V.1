@@ -601,6 +601,14 @@ fun EarthFaultPanel(state: UiState.Success) {
     }
 }
 
+fun calculateCircuitMarginPct(res: ShortCircuitResult): Double {
+    if (res.iscKA <= 0.0) return res.marginPct
+    val cableMargin = if (res.iwKA > 0.0) ((res.iwKA - res.iscKA) / res.iscKA) * 100.0 else Double.POSITIVE_INFINITY
+    val deviceMargin = if (res.deviceKA > 0.0) ((res.deviceKA - res.iscKA) / res.iscKA) * 100.0 else Double.POSITIVE_INFINITY
+    val margin = minOf(cableMargin, deviceMargin)
+    return if (margin.isFinite()) margin else res.marginPct
+}
+
 @Composable
 fun getStatusPillColors(status: String): Triple<Color, Color, Color> {
     val isDark = LocalThemeIsDark.current
@@ -639,7 +647,7 @@ fun ShortCircuitPanel(state: UiState.Success) {
     
     val passRate = if (total > 0) ((passes.toDouble() / total) * 100).roundToInt() else 0
     val highestIsc = results.maxOfOrNull { it.iscKA } ?: 0.0
-    val validMargins = results.filter { it.status != "DATA MISSING" }.map { it.marginPct }
+    val validMargins = results.filter { it.status != "DATA MISSING" }.map { calculateCircuitMarginPct(it) }
     val lowestMargin = if (validMargins.isNotEmpty()) validMargins.minOrNull() ?: 0.0 else 0.0
 
     val isDark = LocalThemeIsDark.current
@@ -917,8 +925,36 @@ fun ShortCircuitCard(
                     modifier = Modifier.width(48.dp)
                 )
 
+                val marginPct = calculateCircuitMarginPct(res)
+                val isFail = res.status == "FAIL" || marginPct < 0.0
+                val isWarnOrLow = res.status == "WARNING" || res.status == "WARN" || (marginPct in 0.0..10.0)
+
+                val barColors = when {
+                    isFail -> if (isDark) {
+                        listOf(Color(0xFFF0554C), Color(0xFFFF6A66))
+                    } else {
+                        listOf(Color(0xFFEF4444), Color(0xFFDC2626))
+                    }
+                    isWarnOrLow -> if (isDark) {
+                        listOf(Color(0xFFD49B28), Color(0xFFF0B542))
+                    } else {
+                        listOf(Color(0xFFF59E0B), Color(0xFFD97706))
+                    }
+                    else -> if (isDark) {
+                        listOf(Color(0xFF3FBF74), Color(0xFF5BD98A))
+                    } else {
+                        listOf(Color(0xFF22C55E), Color(0xFF16A34A))
+                    }
+                }
+
+                val marginTextColor = when {
+                    isFail -> if (isDark) Color(0xFFFF6A66) else Color(0xFFDC2626)
+                    isWarnOrLow -> if (isDark) Color(0xFFF0B542) else Color(0xFFD97706)
+                    else -> if (isDark) Color(0xFF5BD98A) else Color(0xFF16A34A)
+                }
+
                 // Margin Bar
-                val progressFraction = (res.marginPct / 100.0).coerceIn(0.0, 1.0).toFloat()
+                val progressFraction = (marginPct / 100.0).coerceIn(0.0, 1.0).toFloat()
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -929,25 +965,19 @@ fun ShortCircuitCard(
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .fillMaxWidth(fraction = if (res.marginPct > 0.0) progressFraction.coerceAtLeast(0.05f) else 0f)
+                            .fillMaxWidth(fraction = if (marginPct > 0.0) progressFraction.coerceAtLeast(0.05f) else 0f)
                             .clip(RoundedCornerShape(4.dp))
                             .background(
-                                brush = Brush.horizontalGradient(
-                                    colors = if (res.marginPct >= 0) {
-                                        listOf(Color(0xFF3FBF74), Color(0xFF5BD98A))
-                                    } else {
-                                        listOf(Color(0xFFF0554C), Color(0xFFFF6A66))
-                                    }
-                                )
+                                brush = Brush.horizontalGradient(colors = barColors)
                             )
                     )
                 }
 
                 Text(
-                    text = String.format(java.util.Locale.US, "%.1f%%", res.marginPct),
+                    text = String.format(java.util.Locale.US, "%.1f%%", marginPct),
                     style = DsType.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = if (res.marginPct >= 0) Color(0xFF5BD98A) else Color(0xFFFF6A66),
+                    color = marginTextColor,
                     textAlign = TextAlign.End,
                     modifier = Modifier.width(68.dp)
                 )

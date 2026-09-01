@@ -1,13 +1,11 @@
 package com.example.ui
 
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.unit.dp
 import com.example.data.CircuitEntity
 import com.example.engine.ShortCircuitResult
 import com.example.ui.theme.VoltAtlasTheme
@@ -32,7 +30,7 @@ class PowerAndShortCircuitScreenshotTest {
     private fun mockUiState(
         circuits: List<CircuitEntity> = listOf(
             CircuitEntity(id = 1, circuitName = "DP-G3"),
-            CircuitEntity(id = 2, circuitName = "UPP-G3-1"),
+            CircuitEntity(id = 2, circuitName = "UPP-G3-1 (WARN)"),
             CircuitEntity(id = 3, circuitName = "UPP-G3-2"),
             CircuitEntity(id = 4, circuitName = "HVAC-PANEL-FAIL")
         ),
@@ -46,7 +44,7 @@ class PowerAndShortCircuitScreenshotTest {
                 deviceKA = 36.0,
                 deviceCheck = "PASS",
                 cableCheck = "PASS",
-                marginPct = 1362.8,
+                marginPct = 1365.3,
                 status = "PASS",
                 note = "Breaking capacity assumed (not from catalog) — verify device rating."
             ),
@@ -54,14 +52,14 @@ class PowerAndShortCircuitScreenshotTest {
                 circuitId = 2,
                 sourceName = "TX-01",
                 cableMm2 = "10 mm²",
-                iscKA = 1.35,
+                iscKA = 4.30,
                 iwKA = 4.52,
                 deviceKA = 36.0,
-                deviceCheck = "PASS",
+                deviceCheck = "WARNING",
                 cableCheck = "PASS",
-                marginPct = 235.4,
-                status = "PASS",
-                note = "Breaking capacity assumed (not from catalog) — verify device rating."
+                marginPct = 5.1,
+                status = "WARNING",
+                note = "Cable thermal withstand margin is below 10%."
             ),
             3 to ShortCircuitResult(
                 circuitId = 3,
@@ -72,7 +70,7 @@ class PowerAndShortCircuitScreenshotTest {
                 deviceKA = 36.0,
                 deviceCheck = "PASS",
                 cableCheck = "PASS",
-                marginPct = 252.6,
+                marginPct = 253.1,
                 status = "PASS",
                 note = ""
             ),
@@ -85,7 +83,7 @@ class PowerAndShortCircuitScreenshotTest {
                 deviceKA = 15.0,
                 deviceCheck = "FAIL",
                 cableCheck = "FAIL",
-                marginPct = -23.5,
+                marginPct = -35.1,
                 status = "FAIL",
                 note = "Isc exceeds device rated breaking capacity (Icu)."
             )
@@ -185,7 +183,7 @@ class PowerAndShortCircuitScreenshotTest {
     }
 
     @Test
-    @Config(qualifiers = "w380dp-h820dp-xhdpi")
+    @Config(qualifiers = "w380dp-h1000dp-xhdpi")
     fun shortCircuit_cards_portrait_dark() {
         if (!outputDir.exists()) outputDir.mkdirs()
         composeTestRule.setContent {
@@ -204,7 +202,7 @@ class PowerAndShortCircuitScreenshotTest {
     }
 
     @Test
-    @Config(qualifiers = "w380dp-h820dp-xhdpi")
+    @Config(qualifiers = "w380dp-h1000dp-xhdpi")
     fun shortCircuit_cards_portrait_light() {
         if (!outputDir.exists()) outputDir.mkdirs()
         composeTestRule.setContent {
@@ -261,7 +259,7 @@ class PowerAndShortCircuitScreenshotTest {
     }
 
     @Test
-    @Config(qualifiers = "w380dp-h820dp-xhdpi")
+    @Config(qualifiers = "w380dp-h900dp-xhdpi")
     fun shortCircuit_cards_renamedFixture_generalizability() {
         if (!outputDir.exists()) outputDir.mkdirs()
         val customCircuits = listOf(
@@ -305,7 +303,7 @@ class PowerAndShortCircuitScreenshotTest {
                 deviceKA = 10.0,
                 deviceCheck = "FAIL",
                 cableCheck = "FAIL",
-                marginPct = -28.0,
+                marginPct = -33.6,
                 status = "FAIL",
                 note = "Thermal withstand Iw < Isc."
             )
