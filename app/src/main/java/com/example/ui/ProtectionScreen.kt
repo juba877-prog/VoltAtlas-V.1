@@ -2,6 +2,7 @@ package com.example.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -24,6 +25,7 @@ import com.example.ui.designsystem.components.DsSegmentedPillTabRow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -743,13 +745,14 @@ fun ShortCircuitPanel(state: UiState.Success) {
 
         Spacer(modifier = Modifier.height(2.dp))
 
-        // Circuit Cards — one card per circuit, NO horizontal scroll
+        // Circuit Cards — elevated, delineated cards with status stripe and 16dp gap
         if (results.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(18.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp))
                     .padding(24.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -760,9 +763,14 @@ fun ShortCircuitPanel(state: UiState.Success) {
                 )
             }
         } else {
-            results.forEach { res ->
-                val circuitName = state.circuits.find { it.id == res.circuitId }?.circuitName ?: "Circuit ${res.circuitId}"
-                ShortCircuitCard(res = res, circuitName = circuitName, isDark = isDark)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                results.forEach { res ->
+                    val circuitName = state.circuits.find { it.id == res.circuitId }?.circuitName ?: "Circuit ${res.circuitId}"
+                    ShortCircuitCard(res = res, circuitName = circuitName, isDark = isDark)
+                }
             }
         }
 
@@ -779,245 +787,265 @@ fun ShortCircuitCard(
 ) {
     val (statusContainer, statusContent, statusDot) = getStatusPillColors(res.status)
 
-    Box(
+    Surface(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(16.dp)
+            .shadow(elevation = 2.dp, shape = RoundedCornerShape(18.dp), clip = false),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Top Row: Circuit Name + Status Pill
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min)
+        ) {
+            // 4dp Left Status Stripe (PASS green / WARN amber / FAIL red)
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(statusDot)
+            )
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = circuitName,
-                    style = DsType.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-
-                // Status Pill with dot
-                Box(
-                    modifier = Modifier
-                        .height(28.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(statusContainer)
-                        .padding(horizontal = 12.dp),
-                    contentAlignment = Alignment.Center
+                // Top Row: Circuit Name + Status Pill
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .clip(CircleShape)
-                                .background(statusDot)
-                        )
-                        Text(
-                            text = res.status,
-                            style = DsType.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = statusContent
-                        )
-                    }
-                }
-            }
+                    Text(
+                        text = circuitName,
+                        style = DsType.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
 
-            // Meta Tags Row (Source + Cable)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Source tag
-                Box(
-                    modifier = Modifier
-                        .height(28.dp)
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                        .padding(horizontal = 10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Bolt,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Text(
-                            text = res.sourceName,
-                            style = DsType.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                // Cable tag
-                Box(
-                    modifier = Modifier
-                        .height(28.dp)
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                        .padding(horizontal = 10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.GridOn,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Text(
-                            text = res.cableMm2,
-                            style = DsType.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            // 3-Up Metrics Row (Isc, Iw, Device Icu)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MetricItemTile(
-                    label = "Isc",
-                    value = String.format(java.util.Locale.US, "%.2f", res.iscKA),
-                    unit = "kA",
-                    modifier = Modifier.weight(1f)
-                )
-                MetricItemTile(
-                    label = "Iw (withstand)",
-                    value = String.format(java.util.Locale.US, "%.2f", res.iwKA),
-                    unit = "kA",
-                    modifier = Modifier.weight(1f)
-                )
-                MetricItemTile(
-                    label = "Device Icu",
-                    value = String.format(java.util.Locale.US, "%.1f", res.deviceKA),
-                    unit = "kA",
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            // Margin Line
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = "Margin",
-                    style = DsType.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(48.dp)
-                )
-
-                val marginPct = calculateCircuitMarginPct(res)
-                val isFail = res.status == "FAIL" || marginPct < 0.0
-                val isWarnOrLow = res.status == "WARNING" || res.status == "WARN" || (marginPct in 0.0..10.0)
-
-                val barColors = when {
-                    isFail -> if (isDark) {
-                        listOf(Color(0xFFF0554C), Color(0xFFFF6A66))
-                    } else {
-                        listOf(Color(0xFFEF4444), Color(0xFFDC2626))
-                    }
-                    isWarnOrLow -> if (isDark) {
-                        listOf(Color(0xFFD49B28), Color(0xFFF0B542))
-                    } else {
-                        listOf(Color(0xFFF59E0B), Color(0xFFD97706))
-                    }
-                    else -> if (isDark) {
-                        listOf(Color(0xFF3FBF74), Color(0xFF5BD98A))
-                    } else {
-                        listOf(Color(0xFF22C55E), Color(0xFF16A34A))
-                    }
-                }
-
-                val marginTextColor = when {
-                    isFail -> if (isDark) Color(0xFFFF6A66) else Color(0xFFDC2626)
-                    isWarnOrLow -> if (isDark) Color(0xFFF0B542) else Color(0xFFD97706)
-                    else -> if (isDark) Color(0xFF5BD98A) else Color(0xFF16A34A)
-                }
-
-                // Margin Bar
-                val progressFraction = (marginPct / 100.0).coerceIn(0.0, 1.0).toFloat()
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(7.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                ) {
+                    // Status Pill with dot
                     Box(
                         modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(fraction = if (marginPct > 0.0) progressFraction.coerceAtLeast(0.05f) else 0f)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(
-                                brush = Brush.horizontalGradient(colors = barColors)
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(statusContainer)
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(statusDot)
                             )
+                            Text(
+                                text = res.status,
+                                style = DsType.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = statusContent
+                            )
+                        }
+                    }
+                }
+
+                // Meta Tags Row (Source + Cable)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Source tag
+                    Box(
+                        modifier = Modifier
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Bolt,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = res.sourceName,
+                                style = DsType.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Cable tag
+                    Box(
+                        modifier = Modifier
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.GridOn,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = res.cableMm2,
+                                style = DsType.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // 3-Up Metrics Row (Isc, Iw, Device Icu)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    MetricItemTile(
+                        label = "Isc",
+                        value = String.format(java.util.Locale.US, "%.2f", res.iscKA),
+                        unit = "kA",
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetricItemTile(
+                        label = "Iw (withstand)",
+                        value = String.format(java.util.Locale.US, "%.2f", res.iwKA),
+                        unit = "kA",
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetricItemTile(
+                        label = "Device Icu",
+                        value = String.format(java.util.Locale.US, "%.1f", res.deviceKA),
+                        unit = "kA",
+                        modifier = Modifier.weight(1f)
                     )
                 }
 
-                Text(
-                    text = String.format(java.util.Locale.US, "%.1f%%", marginPct),
-                    style = DsType.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = marginTextColor,
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.width(68.dp)
-                )
-            }
-
-            // Warning / Note Banner if present
-            if (res.note.isNotEmpty()) {
-                val noteBg = if (isDark) Color(0xFF3E2E08) else Color(0xFFFEF3C7)
-                val noteFg = if (isDark) Color(0xFFFBE1A6) else Color(0xFF92400E)
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(noteBg)
-                        .padding(horizontal = 11.dp, vertical = 9.dp)
+                // Margin Line
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Text(
+                        text = "Margin",
+                        style = DsType.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(48.dp)
+                    )
+
+                    val marginPct = calculateCircuitMarginPct(res)
+                    val isFail = res.status == "FAIL" || marginPct < 0.0
+                    val isWarnOrLow = res.status == "WARNING" || res.status == "WARN" || (marginPct in 0.0..10.0)
+
+                    val barColors = when {
+                        isFail -> if (isDark) {
+                            listOf(Color(0xFFF0554C), Color(0xFFFF6A66))
+                        } else {
+                            listOf(Color(0xFFEF4444), Color(0xFFDC2626))
+                        }
+                        isWarnOrLow -> if (isDark) {
+                            listOf(Color(0xFFD49B28), Color(0xFFF0B542))
+                        } else {
+                            listOf(Color(0xFFF59E0B), Color(0xFFD97706))
+                        }
+                        else -> if (isDark) {
+                            listOf(Color(0xFF3FBF74), Color(0xFF5BD98A))
+                        } else {
+                            listOf(Color(0xFF22C55E), Color(0xFF16A34A))
+                        }
+                    }
+
+                    val marginTextColor = when {
+                        isFail -> if (isDark) Color(0xFFFF6A66) else Color(0xFFDC2626)
+                        isWarnOrLow -> if (isDark) Color(0xFFF0B542) else Color(0xFFD97706)
+                        else -> if (isDark) Color(0xFF5BD98A) else Color(0xFF16A34A)
+                    }
+
+                    // Margin Bar
+                    val progressFraction = (marginPct / 100.0).coerceIn(0.0, 1.0).toFloat()
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(7.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Warning,
-                            contentDescription = null,
-                            tint = noteFg,
-                            modifier = Modifier.size(14.dp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(fraction = if (marginPct > 0.0) progressFraction.coerceAtLeast(0.05f) else 0f)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(
+                                    brush = Brush.horizontalGradient(colors = barColors)
+                                )
                         )
-                        Text(
-                            text = res.note,
-                            style = DsType.bodySmall.copy(fontSize = 11.5.sp, lineHeight = 14.sp),
-                            color = noteFg
-                        )
+                    }
+
+                    Text(
+                        text = String.format(java.util.Locale.US, "%.1f%%", marginPct),
+                        style = DsType.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = marginTextColor,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.width(68.dp)
+                    )
+                }
+
+                // Warning / Note Banner if present
+                if (res.note.isNotEmpty()) {
+                    val noteBg = if (isDark) Color(0xFF3E2E08) else Color(0xFFFEF3C7)
+                    val noteFg = if (isDark) Color(0xFFFBE1A6) else Color(0xFF92400E)
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(noteBg)
+                            .padding(horizontal = 11.dp, vertical = 9.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Warning,
+                                contentDescription = null,
+                                tint = noteFg,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = res.note,
+                                style = DsType.bodySmall.copy(fontSize = 11.5.sp, lineHeight = 14.sp),
+                                color = noteFg
+                            )
+                        }
                     }
                 }
             }
@@ -1072,7 +1100,7 @@ private fun KpiTile(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
             .padding(12.dp)
     ) {
         Column {
