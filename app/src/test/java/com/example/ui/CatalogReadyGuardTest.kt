@@ -7,24 +7,20 @@ import com.example.data.Catalog
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
-/**
- * R2a guard verification (see performance audit, R2a / C1.4):
- *
- * 1. No UiState.Success/Error may be emitted while catalogReady == false,
- *    even though the other 8 combine source flows emit.
- * 2. The first emission must be UiState.Loading.
- * 3. After the catalog load attempt finishes (catalogReady == true), the
- *    pipeline must resolve to a non-degraded UiState.Success with the
- *    catalog actually loaded.
- */
 @RunWith(AndroidJUnit4::class)
 @Config(manifest = Config.NONE)
 class CatalogReadyGuardTest {
+
+    @Before
+    fun setUp() {
+        Catalog.resetForTesting()
+    }
 
     @Test
     fun noSuccessEmitted_whileCatalogNotReady() = runBlocking {

@@ -10,10 +10,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,8 +25,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -141,6 +147,101 @@ fun formatStatusString(rawStatus: String): String {
 }
 
 @Composable
+fun PowerTopSegmentedBar(
+    selectedTab: Int,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val tabs = listOf(
+        Triple("Generator", Icons.Filled.Bolt, "tab_generator"),
+        Triple("ATS", Icons.AutoMirrored.Filled.AltRoute, "tab_ats"),
+        Triple("UPS", Icons.Filled.BatteryChargingFull, "tab_ups"),
+        Triple("PF Correction", Icons.Filled.Tune, "tab_pf")
+    )
+    val scrollState = rememberScrollState()
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp, end = 0.dp, top = 8.dp, bottom = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scrollState),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            tabs.forEachIndexed { index, (title, icon, tag) ->
+                val isActive = selectedTab == index
+                val containerColor = if (isActive) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainer
+                }
+                val contentColor = if (isActive) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                val iconTint = if (isActive) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+
+                Surface(
+                    onClick = { onTabSelected(index) },
+                    shape = RoundedCornerShape(20.dp),
+                    color = containerColor,
+                    contentColor = contentColor,
+                    modifier = Modifier
+                        .height(40.dp)
+                        .testTag(tag)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = iconTint,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = title,
+                            style = DsType.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = contentColor,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.width(36.dp))
+        }
+
+        // Edge fade gradient on right
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .width(34.dp)
+                .height(40.dp)
+                .background(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            MaterialTheme.colorScheme.background
+                        )
+                    )
+                )
+        )
+    }
+}
+
+@Composable
 fun PowerSystemsScreen(
     state: UiState,
     generatorSettings: GeneratorEntity = GeneratorEntity(),
@@ -161,35 +262,16 @@ fun PowerSystemsScreen(
     onDeleteUps: (String) -> Unit = {}
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(0) }
-    val tabs = listOf("Generator", "ATS", "UPS", "PF Correction")
 
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            ScrollableTabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.background,
-                contentColor = MaterialTheme.colorScheme.primary,
-                edgePadding = DsSpacing.lg
-            ) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = {
-                            Text(
-                                text = title,
-                                style = DsType.labelMedium,
-                                fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Medium,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
-                    )
-                }
-            }
+            PowerTopSegmentedBar(
+                selectedTab = selectedTab,
+                onTabSelected = { selectedTab = it }
+            )
 
             Box(
                 modifier = Modifier

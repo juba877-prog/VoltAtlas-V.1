@@ -5,14 +5,23 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -21,6 +30,8 @@ import com.example.engine.*
 import com.example.ui.components.statusColor
 import com.example.ui.components.statusSymbol
 import com.example.ui.components.StatusBadge
+import com.example.ui.designsystem.theme.*
+import com.example.ui.theme.LocalThemeIsDark
 import kotlin.math.roundToInt
 
 @Composable
@@ -591,6 +602,33 @@ fun EarthFaultPanel(state: UiState.Success) {
 }
 
 @Composable
+fun getStatusPillColors(status: String): Triple<Color, Color, Color> {
+    val isDark = LocalThemeIsDark.current
+    return when (status.uppercase().trim()) {
+        "PASS" -> if (isDark) {
+            Triple(Color(0xFF123D26), Color(0xFFB6F0CE), Color(0xFF5BD98A))
+        } else {
+            Triple(Color(0xFFD1F2E2), Color(0xFF14532D), Color(0xFF16A34A))
+        }
+        "WARNING", "WARN" -> if (isDark) {
+            Triple(Color(0xFF3E2E08), Color(0xFFFBE1A6), Color(0xFFF0B542))
+        } else {
+            Triple(Color(0xFFFEF3C7), Color(0xFF92400E), Color(0xFFD97706))
+        }
+        "FAIL" -> if (isDark) {
+            Triple(Color(0xFF4A1513), Color(0xFFFFD5D2), Color(0xFFFF6A66))
+        } else {
+            Triple(Color(0xFFFEE2E2), Color(0xFF991B1B), Color(0xFFDC2626))
+        }
+        else -> if (isDark) {
+            Triple(Color(0xFF1B2127), Color(0xFFA9B2BB), Color(0xFF94A3B8))
+        } else {
+            Triple(Color(0xFFF1F5F9), Color(0xFF475569), Color(0xFF64748B))
+        }
+    }
+}
+
+@Composable
 fun ShortCircuitPanel(state: UiState.Success) {
     val results = state.shortCircuitResults.values.toList()
     
@@ -598,93 +636,463 @@ fun ShortCircuitPanel(state: UiState.Success) {
     val passes = results.count { it.status == "PASS" }
     val warnings = results.count { it.status == "WARNING" }
     val fails = results.count { it.status == "FAIL" }
-    val missing = results.count { it.status == "DATA MISSING" }
     
     val passRate = if (total > 0) ((passes.toDouble() / total) * 100).roundToInt() else 0
     val highestIsc = results.maxOfOrNull { it.iscKA } ?: 0.0
     val validMargins = results.filter { it.status != "DATA MISSING" }.map { it.marginPct }
     val lowestMargin = if (validMargins.isNotEmpty()) validMargins.minOrNull() ?: 0.0 else 0.0
 
-    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        
-        Text("Short-Circuit Verification", color = ThemeTextColor, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        Text("Based on IEC 60909, IEC 60364-4-43, and IEC 60364-5-54", color = SlateTextSecondary, fontSize = 11.sp, maxLines = 1)
-        Spacer(modifier = Modifier.height(12.dp))
+    val isDark = LocalThemeIsDark.current
 
-        // Dashboard
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            MetricCard("Total", "$total", Modifier.weight(1f))
-            MetricCard("PASS", "$passes", Modifier.weight(1f), SleekPass)
-            MetricCard("WARN", "$warnings", Modifier.weight(1f), SleekWarning)
-            MetricCard("FAIL", "$fails", Modifier.weight(1f), SleekFail)
-            MetricCard("MISSING", "$missing", Modifier.weight(1f), SlateTextSecondary)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Header
+        Column(modifier = Modifier.padding(horizontal = 2.dp)) {
+            Text(
+                text = "Short-Circuit Verification",
+                color = MaterialTheme.colorScheme.onSurface,
+                style = DsType.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(3.dp))
+            Text(
+                text = "IEC 60909 · IEC 60364-4-43 · IEC 60947-2",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = DsType.bodySmall,
+                maxLines = 1
+            )
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            MetricCard("Pass Rate", "$passRate%", Modifier.weight(1f))
-            MetricCard("Highest Isc", "${String.format("%.2f", highestIsc)} kA", Modifier.weight(1f))
-            MetricCard("Lowest Margin", "${String.format("%.1f", lowestMargin)}%", Modifier.weight(1f))
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
 
-        // Horizontally Scrollable Protection Table
-        val horizontalScrollState = rememberScrollState()
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(horizontalScrollState)
+        // Summary Stat Row (TOTAL / PASS / WARN / FAIL)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Table Header
-            Row(
+            StatTile(
+                label = "TOTAL",
+                value = "$total",
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            StatTile(
+                label = "PASS",
+                value = "$passes",
+                containerColor = if (isDark) Color(0xFF123D26) else Color(0xFFD1F2E2),
+                contentColor = if (isDark) Color(0xFFB6F0CE) else Color(0xFF14532D),
+                modifier = Modifier.weight(1f)
+            )
+            StatTile(
+                label = "WARN",
+                value = "$warnings",
+                containerColor = if (isDark) Color(0xFF3E2E08) else Color(0xFFFEF3C7),
+                contentColor = if (isDark) Color(0xFFFBE1A6) else Color(0xFF92400E),
+                modifier = Modifier.weight(1f)
+            )
+            StatTile(
+                label = "FAIL",
+                value = "$fails",
+                containerColor = if (isDark) Color(0xFF4A1513) else Color(0xFFFEE2E2),
+                contentColor = if (isDark) Color(0xFFFFD5D2) else Color(0xFF991B1B),
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        // KPI Row (Pass Rate, Highest Isc, Lowest Margin)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            KpiTile(
+                label = "Pass Rate",
+                value = "$passRate%",
+                modifier = Modifier.weight(1f)
+            )
+            KpiTile(
+                label = "Highest Isc",
+                value = "${String.format(java.util.Locale.US, "%.2f", highestIsc)} kA",
+                modifier = Modifier.weight(1f)
+            )
+            KpiTile(
+                label = "Lowest Margin",
+                value = "${String.format(java.util.Locale.US, "%.1f", lowestMargin)}%",
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        // Circuit Cards — one card per circuit, NO horizontal scroll
+        if (results.isEmpty()) {
+            Box(
                 modifier = Modifier
-                    .background(DarkBackground)
-                    .padding(start = 8.dp, top = 10.dp, bottom = 10.dp, end = 16.dp),
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No short-circuit calculations available.",
+                    style = DsType.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            results.forEach { res ->
+                val circuitName = state.circuits.find { it.id == res.circuitId }?.circuitName ?: "Circuit ${res.circuitId}"
+                ShortCircuitCard(res = res, circuitName = circuitName, isDark = isDark)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+fun ShortCircuitCard(
+    res: com.example.engine.ShortCircuitResult,
+    circuitName: String,
+    isDark: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val (statusContainer, statusContent, statusDot) = getStatusPillColors(res.status)
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(16.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Top Row: Circuit Name + Status Pill
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Circuit", modifier = Modifier.width(110.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                Text("Source", modifier = Modifier.width(90.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                Text("Cable", modifier = Modifier.width(100.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                Text("Isc (kA)", modifier = Modifier.width(85.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                Text("Iw (kA)", modifier = Modifier.width(85.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                Text("Device (kA)", modifier = Modifier.width(95.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                Text("Margin %", modifier = Modifier.width(85.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                Text("Status", modifier = Modifier.width(95.dp), color = SlateTextSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                Text(
+                    text = circuitName,
+                    style = DsType.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+
+                // Status Pill with dot
+                Box(
+                    modifier = Modifier
+                        .height(28.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(statusContainer)
+                        .padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(statusDot)
+                        )
+                        Text(
+                            text = res.status,
+                            style = DsType.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = statusContent
+                        )
+                    }
+                }
             }
 
-            // Table Rows
-            results.forEach { res ->
-                val circuitName = state.circuits.find { it.id == res.circuitId }?.circuitName ?: "Unknown"
-                val color = when (res.status) {
-                    "PASS" -> SleekPass
-                    "WARNING" -> SleekWarning
-                    "FAIL" -> SleekFail
-                    else -> SlateTextSecondary
-                }
-                
-                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+            // Meta Tags Row (Source + Cable)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Source tag
+                Box(
+                    modifier = Modifier
+                        .height(28.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Row(
-                        modifier = Modifier
-                            .background(DarkCardBg)
-                            .padding(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(circuitName, modifier = Modifier.width(110.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(res.sourceName, modifier = Modifier.width(90.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(res.cableMm2, modifier = Modifier.width(100.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(String.format("%.2f", res.iscKA), modifier = Modifier.width(85.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
-                        Text(String.format("%.2f", res.iwKA), modifier = Modifier.width(85.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
-                        Text(String.format("%.1f", res.deviceKA), modifier = Modifier.width(95.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
-                        Text(String.format("%.1f%%", res.marginPct), modifier = Modifier.width(85.dp), color = ThemeTextColor, fontSize = 12.sp, maxLines = 1)
-                        Text(res.status, modifier = Modifier.width(95.dp), color = color, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-                    }
-                    if (res.note.isNotEmpty()) {
-                        Row(modifier = Modifier.background(DarkCardBg).padding(start = 8.dp, bottom = 8.dp, end = 16.dp)) {
-                            Text("Note: ${res.note}", color = SlateTextSecondary, fontSize = 11.sp, modifier = Modifier.padding(start = 16.dp))
-                        }
+                        Icon(
+                            imageVector = Icons.Filled.Bolt,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = res.sourceName,
+                            style = DsType.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
-                HorizontalDivider(color = SlateTextSecondary)
+
+                // Cable tag
+                Box(
+                    modifier = Modifier
+                        .height(28.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.GridOn,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = res.cableMm2,
+                            style = DsType.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // 3-Up Metrics Row (Isc, Iw, Device Icu)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                MetricItemTile(
+                    label = "Isc",
+                    value = String.format(java.util.Locale.US, "%.2f", res.iscKA),
+                    unit = "kA",
+                    modifier = Modifier.weight(1f)
+                )
+                MetricItemTile(
+                    label = "Iw (withstand)",
+                    value = String.format(java.util.Locale.US, "%.2f", res.iwKA),
+                    unit = "kA",
+                    modifier = Modifier.weight(1f)
+                )
+                MetricItemTile(
+                    label = "Device Icu",
+                    value = String.format(java.util.Locale.US, "%.1f", res.deviceKA),
+                    unit = "kA",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // Margin Line
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "Margin",
+                    style = DsType.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(48.dp)
+                )
+
+                // Margin Bar
+                val progressFraction = (res.marginPct / 100.0).coerceIn(0.0, 1.0).toFloat()
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(7.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(fraction = if (res.marginPct > 0.0) progressFraction.coerceAtLeast(0.05f) else 0f)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(
+                                brush = Brush.horizontalGradient(
+                                    colors = if (res.marginPct >= 0) {
+                                        listOf(Color(0xFF3FBF74), Color(0xFF5BD98A))
+                                    } else {
+                                        listOf(Color(0xFFF0554C), Color(0xFFFF6A66))
+                                    }
+                                )
+                            )
+                    )
+                }
+
+                Text(
+                    text = String.format(java.util.Locale.US, "%.1f%%", res.marginPct),
+                    style = DsType.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (res.marginPct >= 0) Color(0xFF5BD98A) else Color(0xFFFF6A66),
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.width(68.dp)
+                )
+            }
+
+            // Warning / Note Banner if present
+            if (res.note.isNotEmpty()) {
+                val noteBg = if (isDark) Color(0xFF3E2E08) else Color(0xFFFEF3C7)
+                val noteFg = if (isDark) Color(0xFFFBE1A6) else Color(0xFF92400E)
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(noteBg)
+                        .padding(horizontal = 11.dp, vertical = 9.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Warning,
+                            contentDescription = null,
+                            tint = noteFg,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = res.note,
+                            style = DsType.bodySmall.copy(fontSize = 11.5.sp, lineHeight = 14.sp),
+                            color = noteFg
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatTile(
+    label: String,
+    value: String,
+    containerColor: Color,
+    contentColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(containerColor)
+            .padding(vertical = 10.dp, horizontal = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = label,
+                style = DsType.labelSmall.copy(fontSize = 10.5.sp, letterSpacing = 0.4.sp),
+                fontWeight = FontWeight.SemiBold,
+                color = contentColor.copy(alpha = 0.85f),
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = value,
+                style = DsType.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = contentColor,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun KpiTile(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(12.dp)
+    ) {
+        Column {
+            Text(
+                text = label,
+                style = DsType.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(3.dp))
+            Text(
+                text = value,
+                style = DsType.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun MetricItemTile(
+    label: String,
+    value: String,
+    unit: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(horizontal = 10.dp, vertical = 10.dp)
+    ) {
+        Column {
+            Text(
+                text = label,
+                style = DsType.labelSmall.copy(fontSize = 10.5.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(3.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = value,
+                    style = DsType.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+                Text(
+                    text = unit,
+                    style = DsType.bodySmall.copy(fontSize = 11.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
             }
         }
     }
