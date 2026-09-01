@@ -86,6 +86,14 @@ fun QuickEngineeringHubScreen(
                 icon = Icons.Default.ElectricBolt,
                 iconTint = SleekPrimary
             ),
+            QuickToolItem(
+                id = "conduit_fill",
+                category = "CABLE",
+                title = "Conduit Fill & Trade Sizing",
+                description = "Calculate fill ratio (40%/31%/53%) & select standard conduit size (IEC 61386)",
+                icon = ElectricalIcons.Conduit,
+                iconTint = SleekPrimary
+            ),
 
             // POWER
             QuickToolItem(
@@ -111,6 +119,50 @@ fun QuickEngineeringHubScreen(
                 description = "Calculate capacitor rating (kVAR), current reduction ΔI & capacitance",
                 icon = Icons.Default.FlashOn,
                 iconTint = Color(0xFF10B981)
+            ),
+
+            // PROTECTION
+            QuickToolItem(
+                id = "breaker_select",
+                category = "PROTECTION",
+                title = "Breaker Selection & Selectivity",
+                description = "Select catalog breaker, verify Icu/Ics & check 1.6:1/2:1 selectivity (IEC 60947-2)",
+                icon = ElectricalIcons.Protection,
+                iconTint = Color(0xFFEF4444)
+            ),
+            QuickToolItem(
+                id = "earthing",
+                category = "PROTECTION",
+                title = "Earthing & Grounding",
+                description = "Rod resistance (Dwight/Sunde), pit array & adiabatic conductor sizing (IEC 60364-5-54)",
+                icon = ElectricalIcons.Earthing,
+                iconTint = Color(0xFFEF4444)
+            ),
+
+            // BACKUP POWER
+            QuickToolItem(
+                id = "generator_quick",
+                category = "BACKUP POWER",
+                title = "Generator Quick Sizing",
+                description = "Continuous capacity, motor starting kVA & transient voltage dip (ISO 8528)",
+                icon = ElectricalIcons.Power,
+                iconTint = Color(0xFF06B6D4)
+            ),
+            QuickToolItem(
+                id = "ups_battery",
+                category = "BACKUP POWER",
+                title = "UPS & Battery Sizing",
+                description = "Critical load kVA, battery Ah/kWh, autonomy & DC string estimation (IEC 62040)",
+                icon = Icons.Default.Bolt,
+                iconTint = Color(0xFF06B6D4)
+            ),
+            QuickToolItem(
+                id = "ats_sizing",
+                category = "BACKUP POWER",
+                title = "ATS Sizing & Withstand",
+                description = "Automatic transfer switch rating, Icw/Icm withstand & AC-33B (IEC 60947-6-1)",
+                icon = ElectricalIcons.Circuits,
+                iconTint = Color(0xFF06B6D4)
             ),
 
             // TRANSFORMER
@@ -307,6 +359,8 @@ fun QuickEngineeringHubScreen(
                                             when (categoryName) {
                                                 "CABLE" -> SleekPrimary
                                                 "POWER" -> Color(0xFF10B981)
+                                                "PROTECTION" -> Color(0xFFEF4444)
+                                                "BACKUP POWER" -> Color(0xFF06B6D4)
                                                 "TRANSFORMER" -> Color(0xFFF59E0B)
                                                 "LIGHTING" -> Color(0xFFA855F7)
                                                 else -> SleekPrimary
