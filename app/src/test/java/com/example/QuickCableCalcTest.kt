@@ -98,11 +98,11 @@ class QuickCableCalcTest {
                 dsList.add(
                     DataSheetEntry(
                         size = obj.getDouble("size"),
-                        R_Cu70 = obj.getDouble("R_Cu70"),
+                        R_Cu20 = if (obj.has("R_Cu20")) obj.getDouble("R_Cu20") else obj.getDouble("R_Cu70"),
                         X = obj.getDouble("X"),
-                        R_Al70 = obj.getDouble("R_Al70"),
-                        R_Cu90 = obj.getDouble("R_Cu90"),
-                        R_Al90 = obj.getDouble("R_Al90")
+                        R_Al20 = if (obj.has("R_Al20")) obj.getDouble("R_Al20") else obj.getDouble("R_Al70"),
+                        R_Cu_70_est = if (obj.has("R_Cu_70_est")) obj.getDouble("R_Cu_70_est") else obj.getDouble("R_Cu90"),
+                        R_Al_70_est = if (obj.has("R_Al_70_est")) obj.getDouble("R_Al_70_est") else obj.getDouble("R_Al90")
                     )
                 )
             }

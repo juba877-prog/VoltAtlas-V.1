@@ -10,24 +10,59 @@ data class CableProduct(
     val air: Double,
     val od: Double,
     val wt: Double,
-    val provenance: String = "CATALOG_JSON"
+    val provenance: String = "ELSEWEDY_TECHNICAL_CATALOG_IEC_60502"
 )
 
 data class CableTypeData(
     val typeCode: Int,
     val cableType: String,
     val sizeMm2: Double,
-    val rCu70: Double,
+    val rCu20: Double,
     val x: Double,
-    val rAl70: Double,
-    val rCu90: Double,
-    val rAl90: Double,
+    val rAl20: Double,
+    val rCu_70_est: Double,
+    val rAl_70_est: Double,
     val conductor: String,
     val insulation: String,
     val armour: String,
     val cores: String,
-    val provenance: String = "CATALOG_TYPES_DATA_JSON"
-)
+    val provenance: String = "IEC_60228_TABLE_2"
+) {
+    // Backward-compatibility property aliases
+    val rCu70: Double get() = rCu20
+    val rAl70: Double get() = rAl20
+    val rCu90: Double get() = rCu_70_est
+    val rAl90: Double get() = rAl_70_est
+
+    constructor(
+        typeCode: Int,
+        cableType: String,
+        sizeMm2: Double,
+        rCu70: Double,
+        x: Double,
+        rAl70: Double,
+        rCu90: Double,
+        rAl90: Double,
+        conductor: String,
+        insulation: String,
+        armour: String,
+        cores: String
+    ) : this(
+        typeCode = typeCode,
+        cableType = cableType,
+        sizeMm2 = sizeMm2,
+        rCu20 = rCu70,
+        x = x,
+        rAl20 = rAl70,
+        rCu_70_est = rCu90,
+        rAl_70_est = rAl90,
+        conductor = conductor,
+        insulation = insulation,
+        armour = armour,
+        cores = cores,
+        provenance = "IEC_60228_TABLE_2"
+    )
+}
 
 data class Breaker(
     val mfg: String,

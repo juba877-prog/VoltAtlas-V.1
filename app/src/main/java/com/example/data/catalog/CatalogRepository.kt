@@ -102,8 +102,9 @@ class CatalogRepository {
                 val air = safeDouble(obj, "air", "AIR", defaultValue = 0.0)
                 val od = safeDouble(obj, "od", "OD", defaultValue = 0.0)
                 val wt = safeDouble(obj, "wt", "WT", defaultValue = 0.0)
+                val provenance = safeString(obj, "provenance", defaultValue = "ELSEWEDY_TECHNICAL_CATALOG_IEC_60502")
 
-                list.add(CableProduct(mfg, typeCode, size, model, gnd, duct, air, od, wt))
+                list.add(CableProduct(mfg, typeCode, size, model, gnd, duct, air, od, wt, provenance))
             }
         } catch (e: Exception) {
             warnings.add("Failed parsing cable_catalog.json: ${e.message}")
@@ -120,17 +121,18 @@ class CatalogRepository {
                 val typeCode = safeInt(obj, "typeCode", "TypeCode", "TC", "code", defaultValue = i + 1)
                 val cableType = safeString(obj, "Cable Type (active from _CATALOG)", "cableType", "TypeStr", defaultValue = "Standard")
                 val sizeMm2 = safeDouble(obj, "SZ (mm²)", "col0", "size", defaultValue = 0.0)
-                val rCu70 = safeDouble(obj, "RCu70", "col1", defaultValue = 0.0)
+                val rCu20 = safeDouble(obj, "RCu20", "RCu70", "col1", defaultValue = 0.0)
                 val x = safeDouble(obj, "X", "col2", defaultValue = 0.0)
-                val rAl70 = safeDouble(obj, "RAl70", "col3", defaultValue = 0.0)
-                val rCu90 = safeDouble(obj, "RCu90", "col4", defaultValue = 0.0)
-                val rAl90 = safeDouble(obj, "RAl90", defaultValue = 0.0)
+                val rAl20 = safeDouble(obj, "RAl20", "RAl70", "col3", defaultValue = 0.0)
+                val rCu_70_est = safeDouble(obj, "RCu_70_est", "RCu90", "col4", defaultValue = 0.0)
+                val rAl_70_est = safeDouble(obj, "RAl_70_est", "RAl90", defaultValue = 0.0)
                 val conductor = safeString(obj, "conductor", defaultValue = "Cu")
                 val insulation = safeString(obj, "insulation", defaultValue = "XLPE")
                 val armour = safeString(obj, "armour", defaultValue = "Unarmoured")
                 val cores = safeString(obj, "cores", defaultValue = "3C")
+                val provenance = safeString(obj, "provenance", defaultValue = "IEC_60228_TABLE_2")
 
-                list.add(CableTypeData(typeCode, cableType, sizeMm2, rCu70, x, rAl70, rCu90, rAl90, conductor, insulation, armour, cores))
+                list.add(CableTypeData(typeCode, cableType, sizeMm2, rCu20, x, rAl20, rCu_70_est, rAl_70_est, conductor, insulation, armour, cores, provenance))
             }
         } catch (e: Exception) {
             warnings.add("Failed parsing cable_types_data.json: ${e.message}")

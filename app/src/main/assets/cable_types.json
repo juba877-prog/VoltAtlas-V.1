@@ -9,7 +9,8 @@
     "cores": "1C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Al70"
+    "rColumn": "R_Al20",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 5,
@@ -21,7 +22,8 @@
     "cores": "3C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Al70"
+    "rColumn": "R_Al20",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 6,
@@ -33,7 +35,8 @@
     "cores": "4C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Al70"
+    "rColumn": "R_Al20",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 14,
@@ -45,7 +48,8 @@
     "cores": "1C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Al90"
+    "rColumn": "R_Al_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 9,
@@ -57,7 +61,8 @@
     "cores": "3C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Al90"
+    "rColumn": "R_Al_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 71,
@@ -69,7 +74,8 @@
     "cores": "4C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu90"
+    "rColumn": "R_Cu_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 72,
@@ -81,7 +87,8 @@
     "cores": "3C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Al90"
+    "rColumn": "R_Al_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 73,
@@ -93,7 +100,8 @@
     "cores": "4C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Al90"
+    "rColumn": "R_Al_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 10,
@@ -105,7 +113,8 @@
     "cores": "3C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Al90"
+    "rColumn": "R_Al_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 76,
@@ -117,7 +126,8 @@
     "cores": "4C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Al90"
+    "rColumn": "R_Al_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 11,
@@ -129,7 +139,8 @@
     "cores": "1C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu70"
+    "rColumn": "R_Cu20",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 1,
@@ -141,7 +152,8 @@
     "cores": "3C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu70"
+    "rColumn": "R_Cu20",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 2,
@@ -153,7 +165,8 @@
     "cores": "4C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu70"
+    "rColumn": "R_Cu20",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 3,
@@ -165,7 +178,8 @@
     "cores": "3C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu70"
+    "rColumn": "R_Cu20",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 4,
@@ -177,7 +191,8 @@
     "cores": "4C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu70"
+    "rColumn": "R_Cu20",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 13,
@@ -189,7 +204,8 @@
     "cores": "1C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu90"
+    "rColumn": "R_Cu_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 7,
@@ -201,7 +217,8 @@
     "cores": "3C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu90"
+    "rColumn": "R_Cu_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 15,
@@ -213,7 +230,8 @@
     "cores": "4C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu90"
+    "rColumn": "R_Cu_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 75,
@@ -225,7 +243,8 @@
     "cores": "4C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu90"
+    "rColumn": "R_Cu_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 66,
@@ -237,7 +256,8 @@
     "cores": "3C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu70"
+    "rColumn": "R_Cu20",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 67,
@@ -249,7 +269,8 @@
     "cores": "4C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu70"
+    "rColumn": "R_Cu20",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 68,
@@ -261,7 +282,8 @@
     "cores": "3C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Al70"
+    "rColumn": "R_Al20",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 69,
@@ -273,7 +295,8 @@
     "cores": "4C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Al70"
+    "rColumn": "R_Al20",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 70,
@@ -285,7 +308,8 @@
     "cores": "3C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu90"
+    "rColumn": "R_Cu_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 90,
@@ -297,7 +321,8 @@
     "cores": "1C",
     "voltage": "0.6/1",
     "standard": "IEC 60331",
-    "rColumn": "R_Cu90"
+    "rColumn": "R_Cu_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 91,
@@ -309,7 +334,8 @@
     "cores": "2C",
     "voltage": "0.6/1",
     "standard": "IEC 60331",
-    "rColumn": "R_Cu90"
+    "rColumn": "R_Cu_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 92,
@@ -321,7 +347,8 @@
     "cores": "3C",
     "voltage": "0.6/1",
     "standard": "IEC 60331",
-    "rColumn": "R_Cu90"
+    "rColumn": "R_Cu_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 94,
@@ -333,7 +360,8 @@
     "cores": "4C",
     "voltage": "0.6/1",
     "standard": "IEC 60331",
-    "rColumn": "R_Cu90"
+    "rColumn": "R_Cu_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 8,
@@ -345,7 +373,8 @@
     "cores": "3C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu90"
+    "rColumn": "R_Cu_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 17,
@@ -357,7 +386,8 @@
     "cores": "4C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Al90"
+    "rColumn": "R_Al_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 82,
@@ -369,7 +399,8 @@
     "cores": "1C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu90"
+    "rColumn": "R_Cu_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 83,
@@ -381,7 +412,8 @@
     "cores": "1C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Cu70"
+    "rColumn": "R_Cu20",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 84,
@@ -393,7 +425,8 @@
     "cores": "1C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Al90"
+    "rColumn": "R_Al_70_est",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   },
   {
     "code": 85,
@@ -405,6 +438,7 @@
     "cores": "1C",
     "voltage": "0.6/1",
     "standard": "IEC 60502",
-    "rColumn": "R_Al70"
+    "rColumn": "R_Al20",
+    "provenance": "IEC_60502_CATALOG_TYPES"
   }
 ]

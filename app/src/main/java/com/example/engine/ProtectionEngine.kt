@@ -159,8 +159,8 @@ object ProtectionEngine {
         val cpcEntry = Catalog.dataSheet.firstOrNull { it.size == cpcSize }
         
         val isAl = sizingResult.cableMaterial.equals("Al", ignoreCase = true)
-        val r1 = if (isAl) (phaseEntry?.R_Al70 ?: 0.0) else (phaseEntry?.R_Cu70 ?: 0.0)
-        val r2 = if (isAl) (cpcEntry?.R_Al70 ?: 0.0) else (cpcEntry?.R_Cu70 ?: 0.0)
+        val r1 = if (isAl) (phaseEntry?.R_Al20 ?: 0.0) else (phaseEntry?.R_Cu20 ?: 0.0)
+        val r2 = if (isAl) (cpcEntry?.R_Al20 ?: 0.0) else (cpcEntry?.R_Cu20 ?: 0.0)
         
         // TEMPERATURE CONVENTION (single source of truth):
         // The catalog "R_Cu70/R_Al70" columns are VERIFIED to contain IEC 60228 20 °C DC

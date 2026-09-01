@@ -18,12 +18,37 @@ data class CableType(
 
 data class DataSheetEntry(
     val size: Double,
-    val R_Cu70: Double,
+    val R_Cu20: Double,
     val X: Double,
-    val R_Al70: Double,
-    val R_Cu90: Double,
-    val R_Al90: Double
-)
+    val R_Al20: Double,
+    val R_Cu_70_est: Double,
+    val R_Al_70_est: Double,
+    val provenance: String = "IEC_60228_TABLE_2"
+) {
+    // Backward-compatibility property aliases
+    val R_Cu70: Double get() = R_Cu20
+    val R_Al70: Double get() = R_Al20
+    val R_Cu90: Double get() = R_Cu_70_est
+    val R_Al90: Double get() = R_Al_70_est
+
+    // Secondary constructor supporting legacy positional/named argument order
+    constructor(
+        size: Double,
+        R_Cu70: Double,
+        X: Double,
+        R_Al70: Double,
+        R_Cu90: Double,
+        R_Al90: Double
+    ) : this(
+        size = size,
+        R_Cu20 = R_Cu70,
+        X = X,
+        R_Al20 = R_Al70,
+        R_Cu_70_est = R_Cu90,
+        R_Al_70_est = R_Al90,
+        provenance = "IEC_60228_TABLE_2"
+    )
+}
 
 data class CableCatalogEntry(
     val mfg: String,
@@ -34,7 +59,8 @@ data class CableCatalogEntry(
     val duct: Double,
     val air: Double,
     val od: Double,
-    val wt: Double
+    val wt: Double,
+    val provenance: String = "ELSEWEDY_TECHNICAL_CATALOG_IEC_60502"
 )
 
 data class BreakerEntry(
@@ -265,11 +291,12 @@ object Catalog {
             val parsedDataSheet = loadJson(context, "data_sheet.json") { obj ->
                 DataSheetEntry(
                     size = obj.getDouble("size"),
-                    R_Cu70 = obj.getDouble("R_Cu70"),
+                    R_Cu20 = if (obj.has("R_Cu20")) obj.getDouble("R_Cu20") else obj.getDouble("R_Cu70"),
                     X = obj.getDouble("X"),
-                    R_Al70 = obj.getDouble("R_Al70"),
-                    R_Cu90 = obj.getDouble("R_Cu90"),
-                    R_Al90 = obj.getDouble("R_Al90")
+                    R_Al20 = if (obj.has("R_Al20")) obj.getDouble("R_Al20") else obj.getDouble("R_Al70"),
+                    R_Cu_70_est = if (obj.has("R_Cu_70_est")) obj.getDouble("R_Cu_70_est") else obj.getDouble("R_Cu90"),
+                    R_Al_70_est = if (obj.has("R_Al_70_est")) obj.getDouble("R_Al_70_est") else obj.getDouble("R_Al90"),
+                    provenance = obj.optString("provenance", "IEC_60228_TABLE_2")
                 )
             }
 
@@ -283,7 +310,8 @@ object Catalog {
                     duct = obj.getDouble("duct"),
                     air = obj.getDouble("air"),
                     od = obj.optDouble("od", 0.0),
-                    wt = obj.optDouble("wt", 0.0)
+                    wt = obj.optDouble("wt", 0.0),
+                    provenance = obj.optString("provenance", "ELSEWEDY_TECHNICAL_CATALOG_IEC_60502")
                 )
             }
 

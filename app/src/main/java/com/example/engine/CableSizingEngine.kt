@@ -288,10 +288,10 @@ object CableSizingEngine {
         } ?: return null
 
         val resistance = when (rColumn) {
-            "R_Cu70" -> sheet.R_Cu70
-            "R_Al70" -> sheet.R_Al70
-            "R_Cu90" -> sheet.R_Cu90
-            "R_Al90" -> sheet.R_Al90
+            "R_Cu20", "R_Cu70" -> sheet.R_Cu20
+            "R_Al20", "R_Al70" -> sheet.R_Al20
+            "R_Cu_70_est", "R_Cu90" -> sheet.R_Cu_70_est
+            "R_Al_70_est", "R_Al90" -> sheet.R_Al_70_est
             else -> return null
         }
 
@@ -516,9 +516,9 @@ object CableSizingEngine {
                 val cableMaterial = if (isAl && !isCu) "Al" else "Cu"
                 val insulation = if (isXLPE) "XLPE" else "PVC"
                 rColumn = if (cableMaterial == "Cu") {
-                    if (insulation == "XLPE") "R_Cu90" else "R_Cu70"
+                    if (insulation == "XLPE") "R_Cu_70_est" else "R_Cu20"
                 } else {
-                    if (insulation == "XLPE") "R_Al90" else "R_Al70"
+                    if (insulation == "XLPE") "R_Al_70_est" else "R_Al20"
                 }
                 selectedTypeCode = selectedTypeRepo.typeCode
             } else if (selectedTypeLegacy != null) {
@@ -588,10 +588,10 @@ object CableSizingEngine {
                 }
                 if (sheet == null) null else {
                     val resistance = when (rColumn) {
-                        "R_Cu70" -> sheet.rCu70
-                        "R_Al70" -> sheet.rAl70
-                        "R_Cu90" -> sheet.rCu90
-                        "R_Al90" -> sheet.rAl90
+                        "R_Cu20", "R_Cu70" -> sheet.rCu20
+                        "R_Al20", "R_Al70" -> sheet.rAl20
+                        "R_Cu_70_est", "R_Cu90" -> sheet.rCu_70_est
+                        "R_Al_70_est", "R_Al90" -> sheet.rAl_70_est
                         else -> 0.0
                     }
                     if (resistance <= 0.0 || sheet.x <= 0.0) null else Pair(resistance, sheet.x)
