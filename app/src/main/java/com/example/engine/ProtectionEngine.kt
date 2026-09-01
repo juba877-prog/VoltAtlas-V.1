@@ -105,6 +105,18 @@ object ProtectionEngine {
         if (isc3Phase_kA > 0.0 && un_V > 0.0) (cmax * un_V) / (sqrt(3.0) * isc3Phase_kA * 1000.0) else 0.0
 
     /**
+     * H4 — insulation-aware adiabatic k factor (IEC 60364-5-54 / IEC 60364-4-43):
+     * Cu/XLPE = 143, Cu/PVC = 115, Al/XLPE = 94, Al/PVC = 76.
+     * Used as the FALLBACK when no k factor was supplied — never assume Cu/XLPE blindly.
+     */
+    fun insulationKFactor(material: String, insulation: String): Double = when {
+        material.equals("Al", ignoreCase = true) && insulation.equals("XLPE", ignoreCase = true) -> 94.0
+        material.equals("Al", ignoreCase = true) -> 76.0
+        insulation.equals("PVC", ignoreCase = true) -> 115.0
+        else -> 143.0
+    }
+
+    /**
      * Max Zs values from IEC 60364-4-41 Table 41.3 for 230V systems.
      * Based on Zs = (U0 * Cmin) / Ia
      * U0 = 230V, Cmin = 0.95, Ia = 5*In (B), 10*In (C), 20*In (D)
@@ -142,6 +154,15 @@ object ProtectionEngine {
         val r1 = if (isAl) (phaseEntry?.R_Al70 ?: 0.0) else (phaseEntry?.R_Cu70 ?: 0.0)
         val r2 = if (isAl) (cpcEntry?.R_Al70 ?: 0.0) else (cpcEntry?.R_Cu70 ?: 0.0)
         
+        // TEMPERATURE CONVENTION (single source of truth):
+        // The catalog "R_Cu70/R_Al70" columns are VERIFIED to contain IEC 60228 20 °C DC
+        // resistance values (e.g. 2.5 mm² Cu = 7.41 Ω/km = R20 exactly; 70 mm² = 0.268 Ω/km
+        // = R20; 240 mm² = 0.0754 Ω/km = R20), despite the column names. For the ADS
+        // min-fault loop (cmin) the resistance is corrected HERE to ~70 °C operating
+        // temperature (×1.20 ≈ (230+70)/(230+20)) per IEC 60364-4-41 §411.4.4 — this is
+        // NOT double-counting. The max-fault path (ShortCircuitEngine, cmax = 1.05)
+        // correctly uses the 20 °C values per IEC 60909-0 §7.1.2. Voltage drop uses the
+        // 20 °C values by workbook/QA-parity convention (see CableSizingEngine thermalFactor).
         val tempFactor = 1.20
         val l_m = circuit.length_m
         val calculatedZs = ze_ohm + ((r1 + r2) * l_m * tempFactor) / 1000.0
@@ -228,7 +249,8 @@ object ProtectionEngine {
 
         // 3. Cable Thermal Withstand Check (k^2 * S^2 >= Isc^2 * t)
         val s_mm2 = extractNumericSize(sizingResult.cableSize_mm2)
-        val k = if (sizingResult.kFactor > 0.0) sizingResult.kFactor else 143.0
+        val k = if (sizingResult.kFactor > 0.0) sizingResult.kFactor
+        else insulationKFactor(sizingResult.cableMaterial, sizingResult.insulation)
         val t = if (sizingResult.clearingTime_s > 0.0) sizingResult.clearingTime_s else 0.1
         val k2S2 = (k * s_mm2) * (k * s_mm2)
         val iscA = isc * 1000.0

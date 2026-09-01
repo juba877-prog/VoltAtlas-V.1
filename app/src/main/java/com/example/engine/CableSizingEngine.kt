@@ -54,6 +54,7 @@ data class SizingResult(
     val clearingTime_s: Double = 0.1,
     val odSourceMfg: String = "Elsewedy",
     val isODApproximated: Boolean = false,
+    val warnings: List<String> = emptyList(),
     val resultStatus: SizingResultStatus,
     val isAmpacityOk: Boolean,
     val isVoltageDropOk: Boolean,
@@ -472,6 +473,15 @@ object CableSizingEngine {
             return failedResult("Total derating factor is zero or invalid.", CableFailureCode.DERATING_INVALID)
         }
 
+        // IEC 60364-5-52 Annex E — third-harmonic derating of the PHASE conductors.
+        // For 15–33 % third-harmonic content the rating factor is 0.86 (the neutral counts
+        // as the 4th current-carrying conductor), applied IN ADDITION to the full-size
+        // neutral. The circuit flag is Boolean — no harmonic-% input exists — so the
+        // 15–33 % band factor (0.86) is applied and explicitly flagged; for > 33 % content
+        // the design must shift to the neutral-current basis (0.86 up to 45 %, then 1.0)
+        // and must be verified manually (see warning emitted in the result).
+        val harmonicPhaseFactor = if (circuit.isHarmonic && circuit.phases.trim().startsWith("3")) 0.86 else 1.0
+
         val iRequiredPerCableA =
             ibA / (circuit.parallelRuns * cTotalDerating)
 
@@ -568,7 +578,7 @@ object CableSizingEngine {
         fun checkCandidate(entry: CableCatalogEntry): CandidateCheck? {
             val ratedCurrentA = ampacityOf(entry, circuit.installation)
             val izDeratedA =
-                ratedCurrentA * circuit.parallelRuns * cTotalDerating
+                ratedCurrentA * circuit.parallelRuns * cTotalDerating * harmonicPhaseFactor
 
             val rxValues = if (isLegacy) rxValueOf(entry.size, rColumn) else {
                 val sheet = catalog?.cableTypesData?.firstOrNull {
@@ -589,8 +599,14 @@ object CableSizingEngine {
             } ?: return null
             val (resistance, reactance) = rxValues
 
-            // IEC 60364-5-52: Resistance must be corrected to operating temperature
-            // Removed the 1.275 double-correction
+            // TEMPERATURE CONVENTION (single source of truth — see ProtectionEngine tempFactor):
+            // The catalog "R_Cu70/R_Cu90/R_Al70/R_Al90" columns are VERIFIED to contain
+            // IEC 60228 20 °C DC resistance values (e.g. 2.5 mm² Cu = 7.41 Ω/km = R20 exactly).
+            // Voltage drop is therefore evaluated at 20 °C (workbook/QA-parity convention);
+            // the ADS min-fault loop applies its own ×1.20 operating-temperature correction
+            // (ProtectionEngine), and the short-circuit max-fault path uses 20 °C per
+            // IEC 60909 §7.1.2. No additional correction is applied here — do NOT add one
+            // (that would double-count).
             val thermalFactor = 1.0
             val rOperating = resistance * thermalFactor
 
@@ -833,6 +849,11 @@ object CableSizingEngine {
             clearingTime_s = clearingTime_s,
             odSourceMfg = dimInfo.sourceMfg,
             isODApproximated = dimInfo.isApproximated,
+            warnings = if (circuit.isHarmonic) {
+                listOf(
+                    "Harmonic circuit (3rd-harmonic content assumed in the 15–33 % band): phase-conductor ampacity derated ×0.86 per IEC 60364-5-52 Annex E, full-size neutral applied. If content exceeds 33 %, sizing must shift to the neutral-current basis — verify."
+                )
+            } else emptyList(),
             resultStatus = resStatus,
             isAmpacityOk = isAmpacityPass,
             isVoltageDropOk = isVdPass,

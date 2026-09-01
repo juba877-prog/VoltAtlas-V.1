@@ -549,6 +549,9 @@ class ProjectContextProviderTest {
     @Test
     fun allRequiredDomainsCurrentAndValid_canBeFullyCompliant() = runBlocking {
         database.projectDao().upsertProject(ProjectEntity(projectId = "PROJ-ALL-VALID", projectName = "All Valid", createdAt = 0, updatedAt = 0, revision = 1L))
+        // H5 note: the transformer FLC is load-driven (~72 A for this project's single
+        // 20 kVA feeder) — the feeder device must keep the coordination ratio >= 2.0.
+        // See the circuit overrideDeviceSize comment below.
         val tx = TransformerEntity(projectId = "PROJ-ALL-VALID", transformerId = "TX-01", transformerName = "Substation TX", kVA = 100.0, voltage = 400, percentZ = 4.0)
         repository.transformerDao.insertTransformer(tx)
 
@@ -561,7 +564,14 @@ class ProjectContextProviderTest {
             cableType = "Cu/XLPE/PVC - 4C",
             manufacturer = "Elsewedy",
             transformerId = "TX-01",
-            fedFrom = "Transformer"
+            fedFrom = "Transformer",
+            // H5 note: the feeder device must give an upstream/downstream coordination ratio
+            // >= MAGNETIC_RATIO_MIN (2.0) so this "fully compliant" snapshot stays truthful.
+            // The transformer FLC is load-driven (~72 A for this project); with a 40 A device
+            // the ratio is 1.8 (inside the 1.6–2.0 thermal-only band, correctly a WARNING
+            // since the H5 remediation). Overriding to 32 A (still >= Ib 28.9 A) yields
+            // ratio 2.25 — genuinely screened-selective (IEC 60947-2 current-ratio screening).
+            overrideDeviceSize = 32.0
         )
         repository.circuitDao.insertCircuit(circuit)
 

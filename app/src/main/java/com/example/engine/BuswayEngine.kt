@@ -211,6 +211,10 @@ object BuswayEngine {
             failReason = buswayRes.failReason,
             cableMaterial = selected?.conductor ?: "Cu",
             insulation = "Air/Film Insulated",
+            // H4 note: k = 143 (Cu, ~90 °C-class air/film insulation) is a documented BUSWAY
+            // CATALOG CONVENTION per IEC 60364-5-54 — busway thermal withstand is verified by
+            // the manufacturer's listed Icw/I²t rating; this k is only a conservative proxy
+            // for the adiabatic check and must not be reused for PVC-class systems.
             kFactor = 143.0,
             deviceBreakingKA = buswayRes.icwKA,
             cableOD_mm = 100.0, // Non-zero nominal housing profile height for conduit/space engines

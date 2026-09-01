@@ -41,12 +41,18 @@ object CoordinationEngine {
 
         val ratio = upstreamRating / downstreamRating
         
-        val status = if (ratio >= THERMAL_RATIO_MIN) "✓ OK" else "⚠ WARNING"
+        // H5 — MAGNETIC_RATIO_MIN is now used in the STATUS logic (was message-text only):
+        // 1.6 ≤ ratio < 2.0 passes the THERMAL screening only — magnetic (short-circuit)
+        // selectivity is unresolved at current-ratio level and must be surfaced as WARNING.
+        val status = when {
+            ratio >= MAGNETIC_RATIO_MIN -> "✓ OK"
+            else -> "⚠ WARNING"
+        }
         val reason = when {
             ratio < 1.0 -> "Downstream breaker (${"%.2f".format(downstreamRating)} A) is larger than Upstream (${"%.2f".format(upstreamRating)} A)!"
             ratio < THERMAL_RATIO_MIN -> "Ratio is only ${"%.2f".format(ratio)}. Upstream (${"%.2f".format(upstreamRating)} A) to Downstream (${"%.2f".format(downstreamRating)} A) requires > 1.6 for selectivity."
-            ratio < MAGNETIC_RATIO_MIN -> "Thermal coordination OK. Potential nuisance tripping during short-circuit (Ratio < 2.0)."
-            else -> "Full Selectivity guaranteed by current ratio rules."
+            ratio < MAGNETIC_RATIO_MIN -> "Thermal coordination OK, but magnetic (short-circuit) selectivity is unresolved at this current ratio — verify with manufacturer tables."
+            else -> "Likely selective (current-ratio screening) — verify with manufacturer cascade/selectivity tables per IEC 60947-2."
         }
 
         return CoordinationResult(
