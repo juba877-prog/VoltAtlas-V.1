@@ -11,8 +11,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Cable
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -24,44 +28,44 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.engine.BoqEngine
 import com.example.ui.UiState
+import com.example.ui.designsystem.components.DsPillTabItem
+import com.example.ui.designsystem.components.DsSegmentedPillTabRow
 import com.example.ui.theme.*
 
 // Combined BOQ / Procurement Screen
 @Composable
 fun BoqProcurementScreen(state: UiState.Success) {
     var subTab by rememberSaveable { mutableIntStateOf(0) }
-    val tabs = listOf("Cables", "Accessories", "Drums", "Conduit Roll-Up")
+    val tabs = listOf(
+        DsPillTabItem(label = "Cables", icon = Icons.Filled.Cable, testTag = "boq_tab_cables", contentDescription = "Cables"),
+        DsPillTabItem(label = "Access.", icon = Icons.Filled.Category, testTag = "boq_tab_accessories", contentDescription = "Accessories"),
+        DsPillTabItem(label = "Drums", icon = Icons.Filled.Album, testTag = "boq_tab_drums", contentDescription = "Drums"),
+        DsPillTabItem(label = "Conduit", icon = Icons.Filled.ViewColumn, testTag = "boq_tab_conduit", contentDescription = "Conduit Roll-Up")
+    )
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        ScrollableTabRow(
-            selectedTabIndex = subTab,
-            containerColor = DarkCardBg,
-            contentColor = SleekPrimary,
-            edgePadding = 16.dp,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = subTab == index,
-                    onClick = { subTab = index },
-                    text = {
-                        Text(
-                            text = title,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-                )
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            DsSegmentedPillTabRow(
+                tabs = tabs,
+                selectedTabIndex = subTab,
+                onTabSelected = { subTab = it }
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 16.dp)
+            ) {
+                when (subTab) {
+                    0 -> BoqCablesScreen(state)
+                    1 -> ProcurementScreen(state)
+                    2 -> BoqDrumsView(state)
+                    3 -> ConduitProcurementRollupScreen(state)
+                }
             }
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-        when (subTab) {
-            0 -> BoqCablesScreen(state)
-            1 -> ProcurementScreen(state)
-            2 -> BoqDrumsView(state)
-            3 -> ConduitProcurementRollupScreen(state)
         }
     }
 }

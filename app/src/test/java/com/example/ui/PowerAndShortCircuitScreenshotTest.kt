@@ -7,7 +7,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.example.data.CircuitEntity
+import com.example.engine.BoqItem
+import com.example.engine.ProcurementItem
 import com.example.engine.ShortCircuitResult
+import com.example.ui.screens.BoqProcurementScreen
 import com.example.ui.theme.VoltAtlasTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
@@ -87,6 +90,43 @@ class PowerAndShortCircuitScreenshotTest {
                 status = "FAIL",
                 note = "Isc exceeds device rated breaking capacity (Icu)."
             )
+        ),
+        boq: List<BoqItem> = listOf(
+            BoqItem(
+                cableType = "Cu / XLPE / PVC / SWA",
+                size = "4x70 mm²",
+                productCode = "CAB-CU-70",
+                manufacturer = "Elsewedy",
+                totalLength_m = 120.0,
+                unitWeight_g_m = 3200.0,
+                totalWeight_kg = 850.0,
+                runsCount = 1,
+                status = "OK"
+            ),
+            BoqItem(
+                cableType = "Cu / PVC / PVC",
+                size = "4x10 mm²",
+                productCode = "CAB-CU-10",
+                manufacturer = "Elsewedy",
+                totalLength_m = 105.0,
+                unitWeight_g_m = 650.0,
+                totalWeight_kg = 210.0,
+                runsCount = 2,
+                status = "OK"
+            )
+        ),
+        procurement: List<ProcurementItem> = listOf(
+            ProcurementItem(
+                circuitName = "DP-G3",
+                cableType = "Cu / XLPE / PVC / SWA",
+                cableSize = "4x70 mm²",
+                glandModel = "CMP-CW32",
+                glandDesc = "Brass Outdoor Armoured",
+                lugsType = "Cu 70 mm² M10",
+                cableOD_mm = 34.0,
+                requiredTrayWidth_mm = 150.0,
+                status = "OK"
+            )
         )
     ): UiState.Success {
         return UiState.Success(
@@ -94,9 +134,9 @@ class PowerAndShortCircuitScreenshotTest {
             transformers = emptyList(),
             sizingResults = emptyMap(),
             transformerResults = emptyMap(),
-            boq = emptyList(),
+            boq = boq,
             drums = emptyList(),
-            procurement = emptyList(),
+            procurement = procurement,
             panels = emptyList(),
             generatorResult = null,
             atsResult = null,
@@ -104,6 +144,82 @@ class PowerAndShortCircuitScreenshotTest {
             pfCorrectionResults = emptyList(),
             shortCircuitResults = scResults
         )
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-xhdpi")
+    fun boqProcurementScreen_topBar_narrowPortrait_dark() {
+        if (!outputDir.exists()) outputDir.mkdirs()
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = true) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    BoqProcurementScreen(
+                        state = mockUiState()
+                    )
+                }
+            }
+        }
+        composeTestRule.onRoot().captureRoboImage(File(outputDir, "BoqProcurementScreen_TopBar_NarrowPortrait_Dark.png").path)
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-xhdpi")
+    fun boqProcurementScreen_topBar_narrowPortrait_light() {
+        if (!outputDir.exists()) outputDir.mkdirs()
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = false) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    BoqProcurementScreen(
+                        state = mockUiState()
+                    )
+                }
+            }
+        }
+        composeTestRule.onRoot().captureRoboImage(File(outputDir, "BoqProcurementScreen_TopBar_NarrowPortrait_Light.png").path)
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-xhdpi")
+    fun boqProcurementScreen_topBar_landscape_dark() {
+        if (!outputDir.exists()) outputDir.mkdirs()
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = true) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    BoqProcurementScreen(
+                        state = mockUiState()
+                    )
+                }
+            }
+        }
+        composeTestRule.onRoot().captureRoboImage(File(outputDir, "BoqProcurementScreen_TopBar_Landscape_Dark.png").path)
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-xhdpi")
+    fun boqProcurementScreen_topBar_landscape_light() {
+        if (!outputDir.exists()) outputDir.mkdirs()
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = false) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    BoqProcurementScreen(
+                        state = mockUiState()
+                    )
+                }
+            }
+        }
+        composeTestRule.onRoot().captureRoboImage(File(outputDir, "BoqProcurementScreen_TopBar_Landscape_Light.png").path)
     }
 
     @Test
