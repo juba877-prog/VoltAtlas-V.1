@@ -176,12 +176,14 @@ object ShortCircuitEngine {
             val isSwitchingDevice = isSwitchingDevice(sizing.deviceType)
             // IEC 60947-2 peak making capacity check (CRITICAL-5): Icm >= ip.
             // Icu (RMS breaking) alone is insufficient — closing onto a fault stresses the device
-            // with the peak (fully-asymmetric) current. Icm is taken from the catalog when
-            // available; otherwise ESTIMATED as 2.2×Icu (IEC 60947-2 n-factor convention,
-            // mirroring the ATS engine's required-Icm = 2.2×Icw rule) and flagged.
+            // with the peak (fully-asymmetric) current. Icm is taken from the CATALOG when
+            // available; when absent it is ESTIMATED via the IEC 60947-2 §4.3.6.1 Table 2
+            // tiered n-factor (Icm = n·Icu) and flagged. The ATS-engine convention
+            // (required Icm = 2.2×Icw for design) is a separate design-target rule.
             val icmCatalog = sizing.deviceMakingKA
             val icmEstimated = icmCatalog <= 0.0
-            val icmEffectiveKA = if (icmEstimated) sizing.deviceBreakingKA * 2.2 else icmCatalog
+            val icmNFactor = if (icmEstimated) iec60947_2_icmNFactor(sizing.deviceBreakingKA) else 1.0
+            val icmEffectiveKA = if (icmEstimated) sizing.deviceBreakingKA * icmNFactor else icmCatalog
             val makingPass = icmEffectiveKA >= ipKA
 
             var note = ""
@@ -200,13 +202,17 @@ object ShortCircuitEngine {
                        else sourceWarnings.joinToString(" | ") + " | " + note
             }
             if (!isSwitchingDevice && icmEstimated) {
-                val estNote = "Making capacity Icm estimated as 2.2×Icu — verify catalog (IEC 60947-2)"
+                val estNote = ("Icm estimated per IEC 60947-2 Table 2 " +
+                    "(n=%.2f, Icu %.1f kA -> %.1f kA) — verify nameplate")
+                    .format(icmNFactor, sizing.deviceBreakingKA, icmEffectiveKA)
                 note = if (note.isBlank()) estNote else note + " | " + estNote
             }
             if (!isSwitchingDevice && !makingPass) {
-                val failNote = "Making capacity FAIL: Icm " +
-                    (if (icmEstimated) "estimated 2.2×Icu" else "from catalog") +
-                    " (%.1f kA) < peak make current ip (%.1f kA) — verify device rating (IEC 60947-2)".format(icmEffectiveKA, ipKA)
+                val failNote = if (icmEstimated) {
+                    "Making capacity FAIL: Icm estimated per IEC 60947-2 Table 2 (%.1f kA) < peak make current ip (%.1f kA) — verify device rating (IEC 60947-2)".format(icmEffectiveKA, ipKA)
+                } else {
+                    "Making capacity FAIL: Icm from catalog (%.1f kA) < peak make current ip (%.1f kA) — verify device rating (IEC 60947-2)".format(icmEffectiveKA, ipKA)
+                }
                 note = if (note.isBlank()) failNote else note + " | " + failNote
                 rowStatus = if (makingCheckFails) "FAIL" else if (rowStatus == "PASS") "WARNING" else rowStatus
             }
@@ -239,6 +245,26 @@ object ShortCircuitEngine {
                upper.contains("ATS") || 
                upper.contains("BUS COUPLER") || 
                upper.contains("CHANGE-OVER")
+    }
+
+    /**
+     * IEC 60947-2 §4.3.6.1 Table 2 — ratio n of the rated making capacity Icm to the
+     * ultimate short-circuit breaking capacity Icu, tiered by Icu:
+     *   Icu ≤ 1.5 kA -> 1.41; ≤3 -> 1.42; ≤4.5 -> 1.47; ≤6 -> 1.53; ≤10 -> 1.70;
+     *   ≤20 -> 2.00; ≤50 -> 2.10; >50 -> 2.20.
+     * Used ONLY as the FALLBACK estimate when the device catalog omits Icm (catalog Icm
+     * takes priority). A blanket 2.2 would over-estimate making capacity in the common
+     * 20–50 kA band (should be 2.1), making the safety check optimistic.
+     */
+    private fun iec60947_2_icmNFactor(icuKA: Double): Double = when {
+        icuKA <= 1.5 -> 1.41
+        icuKA <= 3.0 -> 1.42
+        icuKA <= 4.5 -> 1.47
+        icuKA <= 6.0 -> 1.53
+        icuKA <= 10.0 -> 1.70
+        icuKA <= 20.0 -> 2.00
+        icuKA <= 50.0 -> 2.10
+        else -> 2.20
     }
 
     /** Generator LV terminal voltage used for islanded-source fault calculations (IEC 60909 §6.7). */

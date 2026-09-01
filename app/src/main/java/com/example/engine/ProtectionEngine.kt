@@ -95,14 +95,22 @@ object ProtectionEngine {
 
     /**
      * H6 — Derive the upstream earth-source impedance Ze from the feeding transformer
-     * result instead of assuming a hardcoded 0.01 Ω:
-     *   Ze = (cmax · Un) / (√3 · I″k,3ph)   [IEC 60909; equals the transformer
-     *   positive-sequence impedance Zt upstream of the circuit cables]
+     * result instead of assuming a hardcoded 0.01 Ω. Two layers:
+     *   1. Z1 = (cmax · Un)/(√3 · I″k,3ph)        [IEC 60909 — transformer positive-sequence]
+     *   2. Earth-loop-equivalent Ze = (2·Z1 + Z0)/3  [single line-to-earth fault loop:
+     *      Z(1)+Z(2)+Z(0) with Z(2)=Z(1); per unit U0 → /3]
+     * Z0 is taken as z0z1Ratio·Z1 (default 0.9 = the engine's Dyn11 Z0/Z1 convention), so
+     * Ze = Z1·(2 + z0z1Ratio)/3 ≈ 0.967·Z1. For a 500 kVA / 4 % transformer:
+     * Z1 ≈ 0.0128 Ω → Ze ≈ 0.0124 Ω (≈3 % less than Z1). This matches the Zs loop a
+     * loop-tester would measure on the L-E fault path.
      * Returns 0.0 when no valid source data exists — callers fall back to the
      * explicit, labelled default (0.01 Ω) and must emit a warning.
      */
-    fun deriveZeFromSource(isc3Phase_kA: Double, un_V: Double, cmax: Double = 1.05): Double =
-        if (isc3Phase_kA > 0.0 && un_V > 0.0) (cmax * un_V) / (sqrt(3.0) * isc3Phase_kA * 1000.0) else 0.0
+    fun deriveZeFromSource(isc3Phase_kA: Double, un_V: Double, cmax: Double = 1.05, z0z1Ratio: Double = 0.9): Double {
+        if (isc3Phase_kA <= 0.0 || un_V <= 0.0) return 0.0
+        val z1 = (cmax * un_V) / (sqrt(3.0) * isc3Phase_kA * 1000.0)
+        return z1 * (2.0 + z0z1Ratio) / 3.0
+    }
 
     /**
      * H4 — insulation-aware adiabatic k factor (IEC 60364-5-54 / IEC 60364-4-43):

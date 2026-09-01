@@ -191,8 +191,12 @@ class Phase2RemediationTest {
     }
 
     @Test
-    fun testMakingCapacity_estimatedAs2_2xIcu_whenNotInCatalog() {
-        // No catalog Icm (0.0) -> estimated 2.2×36 = 79.2 kA >= ip -> PASS but flagged
+    fun testMakingCapacity_estimatedIcm_usesTieredNFactor() {
+        // C1 disclosure (was testMakingCapacity_estimatedAs2_2xIcu_whenNotInCatalog):
+        //  BEFORE: no catalog Icm -> estimated Icm = 2.2 × Icu = 79.2 kA for Icu 36 kA
+        //  AFTER : IEC 60947-2 §4.3.6.1 Table 2 tiered n-factor -> n = 2.10 for Icu >20–50 kA
+        //          -> estimated Icm = 75.6 kA (NOT 79.2). The safer, lower estimate is
+        //          checked against ip and flagged.
         val circuit = CircuitEntity(id = 18, circuitName = "MDB", loadKVA = 400.0,
             fedFrom = "Transformer", transformerId = "TX-01", length_m = 0.1)
         val res = ShortCircuitEngine.calculate(
@@ -201,7 +205,32 @@ class Phase2RemediationTest {
         )[18]!!
 
         assertEquals("PASS", res.status)
-        assertTrue(res.note.contains("estimated as 2.2×Icu"))
+        assertTrue("Tiered n-factor estimate must be named", res.note.contains("Icm estimated per IEC 60947-2 Table 2"))
+        assertTrue("Icu 36 kA -> n=2.10 -> Icm 75.6 kA", res.note.contains("75.6"))
+        assertFalse("Blanket 2.2 (79.2 kA) must NOT be used for the 20–50 kA band", res.note.contains("79.2"))
+    }
+
+    @Test
+    fun testMakingCapacity_estimatedIcm_tieredBands() {
+        // C1 — Table 2 band coverage (Icm = n·Icu for the fallback estimate)
+        val bands = listOf(
+            7.0 to 11.9,    // n=1.70 (Icu 6.0 is exactly on the >4.5…6 boundary -> n=1.53)
+            16.0 to 32.0,   // n=2.00
+            36.0 to 75.6,   // n=2.10
+            65.0 to 143.0   // n=2.20
+        )
+        for ((icu, expectedIcm) in bands) {
+            val circuit = CircuitEntity(id = icu.toInt() + 500, circuitName = "MDB", loadKVA = 400.0,
+                fedFrom = "Transformer", transformerId = "TX-01", length_m = 0.1)
+            val res = ShortCircuitEngine.calculate(
+                listOf(circuit), emptyMap(), mapOf(circuit.id to sizing(icu = icu, icm = 0.0)),
+                mapOf("TX-01" to tx(15.16))
+            )[circuit.id]!!
+            assertTrue(
+                "Icu=$icu kA must estimate Icm=${"%.1f kA".format(expectedIcm)} via Table 2",
+                res.note.contains("Table 2") && res.note.contains("%.1f kA".format(expectedIcm))
+            )
+        }
     }
 
     // ------------------------------------------------------------------
@@ -210,10 +239,11 @@ class Phase2RemediationTest {
 
     @Test
     fun testDeriveZeFromSource_helper() {
-        // 500 kVA / 4%: Zt = 0.04·400²/500000 = 0.0128 Ω; Isc3 ≈ 18.93 kA
-        // Ze = 1.05·400/(√3·18.93) = 0.0128 Ω (physically = Zt), NOT the 0.01 Ω fallback
+        // 500 kVA / 4%: Z1 = Zt = 0.04·400²/500000 = 0.0128 Ω; Isc3 ≈ 18.93 kA
+        // C2: Ze now the earth-loop equivalent (2·Z1+Z0)/3 with Z0/Z1 = 0.9 (Dyn11):
+        //      Ze = Z1·2.9/3 ≈ 0.0124 Ω (NOT the 0.0128 Ω positive-sequence Zt alone)
         val ze = ProtectionEngine.deriveZeFromSource(isc3Phase_kA = 18.93, un_V = 400.0)
-        assertEquals(0.0128, ze, 0.0008)
+        assertEquals(0.0124, ze, 0.0005)
         assertEquals(0.0, ProtectionEngine.deriveZeFromSource(0.0, 400.0), 1e-9)
     }
 
@@ -223,13 +253,13 @@ class Phase2RemediationTest {
             fedFrom = "Transformer", transformerId = "TX-01", length_m = 0.1)
         val sizings = mapOf(19 to sizing(inA = 630.0, r = 0.0, x = 0.0))
 
-        // With transformer data: Ze = 0.0128 Ω (not 0.01) — calculatedZs starts at derived Ze
+        // With transformer data: derived earth-loop Ze = 0.0124 Ω (not 0.01) — calculatedZs starts there
         val withTx = EngineeringCalculationCoordinator.calculateProjectAds(
             resolvedCircuits = listOf(circuit),
             sizingResults = sizings,
             transformerResults = mapOf("TX-01" to tx(18.93))
         )[19]!!
-        assertEquals(0.0128, withTx.calculatedZs, 0.0008)
+        assertEquals(0.0124, withTx.calculatedZs, 0.0005)
         assertFalse(withTx.warnings.any { it.contains("Ze assumed") })
 
         // Without transformer data: 0.01 Ω fallback, explicitly labelled
