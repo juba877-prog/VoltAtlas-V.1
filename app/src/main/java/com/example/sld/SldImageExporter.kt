@@ -5,7 +5,9 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import android.widget.Toast
 import androidx.core.content.FileProvider
@@ -29,9 +31,9 @@ object SldImageExporter {
         }
 
         val bounds = engineResult.bounds
-        val margin = 100f
-        val width = maxOf(1400, (bounds.width + margin * 2).toInt())
-        val height = maxOf(1000, (bounds.height + margin * 2).toInt())
+        val margin = 120f
+        val width = maxOf(1600, (bounds.width + margin * 2).toInt())
+        val height = maxOf(1100, (bounds.height + margin * 2).toInt())
 
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -43,36 +45,79 @@ object SldImageExporter {
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
 
         val offsetX = -bounds.left + margin
-        val offsetY = -bounds.top + margin + 40f
+        val offsetY = -bounds.top + margin + 60f
 
-        // Title Header
+        // 1. Title Header & Border
         val titlePaint = Paint().apply {
             color = if (isDarkTheme) Color.parseColor("#38BDF8") else Color.parseColor("#0284C7")
             textSize = 28f
             isFakeBoldText = true
             isAntiAlias = true
         }
-        canvas.drawText("VoltAtlas — Single Line Diagram: ${projectName.ifBlank { "Project" }}", margin, 45f, titlePaint)
+        val effProject = projectName.ifBlank { "VoltAtlas Project" }
+        canvas.drawText("VoltAtlas — Single Line Diagram: $effProject", margin, 48f, titlePaint)
 
-        // Tier Lines
+        val metaPaint = Paint().apply {
+            color = if (isDarkTheme) Color.parseColor("#8B949E") else Color.parseColor("#64748B")
+            textSize = 14f
+            isAntiAlias = true
+        }
+        canvas.drawText("IEC 60364 / BS 7671 • AutoCAD R2000 Equivalent", margin, 74f, metaPaint)
+
+        // 2. Tier Datum Lines
         val tierPaint = Paint().apply {
             color = if (isDarkTheme) Color.parseColor("#21262D") else Color.parseColor("#E2E8F0")
             strokeWidth = 2f
             style = Paint.Style.STROKE
+            pathEffect = DashPathEffect(floatArrayOf(10f, 6f), 0f)
+        }
+        val tierLabelPaint = Paint().apply {
+            color = if (isDarkTheme) Color.parseColor("#484F58") else Color.parseColor("#94A3B8")
+            textSize = 12f
+            isAntiAlias = true
         }
         engineResult.tierDatums.forEach { datum ->
             val y = datum.y + offsetY
             canvas.drawLine(margin, y, width - margin, y, tierPaint)
+            canvas.drawText(datum.label, margin + 10f, y - 8f, tierLabelPaint)
         }
 
-        // Edges / Connection Lines
-        val edgePaint = Paint().apply {
+        // 3. Edges / Wire Paths (Normal vs Emergency)
+        val normalEdgePaint = Paint().apply {
             color = if (isDarkTheme) Color.parseColor("#38BDF8") else Color.parseColor("#0284C7")
             strokeWidth = 3f
             style = Paint.Style.STROKE
             isAntiAlias = true
         }
+        val emergencyEdgePaint = Paint().apply {
+            color = if (isDarkTheme) Color.parseColor("#F59E0B") else Color.parseColor("#D97706")
+            strokeWidth = 3f
+            style = Paint.Style.STROKE
+            pathEffect = DashPathEffect(floatArrayOf(12f, 8f), 0f)
+            isAntiAlias = true
+        }
+
+        val feederDataTitlePaint = Paint().apply {
+            color = if (isDarkTheme) Color.parseColor("#F0F6FC") else Color.parseColor("#0F172A")
+            textSize = 11f
+            isFakeBoldText = true
+            isAntiAlias = true
+        }
+        val feederDataPaint = Paint().apply {
+            color = if (isDarkTheme) Color.parseColor("#38BDF8") else Color.parseColor("#0284C7")
+            textSize = 10f
+            isAntiAlias = true
+        }
+        val breakerSymbolPaint = Paint().apply {
+            color = if (isDarkTheme) Color.parseColor("#10B981") else Color.parseColor("#059669")
+            strokeWidth = 2f
+            style = Paint.Style.STROKE
+            isAntiAlias = true
+        }
+
         engineResult.edges.forEach { edge ->
+            val isEmerg = edge.isEmergency || edge.label == "EMERGENCY"
+            val paint = if (isEmerg) emergencyEdgePaint else normalEdgePaint
             val points = edge.pathPoints
             if (points.size >= 2) {
                 for (i in 0 until points.size - 1) {
@@ -80,12 +125,44 @@ object SldImageExporter {
                     val y1 = points[i].second + offsetY
                     val x2 = points[i + 1].first + offsetX
                     val y2 = points[i + 1].second + offsetY
-                    canvas.drawLine(x1, y1, x2, y2, edgePaint)
+                    canvas.drawLine(x1, y1, x2, y2, paint)
+                }
+
+                // Side-clearance feeder data block
+                val childNode = engineResult.nodes.find { it.id == edge.toId }
+                if (childNode != null && !childNode.isSource && childNode.dataBlock != null) {
+                    val firstPt = points.first()
+                    val feederX = points.last().first + offsetX
+                    val verticalDropStartY = (if (points.size >= 4) points[2].second else firstPt.second) + offsetY
+                    val breakerY = verticalDropStartY + 25f
+
+                    // Breaker Box
+                    val bSize = 14f
+                    canvas.drawRect(feederX - bSize / 2f, breakerY - bSize / 2f, feederX + bSize / 2f, breakerY + bSize / 2f, breakerSymbolPaint)
+
+                    // Side text corridor
+                    val textX = feederX + 16f
+                    var textY = verticalDropStartY + 14f
+                    val db = childNode.dataBlock
+
+                    db.deviceTypeAndRating?.takeIf { it.isNotBlank() }?.let {
+                        canvas.drawText(it, textX, textY, feederDataTitlePaint)
+                        textY += 13f
+                    }
+                    val runsText = if (db.parallelRuns > 1) "${db.parallelRuns}x " else ""
+                    db.cableDescription?.takeIf { it.isNotBlank() }?.let {
+                        canvas.drawText("$runsText$it", textX, textY, feederDataPaint)
+                        textY += 12f
+                    }
+                    val lvd = listOfNotNull(db.lengthM?.takeIf { it.isNotBlank() }?.let { "L: ${it}m" }, db.voltageDropPct?.takeIf { it.isNotBlank() }?.let { "VD: $it" }).joinToString(" • ")
+                    if (lvd.isNotBlank()) {
+                        canvas.drawText(lvd, textX, textY, feederDataPaint)
+                    }
                 }
             }
         }
 
-        // Nodes / Boards / Equipment
+        // 4. Nodes / Equipment
         val nodeBgPaint = Paint().apply {
             color = if (isDarkTheme) Color.parseColor("#161B22") else Color.parseColor("#FFFFFF")
             style = Paint.Style.FILL
@@ -96,29 +173,99 @@ object SldImageExporter {
             style = Paint.Style.STROKE
             isAntiAlias = true
         }
+        val copperBusPaint = Paint().apply {
+            color = Color.parseColor("#E08A4B")
+            style = Paint.Style.FILL
+        }
         val labelPaint = Paint().apply {
             color = if (isDarkTheme) Color.parseColor("#F0F6FC") else Color.parseColor("#0F172A")
-            textSize = 14f
+            textSize = 13f
             isFakeBoldText = true
             isAntiAlias = true
         }
         val subtextPaint = Paint().apply {
             color = if (isDarkTheme) Color.parseColor("#8B949E") else Color.parseColor("#64748B")
-            textSize = 11f
+            textSize = 10.5f
             isAntiAlias = true
         }
 
         engineResult.nodes.forEach { pNode ->
             val nx = pNode.x + offsetX
             val ny = pNode.y + offsetY
-            val rect = RectF(nx, ny, nx + pNode.width, ny + pNode.height)
+            val panelUpper = pNode.panelType.uppercase()
 
-            canvas.drawRoundRect(rect, 8f, 8f, nodeBgPaint)
-            canvas.drawRoundRect(rect, 8f, 8f, nodeBorderPaint)
+            if (pNode.isSource) {
+                if (panelUpper.contains("TRANSFORMER")) {
+                    val cx = nx + pNode.width / 2f
+                    val cy = ny
+                    val r = 24f
+                    val txPaint = Paint().apply {
+                        color = if (isDarkTheme) Color.parseColor("#38BDF8") else Color.parseColor("#0284C7")
+                        style = Paint.Style.STROKE
+                        strokeWidth = 2.5f
+                        isAntiAlias = true
+                    }
+                    canvas.drawCircle(cx, cy - r * 0.5f, r, txPaint)
+                    canvas.drawCircle(cx, cy + r * 0.5f, r, txPaint)
+                    canvas.drawText(pNode.label, cx + 40f, cy - 8f, labelPaint)
+                    canvas.drawText(pNode.ratingText, cx + 40f, cy + 12f, subtextPaint)
+                } else if (panelUpper.contains("GENERATOR")) {
+                    val cx = nx + pNode.width / 2f
+                    val cy = ny
+                    val r = 24f
+                    val genPaint = Paint().apply {
+                        color = if (isDarkTheme) Color.parseColor("#FBBF24") else Color.parseColor("#D97706")
+                        style = Paint.Style.STROKE
+                        strokeWidth = 2.5f
+                        isAntiAlias = true
+                    }
+                    canvas.drawCircle(cx, cy, r, genPaint)
+                    canvas.drawText("G", cx - 7f, cy + 6f, labelPaint)
+                    canvas.drawText(pNode.label, cx + 40f, cy - 8f, labelPaint)
+                    canvas.drawText(pNode.ratingText, cx + 40f, cy + 12f, subtextPaint)
+                } else if (panelUpper.contains("ATS")) {
+                    val cx = nx + pNode.width / 2f
+                    val cy = ny
+                    val boxW = 52f
+                    val boxH = 40f
+                    canvas.drawRoundRect(RectF(cx - boxW / 2f, cy - boxH / 2f, cx + boxW / 2f, cy + boxH / 2f), 6f, 6f, nodeBgPaint)
+                    canvas.drawRoundRect(RectF(cx - boxW / 2f, cy - boxH / 2f, cx + boxW / 2f, cy + boxH / 2f), 6f, 6f, nodeBorderPaint)
+                    canvas.drawText("ATS", cx - 14f, cy + 5f, labelPaint)
+                    canvas.drawText(pNode.label, cx + 40f, cy - 8f, labelPaint)
+                    canvas.drawText(pNode.ratingText, cx + 40f, cy + 12f, subtextPaint)
+                } else {
+                    val rect = RectF(nx, ny - 15f, nx + pNode.width, ny + 15f)
+                    canvas.drawRoundRect(rect, 6f, 6f, nodeBgPaint)
+                    canvas.drawRoundRect(rect, 6f, 6f, nodeBorderPaint)
+                    canvas.drawText(pNode.label, nx + 10f, ny + 5f, labelPaint)
+                }
+            } else {
+                val isMain = panelUpper.contains("MDB") || panelUpper.contains("MAIN")
+                val barHeight = maxOf(pNode.height, 16f)
 
-            canvas.drawText(pNode.label, nx + 10f, ny + 22f, labelPaint)
-            val sub = "${pNode.panelType} • ${pNode.dataBlock?.voltage ?: ""}"
-            canvas.drawText(sub, nx + 10f, ny + 40f, subtextPaint)
+                if (isMain) {
+                    val encPad = 28f
+                    val encRect = RectF(nx - encPad, ny - 80f, nx + pNode.width + encPad, ny + barHeight + 20f)
+                    val encPaint = Paint().apply {
+                        color = if (isDarkTheme) Color.parseColor("#21262D") else Color.parseColor("#E2E8F0")
+                        style = Paint.Style.STROKE
+                        strokeWidth = 1.5f
+                        pathEffect = DashPathEffect(floatArrayOf(6f, 4f), 0f)
+                    }
+                    canvas.drawRoundRect(encRect, 10f, 10f, encPaint)
+                    canvas.drawText(pNode.label, nx - encPad + 12f, ny - 60f, labelPaint)
+                }
+
+                // Copper Busbar
+                val busRect = RectF(nx, ny, nx + pNode.width, ny + barHeight)
+                canvas.drawRoundRect(busRect, 4f, 4f, copperBusPaint)
+
+                // Label
+                canvas.drawText(pNode.label, nx + 10f, ny - 10f, labelPaint)
+                if (pNode.ratingText.isNotBlank()) {
+                    canvas.drawText(pNode.ratingText, nx + 10f, ny + barHeight + 14f, subtextPaint)
+                }
+            }
         }
 
         return bitmap

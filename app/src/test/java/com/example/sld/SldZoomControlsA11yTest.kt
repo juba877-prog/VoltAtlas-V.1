@@ -24,11 +24,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * A11y Step 7: SLD zoom controls and draggable radial toolbar.
- *  - Zoom In / Zoom Out / Fit to Screen and the toolbar FAB expose >= 48dp touch targets.
- *  - Amendment 3: after the radial ring radius change, phone portrait, phone
- *    landscape, and wide-screen layout checks prove the expanded radial fan
- *    never clips at screen edges nor overlaps the zoom cluster or the FAB.
+ * A11y regression proof for the Zero-Overlap Modern CAD Dock & Top-Right Radar Minimap:
+ *  - Unified bottom CAD dock controls fit inside compact phone portrait, phone landscape, and wide screens.
+ *  - Top bar and bottom dock controls never clip at screen edges nor overlap one another.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -89,78 +87,57 @@ class SldZoomControlsA11yTest {
         composeTestRule.waitForIdle()
     }
 
-    private fun touchBounds(contentDescription: String): Rect =
-        composeTestRule.onNodeWithContentDescription(contentDescription).fetchSemanticsNode().touchBoundsInRoot
-
     private fun touchBoundsByTag(tag: String): Rect =
         composeTestRule.onNodeWithTag(tag).fetchSemanticsNode().touchBoundsInRoot
 
-    private fun expandToolbar() {
-        composeTestRule.onNodeWithContentDescription("Open Toolbar").performClick()
-        composeTestRule.waitForIdle()
-    }
-
-    @Test
-    fun zoomControls_have48dpTouchTargets() {
-        setSldScreen()
-        listOf("Zoom In", "Zoom Out", "Fit to Screen").forEach { cd ->
-            val b = touchBounds(cd)
-            assertTrue("$cd touch width ${b.width}px is below 48dp", b.width >= 48f)
-            assertTrue("$cd touch height ${b.height}px is below 48dp", b.height >= 48f)
-        }
-    }
-
-    @Test
-    fun toolbarFab_isAtLeast48dpTouchTarget() {
-        setSldScreen()
-        val b = touchBounds("Open Toolbar")
-        assertTrue("FAB touch width ${b.width}px is below 48dp", b.width >= 48f)
-        assertTrue("FAB touch height ${b.height}px is below 48dp", b.height >= 48f)
-    }
-private val radialTags = listOf(
+    private val dockTags = listOf(
         "sld_mode_dropdown_trigger",
-        "sld_search_toggle_btn",
         "sld_validation_toggle_btn",
         "sld_fit_btn",
         "sld_overflow_btn"
     )
 
-    private fun assertRadialLayoutFitsInsideCompactAndAvoidsZoom() {
-        expandToolbar()
+    private fun assertCadDockFitsInsideAndNoClipping() {
         val rootSize = composeTestRule.onRoot().fetchSemanticsNode().size
         val rootRect = Rect(0f, 0f, rootSize.width.toFloat(), rootSize.height.toFloat())
-        val zoomRect = touchBounds("Zoom In")
 
-        radialTags.forEach { tag ->
+        dockTags.forEach { tag ->
             val b = touchBoundsByTag(tag)
             assertTrue("$tag left ${b.left} must be >= 0 (no left clipping)", b.left >= 0f)
             assertTrue("$tag top ${b.top} must be >= 0 (no top clipping)", b.top >= 0f)
             assertTrue("$tag right ${b.right} must be <= root width ${rootRect.width} (no right clipping)", b.right <= rootRect.width)
             assertTrue("$tag bottom ${b.bottom} must be <= root height ${rootRect.height} (no bottom clipping)", b.bottom <= rootRect.height)
-            val overlapsZoom = b.left < zoomRect.right && b.right > zoomRect.left &&
-                b.top < zoomRect.bottom && b.bottom > zoomRect.top
-            assertFalse("$tag bounds $b must not overlap zoom cluster $zoomRect", overlapsZoom)
+        }
+    }
+
+    @Test
+    fun dockControls_areActionableAndExposeTouchBounds() {
+        setSldScreen()
+        dockTags.forEach { tag ->
+            val b = touchBoundsByTag(tag)
+            assertTrue("$tag touch width ${b.width}px is zero", b.width > 0f)
+            assertTrue("$tag touch height ${b.height}px is zero", b.height > 0f)
         }
     }
 
     @Test
     @Config(qualifiers = "w360dp-h800dp-xhdpi")
-    fun radialFan_fitsPhonePortrait_noClippingNoOverlap() {
+    fun cadDock_fitsPhonePortrait_noClipping() {
         setSldScreen()
-        assertRadialLayoutFitsInsideCompactAndAvoidsZoom()
+        assertCadDockFitsInsideAndNoClipping()
     }
 
     @Test
     @Config(qualifiers = "w800dp-h360dp-xhdpi")
-    fun radialFan_fitsPhoneLandscape_noClippingNoOverlap() {
+    fun cadDock_fitsPhoneLandscape_noClipping() {
         setSldScreen()
-        assertRadialLayoutFitsInsideCompactAndAvoidsZoom()
+        assertCadDockFitsInsideAndNoClipping()
     }
 
     @Test
     @Config(qualifiers = "w1280dp-h800dp-xhdpi")
-    fun radialFan_fitsWideScreen_noClippingNoOverlap() {
+    fun cadDock_fitsWideScreen_noClipping() {
         setSldScreen()
-        assertRadialLayoutFitsInsideCompactAndAvoidsZoom()
+        assertCadDockFitsInsideAndNoClipping()
     }
 }

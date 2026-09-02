@@ -1,3 +1,0 @@
-Nodes: [grid_TX-01, tx_TX-01, gen_1, ats_1]
-Edges: [grid_TX-01 -> tx_TX-01, circ_1 -> ats_1, gen_1 -> ats_1]
-Unconnected: [circ_1, circ_2, circ_3]

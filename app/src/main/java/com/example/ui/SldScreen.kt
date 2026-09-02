@@ -1,5 +1,6 @@
 package com.example.ui
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -90,6 +92,7 @@ fun SldScreen(
     }
 
     var layoutModeEnabled by remember { mutableStateOf(false) }
+    var isToolbarExpanded by remember { mutableStateOf(false) }
 
     val loadingMap = remember(sizingResults) {
         sizingResults.mapValues { (_, res) -> res.utilizationPct }
@@ -216,6 +219,8 @@ fun SldScreen(
     var showBottomSheet by remember { mutableStateOf(false) }
     var showSymbolGallery by remember { mutableStateOf(false) }
     var isSearchOpen by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var isMinimapVisible by remember { mutableStateOf(true) }
     var isValidationOpen by remember { mutableStateOf(false) }
     var displayMode by remember { mutableStateOf(DisplayMode.OVERVIEW) }
     var detailLevel by remember { mutableStateOf(SldDetailLevel.STANDARD) }
@@ -349,55 +354,153 @@ fun SldScreen(
             )
         }
 
-        // Top Analysis Mode Selector Pills: [Overview] [Cables] [Voltage Drop] [Short Circuit]
+        // 1. Slim Translucent Top Bar (Glassmorphism)
         Surface(
             modifier = Modifier
+                .fillMaxWidth()
                 .align(Alignment.TopCenter)
-                .padding(top = 10.dp, start = 12.dp, end = 12.dp)
-                .widthIn(max = 600.dp),
-            shape = RoundedCornerShape(24.dp),
-            color = if (isDarkTheme) Color(0xFF0F172A).copy(alpha = 0.94f) else Color(0xFFFFFFFF).copy(alpha = 0.96f),
+                .zIndex(20f),
+            color = if (isDarkTheme) Color(0xE6131B2E) else Color(0xF2F8FAFC),
             border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1)),
             shadowElevation = 4.dp
         ) {
-            val modeScrollState = rememberScrollState()
             Row(
                 modifier = Modifier
-                    .horizontalScroll(modeScrollState)
-                    .padding(start = 4.dp, end = 12.dp, top = 3.dp, bottom = 3.dp),
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val modes = listOf(
-                    DisplayMode.OVERVIEW to "Overview",
-                    DisplayMode.CABLES to "Cables",
-                    DisplayMode.VOLTAGE_DROP to "Voltage Drop",
-                    DisplayMode.SHORT_CIRCUIT to "Short Circuit"
-                )
-                modes.forEach { (mode, label) ->
-                    val isSelected = displayMode == mode
-                    Surface(
-                        shape = RoundedCornerShape(18.dp),
-                        color = if (isSelected) palette.enclosureBusTaps else Color.Transparent,
-                        modifier = Modifier
-                            .testTag("sld_mode_pill_${mode.name}")
-                            .clickable { displayMode = mode }
-                            .padding(horizontal = 1.dp, vertical = 1.dp)
+                Column {
+                    Text(
+                        text = activeProjectId.ifBlank { "VoltAtlas SLD" },
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = palette.textPrimary
+                    )
+                    Text(
+                        text = "SLD • ${displayMode.name} MODE",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = SleekPrimary,
+                        letterSpacing = 0.5.sp
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { isSearchOpen = !isSearchOpen },
+                        modifier = Modifier.size(36.dp).testTag("sld_search_toggle_btn")
                     ) {
-                        Text(
-                            text = label,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            color = if (isSelected) Color.White else palette.textSecondary,
-                            fontSize = 11.5.sp,
-                            softWrap = false,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                        )
+                        Icon(Icons.Default.Search, contentDescription = "Search Diagram", tint = SleekPrimary, modifier = Modifier.size(19.dp))
+                    }
+                    IconButton(
+                        onClick = { isMinimapVisible = !isMinimapVisible },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(Icons.Default.Map, contentDescription = "Toggle Radar Minimap", tint = if (isMinimapVisible) SleekPrimary else Color(0xFF94A3B8), modifier = Modifier.size(19.dp))
                     }
                 }
             }
         }
 
-        // Top Overlay: SLD Toolbar with Display Modes & IEC Symbol Gallery
+        // 2. Animated Search Bar Overlay
+        AnimatedVisibility(
+            visible = isSearchOpen,
+            enter = slideInVertically() + fadeIn(),
+            exit = slideOutVertically() + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .zIndex(30f)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = if (isDarkTheme) Color(0xFF1E293B) else Color(0xFFF1F5F9),
+                shadowElevation = 6.dp,
+                border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF334155) else Color(0xFFCBD5E1))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = null, tint = SleekPrimary)
+                    TextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Search boards, breakers, ratings...", fontSize = 13.sp) },
+                        singleLine = true,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { isSearchOpen = false; searchQuery = "" }) {
+                        Icon(Icons.Default.Close, contentDescription = "Close Search", tint = Color(0xFF94A3B8))
+                    }
+                }
+            }
+        }
+
+        // 3. Top-Right Collapsible Radar Minimap (110x75dp)
+        AnimatedVisibility(
+            visible = isMinimapVisible && engineResult.nodes.isNotEmpty(),
+            enter = fadeIn() + scaleIn(),
+            exit = fadeOut() + scaleOut(),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 58.dp, end = 14.dp)
+                .zIndex(15f)
+        ) {
+            Box(modifier = Modifier.size(110.dp, 75.dp)) {
+                com.example.sld.SldMinimap(
+                    engineResult = engineResult,
+                    viewportSize = viewportSize,
+                    panOffset = panOffset,
+                    zoomScale = zoomScale,
+                    onPanChanged = { newPan -> panOffset = newPan },
+                    onClose = { isMinimapVisible = false },
+                    manualPositions = manualPositions
+                )
+            }
+        }
+
+        // 4. Edit Mode Top Banner Indicator
+        if (layoutModeEnabled) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 64.dp)
+                    .zIndex(18f),
+                shape = RoundedCornerShape(20.dp),
+                color = SleekPrimary.copy(alpha = 0.95f),
+                shadowElevation = 6.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit Mode", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("EDIT MODE — Drag nodes to reposition", color = MaterialTheme.colorScheme.onPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(12.dp))
+                    TextButton(
+                        onClick = { layoutModeEnabled = false },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onPrimary)
+                    ) {
+                        Text("Done", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+
+        // 5. Unified Bottom CAD Action Dock
         SldToolbar(
             displayMode = displayMode,
             onDisplayModeChange = { displayMode = it },
@@ -422,6 +525,8 @@ fun SldScreen(
             },
             detailLevel = detailLevel,
             onCycleDetailLevel = { detailLevel = SldDetailLevelPolicy.next(detailLevel) },
+            isMinimapVisible = isMinimapVisible,
+            onToggleMinimap = { isMinimapVisible = !isMinimapVisible },
             isFullscreen = false,
             onToggleFullscreen = {},
             onExportImage = {
@@ -457,121 +562,10 @@ fun SldScreen(
             },
             onOpenSymbolGallery = { showSymbolGallery = true },
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 24.dp, bottom = 24.dp)
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp)
+                .zIndex(25f)
         )
-
-        // Adaptive Minimap Radar on wider viewports (tablets & landscape)
-        if (viewportSize.width >= 600f && engineResult.nodes.isNotEmpty()) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 85.dp, bottom = 20.dp)
-                    .size(130.dp, 90.dp)
-            ) {
-                com.example.sld.SldMinimap(
-                    layoutResult = com.example.sld.SldLayoutResult(
-                        layoutNodes = engineResult.nodes.associate {
-                            it.id to com.example.sld.SldLayoutNode(
-                                node = it.toSldNode(effectiveProjId),
-                                x = it.x,
-                                y = it.y,
-                                width = it.width,
-                                height = it.height,
-                                depth = 0
-                            )
-                        },
-                        layoutEdges = engineResult.edges.map {
-                            com.example.sld.SldLayoutEdge(
-                                edge = com.example.sld.SldEdge(
-                                    id = "${it.fromId}_${it.toId}",
-                                    fromNodeId = it.fromId,
-                                    toNodeId = it.toId,
-                                    type = com.example.sld.SldEdgeType.CABLE
-                                ),
-                                pathPoints = it.pathPoints
-                            )
-                        },
-                        unconnectedLayoutNodes = emptyList(),
-                        totalWidth = maxOf(10f, engineResult.bounds.width),
-                        totalHeight = maxOf(10f, engineResult.bounds.height),
-                        unconnectedBoundsY = 0f
-                    ),
-                    viewportSize = viewportSize,
-                    panOffset = panOffset,
-                    zoomScale = zoomScale,
-                    manualPositions = manualPositions
-                )
-            }
-        }
-
-        // Edit Mode Top Banner Indicator
-        if (layoutModeEnabled) {
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 70.dp),
-                shape = RoundedCornerShape(20.dp),
-                color = SleekPrimary.copy(alpha = 0.95f),
-                shadowElevation = 6.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit Mode", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("EDIT MODE — Drag nodes to reposition", color = MaterialTheme.colorScheme.onPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(12.dp))
-                    TextButton(
-                        onClick = { layoutModeEnabled = false },
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onPrimary)
-                    ) {
-                        Text("Done", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-
-        // 3. Floating Zoom Controls Cluster (Bottom-Right within safe area, 48dp touch targets)
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(16.dp),
-            contentAlignment = Alignment.BottomEnd
-        ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = palette.surface,
-                border = BorderStroke(1.dp, palette.enclosureBusTaps),
-                shadowElevation = 4.dp
-            ) {
-                Column(
-                    modifier = Modifier.padding(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    IconButton(
-                        onClick = { zoomScale = (zoomScale * 1.25f).coerceIn(0.05f, 4.0f) },
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Zoom In", tint = palette.textPrimary)
-                    }
-                    IconButton(
-                        onClick = { zoomScale = (zoomScale / 1.25f).coerceIn(0.05f, 4.0f) },
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(Icons.Default.Remove, contentDescription = "Zoom Out", tint = palette.textPrimary)
-                    }
-                    IconButton(
-                        onClick = { fitToScreen() },
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(Icons.Default.AspectRatio, contentDescription = "Fit to Screen", tint = SleekPrimary)
-                    }
-                }
-            }
-        }
 
         // 4. Node Detail Bottom Sheet (Thumb-Reachable)
         if (showBottomSheet && selectedNode != null) {

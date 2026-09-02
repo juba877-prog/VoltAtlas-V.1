@@ -5,6 +5,7 @@ import com.example.data.TransformerEntity
 import com.example.data.GeneratorEntity
 import com.example.data.AtsEntity
 import com.example.data.UpsEntity
+import com.example.data.BusTieEntity
 import com.example.engine.SizingResult
 import com.example.engine.TransformerResult
 import com.example.engine.ShortCircuitResult
@@ -37,7 +38,8 @@ object ElectricalNetworkGraphBuilder {
         atsList: List<AtsEntity>? = null,
         atsResults: Map<String, AtsResult> = emptyMap(),
         upsList: List<UpsEntity>? = null,
-        upsResults: Map<String, UpsResult> = emptyMap()
+        upsResults: Map<String, UpsResult> = emptyMap(),
+        busTies: List<BusTieEntity>? = null
     ): ElectricalNetworkGraph {
         val nodes = mutableListOf<SldNode>()
         val edges = mutableListOf<SldEdge>()
@@ -208,6 +210,59 @@ object ElectricalNetworkGraphBuilder {
                     targetTab = 3
                 )
             )
+        }
+
+        // 2.2b Generator Synchronizing / Paralleling Bus Synthesis (Roadmap Phase 2 §2.1).
+        // STRICT ID RESOLUTION: generators are grouped exclusively by their explicit
+        // syncBusId (preferred) or parallelingGroupId columns. Only groups of two or
+        // more generators warrant a synchronizing bus — a single genset runs standalone.
+        // The resulting SYNC_BUS node sits between Tier 0 (sources) and Tier 1 (boards):
+        // gen_* --GEN_SYNC_CONNECTION--> sync_<busId> --ATS_EMERGENCY_PATH--> ats_*.
+        val syncBusNodeByGeneratorNodeId = mutableMapOf<String, String>()
+        run {
+            val syncGroups = linkedMapOf<String, MutableList<GeneratorEntity>>()
+            projGenerators.forEach { gen ->
+                val groupKey = gen.syncBusId?.takeIf { it.isNotBlank() }
+                    ?: gen.parallelingGroupId?.takeIf { it.isNotBlank() }
+                    ?: return@forEach
+                syncGroups.getOrPut(groupKey) { mutableListOf() }.add(gen)
+            }
+            syncGroups.forEach { (groupKey, groupGens) ->
+                if (groupGens.size < 2) return@forEach
+                val syncNodeId = "sync_$groupKey"
+                val groupKva = groupGens.sumOf { (it.manualSizeKVA ?: 0.0) }
+                val groupKvaStr = if (groupKva > 0.0) " %.0f kVA total".format(groupKva) else ""
+                nodes.add(
+                    SldNode(
+                        id = syncNodeId,
+                        projectId = effectiveProjectId,
+                        type = SldNodeType.SYNC_BUS,
+                        displayName = "Sync Bus $groupKey",
+                        voltage = "400 V",
+                        dataBlock = SldDataBlock(
+                            ratedKva = if (groupKva > 0.0) "${groupKva.toInt()} kVA" else null,
+                            voltage = "400 V",
+                            statusText = "SYNCHRONIZING BUS (${groupGens.size} GENERATORS)$groupKvaStr"
+                        ),
+                        status = SldValidationStatus.VALID,
+                        provenance = SldProvenance.PROJECT_INPUT,
+                        targetTab = 3
+                    )
+                )
+                groupGens.forEach { groupGen ->
+                    val genNodeId = "gen_${groupGen.generatorId}"
+                    syncBusNodeByGeneratorNodeId[genNodeId] = syncNodeId
+                    edges.add(
+                        SldEdge(
+                            id = "edge_${genNodeId}_$syncNodeId",
+                            fromNodeId = genNodeId,
+                            toNodeId = syncNodeId,
+                            type = SldEdgeType.GEN_SYNC_CONNECTION,
+                            label = "SYNC"
+                        )
+                    )
+                }
+            }
         }
 
         // Multi-Instance ATS Processing
@@ -595,6 +650,90 @@ object ElectricalNetworkGraphBuilder {
                     )
                 )
             }
+        }
+
+        // 2.4a Emergency-edge re-parenting through synchronizing buses (Roadmap Phase 2 §2.1).
+        // When a generator belongs to a sync group, its ATS emergency feed is sourced
+        // from the SYNC_BUS, not directly from the genset — downstream panels behind
+        // the ATS show the true dual-feed provenance of the paralleled bus.
+        if (syncBusNodeByGeneratorNodeId.isNotEmpty()) {
+            val rewiredEdges = edges.map { edge ->
+                val syncNodeId = if (edge.type == SldEdgeType.ATS_EMERGENCY_PATH) {
+                    syncBusNodeByGeneratorNodeId[edge.fromNodeId]
+                } else null
+                if (syncNodeId != null && nodes.any { it.id == syncNodeId }) {
+                    edge.copy(fromNodeId = syncNodeId, id = "edge_${syncNodeId}_${edge.toNodeId}")
+                } else edge
+            }
+            edges.clear()
+            edges.addAll(rewiredEdges)
+        }
+
+        // 2.4b Bus-Tie Synthesis (Roadmap Phase 2 §2.1 — Main-Tie-Main).
+        // STRICT ID RESOLUTION: sourceBoardId/targetBoardId must be explicit
+        // CircuitEntity primary keys. No fedFrom string matching is consulted.
+        // Unresolvable references raise SldValidationIssue instead of silently
+        // mis-linking (replacing the legacy name-heuristic fallback chain).
+        val projBusTies = (busTies ?: emptyList()).filter {
+            it.projectId == effectiveProjectId ||
+                (it.projectId == "DEFAULT_PROJECT" && effectiveProjectId != "DEFAULT_PROJECT")
+        }
+        val circuitPrimaryKeyIds = projCircuits.map { it.id.toLong() }.toSet()
+        projBusTies.forEach { tie ->
+            val srcBoardId = tie.sourceBoardId
+            val dstBoardId = tie.targetBoardId
+            val srcResolved = srcBoardId != null && srcBoardId in circuitPrimaryKeyIds
+            val dstResolved = dstBoardId != null && dstBoardId in circuitPrimaryKeyIds
+            if (!srcResolved || !dstResolved) {
+                validationIssues.add(
+                    SldValidationIssue(
+                        affectedNodeId = "tie_${tie.busTieId}",
+                        componentName = tie.name,
+                        failedCondition = "Bus tie '${tie.busTieId}' references a board id not present in the active project (source=$srcBoardId, target=$dstBoardId)",
+                        issueCode = "BUS_TIE_UNRESOLVED_BOARD_REF",
+                        severity = SldValidationStatus.INVALID,
+                        recommendedCorrection = "Select existing switchboards on both sides of the tie in Power Systems"
+                    )
+                )
+                return@forEach
+            }
+            val tieNodeId = "tie_${tie.busTieId}"
+            val srcNodeId = "circ_$srcBoardId"
+            val dstNodeId = "circ_$dstBoardId"
+            nodes.add(
+                SldNode(
+                    id = tieNodeId,
+                    projectId = effectiveProjectId,
+                    type = SldNodeType.BUS_TIE,
+                    displayName = tie.name,
+                    voltage = "400 V",
+                    dataBlock = SldDataBlock(
+                        deviceTypeAndRating = tie.breakerRatingA?.takeIf { it > 0.0 }?.let { "%.0f A".format(it) },
+                        statusText = "BUS TIE (${tie.interlockScheme}) — ${tie.normalStatus}"
+                    ),
+                    status = SldValidationStatus.VALID,
+                    provenance = SldProvenance.PROJECT_INPUT,
+                    targetTab = 3
+                )
+            )
+            edges.add(
+                SldEdge(
+                    id = "edge_${srcNodeId}_$tieNodeId",
+                    fromNodeId = srcNodeId,
+                    toNodeId = tieNodeId,
+                    type = SldEdgeType.BUS_TIE_LINK,
+                    label = tie.busTieId
+                )
+            )
+            edges.add(
+                SldEdge(
+                    id = "edge_${tieNodeId}_$dstNodeId",
+                    fromNodeId = tieNodeId,
+                    toNodeId = dstNodeId,
+                    type = SldEdgeType.BUS_TIE_LINK,
+                    label = tie.busTieId
+                )
+            )
         }
 
         // 2.5 Multi-Instance UPS Processing

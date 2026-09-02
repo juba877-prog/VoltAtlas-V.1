@@ -151,6 +151,24 @@ object SldSymbolLibrary {
             notes = "Rendered identically to DB/SMDB; canonical practice distinguishes MCC by starter units on outgoing circuits."
         ),
         IecSymbolSpec(
+            nodeType = SldNodeType.BUS_TIE,
+            canonicalSymbol = "Circuit-breaker coupler between two busbar sections (tie breaker)",
+            iecReference = "IEC 60617-7 (circuit-breaker, general) + IEC 60617-3 busbar conventions",
+            canonicalForm = "Circuit-breaker symbol (switch contact with automatic-trip mark) bridging the gap between two busbar rails; open/closed state shown by contact position.",
+            voltAtlasImplementation = "SldSymbols.drawSymbol BUS_TIE branch (heavy rail) — positioned on the shared busbar centerline between coupled boards by RiserLayoutEngine.positionBusTiesAndSyncBuses",
+            auditStatus = SymbolAuditStatus.PARTIAL,
+            notes = "The tie node reuses the heavy-rail branch today; a dedicated breaker glyph between the rails is tracked. Interlock scheme and operating state ride in SldDataBlock.statusText."
+        ),
+        IecSymbolSpec(
+            nodeType = SldNodeType.SYNC_BUS,
+            canonicalSymbol = "Synchronising busbar (paralleling section)",
+            iecReference = "IEC 60617-3 busbar conventions",
+            canonicalForm = "Thick conductor line (same canonical form as a normal busbar); parallel/synchronising role is annotation, not symbol geometry.",
+            voltAtlasImplementation = "SldSymbols.drawSymbol SYNC_BUS branch (heavy rail) — synthesized by ElectricalNetworkGraphBuilder from shared syncBusId/parallelingGroupId",
+            auditStatus = SymbolAuditStatus.CONFORMANT_WITH_NOTES,
+            notes = "Identical heavy-rail form to BUS; the synchronising role is conveyed by GEN_SYNC_CONNECTION wires and the node label, matching IEC annotation-only practice."
+        ),
+        IecSymbolSpec(
             nodeType = SldNodeType.FINAL_CIRCUIT,
             canonicalSymbol = "Outgoing circuit to load (conductor with direction arrow)",
             iecReference = "IEC 60617-3 (conductors) / IEC 60617-6",
@@ -316,6 +334,48 @@ object SldSymbolLibrary {
             voltAtlasImplementation = "SldSymbols.drawUps",
             auditStatus = SymbolAuditStatus.CONFORMANT_WITH_NOTES,
             notes = "Same verdict as the node-type mapping: block shorthand with AC/DC terminal marks."
+        ),
+        ExtendedSymbolSpec(
+            symbolType = SldSymbols.IecSymbolType.ATS_3_TERMINAL,
+            iecReference = "IEC 60617-7 (change-over / transfer switchgear with mechanical interlock)",
+            canonicalForm = "Two fixed input terminals, movable contact arm, common output, and mechanical interlock.",
+            voltAtlasImplementation = "SldSymbols.drawAts3Terminal",
+            auditStatus = SymbolAuditStatus.CONFORMANT
+        ),
+        ExtendedSymbolSpec(
+            symbolType = SldSymbols.IecSymbolType.UPS_STATIC_ONLINE,
+            iecReference = "IEC 60617-6 (static double-conversion converter with bypass)",
+            canonicalForm = "Rectifier bridge triangle, inverter triangle, DC link, and static bypass line.",
+            voltAtlasImplementation = "SldSymbols.drawUpsStaticOnline",
+            auditStatus = SymbolAuditStatus.CONFORMANT
+        ),
+        ExtendedSymbolSpec(
+            symbolType = SldSymbols.IecSymbolType.TIE_BREAKER_NO,
+            iecReference = "IEC 60617-7 (circuit-breaker in normally-open configuration)",
+            canonicalForm = "Horizontal bus stubs with open breaker contact gap and interlock bracket.",
+            voltAtlasImplementation = "SldSymbols.drawTieBreakerNo",
+            auditStatus = SymbolAuditStatus.CONFORMANT
+        ),
+        ExtendedSymbolSpec(
+            symbolType = SldSymbols.IecSymbolType.TRANSFORMER_DYN11,
+            iecReference = "IEC 60617-4 (two-winding transformer with Dyn11 vector markings)",
+            canonicalForm = "Two overlapping circles with primary Delta (Δ) and secondary Star (Y) glyphs.",
+            voltAtlasImplementation = "SldSymbols.drawTransformerDyn11",
+            auditStatus = SymbolAuditStatus.CONFORMANT
+        ),
+        ExtendedSymbolSpec(
+            symbolType = SldSymbols.IecSymbolType.GENERATOR_GENSET,
+            iecReference = "IEC 60617-6 (rotating synchronous generator with AC wave)",
+            canonicalForm = "Stator circle with inner 'G' and AC sine wave mark.",
+            voltAtlasImplementation = "SldSymbols.drawGeneratorGenset",
+            auditStatus = SymbolAuditStatus.CONFORMANT
+        ),
+        ExtendedSymbolSpec(
+            symbolType = SldSymbols.IecSymbolType.CT_VT_EARTH,
+            iecReference = "IEC 60617-4 (instrument CT/VT) & IEC 60617-2 (earth pit)",
+            canonicalForm = "Toroidal CT ring on conductor and stepped earth pit bars.",
+            voltAtlasImplementation = "SldSymbols.drawCtVtEarth",
+            auditStatus = SymbolAuditStatus.CONFORMANT
         )
     )
 

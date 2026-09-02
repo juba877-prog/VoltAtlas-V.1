@@ -154,7 +154,14 @@ data class GeneratorEntity(
     val stepLoadPct: Double = 50.0,
     val oversizingFactor: Double = 1.0,
     val enableManualOverride: Boolean = false,
-    val manualSizeKVA: Double? = null
+    val manualSizeKVA: Double? = null,
+    // Generic multi-generator paralleling / synchronizing linkage (Roadmap Phase 1):
+    // generators sharing a parallelingGroupId or syncBusId are synthesized onto a
+    // common SYNC_BUS node by the SLD graph builder — strictly by these IDs.
+    @ColumnInfo(name = "parallelingGroupId", defaultValue = "NULL")
+    val parallelingGroupId: String? = null,
+    @ColumnInfo(name = "syncBusId", defaultValue = "NULL")
+    val syncBusId: String? = null
 )
 
 @Entity(
@@ -321,6 +328,39 @@ data class EarthingEntity(
     val siteLength_m: Double? = null,
     val siteWidth_m: Double? = null,
     val autoDesignAppliedConfigId: String? = null
+)
+
+/**
+ * Main-Tie-Main bus coupler / tie breaker between two switchboards (Roadmap Phase 1).
+ *
+ * Both board links are STRICT relational references: [sourceBoardId] and
+ * [targetBoardId] must carry the primary key `id` of the connected
+ * [CircuitEntity] rows. No name heuristics are involved in resolution.
+ */
+@Entity(
+    tableName = "bus_ties",
+    primaryKeys = ["projectId", "id"],
+    indices = [
+        Index(value = ["projectId", "sourceBoardId"], name = "index_bus_ties_source"),
+        Index(value = ["projectId", "targetBoardId"], name = "index_bus_ties_target")
+    ]
+)
+data class BusTieEntity(
+    @ColumnInfo(defaultValue = "'DEFAULT_PROJECT'")
+    val projectId: String = "DEFAULT_PROJECT",
+    val id: Long = 0,
+    @ColumnInfo(defaultValue = "'TIE-01'")
+    val busTieId: String = "TIE-01",
+    val name: String = "Bus Tie 1",
+    val sourceBoardId: Long? = null,
+    val targetBoardId: Long? = null,
+    // TWO_OUT_OF_THREE, MANUAL, KEY_INTERLOCK
+    @ColumnInfo(defaultValue = "'TWO_OUT_OF_THREE'")
+    val interlockScheme: String = "TWO_OUT_OF_THREE",
+    // OPEN or CLOSED
+    @ColumnInfo(defaultValue = "'OPEN'")
+    val normalStatus: String = "OPEN",
+    val breakerRatingA: Double? = null
 )
 
 

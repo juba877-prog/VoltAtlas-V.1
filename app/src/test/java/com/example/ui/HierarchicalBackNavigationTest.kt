@@ -1,0 +1,166 @@
+package com.example.ui
+
+import android.app.Application
+import androidx.activity.ComponentActivity
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.test.core.app.ApplicationProvider
+import com.example.data.AppDatabase
+import com.example.ui.theme.VoltAtlasTheme
+import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+
+/**
+ * Verification test suite for 3-tier hierarchical Back Navigation in VoltAtlas:
+ *  - Level 1 (App Root / ProjectPickerScreen): Back press shows "Exit VoltAtlas?" confirmation dialog.
+ *  - Level 2 (Project Root / DashboardScreen): Back press closes project and returns to ProjectPickerScreen.
+ *  - Level 3 (Sub-screens & Tools): Back press returns to project Dashboard.
+ */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [33], qualifiers = RobolectricDeviceQualifiers.Pixel6)
+class HierarchicalBackNavigationTest {
+
+    @get:Rule
+    val composeTestRule = createAndroidComposeRule<ComponentActivity>()
+
+    private lateinit var viewModel: EngineeringViewModel
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        AppDatabase.useTestExecutors = true
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        viewModel = EngineeringViewModel(context)
+        viewModel.preferences.setHasCompletedFirstLaunch(true)
+    }
+
+    @After
+    fun tearDown() {
+        AppDatabase.useTestExecutors = false
+        Dispatchers.resetMain()
+    }
+
+    private fun setMainLayout() {
+        val storeOwner = object : ViewModelStoreOwner {
+            override val viewModelStore: ViewModelStore = ViewModelStore()
+        }
+        composeTestRule.setContent {
+            CompositionLocalProvider(LocalViewModelStoreOwner provides storeOwner) {
+                VoltAtlasTheme {
+                    MainLayout(viewModel = viewModel)
+                }
+            }
+        }
+        composeTestRule.waitForIdle()
+    }
+
+    private fun openTestProject(name: String) {
+        viewModel.createAndOpenProject(name)
+        composeTestRule.waitUntil(timeoutMillis = 15_000) {
+            viewModel.activeProjectId.value != null
+        }
+        composeTestRule.waitForIdle()
+    }
+
+    @Test
+    fun projectPicker_backPress_showsExitConfirmationDialog() {
+        // Given user is on ProjectPickerScreen (no active project)
+        viewModel.closeProject()
+        composeTestRule.waitUntil(timeoutMillis = 15_000) {
+            viewModel.activeProjectId.value == null
+        }
+        setMainLayout()
+
+        // When user presses system back
+        composeTestRule.activityRule.scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeTestRule.waitForIdle()
+
+        // Then Exit Dialog is displayed
+        composeTestRule.onNodeWithText("Exit VoltAtlas?").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Are you sure you want to exit the app?").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Cancel").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Exit").assertIsDisplayed()
+
+        // And dismissing the dialog leaves the user on ProjectPickerScreen
+        composeTestRule.onNodeWithText("Cancel").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Electrical Engineering Platform").assertIsDisplayed()
+    }
+
+    @Test
+    fun dashboard_backPress_closesProjectAndNavigatesToProjectPicker() {
+        // Given an active project is open on Dashboard
+        openTestProject("Hospital Substation Alpha")
+        setMainLayout()
+
+        // When user presses back on Dashboard (Home tab)
+        composeTestRule.activityRule.scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeTestRule.waitUntil(timeoutMillis = 15_000) {
+            viewModel.activeProjectId.value == null
+        }
+        composeTestRule.waitForIdle()
+
+        // Then project is closed, returning to ProjectPickerScreen without exit dialog
+        assertNull("Active project must be null after exiting Dashboard", viewModel.activeProjectId.value)
+        composeTestRule.onNodeWithText("Electrical Engineering Platform").assertIsDisplayed()
+    }
+
+    @Test
+    fun subScreen_backPress_returnsToDashboard_thenBackPress_returnsToProjectPicker() {
+        // Given an active project is open
+        openTestProject("Data Center Power Feed")
+        setMainLayout()
+
+        // When user navigates to Circuits tab
+        composeTestRule.onNodeWithTag("bottom_dest_1").performClick()
+        composeTestRule.waitForIdle()
+
+        // When user presses back from Circuits tab
+        composeTestRule.activityRule.scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeTestRule.waitForIdle()
+
+        // Then user is returned to Dashboard (Home tab) while project remains open
+        assertNotNull("Project should still be open on Dashboard", viewModel.activeProjectId.value)
+
+        // When user presses back again from Dashboard
+        composeTestRule.activityRule.scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeTestRule.waitUntil(timeoutMillis = 15_000) {
+            viewModel.activeProjectId.value == null
+        }
+        composeTestRule.waitForIdle()
+
+        // Then project is closed and ProjectPickerScreen is displayed
+        assertNull("Active project must be null after exiting Dashboard", viewModel.activeProjectId.value)
+        composeTestRule.onNodeWithText("Electrical Engineering Platform").assertIsDisplayed()
+    }
+}

@@ -887,6 +887,46 @@ val MIGRATION_22_23 = object : Migration(22, 23) {
     }
 }
 
+/**
+ * v23 -> v24 (Roadmap Phase 1 — generic SLD topology foundation):
+ *
+ *  1. New `bus_ties` table for Main-Tie-Main bus couplers. Non-destructive:
+ *     CREATE TABLE/INDEX on a fresh table preserves all existing rows.
+ *  2. `generator_settings` gains `parallelingGroupId` + `syncBusId` (nullable,
+ *     DEFAULT NULL) via the idempotent [migrationEnsureColumn] guard.
+ *  3. `sld_node_positions` gains `portOverrides` (nullable, DEFAULT NULL).
+ *
+ * No table rebuilds, no row rewrites — zero data loss.
+ */
+val MIGRATION_23_24 = object : Migration(23, 24) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // 1. Bus ties (fail-fast: CREATE TABLE must succeed — house MIGRATION_4_5 style)
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `bus_ties` (
+                `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT',
+                `id` INTEGER NOT NULL,
+                `busTieId` TEXT NOT NULL DEFAULT 'TIE-01',
+                `name` TEXT NOT NULL,
+                `sourceBoardId` INTEGER,
+                `targetBoardId` INTEGER,
+                `interlockScheme` TEXT NOT NULL DEFAULT 'TWO_OUT_OF_THREE',
+                `normalStatus` TEXT NOT NULL DEFAULT 'OPEN',
+                `breakerRatingA` REAL,
+                PRIMARY KEY(`projectId`, `id`)
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_bus_ties_source` ON `bus_ties`(`projectId`, `sourceBoardId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_bus_ties_target` ON `bus_ties`(`projectId`, `targetBoardId`)")
+
+        // 2. Generator paralleling / synchronizing columns (idempotent guard per house style)
+        migrationEnsureColumn(db, "ALTER TABLE `generator_settings` ADD COLUMN `parallelingGroupId` TEXT DEFAULT NULL")
+        migrationEnsureColumn(db, "ALTER TABLE `generator_settings` ADD COLUMN `syncBusId` TEXT DEFAULT NULL")
+
+        // 3. Persisted manual port-override hints for SLD node anchoring
+        migrationEnsureColumn(db, "ALTER TABLE `sld_node_positions` ADD COLUMN `portOverrides` TEXT DEFAULT NULL")
+    }
+}
+
 @Dao
 interface SldNodePositionDao {
     @Query("SELECT * FROM sld_node_positions WHERE projectId = :projectId")
@@ -920,9 +960,10 @@ interface SldNodePositionDao {
         EarthingEntity::class,
         SldNodePositionEntity::class,
         ApprovalGrantEntity::class,
-        MutationExecutionReceiptEntity::class
+        MutationExecutionReceiptEntity::class,
+        BusTieEntity::class
     ],
-    version = 23,
+    version = 24,
     exportSchema = false
 )
 @TypeConverters(AiDatabaseConverters::class)
@@ -936,6 +977,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun sldNodePositionDao(): SldNodePositionDao
     abstract fun approvalGrantDao(): ApprovalGrantDao
     abstract fun mutationExecutionReceiptDao(): MutationExecutionReceiptDao
+    abstract fun busTieDao(): BusTieDao
 
     companion object {
         @Volatile
@@ -955,7 +997,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                     MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-                    MIGRATION_21_22, MIGRATION_22_23
+                    MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24
                 )
 
 

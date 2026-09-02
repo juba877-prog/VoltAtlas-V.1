@@ -1,5 +1,6 @@
 package com.example.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
@@ -40,6 +41,8 @@ fun GlobalSettingsScreen(
     preferences: GlobalPreferences,
     onBack: () -> Unit
 ) {
+    BackHandler { onBack() }
+
     val confirmDestructive by preferences.confirmDestructiveActions.collectAsState()
     val startupBehavior by preferences.startupBehavior.collectAsState()
     val themeMode by preferences.themeMode.collectAsState()

@@ -22,6 +22,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -74,17 +76,32 @@ fun SldCanvas(
 
     var activeDraggingNodeId by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
 
-    val edgePaths = androidx.compose.runtime.remember(engineResult.edges) {
+    // Phase 4 §4.2 — Dynamically resolve the active Level of Detail band from zoom
+    val effectiveDetailLevel = androidx.compose.runtime.remember(zoomScale, detailLevel) {
+        SldDetailLevelPolicy.resolveEffectiveDetailLevel(zoomScale, detailLevel)
+    }
+
+    // Phase 3 §3.2 — Hop Arc-aware routed paths. Crossings between DISTINCT,
+    // NON-CONNECTED wires get a semicircular bridge in the interrupted wire so
+    // junctions are visually distinct from crossings. Built ONCE per edge-set
+    // (memoized) so the draw loop stays allocation-free.
+    val routedEdgePaths = androidx.compose.runtime.remember(engineResult.edges) {
+        val crossings = SldHopArcEngine.detectHopCrossings(engineResult.edges)
         engineResult.edges.map { edge ->
-            val points = edge.pathPoints
-            val p = Path()
-            if (points.size >= 2) {
-                p.moveTo(points[0].first, points[0].second)
-                for (i in 1 until points.size) {
-                    p.lineTo(points[i].first, points[i].second)
-                }
-            }
-            p
+            SldHopArcEngine.buildPath(SldHopArcEngine.buildPathCommands(edge, crossings))
+        }
+    }
+
+    // Phase 4 §4.1 — Precompute edge bounding envelopes for zero-allocation viewport culling.
+    val edgeEnvelopes = androidx.compose.runtime.remember(engineResult.edges) {
+        engineResult.edges.map { SldViewportHelper.computeEdgeEnvelope(it.pathPoints) }
+    }
+
+    // Phase 3 §3.3 — every wire segment as a geometry primitive, used to keep
+    // feeder data labels at a minimum clearance envelope from adjacent wires.
+    val wireSegments = androidx.compose.runtime.remember(engineResult.edges) {
+        engineResult.edges.flatMap { edge ->
+            SldHopArcEngine.collectSegments(SldHopArcEngine.edgeKey(edge), edge.pathPoints)
         }
     }
 
@@ -206,6 +223,10 @@ fun SldCanvas(
                 }
             }
     ) {
+        val viewportSize = size
+        val visibleWorldRect = SldViewportHelper.calculateVisibleWorldRect(panOffset, zoomScale, viewportSize, safetyMargin = 64f)
+        val isMacro = effectiveDetailLevel == SldDetailLevel.MACRO
+
         withTransform({
             translate(panOffset.x, panOffset.y)
             scale(zoomScale, zoomScale, pivot = Offset.Zero)
@@ -215,6 +236,7 @@ fun SldCanvas(
             val maxCanvasX = maxOf(3000f, engineResult.bounds.right + 400f)
             engineResult.tierDatums.forEach { datum ->
                 val datumY = datum.y
+                if (datumY < visibleWorldRect.top || datumY > visibleWorldRect.bottom) return@forEach
                 drawLine(
                     color = palette.tierDatum,
                     start = Offset(minCanvasX, datumY),
@@ -222,18 +244,26 @@ fun SldCanvas(
                     strokeWidth = SldTheme.tierDatumStroke()
                 )
 
-                drawSafeText(
-                    textMeasurer = textMeasurer,
-                    text = datum.label,
-                    style = datumTextStyle,
-                    topLeft = Offset(minCanvasX + 20f, datumY - 18f)
-                )
+                if (!isMacro) {
+                    drawSafeText(
+                        textMeasurer = textMeasurer,
+                        text = datum.label,
+                        style = datumTextStyle,
+                        topLeft = Offset(minCanvasX + 20f, datumY - 18f)
+                    )
+                }
             }
 
             // 1. Draw Edges and Cable Data (Mode-Specific)
             engineResult.edges.forEachIndexed { index, edge ->
+                val isConnectedToSelected = edge.fromId == selectedNodeId || edge.toId == selectedNodeId
+                val envelope = edgeEnvelopes.getOrNull(index) ?: Rect.Zero
+                if (!isConnectedToSelected && !SldViewportHelper.isEdgeVisible(envelope, visibleWorldRect)) {
+                    return@forEachIndexed
+                }
+
                 val points = edge.pathPoints
-                val edgePath = edgePaths.getOrNull(index)
+                val edgePath = routedEdgePaths.getOrNull(index)
                 if (points.size >= 2 && edgePath != null) {
                     val childNode = engineResult.nodes.find { it.id == edge.toId }
                     val isAtsChild = childNode?.panelType?.uppercase()?.contains("ATS") == true
@@ -294,7 +324,7 @@ fun SldCanvas(
                             close()
                         }
                         drawPath(path = warnPath, color = Color(0xFFF59E0B), style = androidx.compose.ui.graphics.drawscope.Fill)
-                        if (edge.label.isNotBlank() && zoomScale > 0.35f) {
+                        if (edge.label.isNotBlank() && !isMacro) {
                             drawSafeText(
                                 textMeasurer = textMeasurer,
                                 text = edge.label,
@@ -315,7 +345,7 @@ fun SldCanvas(
                     val verticalDropEndY = lastPt.second
                     val arrowY = verticalDropStartY + (verticalDropEndY - verticalDropStartY) * 0.85f
 
-                    if (!isAtsEdge && verticalDropEndY - verticalDropStartY > 40f && zoomScale > 0.35f) {
+                    if (!isAtsEdge && verticalDropEndY - verticalDropStartY > 40f && !isMacro) {
                         val arrowSize = 6f
                         val arrowPath = Path().apply {
                             moveTo(feederX - arrowSize, arrowY - arrowSize)
@@ -330,7 +360,7 @@ fun SldCanvas(
                     }
 
                     if (isAtsEdge) {
-                        if (edge.label.isNotBlank() && zoomScale > 0.35f) {
+                        if (edge.label.isNotBlank() && !isMacro) {
                             val channelY = if (points.size >= 4) points[1].second else (points.firstOrNull()?.second ?: 0f)
                             val channelMidX = if (points.size >= 4) (points[1].first + points[2].first) / 2f else (points.firstOrNull()?.first ?: 0f)
                             drawSafeText(
@@ -340,7 +370,7 @@ fun SldCanvas(
                                 topLeft = Offset(channelMidX - 24f, channelY - 16f)
                             )
                         }
-                    } else if (childNode != null && !childNode.isSource && childNode.dataBlock != null && zoomScale > 0.35f) {
+                    } else if (childNode != null && !childNode.isSource && childNode.dataBlock != null && !isMacro) {
                         val breakerY = verticalDropStartY + 25f
 
                         val breakerText = childNode.dataBlock.deviceTypeAndRating.orEmpty()
@@ -361,7 +391,7 @@ fun SldCanvas(
                         }
 
                         // B. Accumulate Structured Feeder Callout Badges (filtered by §3.2 detail level)
-                        val calloutPolicy = SldDetailLevelPolicy.feederCallout(detailLevel)
+                        val calloutPolicy = SldDetailLevelPolicy.feederCallout(effectiveDetailLevel)
                         val linesToDraw = mutableListOf<Pair<String, TextStyle>>()
 
                         // Line 1: Protection Device & Rating (e.g. 400A MCCB)
@@ -427,7 +457,8 @@ fun SldCanvas(
                             }
                         }
 
-                        // Render lines with dynamic measured Y advancement for zero label collision
+                        // Render lines with dynamic measured Y advancement for zero label collision.
+                        // Phase 3 §3.3 — each label keeps an 8f clearance envelope from adjacent wires.
                         var currentY = verticalDropStartY + 14f
                         linesToDraw.forEach { (text, style) ->
                             val measuredH = textMeasurer.measure(text, style).size.height.toFloat()
@@ -435,7 +466,8 @@ fun SldCanvas(
                                 textMeasurer = textMeasurer,
                                 text = text,
                                 style = style,
-                                topLeft = Offset(feederX + 14f, currentY)
+                                topLeft = Offset(feederX + 14f, currentY),
+                                clearanceSegments = wireSegments
                             )
                             currentY += measuredH + 4f
                         }
@@ -446,6 +478,11 @@ fun SldCanvas(
             // 2. Draw Nodes (Switchboard Enclosures, Busbars, Sources, and Loads)
             engineResult.nodes.forEach { node ->
                 val isSelected = node.id == selectedNodeId
+                val nodeBounds = Rect(node.x - 40f, node.y - 120f, node.x + node.width + 40f, node.y + maxOf(node.height, 40f) + 40f)
+                if (!isSelected && !SldViewportHelper.isNodeVisible(nodeBounds, visibleWorldRect)) {
+                    return@forEach
+                }
+
                 val statusColor = when (displayMode) {
                     DisplayMode.VALIDATION -> when (node.status) {
                         SldValidationStatus.INVALID, SldValidationStatus.DATA_REQUIRED -> palette.invalidStatus
@@ -473,19 +510,21 @@ fun SldCanvas(
                             label = node.label
                         )
 
-                        val labelX = cx - 40f
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = node.label,
-                            style = TextStyle(color = palette.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold),
-                            topLeft = Offset(labelX, cy + 28f)
-                        )
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = node.ratingText,
-                            style = TextStyle(color = palette.textSecondary, fontSize = 10.sp),
-                            topLeft = Offset(labelX, cy + 44f)
-                        )
+                        if (!isMacro) {
+                            val labelX = cx - 40f
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = node.label,
+                                style = TextStyle(color = palette.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                                topLeft = Offset(labelX, cy + 28f)
+                            )
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = node.ratingText,
+                                style = TextStyle(color = palette.textSecondary, fontSize = 10.sp),
+                                topLeft = Offset(labelX, cy + 44f)
+                            )
+                        }
                     } else if (panelUpper.contains("TRANSFORMER")) {
                         val cx = node.x + node.width / 2f
                         val cy = node.y
@@ -494,22 +533,24 @@ fun SldCanvas(
                             center = Offset(cx, cy),
                             sizePx = 48f,
                             palette = palette,
-                            ratingText = node.ratingText
+                            ratingText = if (isMacro) "" else node.ratingText
                         )
 
-                        val labelX = cx + 45f
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = node.label,
-                            style = TextStyle(color = palette.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold),
-                            topLeft = Offset(labelX, cy - 20f)
-                        )
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = node.ratingText,
-                            style = TextStyle(color = palette.textSecondary, fontSize = 11.sp),
-                            topLeft = Offset(labelX, cy + 6f)
-                        )
+                        if (!isMacro) {
+                            val labelX = cx + 45f
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = node.label,
+                                style = TextStyle(color = palette.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                                topLeft = Offset(labelX, cy - 20f)
+                            )
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = node.ratingText,
+                                style = TextStyle(color = palette.textSecondary, fontSize = 11.sp),
+                                topLeft = Offset(labelX, cy + 6f)
+                            )
+                        }
                     } else if (panelUpper.contains("GENERATOR")) {
                         val cx = node.x + node.width / 2f
                         val cy = node.y
@@ -518,43 +559,49 @@ fun SldCanvas(
                             center = Offset(cx, cy),
                             sizePx = 48f,
                             palette = palette,
-                            ratingText = node.ratingText
+                            ratingText = if (isMacro) "" else node.ratingText
                         )
 
-                        val labelX = cx - 50f
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = node.label,
-                            style = TextStyle(color = palette.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold),
-                            topLeft = Offset(labelX, cy + 28f)
-                        )
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = node.ratingText,
-                            style = TextStyle(color = palette.textSecondary, fontSize = 10.sp),
-                            topLeft = Offset(labelX, cy + 44f)
-                        )
+                        if (!isMacro) {
+                            val labelX = cx - 50f
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = node.label,
+                                style = TextStyle(color = palette.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                                topLeft = Offset(labelX, cy + 28f)
+                            )
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = node.ratingText,
+                                style = TextStyle(color = palette.textSecondary, fontSize = 10.sp),
+                                topLeft = Offset(labelX, cy + 44f)
+                            )
+                        }
                     } else if (panelUpper.contains("ATS")) {
-                        val geometry = SldSymbols.atsSymbolGeometry(node.x, node.y, node.width)
+                        // Phase 3 §3.1 — anchor-first geometry; falls back to the
+                        // value math when the node carries no resolved ports.
+                        val geometry = SldSymbols.atsSymbolGeometry(node)
                         SldSymbols.drawTransferSwitch(
                             drawScope = this,
                             geometry = geometry,
                             palette = palette
                         )
 
-                        val labelX = node.x + node.width + 14f
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = node.label,
-                            style = TextStyle(color = palette.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold),
-                            topLeft = Offset(labelX, node.y - 20f)
-                        )
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = node.ratingText,
-                            style = TextStyle(color = palette.textSecondary, fontSize = 11.sp),
-                            topLeft = Offset(labelX, node.y + 6f)
-                        )
+                        if (!isMacro) {
+                            val labelX = node.x + node.width + 14f
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = node.label,
+                                style = TextStyle(color = palette.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                                topLeft = Offset(labelX, node.y - 20f)
+                            )
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = node.ratingText,
+                                style = TextStyle(color = palette.textSecondary, fontSize = 11.sp),
+                                topLeft = Offset(labelX, node.y + 6f)
+                            )
+                        }
                     } else if (panelUpper.contains("UPS")) {
                         val cx = node.x + node.width / 2f
                         val cy = node.y
@@ -565,19 +612,21 @@ fun SldCanvas(
                             palette = palette
                         )
 
-                        val labelX = cx + 36f
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = node.label,
-                            style = TextStyle(color = palette.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold),
-                            topLeft = Offset(labelX, cy - 20f)
-                        )
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = node.ratingText,
-                            style = TextStyle(color = palette.textSecondary, fontSize = 11.sp),
-                            topLeft = Offset(labelX, cy + 6f)
-                        )
+                        if (!isMacro) {
+                            val labelX = cx + 36f
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = node.label,
+                                style = TextStyle(color = palette.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                                topLeft = Offset(labelX, cy - 20f)
+                            )
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = node.ratingText,
+                                style = TextStyle(color = palette.textSecondary, fontSize = 11.sp),
+                                topLeft = Offset(labelX, cy + 6f)
+                            )
+                        }
                     } else {
                         drawRect(
                             color = statusColor,
@@ -585,12 +634,14 @@ fun SldCanvas(
                             size = Size(node.width, 30f),
                             style = Stroke(width = if (displayMode == DisplayMode.VALIDATION) 3.5f else 2f)
                         )
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = node.label,
-                            style = TextStyle(color = palette.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold),
-                            topLeft = Offset(node.x + 8f, node.y - 8f)
-                        )
+                        if (!isMacro) {
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = node.label,
+                                style = TextStyle(color = palette.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                                topLeft = Offset(node.x + 8f, node.y - 8f)
+                            )
+                        }
                     }
                 } else {
                     val panelUpper = node.panelType.uppercase()
@@ -627,12 +678,14 @@ fun SldCanvas(
                         )
 
                         // Enclosure Header Tag (Top Left inside enclosure)
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = node.label,
-                            style = TextStyle(color = palette.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold),
-                            topLeft = Offset(encLeft + 14f, encTop + 10f)
-                        )
+                        if (!isMacro) {
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = node.label,
+                                style = TextStyle(color = palette.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                                topLeft = Offset(encLeft + 14f, encTop + 10f)
+                            )
+                        }
 
                         // 2. Incoming Feeder with Disconnector & DMM Meter
                         val midX = node.x + node.width / 2f
@@ -656,26 +709,28 @@ fun SldCanvas(
                         )
 
                         // Digital Multi Meter (DMM) beside incomer
-                        val dmmCenterX = midX + 65f
-                        val dmmCenterY = encTop + 50f
-                        SldSymbols.drawDmm(
-                            drawScope = this,
-                            center = Offset(dmmCenterX, dmmCenterY),
-                            sizePx = 36f,
-                            palette = palette
-                        )
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = "DMM",
-                            style = TextStyle(color = palette.textSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold),
-                            topLeft = Offset(dmmCenterX + 24f, dmmCenterY - 18f)
-                        )
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = "400 V • 3Ph",
-                            style = TextStyle(color = if (palette.isDark) Color(0xFF64748B) else Color(0xFF475569), fontSize = 8.5.sp),
-                            topLeft = Offset(dmmCenterX + 24f, dmmCenterY - 4f)
-                        )
+                        if (!isMacro) {
+                            val dmmCenterX = midX + 65f
+                            val dmmCenterY = encTop + 50f
+                            SldSymbols.drawDmm(
+                                drawScope = this,
+                                center = Offset(dmmCenterX, dmmCenterY),
+                                sizePx = 36f,
+                                palette = palette
+                            )
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = "DMM",
+                                style = TextStyle(color = palette.textSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold),
+                                topLeft = Offset(dmmCenterX + 24f, dmmCenterY - 18f)
+                            )
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = "400 V • 3Ph",
+                                style = TextStyle(color = if (palette.isDark) Color(0xFF64748B) else Color(0xFF475569), fontSize = 8.5.sp),
+                                topLeft = Offset(dmmCenterX + 24f, dmmCenterY - 4f)
+                            )
+                        }
 
                         // 3. Heavy Glowing Copper Distribution Busbar
                         val copperColor = Color(0xFFE08A4B)
@@ -698,15 +753,17 @@ fun SldCanvas(
                         )
 
                         // Centered Busbar Type Tag
-                        val busTag = "MDB"
-                        val tagLayout = textMeasurer.measure(
-                            text = AnnotatedString(busTag),
-                            style = TextStyle(color = Color(0xFF0F172A), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
-                        )
-                        drawText(
-                            textLayoutResult = tagLayout,
-                            topLeft = Offset(midX - tagLayout.size.width / 2f, busbarY + (busbarH - tagLayout.size.height) / 2f)
-                        )
+                        if (!isMacro) {
+                            val busTag = "MDB"
+                            val tagLayout = textMeasurer.measure(
+                                text = AnnotatedString(busTag),
+                                style = TextStyle(color = Color(0xFF0F172A), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                            )
+                            drawText(
+                                textLayoutResult = tagLayout,
+                                topLeft = Offset(midX - tagLayout.size.width / 2f, busbarY + (busbarH - tagLayout.size.height) / 2f)
+                            )
+                        }
                     } else if (isMotor) {
                         // Motor Load Symbol (Circle M with downward load arrow)
                         val cx = node.x + node.width / 2f
@@ -716,14 +773,16 @@ fun SldCanvas(
                             center = Offset(cx, cy),
                             sizePx = 36f,
                             palette = palette,
-                            ratingText = node.label
+                            ratingText = if (isMacro) "" else node.label
                         )
-                        drawSafeText(
-                            textMeasurer = textMeasurer,
-                            text = node.label,
-                            style = TextStyle(color = palette.textPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                            topLeft = Offset(cx - 30f, cy + 34f)
-                        )
+                        if (!isMacro) {
+                            drawSafeText(
+                                textMeasurer = textMeasurer,
+                                text = node.label,
+                                style = TextStyle(color = palette.textPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                                topLeft = Offset(cx - 30f, cy + 34f)
+                            )
+                        }
                     } else {
                         // Sub-distribution Panel (SMDB / DB) Outlined Engineering Box
                         val outlineColor = if (isSelected) palette.enclosureBusTaps else if (palette.isDark) Color(0xFF334155) else Color(0xFFCBD5E1)
@@ -745,21 +804,25 @@ fun SldCanvas(
                             style = Stroke(width = if (isSelected || displayMode == DisplayMode.VALIDATION) 2.5f else 1.5f)
                         )
 
-                        // Centered Label inside Panel Box
-                        val nameLayout = textMeasurer.measure(
-                            text = AnnotatedString(node.label),
-                            style = TextStyle(
-                                color = palette.textPrimary,
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold
+                        // Centered Label inside Panel Box (Phase 3 §3.3.1 auto-fit:
+                        // shrink font down to 8sp, then ellipsize, when too wide for the box).
+                        if (!isMacro) {
+                            val fittedLabel = textMeasurer.fitText(
+                                text = node.label,
+                                style = TextStyle(
+                                    color = palette.textPrimary,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                maxWidth = boxW
                             )
-                        )
-                        val labelX = node.x + boxW / 2f - nameLayout.size.width / 2f
-                        val labelY = boxTop + (boxH - nameLayout.size.height) / 2f
-                        drawText(
-                            textLayoutResult = nameLayout,
-                            topLeft = Offset(labelX, labelY)
-                        )
+                            val labelX = node.x + boxW / 2f - fittedLabel.size.width / 2f
+                            val labelY = boxTop + (boxH - fittedLabel.size.height) / 2f
+                            drawText(
+                                textLayoutResult = fittedLabel,
+                                topLeft = Offset(labelX, labelY)
+                            )
+                        }
                     }
                 }
 
@@ -790,12 +853,85 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSafeText(
     textMeasurer: androidx.compose.ui.text.TextMeasurer,
     text: String,
     style: TextStyle,
-    topLeft: Offset
+    topLeft: Offset,
+    maxWidth: Float? = null,
+    minFontSize: TextUnit = 8.sp,
+    horizontalPadding: Float = 12f,
+    clearanceSegments: List<SldHopArcEngine.OrthogonalSegment>? = null,
+    clearance: Float = 8f
 ) {
     if (text.isBlank()) return
-    val measured = textMeasurer.measure(text, style)
+    val measured = if (maxWidth != null) {
+        textMeasurer.fitText(text, style, maxWidth, minFontSize, horizontalPadding)
+    } else {
+        textMeasurer.measure(text, style)
+    }
+    var pos = topLeft
+    if (clearanceSegments != null && clearanceSegments.isNotEmpty()) {
+        pos = nudgeForWireClearance(textSize = measured.size, topLeft = pos, segments = clearanceSegments, clearance = clearance)
+    }
     drawText(
         textLayoutResult = measured,
-        topLeft = topLeft
+        topLeft = pos
     )
+}
+
+/**
+ * Phase 3 §3.3.1 — measure [text] and, when it exceeds [maxWidth] minus the
+ * horizontal padding, scale the font down in 1sp steps to [minFontSize]; if it
+ * still does not fit, ellipsize to a single line. Returns the fitted layout.
+ */
+private fun androidx.compose.ui.text.TextMeasurer.fitText(
+    text: String,
+    style: TextStyle,
+    maxWidth: Float,
+    minFontSize: TextUnit = 8.sp,
+    horizontalPadding: Float = 12f
+): androidx.compose.ui.text.TextLayoutResult {
+    if (maxWidth <= 0f) return measure(text, style)
+    val avail = (maxWidth - horizontalPadding * 2f).coerceAtLeast(4f)
+    var fontSize = style.fontSize
+    var result = measure(text, style)
+    while (result.size.width > avail && fontSize.value > minFontSize.value) {
+        fontSize = (fontSize.value - 1f).sp
+        result = measure(text, style.copy(fontSize = fontSize))
+    }
+    if (result.size.width > avail) {
+        result = measure(
+            text,
+            style.copy(fontSize = fontSize),
+            overflow = TextOverflow.Ellipsis,
+            maxLines = 1
+        )
+    }
+    return result
+}
+
+/**
+ * Phase 3 §3.3.2 — deterministically nudge [topLeft] away from any wire segment
+ * whose clearance envelope intersects the label rect. Bounded iterations keep
+ * the pass O(segments) per label with zero per-frame allocation in the hot path.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.nudgeForWireClearance(
+    textSize: androidx.compose.ui.unit.IntSize,
+    topLeft: Offset,
+    segments: List<SldHopArcEngine.OrthogonalSegment>,
+    clearance: Float
+): Offset {
+    var pos = topLeft
+    repeat(3) {
+        val rect = Rect(pos.x, pos.y, pos.x + textSize.width.toFloat(), pos.y + textSize.height.toFloat())
+        val collides = segments.any { seg ->
+            val segRect = Rect(
+                minOf(seg.start.x, seg.end.x) - clearance,
+                minOf(seg.start.y, seg.end.y) - clearance,
+                maxOf(seg.start.x, seg.end.x) + clearance,
+                maxOf(seg.start.y, seg.end.y) + clearance
+            )
+            rect.overlaps(segRect)
+        }
+        if (!collides) return pos
+        pos = Offset(pos.x + clearance + 4f, pos.y + clearance + 2f)
+    }
+    return pos
 }

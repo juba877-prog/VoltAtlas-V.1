@@ -55,7 +55,13 @@ fun SldSymbolGallery(
             SymbolGalleryItem("Digital kWh Meter", "IEC 60617-8", "Energy Meter RS485", SldSymbols.IecSymbolType.DIGITAL_KWH_METER),
             SymbolGalleryItem("Final Load Arrow", "IEC 60617-2", "Feeder Load Drop", SldSymbols.IecSymbolType.LOAD_ARROW),
             SymbolGalleryItem("Motor Load", "IEC 60617-6", "3Ph Induction M", SldSymbols.IecSymbolType.MOTOR_LOAD),
-            SymbolGalleryItem("Earth / Ground", "IEC 60617-2", "Protective Earth", SldSymbols.IecSymbolType.EARTHING)
+            SymbolGalleryItem("Earth / Ground", "IEC 60617-2", "Protective Earth", SldSymbols.IecSymbolType.EARTHING),
+            SymbolGalleryItem("ATS 3-Terminal", "IEC 60617-7", "ATS 3-Port Interlock", SldSymbols.IecSymbolType.ATS_3_TERMINAL),
+            SymbolGalleryItem("Static Online UPS", "IEC 60617-6", "Double Conversion", SldSymbols.IecSymbolType.UPS_STATIC_ONLINE),
+            SymbolGalleryItem("Tie Breaker N.O.", "IEC 60617-7", "Bus Coupler N.O.", SldSymbols.IecSymbolType.TIE_BREAKER_NO),
+            SymbolGalleryItem("Transformer Dyn11", "IEC 60617-4", "Dyn11 22/0.4kV", SldSymbols.IecSymbolType.TRANSFORMER_DYN11),
+            SymbolGalleryItem("Generator Genset", "IEC 60617-6", "Synchronous AC", SldSymbols.IecSymbolType.GENERATOR_GENSET),
+            SymbolGalleryItem("CT / VT & Earth", "IEC 60617-4", "Toroid CT & Ground", SldSymbols.IecSymbolType.CT_VT_EARTH)
         )
     }
 
@@ -98,21 +104,20 @@ fun SldSymbolGallery(
             columns = GridCells.Adaptive(150.dp),
             modifier = Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(bottom = 24.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(symbols) { item ->
                 Card(
-                    modifier = Modifier.height(170.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = palette.surface),
-                    border = BorderStroke(1.dp, palette.tierDatum)
+                    shape = RoundedCornerShape(8.dp)
                 ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(8.dp),
+                            .fillMaxWidth()
+                            .padding(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.SpaceBetween
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
                             text = item.title,
@@ -147,6 +152,12 @@ fun SldSymbolGallery(
                                 SldSymbols.IecSymbolType.LOAD_ARROW -> SldSymbols.drawLoadArrow(this, center, sizePx, palette)
                                 SldSymbols.IecSymbolType.MOTOR_LOAD -> SldSymbols.drawMotorLoad(this, center, sizePx, palette, item.spec)
                                 SldSymbols.IecSymbolType.EARTHING -> SldSymbols.drawEarthing(this, center, sizePx, palette)
+                                SldSymbols.IecSymbolType.ATS_3_TERMINAL -> SldSymbols.drawAts3Terminal(this, center, sizePx, palette)
+                                SldSymbols.IecSymbolType.UPS_STATIC_ONLINE -> SldSymbols.drawUpsStaticOnline(this, center, sizePx, palette)
+                                SldSymbols.IecSymbolType.TIE_BREAKER_NO -> SldSymbols.drawTieBreakerNo(this, center, sizePx, palette)
+                                SldSymbols.IecSymbolType.TRANSFORMER_DYN11 -> SldSymbols.drawTransformerDyn11(this, center, sizePx, palette)
+                                SldSymbols.IecSymbolType.GENERATOR_GENSET -> SldSymbols.drawGeneratorGenset(this, center, sizePx, palette)
+                                SldSymbols.IecSymbolType.CT_VT_EARTH -> SldSymbols.drawCtVtEarth(this, center, sizePx, palette)
                             }
                         }
 

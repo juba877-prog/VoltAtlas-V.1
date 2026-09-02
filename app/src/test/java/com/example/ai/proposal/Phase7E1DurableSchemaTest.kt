@@ -205,7 +205,7 @@ class Phase7E1DurableSchemaTest {
     @Test
     fun noDestructiveMigrationFallback_isConfigured() {
         // AppDatabase specifies explicit migration chain without fallbackToDestructiveMigration
-        assertEquals(23, AppDatabase.getDatabase(context).openHelper.readableDatabase.version)
+        assertEquals(24, AppDatabase.getDatabase(context).openHelper.readableDatabase.version)
     }
 
     // =========================================================================
@@ -1130,6 +1130,6 @@ class Phase7E1DurableSchemaTest {
 
     @Test
     fun no7DOrFormulaBehaviorChanged() {
-        assertEquals(23, database.openHelper.readableDatabase.version)
+        assertEquals(24, database.openHelper.readableDatabase.version)
     }
 }

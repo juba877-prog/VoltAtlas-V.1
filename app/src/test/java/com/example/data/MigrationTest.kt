@@ -262,14 +262,24 @@ class MigrationTest {
         val db = AppDatabase.getDatabase(app)
         val viewModel = EngineeringViewModel(app)
 
-        // Wait for ViewModel startup initialization to be 100% Ready (so it doesn't race and overwrite projectId with null)
+        // Wait for ViewModel startup initialization to be 100% Ready (so it doesn't race and overwrite projectId with null).
+        // Poll until any TERMINAL startup state is reached — the startup flow also
+        // passes through LoadingProjects / RestoringApplicationState while it awaits
+        // the catalog load (Catalog.loadAll on Dispatchers.IO), which can outlast a
+        // wait that only watches OpeningDatabase/ValidatingCableCatalog under suite
+        // load.
+        val isTerminalStartupState = { state: StartupState ->
+            state is StartupState.Ready || state is StartupState.NoProjects ||
+                state is StartupState.ReadyWithWarnings || state is StartupState.DatabaseError ||
+                state is StartupState.CatalogError || state is StartupState.FatalError
+        }
         var elapsed = 0
-        while ((viewModel.startupState.value is StartupState.OpeningDatabase || viewModel.startupState.value is StartupState.ValidatingCableCatalog) && elapsed < 50) {
+        while (!isTerminalStartupState(viewModel.startupState.value) && elapsed < 50) {
             println("CURRENT_STARTUP_STATE: ${viewModel.startupState.value}")
             delayAndIdle(100)
             elapsed++
         }
-        assertTrue("Startup state should finish initialization", viewModel.startupState.value is StartupState.Ready || viewModel.startupState.value is StartupState.NoProjects)
+        assertTrue("Startup state should finish initialization", isTerminalStartupState(viewModel.startupState.value))
 
 
         // Scenario H: Null activeProjectId causes no writes and reports visible error

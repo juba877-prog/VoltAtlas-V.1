@@ -2,6 +2,7 @@ package com.example.ui
 
 import com.example.ui.theme.*
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
@@ -84,6 +86,7 @@ fun ProjectPickerScreen(
     var showImportDialog by rememberSaveable { mutableStateOf(false) }
     var importJsonText by rememberSaveable { mutableStateOf("") }
     var importErrorMsg by rememberSaveable { mutableStateOf<String?>(null) }
+    var showExitAppDialog by rememberSaveable { mutableStateOf(false) }
 
     var pendingExportProject by remember { mutableStateOf<ProjectEntity?>(null) }
 
@@ -153,6 +156,18 @@ fun ProjectPickerScreen(
     var showDeleteConfirm by rememberSaveable { mutableStateOf<ProjectEntity?>(null) }
     
     var searchQuery by rememberSaveable { mutableStateOf("") }
+
+    BackHandler(enabled = true) {
+        when {
+            showCreateDialog -> showCreateDialog = false
+            showRenameDialog != null -> showRenameDialog = null
+            showDeleteConfirm != null -> showDeleteConfirm = null
+            showImportDialog -> showImportDialog = false
+            showExitAppDialog -> showExitAppDialog = false
+            searchQuery.isNotBlank() -> searchQuery = ""
+            else -> showExitAppDialog = true
+        }
+    }
 
     val filteredProjects = remember(projects, searchQuery) {
         if (searchQuery.isBlank()) {
@@ -720,6 +735,100 @@ fun ProjectPickerScreen(
                 TextButton(onClick = { showImportDialog = false }) { Text("Cancel", color = SlateTextSecondary) }
             }
         )
+    }
+
+    // ── Exit Confirmation Dialog (dark-themed, matches app identity) ──
+    if (showExitAppDialog) {
+        val activity = LocalContext.current as? android.app.Activity
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showExitAppDialog = false }
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(VoltAtlasShapes.card),
+                colors = CardDefaults.cardColors(containerColor = ThemeSurface),
+                border = BorderStroke(1.dp, ThemeBorderSubtle)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Icon
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                SleekPrimary.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(12.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PowerSettingsNew,
+                            contentDescription = "Exit",
+                            tint = SleekPrimary,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Title
+                    Text(
+                        text = "Exit VoltAtlas?",
+                        color = SleekPrimary,
+                        style = SectionTitle,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Message
+                    Text(
+                        text = "Are you sure you want to exit the app?",
+                        color = SlateTextSecondary,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Buttons row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Cancel — subtle outline button
+                        OutlinedButton(
+                            onClick = { showExitAppDialog = false },
+                            modifier = Modifier.weight(1f).height(44.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, BorderColor)
+                        ) {
+                            Text("Cancel", color = ThemeTextColor, fontSize = 14.sp)
+                        }
+
+                        // Exit — accent/danger button
+                        Button(
+                            onClick = {
+                                showExitAppDialog = false
+                                activity?.finishAffinity()
+                            },
+                            modifier = Modifier.weight(1f).height(44.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = SleekFail
+                            )
+                        ) {
+                            Text("Exit", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

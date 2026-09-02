@@ -1,5 +1,7 @@
 package com.example.sld
 
+import androidx.compose.runtime.Immutable
+import androidx.compose.ui.geometry.Offset
 import com.example.engine.SizingResult
 import com.example.engine.TransformerResult
 import com.example.engine.ShortCircuitResult
@@ -13,6 +15,8 @@ enum class SldNodeType {
     UPS,
     CAPACITOR_BANK,
     BUS,
+    BUS_TIE,
+    SYNC_BUS,
     MDB,
     SMDB,
     DB,
@@ -32,6 +36,8 @@ enum class SldEdgeType {
     ATS_OUTPUT,
     UPS_INPUT,
     UPS_OUTPUT,
+    BUS_TIE_LINK,
+    GEN_SYNC_CONNECTION,
     UNRESOLVED_PATH
 }
 
@@ -42,6 +48,35 @@ enum class SldValidationStatus {
     DISCONNECTED,
     DATA_REQUIRED
 }
+
+/** Side of a node box a schematic terminal lives on (Phase 3 §3.1). */
+enum class PortSide { TOP, BOTTOM, LEFT, RIGHT }
+
+/**
+ * First-class schematic port anchor (Phase 3 §3.1).
+ *
+ * [RiserLayoutEngine] resolves one [PortAnchor] per topological terminal on a
+ * positioned node — ATS NORMAL/EMERGENCY inputs, source bottom outputs, panel
+ * busbar tap ports, and lateral Left/Right coupler ports — during the layout
+ * pass. Canvas rendering, wire routing and DXF export consume these anchors
+ * instead of re-deriving port coordinates with duplicated hardcoded offsets, so
+ * the symbol geometry, the routed wire termini and the hit-testing model can
+ * never drift apart.
+ *
+ * @property id Stable anchor id, e.g. `ats_1.NORMAL`, `circ_2.TAP.circ_3` (names
+ *   are schematic role ids, never user-facing project names).
+ * @property side The node-box side this terminal faces.
+ * @property offset Absolute world coordinate of the terminal (same space as
+ *   [PositionedSldNode.x/y]).
+ * @property isOccupied True when a routed wire is connected to this anchor.
+ */
+@Immutable
+data class PortAnchor(
+    val id: String,
+    val side: PortSide,
+    val offset: Offset,
+    val isOccupied: Boolean = false
+)
 
 enum class SldProvenance {
     VERIFIED_FORMULA,
@@ -125,7 +160,24 @@ data class ElectricalNetworkGraph(
     val edges: List<SldEdge>,
     val validationIssues: List<SldValidationIssue>,
     val unconnectedNodes: List<SldNode>
-)
+) {
+    companion object {
+        /**
+         * Edge types that connect nodes on the SAME effective tier (Roadmap
+         * Phase 2 §2.3 — Main-Tie-Main bus ties, generator synchronizing
+         * buses). These are routed horizontally (Right port → elbow → Left
+         * port at the busbar centerline) and must be excluded from the
+         * vertical `childTier >= parentTier + 1` relaxation and from the
+         * parent→child topology used by subtree packing.
+         */
+        val LATERAL_EDGE_TYPES: Set<SldEdgeType> = setOf(
+            SldEdgeType.BUS_TIE_LINK,
+            SldEdgeType.GEN_SYNC_CONNECTION
+        )
+
+        fun isLateralEdge(edge: SldEdge): Boolean = edge.type in LATERAL_EDGE_TYPES
+    }
+}
 
 data class SldLayoutNode(
     val node: SldNode,

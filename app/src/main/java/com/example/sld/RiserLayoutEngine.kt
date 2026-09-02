@@ -1,5 +1,6 @@
 package com.example.sld
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.sp
 import com.example.data.CircuitEntity
@@ -41,8 +42,49 @@ object RiserLayoutEngine {
         SldNodeType.MCC
     )
 
+    /** Same set as [PANEL_BUSBAR_TYPES] keyed by node-type name (for [PositionedSldNode.panelType]). */
+    val PANEL_BUSBAR_TYPE_NAMES: Set<String> = PANEL_BUSBAR_TYPES.mapTo(mutableSetOf()) { it.name }
+
     /** Minimum clearance between a busbar tap port and either end of the bar. */
     const val BUSBAR_TAP_END_PAD = 24f
+
+    /**
+     * Standard horizontal clearance between two switchboards connected by a
+     * bus tie (Main-Tie-Main, Roadmap Phase 2 §2.3). The BUS_TIE breaker node
+     * is centered in this gap at the shared busbar centerline. The effective
+     * gap grows automatically when the tie label is wider than the default.
+     */
+    const val TIE_BREAKER_GAP = 300f
+
+    /**
+     * Minimum clearance an emergency riser must keep from any registered
+     * routing obstacle (busbar rail, panel box, label envelope) when a
+     * dedicated vertical corridor lane is allocated (Roadmap Phase 2 §2.4).
+     */
+    const val EMERGENCY_CORRIDOR_CLEARANCE = 24f
+
+    /** Candidate lane offsets scanned around a preferred X when allocating a free vertical corridor. */
+    val CORRIDOR_LANE_CANDIDATE_OFFSETS = listOf(0f, 40f, 80f, 120f, 160f, 200f, 240f, 300f, 360f, 420f)
+
+    /**
+     * Minimum separation between two adjacent busbar tap ports (Roadmap Phase 2
+     * §2.3). When child-anchored taps bunch tighter than this even after the
+     * sequential separation pass, the port model falls back to the proportional
+     * allocation [proportionalPortX] which spreads the K ports evenly.
+     */
+    const val MIN_BUSBAR_PORT_SPACING = 24f
+
+    /**
+     * Proportional port model (Roadmap Phase 2 §2.3): the i-th of K ports on a
+     * rail starting at [start] with span [span] sits at
+     * `start + (i + 0.5) / K * span` — dead-center of its equal share of the
+     * rail, so ports can never bunch against one end regardless of how the
+     * feeder columns happen to be laid out. Downstream feeders still exit the
+     * bottom ports (`y + height`); ATS terminals keep their dedicated
+     * [SldSymbols.atsSymbolGeometry] contract (NORMAL 0.25 / EMERGENCY 0.75).
+     */
+    fun proportionalPortX(index: Int, count: Int, start: Float, span: Float): Float =
+        start + (index + 0.5f) / count * span
 
     data class LayerAssignmentResult(
         val effectiveTier: Map<String, Int>,
@@ -63,10 +105,20 @@ object RiserLayoutEngine {
         SldNodeType.TRANSFORMER,
         SldNodeType.GENERATOR -> 0 // Transformer & Generator sit at Tier 0
 
+        // Synchronizing bus sits one tier below its paralleled generators
+        // (Tier 0) so GEN_SYNC_CONNECTION drops vertically into the bus; the
+        // bus shares Tier 1 with the ATS boards it feeds via emergency paths.
+        SldNodeType.SYNC_BUS,
         SldNodeType.MDB,
         SldNodeType.MCC,
         SldNodeType.ATS,
         SldNodeType.UPS -> 1
+
+        // Bus ties live on the SAME tier as the boards they couple — they are
+        // positioned/routed horizontally by the dedicated bus-tie pass (§2.3).
+        SldNodeType.BUS_TIE -> 1
+
+        SldNodeType.BUS -> 1
 
         SldNodeType.SMDB -> 2
 
@@ -103,8 +155,16 @@ object RiserLayoutEngine {
                 if (parentNode != null && childNode != null) {
                     val isSourceToSource = parentNode.type == SldNodeType.UTILITY_SOURCE && childNode.type == SldNodeType.TRANSFORMER
 
-                    // Do not push Transformer out of Tier 0, and do not relax tier via secondary ATS emergency edges
-                    if (!isSourceToSource && edge.type != SldEdgeType.ATS_EMERGENCY_PATH) {
+                    // Do not push Transformer out of Tier 0, do not relax tier via
+                    // secondary ATS emergency edges, and never relax through
+                    // same-tier BUS_TIE_LINK couplers (they would wrongly push the
+                    // coupled boards onto separate tiers and shove the tie below
+                    // the busbar centerline). GEN_SYNC_CONNECTION stays ACTIVE so
+                    // a synchronizing bus is forced one tier below its generators.
+                    if (!isSourceToSource &&
+                        edge.type != SldEdgeType.ATS_EMERGENCY_PATH &&
+                        edge.type != SldEdgeType.BUS_TIE_LINK
+                    ) {
                         val parentTier = effectiveTier[edge.fromNodeId] ?: 0
                         val currentChildTier = effectiveTier[edge.toNodeId] ?: 0
                         val minChildTier = parentTier + 1
@@ -171,7 +231,15 @@ object RiserLayoutEngine {
         val parentMap = mutableMapOf<String, String>()
 
         graph.edges.forEach { edge ->
-            if (edge.type != SldEdgeType.ATS_EMERGENCY_PATH) {
+            // ATS emergency feeds and same-tier BUS_TIE_LINK couplers are NOT
+            // parent→child vertical topology: emergency risers are geometric
+            // columns and bus ties are horizontal same-tier couplers handled by
+            // the dedicated bus-tie clustering pass (§2.3). GEN_SYNC_CONNECTION
+            // stays in the tree so the synchronizing bus is positioned one
+            // tier below its generators as a proper subtree root.
+            if (edge.type != SldEdgeType.ATS_EMERGENCY_PATH &&
+                edge.type != SldEdgeType.BUS_TIE_LINK
+            ) {
                 childrenMap.getOrPut(edge.fromNodeId) { mutableListOf() }.add(edge.toNodeId)
                 parentMap[edge.toNodeId] = edge.fromNodeId
             }
@@ -219,6 +287,9 @@ object RiserLayoutEngine {
         // Compute subtrees for downstream root nodes (Tier 1+ nodes whose parent is null or Tier <= 0 source)
         val nonSourceNodes = graph.nodes.filter { (effectiveTier[it.id] ?: 0) > 0 }
         val downstreamRoots = nonSourceNodes.filter { node ->
+            // BUS_TIE breakers are positioned by the dedicated same-tier pass,
+            // never as free-standing subtree roots.
+            if (node.type == SldNodeType.BUS_TIE) return@filter false
             val pId = parentMap[node.id]
             pId == null || (effectiveTier[pId] ?: 0) <= 0 || !nodeMap.containsKey(pId)
         }.sortedWith(
@@ -369,6 +440,11 @@ object RiserLayoutEngine {
                 }
             }
         }
+        // NOTE: the §2.3 dedicated same-tier passes (bus-tie clustering +
+        // synchronizing-bus centering) run LATER — after source placement,
+        // collision avoidance and ATS clearance — so they see every node's
+        // FINAL coordinate (see positionBusTiesAndSyncBuses call in §3f).
+
         expandBusbarsAcrossTakeoffs()
 
         // Position Tier 0 & Tier -1 Sources (Utility Grid, Transformer, Generator)
@@ -407,6 +483,24 @@ object RiserLayoutEngine {
                     if (fedTxPos != null) fedTxPos.x + fedTxPos.width / 2f - w / 2f else defaultSourceX
                 }
                 SldNodeType.GENERATOR -> {
+                    // Paralleled genset: spread sibling generators symmetrically
+                    // around their synchronizing bus center (Roadmap Phase 2 §2.1)
+                    // so each GEN_SYNC_CONNECTION drops vertically into the bus.
+                    val syncEdge = graph.edges.firstOrNull {
+                        it.fromNodeId == node.id && it.type == SldEdgeType.GEN_SYNC_CONNECTION
+                    }
+                    val syncPos = syncEdge?.let { positionedNodesMap[it.toNodeId] }
+                    if (syncPos != null) {
+                        val siblings = graph.edges
+                            .filter { it.toNodeId == syncEdge.toNodeId && it.type == SldEdgeType.GEN_SYNC_CONNECTION }
+                            .map { it.fromNodeId }
+                            .sorted()
+                        val idx = siblings.indexOf(node.id).coerceAtLeast(0)
+                        val n = siblings.size.coerceAtLeast(1)
+                        val blockWidth = n * w + (n - 1) * MIN_HORIZONTAL_GAP
+                        val blockStart = syncPos.x + syncPos.width / 2f - blockWidth / 2f
+                        blockStart + idx * (w + MIN_HORIZONTAL_GAP)
+                    } else {
                     // Lock Generator directly above its connected ATS emergency port as a vertically aligned column
                     val matchedAtsEdge = graph.edges.firstOrNull { it.fromNodeId == node.id && it.type == SldEdgeType.ATS_EMERGENCY_PATH }
                     val atsPos = matchedAtsEdge?.let { positionedNodesMap[it.toNodeId] }
@@ -438,6 +532,7 @@ object RiserLayoutEngine {
                             maxOf(defaultSourceX, currentRootX)
                         }
                     }
+                    } // end of legacy "lock above ATS emergency port" else-block
                 }
                 else -> defaultSourceX
             }
@@ -482,6 +577,13 @@ object RiserLayoutEngine {
         val rootNodeIds = downstreamRoots.map { it.id }.toSet()
         enforceAtsToPanelClearance(positionedNodesMap, textMeasurer, childrenMap, graph, rootNodeIds)
 
+        // §2.3 dedicated same-tier passes: cluster coupled boards with
+        // TIE_BREAKER_GAP and center the synchronizing bus over its gensets.
+        // Runs AFTER source placement (Tier 0/−1), the dynamic collision
+        // avoidance pass and the ATS clearance enforcement, so it clusters and
+        // centers against every node's FINAL coordinate.
+        positionBusTiesAndSyncBuses(graph, positionedNodesMap, childrenMap)
+
         // 3g. Busbar Port Model: every panel node exposes ordered tap ports
         // for direct feeders, UPS input takeoffs, and ATS normal-input takeoffs
         // along the SAME continuous busbar rail.
@@ -523,14 +625,137 @@ object RiserLayoutEngine {
                         resultList.add(p.copy(tapX = tapX))
                         prevX = tapX
                     }
-                    resultList
+                    // Proportional relief (Roadmap Phase 2 §2.3): if the
+                    // child-anchored taps still bunch tighter than
+                    // MIN_BUSBAR_PORT_SPACING after the sequential separation
+                    // pass, redistribute all K ports evenly across the rail
+                    // span with [proportionalPortX].
+                    val bunched = resultList.zipWithNext()
+                        .any { (a, b) -> b.tapX - a.tapX < MIN_BUSBAR_PORT_SPACING }
+                    if (bunched && resultList.size > 1) {
+                        val span = maxTap - minTap
+                        resultList.mapIndexed { idx, p ->
+                            p.copy(tapX = proportionalPortX(idx, resultList.size, minTap, span))
+                        }
+                    } else {
+                        resultList
+                    }
                 }
 
                 panelNode.id to ports
             }
             .toMap()
 
-        return CoordinateAssignmentResult(positionedNodesMap, busbarPorts)
+        // Phase 3 §3.1 — First-class Port Anchors: resolve every node's
+        // schematic ports (TOP/BOTTOM/LEFT/RIGHT) from its FINAL position so
+        // the canvas, wire routing and DXF exporter consume pre-calculated
+        // anchors instead of re-deriving them with scattered hardcoded offsets.
+        val finalNodes = positionedNodesMap.mapValues { (_, node) ->
+            node.copy(ports = buildSchematicPorts(node, graph, busbarPorts))
+        }
+
+        return CoordinateAssignmentResult(finalNodes, busbarPorts)
+    }
+
+    /**
+     * Phase 3 §3.1 — resolve the schematic port anchors for one positioned node.
+     *
+     * Every anchor coordinate is derived ONCE from the node's final position and
+     * mirrors the exact wire-terminus math used by [routeEdges] and
+     * [SldSymbols.atsSymbolGeometry], so symbols, wires and hit-testing can never
+     * drift apart:
+     *
+     *  - ATS: TOP NORMAL (0.25·w) / TOP EMERGENCY (0.75·w) / BOTTOM OUTPUT (0.5·w).
+     *  - Generators / transformers / utility sources / UPS: single BOTTOM output.
+     *  - Bus ties & synchronizing buses: LEFT/RIGHT centerline coupler ports
+     *    (plus a TOP rail entry for the sync bus's GEN_SYNC_CONNECTION).
+     *  - Busbar panels (BUS/MDB/SMDB/DB/MCC): TOP incoming terminal, one BOTTOM
+     *    tap per §3g busbar port, and LEFT/RIGHT centerline coupler ports.
+     *  - Plain distribution / load nodes: single TOP incoming terminal.
+     */
+    private fun buildSchematicPorts(
+        node: PositionedSldNode,
+        graph: ElectricalNetworkGraph,
+        busbarPorts: Map<String, List<BusbarPort>>
+    ): Map<PortSide, List<PortAnchor>> {
+        val upper = node.panelType.uppercase()
+        val centerY = node.y + node.height / 2f
+        val centerX = node.x + node.width / 2f
+
+        if (upper.contains("ATS")) {
+            val g = SldSymbols.atsSymbolGeometry(node.x, node.y, node.width)
+            return mapOf(
+                PortSide.TOP to listOf(
+                    PortAnchor(id = "${node.id}.NORMAL", side = PortSide.TOP, offset = g.normalTerminal, isOccupied = true),
+                    PortAnchor(id = "${node.id}.EMERGENCY", side = PortSide.TOP, offset = g.emergencyTerminal, isOccupied = true)
+                ),
+                PortSide.BOTTOM to listOf(
+                    PortAnchor(id = "${node.id}.OUTPUT", side = PortSide.BOTTOM, offset = g.outputTerminal, isOccupied = true)
+                )
+            )
+        }
+
+        if (node.panelType == SldNodeType.BUS_TIE.name || node.panelType == SldNodeType.SYNC_BUS.name) {
+            val anchors = mutableListOf(
+                PortAnchor(id = "${node.id}.LEFT", side = PortSide.LEFT, offset = Offset(node.x, centerY)),
+                PortAnchor(id = "${node.id}.RIGHT", side = PortSide.RIGHT, offset = Offset(node.x + node.width, centerY))
+            )
+            if (node.panelType == SldNodeType.SYNC_BUS.name) {
+                anchors.add(PortAnchor(id = "${node.id}.RAIL_IN", side = PortSide.TOP, offset = Offset(centerX, node.y)))
+            }
+            return mapOf(
+                PortSide.LEFT to listOf(anchors[0]),
+                PortSide.RIGHT to listOf(anchors[1]),
+                PortSide.TOP to anchors.filter { it.side == PortSide.TOP }
+            )
+        }
+
+        if (node.isSource) {
+            return mapOf(
+                PortSide.BOTTOM to listOf(
+                    PortAnchor(id = "${node.id}.OUTPUT", side = PortSide.BOTTOM, offset = Offset(centerX, node.y + 24f), isOccupied = true)
+                )
+            )
+        }
+
+        if (node.panelType in PANEL_BUSBAR_TYPE_NAMES) {
+            val taps = (busbarPorts[node.id].orEmpty()).map { port ->
+                PortAnchor(
+                    id = "${node.id}.TAP.${port.childNodeId}",
+                    side = PortSide.BOTTOM,
+                    offset = Offset(port.tapX, node.y + node.height),
+                    isOccupied = true
+                )
+            }
+            val incoming = graph.edges.any { it.toNodeId == node.id }
+            val hasTieLink = graph.edges.any {
+                it.type == SldEdgeType.BUS_TIE_LINK &&
+                    (it.fromNodeId == node.id || it.toNodeId == node.id)
+            }
+            return mapOf(
+                PortSide.TOP to listOf(
+                    PortAnchor(id = "${node.id}.IN", side = PortSide.TOP, offset = Offset(centerX, node.y), isOccupied = incoming)
+                ),
+                PortSide.BOTTOM to taps,
+                PortSide.LEFT to listOf(
+                    PortAnchor(id = "${node.id}.LEFT", side = PortSide.LEFT, offset = Offset(node.x, centerY), isOccupied = hasTieLink)
+                ),
+                PortSide.RIGHT to listOf(
+                    PortAnchor(id = "${node.id}.RIGHT", side = PortSide.RIGHT, offset = Offset(node.x + node.width, centerY), isOccupied = hasTieLink)
+                )
+            )
+        }
+
+        return mapOf(
+            PortSide.TOP to listOf(
+                PortAnchor(
+                    id = "${node.id}.IN",
+                    side = PortSide.TOP,
+                    offset = Offset(centerX, node.y),
+                    isOccupied = graph.edges.any { it.toNodeId == node.id }
+                )
+            )
+        )
     }
 
     // =========================================================================
@@ -543,6 +768,23 @@ object RiserLayoutEngine {
         busbarPorts: Map<String, List<BusbarPort>> = emptyMap()
     ): List<PositionedSldEdge> {
         val nodeMap = graph.nodes.associateBy { it.id }
+
+        // Routing obstacle registry (Roadmap Phase 2 §2.4): every rendered node
+        // box (lane-blocking) plus its label/enclosure envelope (non-lane-blocking)
+        // is registered so emergency corridors and horizontal segments can be
+        // collision-checked against the actual drawing geometry.
+        val obstacleField = RoutingObstacleField()
+        positionedNodesMap.values.forEach { node ->
+            obstacleField.registerNode(node)
+            val bounds = getNodeVisualBounds(node, null)
+            obstacleField.registerEnvelope(
+                bounds.left,
+                bounds.top,
+                bounds.right,
+                bounds.bottom,
+                ownerNodeId = node.id
+            )
+        }
 
         // Shared-source ATS NORMAL incomers get staggered channels so parallel
         // wires and their NORMAL labels never overlap (see SldAtsRoutingTest).
@@ -594,13 +836,37 @@ object RiserLayoutEngine {
                         )
                     )
                 }
+            } else if (fromNode != null && toNode != null && ElectricalNetworkGraph.isLateralEdge(edge)) {
+                // Lateral (same-tier) couplers (Roadmap Phase 2 §2.3): bus ties
+                // route horizontally at the shared busbar centerline —
+                // BoardA.RIGHT_BUS_PORT → BUS_TIE → BoardB.LEFT_BUS_PORT — and
+                // generator synchronizing connections drop vertically into the
+                // sync bus rail. Never the vertical drop-from-source pattern.
+                positionedEdges.add(
+                    PositionedSldEdge(
+                        fromId = edge.fromNodeId,
+                        toId = edge.toNodeId,
+                        label = edge.label ?: "",
+                        pathPoints = routeLateralEdge(edge, fromNode, toNode)
+                    )
+                )
             } else if (fromNode != null && toNode != null) {
                 val isToAts = toNode.panelType.uppercase().contains("ATS") || edge.type == SldEdgeType.ATS_NORMAL_PATH || edge.type == SldEdgeType.ATS_EMERGENCY_PATH
 
                 val points = if (isToAts) {
-                    val portOffsetX = if (edge.type == SldEdgeType.ATS_EMERGENCY_PATH) toNode.width * 0.75f else toNode.width * 0.25f
-                    val toXPort = toNode.x + portOffsetX
-                    val toYPort = toNode.y - 24f
+                    // Phase 3 §3.1 — consume the pre-calculated TOP anchors when
+                    // present (falling back to the identical value math so the
+                    // routed termini can never drift from the symbol geometry).
+                    val topPorts = toNode.ports[PortSide.TOP].orEmpty()
+                    val isEmerg = edge.type == SldEdgeType.ATS_EMERGENCY_PATH
+                    val anchor = if (isEmerg) {
+                        topPorts.firstOrNull { it.id.endsWith(".EMERGENCY") }?.offset
+                    } else {
+                        topPorts.firstOrNull { it.id.endsWith(".NORMAL") }?.offset
+                    }
+                    val toXPort = anchor?.x
+                        ?: (toNode.x + (if (isEmerg) toNode.width * 0.75f else toNode.width * 0.25f))
+                    val toYPort = anchor?.y ?: (toNode.y - 24f)
                     val fromYPort = fromNode.y + (if (fromNode.isSource) 24f else fromNode.height)
 
                     val isParentPanel = fromNode.panelType.uppercase().contains("MDB") ||
@@ -661,7 +927,20 @@ object RiserLayoutEngine {
                             Pair(toXPort, toYPort)
                         )
                     }
-                    atsPoints
+                    if (isEmergencyEdge) {
+                        routeEmergencyPathAroundObstacles(
+                            obstacleField = obstacleField,
+                            fromNode = fromNode,
+                            toNode = toNode,
+                            fromXPort = fromXPort,
+                            toXPort = toXPort,
+                            fromYPort = fromYPort,
+                            toYPort = toYPort,
+                            fallback = atsPoints
+                        )
+                    } else {
+                        atsPoints
+                    }
                 } else {
                     val toCenterX = toNode.x + toNode.width / 2f
                     val fromY = fromNode.y + (if (fromNode.isSource) 24f else fromNode.height)
@@ -705,6 +984,116 @@ object RiserLayoutEngine {
         }
 
         return positionedEdges
+    }
+
+    /**
+     * Lateral (same-tier) edge routing (Roadmap Phase 2 §2.3).
+     *
+     *  - BUS_TIE_LINK: strictly horizontal at the shared busbar centerline —
+     *    `BoardA.RIGHT_BUS_PORT → BUS_TIE → BoardB.LEFT_BUS_PORT`. The §2.3
+     *    clustering pass has already centered the tie breaker between the two
+     *    boards at the boards' centerline Y, so the wire is a single straight
+     *    horizontal segment (an H-V-H elbow is emitted only if the two ends
+     *    are not exactly level).
+     *  - GEN_SYNC_CONNECTION: vertical drop from the generator output into the
+     *    top of its synchronizing bus rail (the §2.3 pass spine-aligns each
+     *    genset above the bus center, so this is normally a straight vertical).
+     */
+    private fun routeLateralEdge(
+        edge: SldEdge,
+        fromNode: PositionedSldNode,
+        toNode: PositionedSldNode
+    ): List<Pair<Float, Float>> {
+        if (edge.type == SldEdgeType.GEN_SYNC_CONNECTION) {
+            val fromX = fromNode.x + fromNode.width / 2f
+            val fromY = fromNode.y + (if (fromNode.isSource) 24f else fromNode.height)
+            val toX = toNode.x + toNode.width / 2f
+            val toY = toNode.y
+            return if (Math.abs(fromX - toX) < 2f) {
+                listOf(Pair(fromX, fromY), Pair(fromX, toY))
+            } else {
+                val midY = fromY + (toY - fromY) / 2f
+                listOf(Pair(fromX, fromY), Pair(fromX, midY), Pair(toX, midY), Pair(toX, toY))
+            }
+        }
+
+        // BUS_TIE_LINK: one endpoint is the tie breaker, the other a coupled board.
+        val tieIsFrom = fromNode.panelType == SldNodeType.BUS_TIE.name
+        val tie = if (tieIsFrom) fromNode else toNode
+        val board = if (tieIsFrom) toNode else fromNode
+        val tieCenterY = tie.y + tie.height / 2f
+        val boardCenterY = board.y + board.height / 2f
+
+        val (boardPortX, tiePortX) = if (board.x + board.width <= tie.x + 1f) {
+            // Board sits left of the tie: exit its RIGHT bus port, enter the tie LEFT port.
+            Pair(board.x + board.width, tie.x)
+        } else {
+            // Board sits right of the tie: exit its LEFT bus port, enter the tie RIGHT port.
+            Pair(board.x, tie.x + tie.width)
+        }
+
+        return if (Math.abs(boardCenterY - tieCenterY) < 2f) {
+            listOf(Pair(boardPortX, boardCenterY), Pair(tiePortX, tieCenterY))
+        } else {
+            val midX = (boardPortX + tiePortX) / 2f
+            listOf(
+                Pair(boardPortX, boardCenterY),
+                Pair(midX, boardCenterY),
+                Pair(midX, tieCenterY),
+                Pair(tiePortX, tieCenterY)
+            )
+        }
+    }
+
+    /**
+     * Emergency riser collision handling (Roadmap Phase 2 §2.4).
+     *
+     * The straight emergency drop from the generator output to the ATS emergency
+     * terminal is checked against the routing obstacle field (panel boxes,
+     * busbar rails). When the preferred lane is blocked, the router allocates
+     * the nearest clear vertical corridor lane — outside the blocking busbar
+     * envelope (`X_lane = obstacle.right + clearance`) — and detours
+     * orthogonally:
+     *
+     *   genOutput → V jog → H to lane → V past the obstacles → H back → ATS terminal
+     *
+     * Horizontal jog segments are additionally nudged into free horizontal
+     * channels by [RoutingObstacleField.nudgeHorizontalSegments]. When no clear
+     * lane exists at all, the straight fallback polyline is kept (best effort).
+     */
+    private fun routeEmergencyPathAroundObstacles(
+        obstacleField: RoutingObstacleField,
+        fromNode: PositionedSldNode,
+        toNode: PositionedSldNode,
+        fromXPort: Float,
+        toXPort: Float,
+        fromYPort: Float,
+        toYPort: Float,
+        fallback: List<Pair<Float, Float>>
+    ): List<Pair<Float, Float>> {
+        val ignoreOwners = setOf(fromNode.id, toNode.id)
+        if (obstacleField.isVerticalLaneClear(toXPort, fromYPort, toYPort, ignoreOwners = ignoreOwners)) {
+            return fallback
+        }
+        val laneX = obstacleField.allocateVerticalLane(
+            preferredX = toXPort,
+            yTop = fromYPort,
+            yBottom = toYPort,
+            ignoreOwners = ignoreOwners
+        ) ?: return fallback
+
+        val jogTop = fromYPort + 20f
+        val jogBottom = toYPort - 20f
+        val detour = listOf(
+            Pair(fromXPort, fromYPort),
+            Pair(fromXPort, jogTop),
+            Pair(laneX, jogTop),
+            Pair(laneX, jogBottom),
+            Pair(toXPort, jogBottom),
+            Pair(toXPort, toYPort)
+        )
+        // Collision pass: nudge horizontal segments into free channels.
+        return obstacleField.nudgeHorizontalSegments(detour, ignoreOwners = ignoreOwners)
     }
 
     fun calculateLayout(
@@ -1189,6 +1578,80 @@ object RiserLayoutEngine {
         return maxOf(l1, l2, l3, l4, l5) * 1.25f
     }
 
+    // =========================================================================
+    // §2.3 SAME-TIER HORIZONTAL PASSES (Main-Tie-Main + generator sync bus)
+    // =========================================================================
+
+    /**
+     * Positions BUS_TIE breakers and SYNC_BUS rails after tree packing:
+     *
+     *  - Bus ties: cluster the two coupled boards horizontally adjacent with a
+     *    [TIE_BREAKER_GAP] clearance, then center the tie breaker between them
+     *    on the shared busbar centerline (Tier-1 Y band).
+     *  - Synchronizing buses: center the rail over the mean X of its paralleled
+     *    generators so every GEN_SYNC_CONNECTION drops vertically.
+     */
+    private fun positionBusTiesAndSyncBuses(
+        graph: ElectricalNetworkGraph,
+        positionedNodesMap: MutableMap<String, PositionedSldNode>,
+        childrenMap: Map<String, List<String>>
+    ) {
+        // --- Synchronizing buses: center over their paralleled generator cluster ---
+        graph.nodes.filter { it.type == SldNodeType.SYNC_BUS }.forEach { syncNode ->
+            val pos = positionedNodesMap[syncNode.id] ?: return@forEach
+            val genEdges = graph.edges.filter {
+                it.toNodeId == syncNode.id && it.type == SldEdgeType.GEN_SYNC_CONNECTION
+            }
+            val genCenters = genEdges.mapNotNull { positionedNodesMap[it.fromNodeId] }
+                .map { it.x + it.width / 2f }
+            if (genCenters.isNotEmpty()) {
+                val targetX = (genCenters.sum() / genCenters.size) - pos.width / 2f
+                positionedNodesMap[syncNode.id] = pos.copy(x = targetX)
+            }
+        }
+
+        // --- Bus ties: cluster coupled boards + center the tie on the busbar line ---
+        val tieNodes = graph.nodes.filter { it.type == SldNodeType.BUS_TIE }
+        if (tieNodes.isEmpty()) return
+        val processed = mutableSetOf<String>()
+        tieNodes.forEach { tieNode ->
+            if (!processed.add(tieNode.id)) return@forEach
+            val tiePos = positionedNodesMap[tieNode.id] ?: return@forEach
+            val links = graph.edges.filter {
+                it.type == SldEdgeType.BUS_TIE_LINK &&
+                    (it.fromNodeId == tieNode.id || it.toNodeId == tieNode.id)
+            }
+            val boardIds = links.map {
+                if (it.fromNodeId == tieNode.id) it.toNodeId else it.fromNodeId
+            }.distinct()
+            val boardA = boardIds.getOrNull(0)?.let { positionedNodesMap[it] }
+            val boardB = boardIds.getOrNull(1)?.let { positionedNodesMap[it] }
+            if (boardA == null || boardB == null) return@forEach
+
+            var left = boardA
+            var right = boardB
+            if (left.x > right.x) {
+                val swap = left
+                left = right
+                right = swap
+            }
+
+            // Cluster: nudge the right board's entire subtree so its rendered box
+            // starts at least TIE_BREAKER_GAP past the left board's right edge.
+            val minLeft = left.x + left.width + TIE_BREAKER_GAP
+            if (right.x < minLeft) {
+                shiftSubtree(right.id, minLeft - right.x, positionedNodesMap, childrenMap)
+            }
+            val rightNode = positionedNodesMap[right.id] ?: return@forEach
+
+            val centerY = left.y + left.height / 2f
+            positionedNodesMap[tieNode.id] = tiePos.copy(
+                x = (left.x + left.width + rightNode.x) / 2f - tiePos.width / 2f,
+                y = centerY - tiePos.height / 2f
+            )
+        }
+    }
+
     private fun shiftSubtree(
         rootId: String,
         deltaX: Float,
@@ -1202,5 +1665,190 @@ object RiserLayoutEngine {
         childrenMap[rootId]?.forEach { childId ->
             shiftSubtree(childId, deltaX, positionedNodesMap, childrenMap, visited)
         }
+    }
+}
+
+/**
+ * Geometric obstacle registry for the orthogonal routing pass (Roadmap Phase 2
+ * §2.4).
+ *
+ * The field accumulates axis-aligned rectangles for every rendered element —
+ * node boxes, continuous busbar rails and label exclusion envelopes (derived
+ * from [RiserLayoutEngine.getNodeVisualBounds]) — and answers the two queries
+ * the router needs:
+ *
+ *  1. [allocateVerticalLane] — find a free vertical corridor X for emergency
+ *     risers, scanning outward from the preferred X so the allocated lane sits
+ *     OUTSIDE the blocking busbar envelope (`X_lane = obstacle.right + clearance`).
+ *  2. [nudgeHorizontalSegments] — a post-routing collision pass that nudges
+ *     horizontal segments vertically into free channels until they no longer
+ *     intersect any obstacle.
+ *
+ * Two obstacle classes are tracked:
+ *  - NODE boxes (via [registerNode]) BLOCK vertical lanes — an emergency riser
+ *    must never pass through a panel box or busbar rail.
+ *  - Label/enclosure envelopes (via [registerEnvelope]) do NOT block vertical
+ *    lanes (wires legitimately pass through the empty label band above panels
+ *    between tiers) but DO participate in the horizontal nudge pass, so jog
+ *    segments avoid overprinting callout text.
+ */
+class RoutingObstacleField {
+
+    private enum class Kind { NODE, ENVELOPE }
+
+    private data class Obstacle(
+        val left: Float,
+        val top: Float,
+        val right: Float,
+        val bottom: Float,
+        val kind: Kind,
+        val ownerNodeId: String?
+    )
+
+    private val obstacles = mutableListOf<Obstacle>()
+
+    /** Number of registered obstacles (nodes + envelopes). */
+    val size: Int get() = obstacles.size
+
+    fun register(
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float,
+        ownerNodeId: String? = null
+    ) {
+        registerObstacle(left, top, right, bottom, Kind.NODE, ownerNodeId)
+    }
+
+    /** Register a node's core box — blocks vertical lanes. */
+    fun registerNode(node: PositionedSldNode) {
+        registerObstacle(node.x, node.y, node.x + node.width, node.y + node.height, Kind.NODE, node.id)
+    }
+
+    /** Register a node's label/enclosure exclusion envelope — nudge-pass only. */
+    fun registerEnvelope(left: Float, top: Float, right: Float, bottom: Float, ownerNodeId: String?) {
+        registerObstacle(left, top, right, bottom, Kind.ENVELOPE, ownerNodeId)
+    }
+
+    private fun registerObstacle(
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float,
+        kind: Kind,
+        ownerNodeId: String?
+    ) {
+        if (right > left && bottom > top) {
+            obstacles.add(Obstacle(left, top, right, bottom, kind, ownerNodeId))
+        }
+    }
+
+    fun clear() = obstacles.clear()
+
+    private fun firstBlocking(
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        clearance: Float,
+        ignoreOwners: Set<String>,
+        includeEnvelopes: Boolean
+    ): Obstacle? = obstacles.firstOrNull { o ->
+        if (o.kind == Kind.ENVELOPE && !includeEnvelopes) return@firstOrNull false
+        if (o.ownerNodeId != null && o.ownerNodeId in ignoreOwners) return@firstOrNull false
+        x1 < o.right + clearance && x2 > o.left - clearance &&
+            y1 < o.bottom + clearance && y2 > o.top - clearance
+    }
+
+    /** True when the vertical corridor at [x] between [yTop] and [yBottom] hits no node box. */
+    fun isVerticalLaneClear(
+        x: Float,
+        yTop: Float,
+        yBottom: Float,
+        clearance: Float = RiserLayoutEngine.EMERGENCY_CORRIDOR_CLEARANCE,
+        ignoreOwners: Set<String> = emptySet()
+    ): Boolean = firstBlocking(x, yTop, x, yBottom, clearance, ignoreOwners, includeEnvelopes = false) == null
+
+    /** True when the horizontal segment at [y] between [xLeft] and [xRight] hits no obstacle. */
+    fun isHorizontalSegmentClear(
+        y: Float,
+        xLeft: Float,
+        xRight: Float,
+        clearance: Float = RiserLayoutEngine.EMERGENCY_CORRIDOR_CLEARANCE,
+        ignoreOwners: Set<String> = emptySet()
+    ): Boolean = firstBlocking(xLeft, y, xRight, y, clearance, ignoreOwners, includeEnvelopes = true) == null
+
+    /**
+     * Allocate the nearest free vertical corridor lane to [preferredX] for the
+     * span [yTop]..[yBottom]. Scans [RiserLayoutEngine.CORRIDOR_LANE_CANDIDATE_OFFSETS]
+     * outward on both sides; for a busbar-blocked preferred lane the first
+     * accepted candidate therefore lands just outside the busbar envelope
+     * (`busbar.right + clearance`). Returns null when every candidate is blocked.
+     */
+    fun allocateVerticalLane(
+        preferredX: Float,
+        yTop: Float,
+        yBottom: Float,
+        clearance: Float = RiserLayoutEngine.EMERGENCY_CORRIDOR_CLEARANCE,
+        ignoreOwners: Set<String> = emptySet()
+    ): Float? {
+        val candidates = buildList {
+            add(preferredX)
+            for (offset in RiserLayoutEngine.CORRIDOR_LANE_CANDIDATE_OFFSETS) {
+                if (offset != 0f) {
+                    add(preferredX + offset)
+                    add(preferredX - offset)
+                }
+            }
+        }
+        return candidates.firstOrNull { isVerticalLaneClear(it, yTop, yBottom, clearance, ignoreOwners) }
+    }
+
+    /**
+     * Post-routing collision pass (Roadmap Phase 2 §2.4): every horizontal
+     * segment that intersects an obstacle (node box, busbar rail or label
+     * envelope) is nudged vertically — scanning in [NUDGE_STEP] increments up
+     * and down — into the nearest free channel. Vertical segments stay vertical
+     * (their endpoints keep the shared X), so the polyline remains strictly
+     * orthogonal.
+     */
+    fun nudgeHorizontalSegments(
+        points: List<Pair<Float, Float>>,
+        clearance: Float = RiserLayoutEngine.EMERGENCY_CORRIDOR_CLEARANCE,
+        ignoreOwners: Set<String> = emptySet(),
+        maxNudges: Int = 12
+    ): List<Pair<Float, Float>> {
+        if (points.size < 2) return points
+        val result = points.toMutableList()
+        for (i in 0 until result.size - 1) {
+            val (x1, y1) = result[i]
+            val (x2, y2) = result[i + 1]
+            if (Math.abs(y1 - y2) > 0.001f) continue // vertical segment
+            if (isHorizontalSegmentClear(y1, minOf(x1, x2), maxOf(x1, x2), clearance, ignoreOwners)) continue
+
+            val originalY = y1
+            var nudgedY = originalY
+            for (step in 1..maxNudges) {
+                val up = originalY - step * NUDGE_STEP
+                if (isHorizontalSegmentClear(up, minOf(x1, x2), maxOf(x1, x2), clearance, ignoreOwners)) {
+                    nudgedY = up
+                    break
+                }
+                val down = originalY + step * NUDGE_STEP
+                if (isHorizontalSegmentClear(down, minOf(x1, x2), maxOf(x1, x2), clearance, ignoreOwners)) {
+                    nudgedY = down
+                    break
+                }
+            }
+            if (nudgedY != originalY) {
+                result[i] = Pair(x1, nudgedY)
+                result[i + 1] = Pair(x2, nudgedY)
+            }
+        }
+        return result
+    }
+
+    private companion object {
+        const val NUDGE_STEP = 20f
     }
 }

@@ -1,4 +1,0 @@
-Nodes: [grid_TX-01, tx_TX-01, circ_1]
-Edges: [grid_TX-01 -> tx_TX-01, tx_TX-01 -> circ_1]
-Unconnected: []
-ValidationIssues: []

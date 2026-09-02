@@ -282,11 +282,10 @@ fun MainLayout(
     val sldManualPositions = remember(activeProject?.projectId) { androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.geometry.Offset>() }
     var showNewProjectConfirmation by rememberSaveable { mutableStateOf(false) }
     var showDiagnosticsDialog by rememberSaveable { mutableStateOf(false) }
-    var showExitDialog by rememberSaveable { mutableStateOf(false) }
     val tabs = listOf("Dashboard", "Circuits", "Transformers", "Power Systems", "Protection", "SLD", "Conduits", "BOQ / Procurement", "Settings")
 
     // ── Hierarchical Predictive Back-Button Handler ──
-    // Priority: (0) Assistant sheet → (1) close overlay → (2) Panel Schedule return / More child→More grid → (3) any non-Home→Home → (4) Home→exit dialog
+    // Priority: (0) Assistant sheet → (1) close overlay → (2) Panel Schedule return / More child→More grid → (3) any non-Home→Home → (4) Home→close project (return to Project Picker)
     var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
     var isPredictiveBackNav by remember { mutableStateOf(false) }
 
@@ -307,6 +306,7 @@ fun MainLayout(
             )
             else -> com.example.ai.context.ProjectSummarySnapshot()
         }
+        val projectName = activeProject?.projectName ?: "VoltAtlas Project"
         val currentScreenName = when (currentTab) {
             0 -> "Dashboard"
             1 -> "Circuits"
@@ -342,13 +342,12 @@ fun MainLayout(
             progress.collect { backEvent ->
                 predictiveBackProgress = backEvent.progress
             }
-            // Gesture Completed -> Execute exact 6-tier navigation logic
+            // Gesture Completed -> Execute exact hierarchical navigation logic
             when {
                 // 1. Close any open overlay / dialog / fullscreen first
                 showPdfExportDialog -> showPdfExportDialog = false
                 showDiagnosticsDialog -> showDiagnosticsDialog = false
                 showNewProjectConfirmation -> showNewProjectConfirmation = false
-                showExitDialog -> showExitDialog = false
                 isSldFullscreen -> isSldFullscreen = false
                 // 2. Panel Schedule (12) returns to entry point (Circuits or More grid)
                 currentTab == 12 -> {
@@ -365,8 +364,8 @@ fun MainLayout(
                     isPredictiveBackNav = true
                     currentTab = 0
                 }
-                // 5. Already on Home → show exit confirmation
-                else -> showExitDialog = true
+                // 5. Already on Home (Dashboard) → close project and return to Project Picker Screen
+                else -> viewModel.closeProject()
             }
         } catch (_: kotlinx.coroutines.CancellationException) {
             predictiveBackProgress = 0f
@@ -889,9 +888,9 @@ fun MainLayout(
                         }
                     }
                     is UiState.Success -> {
-                        val peekBackTarget = remember(currentTab, showPdfExportDialog, showDiagnosticsDialog, showNewProjectConfirmation, showExitDialog, isSldFullscreen, panelScheduleReturnTab) {
+                        val peekBackTarget = remember(currentTab, showPdfExportDialog, showDiagnosticsDialog, showNewProjectConfirmation, isSldFullscreen, panelScheduleReturnTab) {
                             when {
-                                showPdfExportDialog || showDiagnosticsDialog || showNewProjectConfirmation || showExitDialog || isSldFullscreen -> null
+                                showPdfExportDialog || showDiagnosticsDialog || showNewProjectConfirmation || isSldFullscreen -> null
                                 currentTab == 12 -> panelScheduleReturnTab
                                 currentTab in listOf(4, 5, 6, 7, 8, 10, 11) -> 9
                                 currentTab != 0 -> 0
@@ -1020,100 +1019,6 @@ fun MainLayout(
             },
             containerColor = DarkCardBg
         )
-    }
-
-    // ── Exit Confirmation Dialog (dark-themed, matches app identity) ──
-    if (showExitDialog) {
-        val activity = LocalContext.current as? android.app.Activity
-        androidx.compose.ui.window.Dialog(
-            onDismissRequest = { showExitDialog = false }
-        ) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(VoltAtlasShapes.card),
-                colors = CardDefaults.cardColors(containerColor = ThemeSurface),
-                border = BorderStroke(1.dp, ThemeBorderSubtle)
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    // Icon
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(
-                                SleekPrimary.copy(alpha = 0.12f),
-                                shape = RoundedCornerShape(12.dp)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PowerSettingsNew,
-                            contentDescription = "Exit",
-                            tint = SleekPrimary,
-                            modifier = Modifier.size(26.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Title
-                    Text(
-                        text = "Exit VoltAtlas?",
-                        color = SleekPrimary,
-                        style = SectionTitle,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Message
-                    Text(
-                        text = "Are you sure you want to exit the app?",
-                        color = SlateTextSecondary,
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center
-                    )
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // Buttons row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // Cancel — subtle outline button
-                        OutlinedButton(
-                            onClick = { showExitDialog = false },
-                            modifier = Modifier.weight(1f).height(44.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, BorderColor)
-                        ) {
-                            Text("Cancel", color = ThemeTextColor, fontSize = 14.sp)
-                        }
-
-                        // Exit — accent/danger button
-                        Button(
-                            onClick = {
-                                showExitDialog = false
-                                activity?.finishAffinity()
-                            },
-                            modifier = Modifier.weight(1f).height(44.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = SleekFail
-                            )
-                        ) {
-                            Text("Exit", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
-                    }
-                }
-            }
-        }
     }
 
     if (showDiagnosticsDialog) {

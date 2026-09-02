@@ -24,15 +24,22 @@ class SldDxfExporterTest {
         assertTrue("Contains \$INSBASE", dxf.contains("\$INSBASE"))
         assertTrue("Contains \$EXTMIN", dxf.contains("\$EXTMIN"))
         assertTrue("Contains \$EXTMAX", dxf.contains("\$EXTMAX"))
-        assertFalse("Does NOT contain \$INSUNITS invalid group code 7", dxf.contains("\$INSUNITS"))
+        assertTrue(
+            "Contains R12-valid \$DWGCODEPAGE ANSI_1252 (replaces invalid AC1009 \$INSUNITS)",
+            dxf.contains("\$DWGCODEPAGE\n3\nANSI_1252")
+        )
+        assertFalse("AC1009 header must not contain AC1015+ \$INSUNITS", dxf.contains("\$INSUNITS"))
 
         assertTrue("Contains LAYER table", dxf.contains("TABLE\n2\nLAYER"))
-        assertTrue("Contains SLD_NODES layer", dxf.contains("SLD_NODES"))
-        assertTrue("Contains SLD_BUS layer", dxf.contains("SLD_BUS"))
-        assertTrue("Contains SLD_WIRES layer", dxf.contains("SLD_WIRES"))
-        assertTrue("Contains SLD_SYMBOLS layer", dxf.contains("SLD_SYMBOLS"))
-        assertTrue("Contains SLD_TEXT layer", dxf.contains("SLD_TEXT"))
-        assertTrue("Contains SLD_TIERS layer", dxf.contains("SLD_TIERS"))
+        assertTrue("Contains MANDATORY layer 0", dxf.contains("2\n0\n"))
+        assertTrue("Contains STYLE table with STANDARD text style", dxf.contains("TABLE\n2\nSTYLE") && dxf.contains("2\nSTANDARD\n"))
+        assertTrue("Contains E-PANEL layer", dxf.contains("2\nE-PANEL\n"))
+        assertTrue("Contains E-NORMAL layer", dxf.contains("2\nE-NORMAL\n"))
+        assertTrue("Contains E-EMERG layer", dxf.contains("2\nE-EMERG\n"))
+        assertTrue("Contains E-SYMBOLS layer", dxf.contains("2\nE-SYMBOLS\n"))
+        assertTrue("Contains E-TEXT-TITLE layer", dxf.contains("2\nE-TEXT-TITLE\n"))
+        assertTrue("Contains E-TEXT-DATA layer", dxf.contains("2\nE-TEXT-DATA\n"))
+        assertTrue("Contains E-BORDER layer", dxf.contains("2\nE-BORDER\n"))
 
         assertTrue("Contains ENTITIES section", dxf.contains("SECTION\n2\nENTITIES"))
         assertTrue("Contains EOF tag", dxf.contains("0\nEOF\n"))
@@ -94,17 +101,18 @@ class SldDxfExporterTest {
 
         val dxf = SldDxfExporter.generateDxf(engineResult, "GEOMETRY_TEST")
 
-        // 1. Busbar rectangle check on SLD_BUS
-        assertTrue("Busbar lines on SLD_BUS", dxf.contains("LINE\n8\nSLD_BUS"))
+        // 1. Busbar check on E-PANEL
+        assertTrue("Busbar lines on E-PANEL", dxf.contains("8\nE-PANEL"))
 
-        // 2. Transformer & Generator symbol circles on SLD_SYMBOLS
-        assertTrue("Circles for Transformer/Generator on SLD_SYMBOLS", dxf.contains("CIRCLE\n8\nSLD_SYMBOLS"))
+        // 2. Transformer & Generator symbol circles on E-TX / E-GEN
+        assertTrue("Circles for Transformer on E-TX", dxf.contains("CIRCLE\n8\nE-TX"))
+        assertTrue("Circles for Generator on E-GEN", dxf.contains("CIRCLE\n8\nE-GEN"))
 
-        // 3. Feeder wire line on SLD_WIRES
-        assertTrue("Feeder line on SLD_WIRES", dxf.contains("LINE\n8\nSLD_WIRES"))
+        // 3. Feeder wire line on E-NORMAL
+        assertTrue("Feeder line on E-NORMAL", dxf.contains("LINE\n8\nE-NORMAL"))
 
-        // 4. Text entities on SLD_TEXT
-        assertTrue("Text label MDB on SLD_TEXT", dxf.contains("TEXT\n8\nSLD_TEXT"))
+        // 4. Text entities on E-TEXT-TITLE / E-TEXT-DATA
+        assertTrue("Text label on E-TEXT-TITLE", dxf.contains("8\nE-TEXT-TITLE"))
         assertTrue("MDB label text present", dxf.contains("1\nMDB"))
         assertTrue("TX-01 label text present", dxf.contains("1\nTX-01"))
         assertTrue("GEN-01 label text present", dxf.contains("1\nGEN-01"))
@@ -137,22 +145,5 @@ class SldDxfExporterTest {
         assertTrue(dxf.length > 500)
         assertTrue(dxf.startsWith("0\nSECTION"))
         assertTrue(dxf.endsWith("0\nEOF\n"))
-    }
-
-    @Test
-    fun testDxfWriteToStream() {
-        val engineResult = SldEngineResult(
-            nodes = emptyList(),
-            edges = emptyList(),
-            bounds = Rect(0f, 0f, 1000f, 800f)
-        )
-        val dxf = SldDxfExporter.generateDxf(engineResult, "STREAM_TEST")
-        val baos = java.io.ByteArrayOutputStream()
-        SldDxfExporter.writeDxfToStream(dxf, baos)
-        val output = baos.toString(Charsets.UTF_8.name())
-
-        assertEquals(dxf, output)
-        assertTrue(output.startsWith("0\nSECTION\n2\nHEADER\n"))
-        assertTrue(output.endsWith("0\nEOF\n"))
     }
 }

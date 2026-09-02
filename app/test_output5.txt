@@ -1,3 +1,0 @@
-Nodes: [circ_2 at (7520.0, 676.0), ats_ATS-01 at (800.0, 676.0), circ_1 at (800.0, 964.0), tx_TX-01 at (84.0, 388.0), tx_TX-02 at (7504.0, 388.0), grid_TX-01 at (85.0, 100.0), grid_TX-02 at (3785.0, 100.0)]
-Edges: [grid_TX-01 -> tx_TX-01, grid_TX-02 -> tx_TX-02, circ_2 -> ats_ATS-01, ats_ATS-01 -> circ_1, tx_TX-02 -> circ_2]
-ValidationIssues: [ATS_EMERGENCY_SOURCE_REQUIRED]

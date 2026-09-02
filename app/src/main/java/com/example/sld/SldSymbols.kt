@@ -37,7 +37,13 @@ object SldSymbols {
         UPS,
         LOAD_ARROW,
         MOTOR_LOAD,
-        EARTHING
+        EARTHING,
+        ATS_3_TERMINAL,
+        UPS_STATIC_ONLINE,
+        TIE_BREAKER_NO,
+        TRANSFORMER_DYN11,
+        GENERATOR_GENSET,
+        CT_VT_EARTH
     }
 
     /** Which fixed input terminal of an ATS the movable blade rests on. */
@@ -65,6 +71,26 @@ object SldSymbols {
             emergencyTerminal = Offset(nodeX + nodeWidth * 0.75f, nodeY - 24f),
             outputTerminal = Offset(nodeX + nodeWidth * 0.5f, nodeY + 24f)
         )
+
+    /**
+     * Phase 3 §3.1 — anchor-first ATS geometry. Consumes the pre-calculated
+     * [PortAnchor]s resolved by [RiserLayoutEngine] so the symbol terminals are
+     * literally the same offsets the wire router and hit-testing model use.
+     * Falls back to the [atsSymbolGeometry] value math when the node carries no
+     * resolved ports (e.g. shop-drawing or hand-built nodes).
+     */
+    fun atsSymbolGeometry(node: PositionedSldNode): AtsSymbolGeometry {
+        val top = node.ports[PortSide.TOP].orEmpty()
+        val bottom = node.ports[PortSide.BOTTOM].orEmpty()
+        val normal = top.firstOrNull { it.id.endsWith(".NORMAL") }?.offset
+        val emergency = top.firstOrNull { it.id.endsWith(".EMERGENCY") }?.offset
+        val output = bottom.firstOrNull()?.offset
+        return if (normal != null && emergency != null && output != null) {
+            AtsSymbolGeometry(normalTerminal = normal, emergencyTerminal = emergency, outputTerminal = output)
+        } else {
+            atsSymbolGeometry(node.x, node.y, node.width)
+        }
+    }
     /**
      * Draw standard node symbol given SldNodeType.
      */
@@ -93,7 +119,8 @@ object SldSymbols {
             SldNodeType.ATS -> drawAts(drawScope, center, sizePx, palette, ratingText = "800 A")
             SldNodeType.UPS -> drawUps(drawScope, center, sizePx, palette)
             SldNodeType.CAPACITOR_BANK -> drawCapacitorBank(drawScope, center, sizePx, palette)
-            SldNodeType.BUS, SldNodeType.MDB, SldNodeType.SMDB, SldNodeType.DB, SldNodeType.MCC -> {
+            SldNodeType.BUS, SldNodeType.MDB, SldNodeType.SMDB, SldNodeType.DB, SldNodeType.MCC,
+            SldNodeType.BUS_TIE, SldNodeType.SYNC_BUS -> {
                 val busW = sizePx * 1.5f
                 drawScope.drawLine(
                     color = palette.enclosureBusTaps,
@@ -730,4 +757,285 @@ object SldSymbols {
             strokeWidth = strokeWidth
         )
     }
+
+    // 15. ATS 3-Terminal Vector Symbol
+    fun drawAts3Terminal(
+        drawScope: DrawScope,
+        center: Offset,
+        sizePx: Float,
+        palette: SldPalette,
+        normalConnected: Boolean = true
+    ) {
+        val w = sizePx * 1.2f
+        val h = sizePx * 0.9f
+        val strokeWidth = 2.0f
+        val term1 = Offset(center.x - w * 0.3f, center.y - h * 0.4f)
+        val term2 = Offset(center.x + w * 0.3f, center.y - h * 0.4f)
+        val termOut = Offset(center.x, center.y + h * 0.4f)
+
+        // Enclosure box
+        drawScope.drawRoundRect(
+            color = palette.enclosureBusTaps,
+            topLeft = Offset(center.x - w / 2f, center.y - h / 2f),
+            size = Size(w, h),
+            cornerRadius = CornerRadius(6f, 6f),
+            style = Stroke(width = strokeWidth)
+        )
+
+        // Terminal contact dots
+        drawScope.drawCircle(color = palette.textPrimary, radius = 3.5f, center = term1)
+        drawScope.drawCircle(color = palette.feeders, radius = 3.5f, center = term2)
+        drawScope.drawCircle(color = palette.textPrimary, radius = 3.5f, center = termOut)
+
+        // Normal switch blade
+        val activeTarget = if (normalConnected) term1 else term2
+        drawScope.drawLine(
+            color = palette.textPrimary,
+            start = termOut,
+            end = activeTarget,
+            strokeWidth = strokeWidth * 1.2f,
+            cap = StrokeCap.Round
+        )
+
+        // Dashed open emergency connection path
+        val inactiveTarget = if (normalConnected) term2 else term1
+        drawScope.drawLine(
+            color = palette.feeders.copy(alpha = 0.6f),
+            start = termOut,
+            end = inactiveTarget,
+            strokeWidth = strokeWidth * 0.8f,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f), 0f)
+        )
+    }
+
+    // 16. UPS Static Double-Conversion Online Symbol
+    fun drawUpsStaticOnline(
+        drawScope: DrawScope,
+        center: Offset,
+        sizePx: Float,
+        palette: SldPalette
+    ) {
+        val w = sizePx * 1.3f
+        val h = sizePx * 0.85f
+        val strokeWidth = 2.0f
+        val color = palette.textPrimary
+
+        // Enclosure
+        drawScope.drawRoundRect(
+            color = color,
+            topLeft = Offset(center.x - w / 2f, center.y - h / 2f),
+            size = Size(w, h),
+            cornerRadius = CornerRadius(6f, 6f),
+            style = Stroke(width = strokeWidth)
+        )
+
+        // Rectifier triangle (~ -> =)
+        val rectPath = Path().apply {
+            moveTo(center.x - w * 0.35f, center.y - h * 0.2f)
+            lineTo(center.x - w * 0.10f, center.y)
+            lineTo(center.x - w * 0.35f, center.y + h * 0.2f)
+            close()
+        }
+        drawScope.drawPath(rectPath, color = color, style = Stroke(width = strokeWidth * 0.8f))
+
+        // Inverter triangle (= -> ~)
+        val invPath = Path().apply {
+            moveTo(center.x + w * 0.10f, center.y - h * 0.2f)
+            lineTo(center.x + w * 0.35f, center.y)
+            lineTo(center.x + w * 0.10f, center.y + h * 0.2f)
+            close()
+        }
+        drawScope.drawPath(invPath, color = color, style = Stroke(width = strokeWidth * 0.8f))
+
+        // DC link between Rectifier & Inverter
+        drawScope.drawLine(
+            color = color,
+            start = Offset(center.x - w * 0.10f, center.y),
+            end = Offset(center.x + w * 0.10f, center.y),
+            strokeWidth = strokeWidth
+        )
+
+        // Static Bypass Line at top
+        val bypassY = center.y - h * 0.32f
+        drawScope.drawLine(
+            color = palette.feeders,
+            start = Offset(center.x - w * 0.4f, bypassY),
+            end = Offset(center.x + w * 0.4f, bypassY),
+            strokeWidth = strokeWidth * 0.7f,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f), 0f)
+        )
+    }
+
+    // 17. Normally-Open Tie Breaker (N.O. / 2/3 Interlock)
+    fun drawTieBreakerNo(
+        drawScope: DrawScope,
+        center: Offset,
+        sizePx: Float,
+        palette: SldPalette,
+        isOpen: Boolean = true
+    ) {
+        val w = sizePx * 1.4f
+        val h = sizePx * 0.6f
+        val strokeWidth = 2.2f
+        val color = palette.validStatus
+
+        // Left bus stub
+        drawScope.drawLine(
+            color = palette.enclosureBusTaps,
+            start = Offset(center.x - w / 2f, center.y),
+            end = Offset(center.x - w * 0.15f, center.y),
+            strokeWidth = strokeWidth * 1.5f
+        )
+        // Right bus stub
+        drawScope.drawLine(
+            color = palette.enclosureBusTaps,
+            start = Offset(center.x + w * 0.15f, center.y),
+            end = Offset(center.x + w / 2f, center.y),
+            strokeWidth = strokeWidth * 1.5f
+        )
+
+        // Terminal contact dots
+        drawScope.drawCircle(color = palette.textPrimary, radius = 3.5f, center = Offset(center.x - w * 0.15f, center.y))
+        drawScope.drawCircle(color = palette.textPrimary, radius = 3.5f, center = Offset(center.x + w * 0.15f, center.y))
+
+        // Open breaker contact blade
+        val contactEnd = if (isOpen) Offset(center.x + w * 0.05f, center.y - h * 0.4f) else Offset(center.x + w * 0.15f, center.y)
+        drawScope.drawLine(
+            color = color,
+            start = Offset(center.x - w * 0.15f, center.y),
+            end = contactEnd,
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+
+        // Interlock bracket arc
+        val bracketPath = Path().apply {
+            moveTo(center.x - w * 0.2f, center.y - h * 0.45f)
+            lineTo(center.x, center.y - h * 0.55f)
+            lineTo(center.x + w * 0.2f, center.y - h * 0.45f)
+        }
+        drawScope.drawPath(bracketPath, color = color, style = Stroke(width = 1.5f))
+    }
+
+    // 18. Dyn11 Two-Winding Transformer Symbol
+    fun drawTransformerDyn11(
+        drawScope: DrawScope,
+        center: Offset,
+        sizePx: Float,
+        palette: SldPalette,
+        ratingText: String = "1000 kVA",
+        voltageText: String = "22kV / 400V"
+    ) {
+        val r = sizePx * 0.35f
+        val strokeWidth = 2.5f
+        val color = palette.textPrimary
+
+        // Primary (top) circle
+        drawScope.drawCircle(
+            color = color,
+            radius = r,
+            center = Offset(center.x, center.y - r * 0.55f),
+            style = Stroke(width = strokeWidth)
+        )
+        // Secondary (bottom) circle
+        drawScope.drawCircle(
+            color = color,
+            radius = r,
+            center = Offset(center.x, center.y + r * 0.55f),
+            style = Stroke(width = strokeWidth)
+        )
+
+        // Primary delta mark (Δ)
+        val deltaPath = Path().apply {
+            val dy = center.y - r * 0.55f
+            moveTo(center.x, dy - r * 0.35f)
+            lineTo(center.x - r * 0.3f, dy + r * 0.25f)
+            lineTo(center.x + r * 0.3f, dy + r * 0.25f)
+            close()
+        }
+        drawScope.drawPath(deltaPath, color = color, style = Stroke(width = 1.8f))
+
+        // Secondary star mark (Y)
+        val sy = center.y + r * 0.55f
+        drawScope.drawLine(color, Offset(center.x, sy), Offset(center.x, sy + r * 0.35f), strokeWidth = 1.8f)
+        drawScope.drawLine(color, Offset(center.x, sy), Offset(center.x - r * 0.25f, sy - r * 0.25f), strokeWidth = 1.8f)
+        drawScope.drawLine(color, Offset(center.x, sy), Offset(center.x + r * 0.25f, sy - r * 0.25f), strokeWidth = 1.8f)
+    }
+
+    // 19. Generator Genset Rotating Machine Symbol
+    fun drawGeneratorGenset(
+        drawScope: DrawScope,
+        center: Offset,
+        sizePx: Float,
+        palette: SldPalette,
+        ratingText: String = "500 kVA"
+    ) {
+        val r = sizePx * 0.45f
+        val strokeWidth = 2.5f
+        val color = palette.textPrimary
+
+        // Stator circle
+        drawScope.drawCircle(
+            color = color,
+            radius = r,
+            center = center,
+            style = Stroke(width = strokeWidth)
+        )
+
+        // G letter glyph
+        val gPath = Path().apply {
+            val cr = r * 0.5f
+            moveTo(center.x + cr * 0.6f, center.y - cr * 0.6f)
+            cubicTo(center.x - cr, center.y - cr, center.x - cr, center.y + cr, center.x, center.y + cr)
+            cubicTo(center.x + cr * 0.8f, center.y + cr, center.x + cr * 0.8f, center.y, center.x + cr * 0.8f, center.y)
+            lineTo(center.x + cr * 0.2f, center.y)
+        }
+        drawScope.drawPath(gPath, color = color, style = Stroke(width = strokeWidth, cap = StrokeCap.Round))
+
+        // Sine wave mark below
+        val sinePath = Path().apply {
+            val sw = r * 0.35f
+            val sh = r * 0.15f
+            val sy = center.y + r * 0.45f
+            moveTo(center.x - sw, sy)
+            cubicTo(center.x - sw / 2f, sy - sh, center.x, sy - sh, center.x, sy)
+            cubicTo(center.x, sy + sh, center.x + sw / 2f, sy + sh, center.x + sw, sy)
+        }
+        drawScope.drawPath(sinePath, color = color, style = Stroke(width = 1.5f))
+    }
+
+    // 20. Instrument CT/VT & Earthing Pit Symbol
+    fun drawCtVtEarth(
+        drawScope: DrawScope,
+        center: Offset,
+        sizePx: Float,
+        palette: SldPalette
+    ) {
+        val strokeWidth = 2.0f
+        val color = palette.textPrimary
+
+        // Feeder line
+        drawScope.drawLine(
+            color = color,
+            start = Offset(center.x - sizePx * 0.5f, center.y),
+            end = Offset(center.x + sizePx * 0.5f, center.y),
+            strokeWidth = strokeWidth
+        )
+
+        // Toroidal CT donut ring
+        drawScope.drawCircle(
+            color = color,
+            radius = sizePx * 0.22f,
+            center = Offset(center.x - sizePx * 0.2f, center.y),
+            style = Stroke(width = strokeWidth)
+        )
+
+        // Earth pit stepped bars
+        val earthX = center.x + sizePx * 0.25f
+        drawScope.drawLine(color, Offset(earthX, center.y), Offset(earthX, center.y + sizePx * 0.3f), strokeWidth = strokeWidth)
+        drawScope.drawLine(color, Offset(earthX - 12f, center.y + sizePx * 0.3f), Offset(earthX + 12f, center.y + sizePx * 0.3f), strokeWidth = strokeWidth)
+        drawScope.drawLine(color, Offset(earthX - 8f, center.y + sizePx * 0.38f), Offset(earthX + 8f, center.y + sizePx * 0.38f), strokeWidth = strokeWidth)
+        drawScope.drawLine(color, Offset(earthX - 4f, center.y + sizePx * 0.46f), Offset(earthX + 4f, center.y + sizePx * 0.46f), strokeWidth = strokeWidth)
+    }
 }
+

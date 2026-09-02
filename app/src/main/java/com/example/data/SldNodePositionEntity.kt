@@ -14,5 +14,12 @@ data class SldNodePositionEntity(
     val projectId: String = "DEFAULT_PROJECT",
     val nodeId: String,
     val x: Float,
-    val y: Float
+    val y: Float,
+    /**
+     * Optional JSON map of manual port-side hints, e.g.
+     * `{"NORMAL":"LEFT","EMERGENCY":"TOP"}`. Persisted so manual port
+     * anchoring survives across sessions (Roadmap Phase 1 §1.1.3).
+     */
+    @ColumnInfo(name = "portOverrides", defaultValue = "NULL")
+    val portOverrides: String? = null
 )

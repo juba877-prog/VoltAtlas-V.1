@@ -1,9 +1,12 @@
 package com.example.sld
 
 import com.example.data.AtsEntity
+import com.example.data.BusTieEntity
 import com.example.data.CircuitEntity
 import com.example.data.GeneratorEntity
 import com.example.data.TransformerEntity
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
@@ -195,6 +198,209 @@ class SldOrthogonalRoutingInvariantTest {
     fun cascadedAtsOutputs_edgesOrthogonalOnAllEngines() {
         runOnAllEngines(cascadedAtsOutputs("inv-cascade")).forEach { (engineName, result) ->
             assertOrthogonalRouting("cascadedAtsOutputs", engineName, result)
+        }
+    }
+
+    // =========================================================================
+    // Phase 3 — Main-Tie-Main horizontal routing + multi-generator emergency
+    // =========================================================================
+
+    private fun doesSegmentIntersectBox(
+        p1: Pair<Float, Float>,
+        p2: Pair<Float, Float>,
+        boxLeft: Float,
+        boxTop: Float,
+        boxRight: Float,
+        boxBottom: Float
+    ): Boolean {
+        val isVertical = abs(p1.first - p2.first) < 1e-3f
+        val isHorizontal = abs(p1.second - p2.second) < 1e-3f
+        if (isVertical) {
+            val segX = p1.first
+            val minY = minOf(p1.second, p2.second)
+            val maxY = maxOf(p1.second, p2.second)
+            return (segX >= boxLeft && segX <= boxRight) && (minY < boxBottom && maxY > boxTop)
+        } else if (isHorizontal) {
+            val segY = p1.second
+            val minX = minOf(p1.first, p2.first)
+            val maxX = maxOf(p1.first, p2.first)
+            return (segY >= boxTop && segY <= boxBottom) && (minX < boxRight && maxX > boxLeft)
+        }
+        return false
+    }
+
+    /**
+     * Generic Main-Tie-Main topology (names are arbitrary fixture data):
+     *
+     *   Transformer -> Board A (MDB)   [strict id 1]
+     *   Transformer -> Board B (MDB)   [strict id 2]
+     *   BusTieEntity(sourceBoardId = 1, targetBoardId = 2)
+     *
+     * Invariants:
+     *  - Strict relational IDs synthesize exactly 2 BUS_TIE_LINK edges, no
+     *    validation issues.
+     *  - Both tie links route HORIZONTALLY at the boards' shared busbar
+     *    centerline (BoardA.RIGHT → BUS_TIE → BoardB.LEFT) — never the vertical
+     *    drop-from-source pattern.
+     *  - No tie-wire segment crosses any other node's box (no vertical
+     *    collisions).
+     */
+    @Test
+    fun mainTieMain_routesHorizontallyAtBusbarCenterline() {
+        val projectId = "inv-mtm"
+        val transformers = listOf(
+            TransformerEntity(projectId = projectId, transformerId = "TX-01", kVA = 1000.0)
+        )
+        val circuits = listOf(
+            CircuitEntity(
+                id = 1, projectId = projectId, circuitName = "BOARD-A",
+                fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"
+            ),
+            CircuitEntity(
+                id = 2, projectId = projectId, circuitName = "BOARD-B",
+                fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"
+            )
+        )
+        val busTies = listOf(
+            BusTieEntity(
+                projectId = projectId, id = 1, busTieId = "TIE-01", name = "Bus Tie 1",
+                sourceBoardId = 1, targetBoardId = 2
+            )
+        )
+
+        val graph = ElectricalNetworkGraphBuilder.buildGraph(
+            activeProjectId = projectId,
+            transformers = transformers,
+            circuits = circuits,
+            busTies = busTies
+        )
+        assertTrue(
+            "Strict board refs must resolve — no validation issues expected",
+            graph.validationIssues.isEmpty()
+        )
+        val tieLinks = graph.edges.filter { it.type == SldEdgeType.BUS_TIE_LINK }
+        assertEquals("Main-Tie-Main must synthesize exactly 2 BUS_TIE_LINK edges", 2, tieLinks.size)
+
+        val result = RiserLayoutEngine.calculateLayout(graph, circuits)
+        assertOrthogonalRouting("mainTieMain", "RiserLayoutEngine", result)
+
+        val boardA = result.nodes.first { it.id == "circ_1" }
+        val boardB = result.nodes.first { it.id == "circ_2" }
+        val centerlineY = boardA.y + boardA.height / 2f
+        assertEquals(
+            "Coupled boards must share one busbar centerline",
+            centerlineY, boardB.y + boardB.height / 2f, 0.01f
+        )
+
+        val tieEdges = result.edges.filter { edge ->
+            tieLinks.any { link -> link.fromNodeId == edge.fromId && link.toNodeId == edge.toId }
+        }
+        assertEquals("Both BUS_TIE_LINK edges must be routed", 2, tieEdges.size)
+
+        for (edge in tieEdges) {
+            val pts = edge.pathPoints
+            assertTrue("Tie edge ${edge.fromId}->${edge.toId} needs >= 2 waypoints", pts.size >= 2)
+            for (p in pts) {
+                assertEquals(
+                    "Tie wire ${edge.fromId}->${edge.toId} must run at the busbar centerline",
+                    centerlineY, p.second, 0.01f
+                )
+            }
+        }
+
+        // No vertical collisions: horizontal tie wires cross no other node box.
+        for (edge in tieEdges) {
+            for (i in 0 until edge.pathPoints.size - 1) {
+                val p1 = edge.pathPoints[i]
+                val p2 = edge.pathPoints[i + 1]
+                for (node in result.nodes) {
+                    if (node.id == edge.fromId || node.id == edge.toId) continue
+                    assertFalse(
+                        "Tie wire segment $p1->$p2 must not cross node box ${node.id}",
+                        doesSegmentIntersectBox(
+                            p1, p2, node.x, node.y, node.x + node.width, node.y + node.height
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Generic paralleled-generator topology (names are arbitrary fixture data):
+     *
+     *   Generator 1 ─┐
+     *                ├─ (shared syncBusId) → SYNC_BUS → ATS_EMERGENCY_PATH → ATS 1
+     *   Generator 2 ─┘
+     *   Transformer -> Board A (MDB) -> ATS 1 (NORMAL)
+     *
+     * Invariant: every ATS_EMERGENCY_PATH segment stays clear of the main
+     * board's busbar rectangle — emergency risers must never intersect the
+     * NORMAL source rail.
+     */
+    @Test
+    fun multiGeneratorEmergencyLines_avoidMainBusbarRectangle() {
+        val projectId = "inv-sync-emerg"
+        val transformers = listOf(
+            TransformerEntity(projectId = projectId, transformerId = "TX-01", kVA = 1000.0)
+        )
+        val generators = listOf(
+            GeneratorEntity(
+                projectId = projectId, generatorId = "GEN-01", generatorName = "Generator 1",
+                manualSizeKVA = 40.0, syncBusId = "SYNC-A"
+            ),
+            GeneratorEntity(
+                projectId = projectId, generatorId = "GEN-02", generatorName = "Generator 2",
+                manualSizeKVA = 30.0, syncBusId = "SYNC-A"
+            )
+        )
+        val atsList = listOf(
+            AtsEntity(
+                projectId = projectId, atsId = "ATS-01", atsName = "ATS 1",
+                normalSourceId = "BOARD-A", emergencySourceId = "GEN-01", outputBoardId = 10
+            )
+        )
+        val circuits = listOf(
+            CircuitEntity(
+                id = 1, projectId = projectId, circuitName = "BOARD-A",
+                fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"
+            ),
+            CircuitEntity(id = 10, projectId = projectId, circuitName = "ATS1-OUT-1", fedFrom = "ATS 1", panelType = "DB")
+        )
+
+        val graph = ElectricalNetworkGraphBuilder.buildGraph(
+            activeProjectId = projectId,
+            transformers = transformers,
+            circuits = circuits,
+            generators = generators,
+            atsList = atsList
+        )
+        assertTrue(
+            "Paralleled generators must synthesize a sync bus without issues",
+            graph.validationIssues.isEmpty()
+        )
+        assertTrue(
+            "Sync bus must be synthesized from the shared syncBusId",
+            graph.nodes.any { it.type == SldNodeType.SYNC_BUS }
+        )
+
+        val result = RiserLayoutEngine.calculateLayout(graph, circuits)
+        assertOrthogonalRouting("multiGenEmergency", "RiserLayoutEngine", result)
+
+        val mdb = result.nodes.first { it.id == "circ_1" }
+        val emergencyEdges = result.edges.filter { it.isEmergency }
+        assertTrue("Fixture must route at least one emergency edge", emergencyEdges.isNotEmpty())
+
+        for (edge in emergencyEdges) {
+            for (i in 0 until edge.pathPoints.size - 1) {
+                val p1 = edge.pathPoints[i]
+                val p2 = edge.pathPoints[i + 1]
+                assertFalse(
+                    "Emergency segment ${edge.fromId}->${edge.toId} $p1->$p2 must not " +
+                        "intersect the main busbar rectangle",
+                    doesSegmentIntersectBox(p1, p2, mdb.x, mdb.y, mdb.x + mdb.width, mdb.y + mdb.height)
+                )
+            }
         }
     }
 }

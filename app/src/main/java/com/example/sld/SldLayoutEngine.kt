@@ -8,6 +8,7 @@ import com.example.engine.ShortCircuitResult
 import com.example.engine.SizingResult
 import com.example.engine.TransformerResult
 import com.example.data.AtsEntity
+import com.example.data.BusTieEntity
 
 data class PositionedSldNode(
     val id: String,
@@ -22,7 +23,9 @@ data class PositionedSldNode(
     val circuit: CircuitEntity? = null,
     val isSource: Boolean = false,
     val dataBlock: SldDataBlock? = null,
-    val status: SldValidationStatus = SldValidationStatus.VALID
+    val status: SldValidationStatus = SldValidationStatus.VALID,
+    /** Resolved schematic ports keyed by side (Phase 3 §3.1). */
+    val ports: Map<PortSide, List<PortAnchor>> = emptyMap()
 )
 
 data class PositionedSldEdge(
@@ -88,7 +91,8 @@ object SldLayoutEngine {
         upsList: List<com.example.data.UpsEntity> = emptyList(),
         upsResults: Map<String, com.example.engine.UpsResult> = emptyMap(),
         textMeasurer: androidx.compose.ui.text.TextMeasurer? = null,
-        manualPositions: Map<String, androidx.compose.ui.geometry.Offset> = emptyMap()
+        manualPositions: Map<String, androidx.compose.ui.geometry.Offset> = emptyMap(),
+        busTies: List<BusTieEntity> = emptyList()
     ): SldEngineResult {
         val graph = ElectricalNetworkGraphBuilder.buildGraph(
             activeProjectId = activeProjectId,
@@ -107,7 +111,8 @@ object SldLayoutEngine {
             atsList = atsList,
             atsResults = atsResults,
             upsList = upsList,
-            upsResults = upsResults
+            upsResults = upsResults,
+            busTies = busTies
         )
 
         return RiserLayoutEngine.calculateLayout(graph, circuits, textMeasurer, manualPositions)
