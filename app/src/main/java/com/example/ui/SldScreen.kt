@@ -179,7 +179,7 @@ fun SldScreen(
 
     // SAF Launcher for SLD DXF Export
     val saveDxfLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("*/*")
+        contract = ActivityResultContracts.CreateDocument("application/dxf")
     ) { uri: Uri? ->
         if (uri != null) {
             scope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -546,19 +546,33 @@ fun SldScreen(
                 )
             },
             onExportDxf = {
-                if (engineResult.nodes.isEmpty()) {
-                    android.widget.Toast.makeText(context, "Diagram not ready or empty. Please add components first.", android.widget.Toast.LENGTH_SHORT).show()
+                val safeProjectName = activeProjectId
+                    .trim()
+                    .replace(Regex("[^a-zA-Z0-9_-]"), "_")
+                    .takeIf { it.isNotBlank() } ?: "VoltAtlas"
+                val suggestedFileName = "${safeProjectName}_SLD.dxf"
+
+                if (engineResult.nodes.isNotEmpty()) {
+                    saveDxfLauncher.launch(suggestedFileName)
                 } else {
-                    val safeName = activeProjectId.ifBlank { "VoltAtlas" }.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-                    saveDxfLauncher.launch("${safeName}_SLD.dxf")
+                    android.widget.Toast.makeText(context, "Diagram not ready or empty. Please add components first.", android.widget.Toast.LENGTH_SHORT).show()
                 }
             },
             onShareDxf = {
-                com.example.sld.SldDxfExporter.exportAndShareDxf(
-                    context = context,
-                    engineResult = engineResult,
-                    projectName = activeProjectId.ifBlank { "VoltAtlas_SLD" }
-                )
+                val safeProjectName = activeProjectId
+                    .trim()
+                    .replace(Regex("[^a-zA-Z0-9_-]"), "_")
+                    .takeIf { it.isNotBlank() } ?: "VoltAtlas"
+
+                if (engineResult.nodes.isNotEmpty()) {
+                    com.example.sld.SldDxfExporter.exportAndShareDxf(
+                        context = context,
+                        engineResult = engineResult,
+                        projectName = safeProjectName
+                    )
+                } else {
+                    android.widget.Toast.makeText(context, "Diagram not ready or empty. Please add components first.", android.widget.Toast.LENGTH_SHORT).show()
+                }
             },
             onOpenSymbolGallery = { showSymbolGallery = true },
             modifier = Modifier
