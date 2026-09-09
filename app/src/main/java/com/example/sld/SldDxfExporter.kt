@@ -1074,6 +1074,24 @@ object SldDxfExporter {
                         val headerY = if (isMain) node.y + barHeight + 26f else node.y + barHeight + 40f
                         writeText(boardHeaders, node.x + 8f, headerY, height = 9f, layer = "E-TEXT-DATA")
                     }
+
+                    // Board load roll-up (Phase 2A): TCL / TDL (with DF) / board
+                    // design current / phase unbalance — all engine-backed.
+                    val boardLoadLine = listOfNotNull(
+                        boardDb?.boardTotalConnectedKva?.takeIf { it.isNotBlank() }?.let { "TCL $it" },
+                        boardDb?.boardDemandKva?.takeIf { it.isNotBlank() }?.let { "TDL $it" },
+                        boardDb?.boardDemandFactorPct?.takeIf { it.isNotBlank() }?.let { "DF $it" },
+                        boardDb?.boardDesignCurrentA?.takeIf { it.isNotBlank() }?.let { "I $it" },
+                        boardDb?.boardUnbalancePct?.takeIf { it.isNotBlank() }?.let { "Unb $it" }
+                    ).joinToString("  |  ")
+                    if (boardLoadLine.isNotBlank()) {
+                        val loadY = when {
+                            isMain -> node.y + barHeight + 40f
+                            boardHeaders.isNotBlank() -> node.y + barHeight + 54f
+                            else -> node.y + barHeight + 40f
+                        }
+                        writeText(boardLoadLine, node.x + 8f, loadY, height = 9f, layer = "E-TEXT-DATA")
+                    }
                 }
             }
         }

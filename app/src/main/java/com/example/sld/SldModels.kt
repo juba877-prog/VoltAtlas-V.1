@@ -235,7 +235,26 @@ data class SldDataBlock(
     val adsDisconnectionTime: String? = null,
 
     /** ADS overall verdict from [AdsResult.status]. */
-    val adsStatus: String? = null
+    val adsStatus: String? = null,
+
+    // ================================================================
+    // BOARD AGGREGATION SLOTS (PanelScheduleEngine roll-up — Phase 2A)
+    // ================================================================
+
+    /** Total Connected Load (TCL) of the board subtree from [PanelScheduleRecursiveResult.totalPanelLoadKVA]. */
+    val boardTotalConnectedKva: String? = null,
+
+    /** Total Demand Load (TDL) = TCL × demand factor of the board circuit. */
+    val boardDemandKva: String? = null,
+
+    /** Demand factor applied to TCL (from [CircuitEntity.demandFactor]), as percent. */
+    val boardDemandFactorPct: String? = null,
+
+    /** Board design current derived from TDL at the board's real phase voltage. */
+    val boardDesignCurrentA: String? = null,
+
+    /** Phase unbalance across L1/L2/L3 from [PanelScheduleRecursiveResult.unbalancePct]. */
+    val boardUnbalancePct: String? = null
 )
 
 data class SldNode(

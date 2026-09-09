@@ -508,22 +508,32 @@ object PanelScheduleEngine {
      * Bottom-up recursive schedule generation.
      * Evaluates child loads fed from panelName (direct circuits + sub-panels),
      * recursively aggregating sub-panel totals.
+     *
+     * @param memo Optional intra-invocation cache shared by a single top-level call
+     *   tree (circuits + sizingResults fixed). Sub-board roll-ups are path-independent
+     *   (a cycle is a graph property, never a traversal artifact), so caching by panel
+     *   key preserves exact semantics while making wide board hierarchies O(N) instead
+     *   of O(N²). Callers that vary circuits/sizingResults must not share a memo.
      */
     fun generateScheduleRecursive(
         panelName: String,
         circuits: List<CircuitEntity>,
         sizingResults: Map<Int, SizingResult> = emptyMap(),
         visitedChain: List<String> = emptyList(),
-        targetCircuitId: Int? = null
+        targetCircuitId: Int? = null,
+        memo: MutableMap<String, PanelScheduleRecursiveResult>? = null
     ): PanelScheduleRecursiveResult {
         val targetName = panelName.trim()
         val normalizedTarget = targetName.lowercase()
         val panelKey = if (targetCircuitId != null) "id_$targetCircuitId" else targetName
 
+        // Phase 2A: memo lookup before any traversal work.
+        memo?.get(panelKey)?.let { return it }
+
         // 1. Circular reference protection
         if (visitedChain.any { it.trim().equals(targetName, ignoreCase = true) || it == panelKey }) {
             val chainStr = (visitedChain + targetName).joinToString(" → ")
-            return PanelScheduleRecursiveResult(
+            val circularResult = PanelScheduleRecursiveResult(
                 panelName = targetName,
                 panelCircuit = null,
                 childrenCircuits = emptyList(),
@@ -541,6 +551,8 @@ object PanelScheduleEngine {
                 hasCircularReference = true,
                 errorMessage = "Circular reference detected in panel hierarchy: $chainStr"
             )
+            memo?.put(panelKey, circularResult)
+            return circularResult
         }
 
         val currentVisited = visitedChain + panelKey
@@ -584,17 +596,18 @@ object PanelScheduleEngine {
             cableStr = sizingRes?.let { it.cableSize_mm2 } ?: (child.overrideCableSize ?: "-")
 
             if (isSubPanel) {
-                // Recursive calculation for sub-panel
+                // Recursive calculation for sub-panel (shares the intra-invocation memo)
                 val subResult = generateScheduleRecursive(
                     panelName = child.circuitName,
                     circuits = circuits,
                     sizingResults = sizingResults,
                     visitedChain = currentVisited,
-                    targetCircuitId = child.id
+                    targetCircuitId = child.id,
+                    memo = memo
                 )
 
                 if (subResult.hasCircularReference) {
-                    return PanelScheduleRecursiveResult(
+                    val propagatedResult = PanelScheduleRecursiveResult(
                         panelName = targetName,
                         panelCircuit = panelCircuit,
                         childrenCircuits = directChildren,
@@ -612,6 +625,8 @@ object PanelScheduleEngine {
                         hasCircularReference = true,
                         errorMessage = subResult.errorMessage
                     )
+                    memo?.put(panelKey, propagatedResult)
+                    return propagatedResult
                 }
 
                 rowLoadKVA = subResult.totalPanelLoadKVA
@@ -740,7 +755,7 @@ object PanelScheduleEngine {
         val avgP = (l1Sum + l2Sum + l3Sum) / 3.0
         val unbal = if (avgP > 0.0) ((maxP - minP) / avgP) * 100.0 else 0.0
 
-        return PanelScheduleRecursiveResult(
+        val finalResult = PanelScheduleRecursiveResult(
             panelName = targetName,
             panelCircuit = panelCircuit,
             childrenCircuits = directChildren,
@@ -758,6 +773,8 @@ object PanelScheduleEngine {
             hasCircularReference = false,
             errorMessage = null
         )
+        memo?.put(panelKey, finalResult)
+        return finalResult
     }
 }
 

@@ -150,6 +150,12 @@ fun SldDetailsSheet(
                     db.panelLocation?.let { DetailRow("Panel Location", it) }
                     db.numberOfWays?.let { DetailRow("Number of Ways", it) }
                     db.mainIncoming?.let { DetailRow("Main Incoming", it) }
+                    // ---- BOARD AGGREGATION (PanelScheduleEngine roll-up — 2A) ----
+                    db.boardTotalConnectedKva?.let { DetailRow("Total Connected Load (TCL)", it) }
+                    db.boardDemandKva?.let { DetailRow("Total Demand Load (TDL)", it) }
+                    db.boardDemandFactorPct?.let { DetailRow("Demand Factor", it) }
+                    db.boardDesignCurrentA?.let { DetailRow("Board Design Current", it) }
+                    db.boardUnbalancePct?.let { DetailRow("Phase Unbalance", it) }
                     // ---- PROTECTION / ADS VERDICTS (engine-backed) ----
                     db.protectionOverload?.let { DetailRow("Overload (Ib≤In≤Iz)", it) }
                     db.protectionShortCircuit?.let { DetailRow("Short Circuit (Icu≥Isc)", it) }

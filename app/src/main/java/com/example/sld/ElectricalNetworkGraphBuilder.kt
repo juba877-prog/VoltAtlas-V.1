@@ -17,6 +17,11 @@ import com.example.engine.PfCorrectionResult
 
 object ElectricalNetworkGraphBuilder {
 
+    /** Node classes treated as switchboards for the Phase 2A load roll-up. */
+    private val BOARD_ROLLUP_NODE_TYPES = setOf(
+        SldNodeType.MDB, SldNodeType.SMDB, SldNodeType.DB, SldNodeType.MCC
+    )
+
     fun buildGraph(
         activeProjectId: String,
         transformers: List<TransformerEntity>,
@@ -955,6 +960,11 @@ object ElectricalNetworkGraphBuilder {
             }
         }
 
+        // Phase 2A: shared memo for board roll-ups — sub-board results are
+        // path-independent, so one cache per buildGraph invocation keeps wide
+        // board hierarchies O(N) (verified by the 10k-circuit stress test).
+        val boardRollupMemo = HashMap<String, com.example.engine.PanelScheduleRecursiveResult>()
+
         projCircuits.forEach { circ ->
             val circNodeId = "circ_${circ.id}"
             val isParentBoard = parentFedNames.contains(circ.circuitName.trim().lowercase()) ||
@@ -1149,6 +1159,38 @@ object ElectricalNetworkGraphBuilder {
             val protRes = protectionResults[circ.id]
             val adsRes = adsResults[circ.id]
 
+            // Phase 2A: board-level load roll-up (TCL / TDL / DF / board current) —
+            // real PanelScheduleEngine output, computed only for switchboard nodes.
+            val boardRollup = if (nodeType in BOARD_ROLLUP_NODE_TYPES) {
+                boardRollupMemo.getOrPut("id_${circ.id}") {
+                    com.example.engine.PanelScheduleEngine.generateScheduleRecursive(
+                        panelName = circ.circuitName,
+                        circuits = projCircuits,
+                        targetCircuitId = circ.id,
+                        memo = boardRollupMemo
+                    )
+                }
+            } else null
+
+            val boardTclKva = boardRollup
+                ?.takeIf { !it.hasCircularReference && it.totalPanelLoadKVA > 0.0 }
+                ?.totalPanelLoadKVA ?: 0.0
+            val boardDf = circ.demandFactor
+            val boardTdlKva = boardTclKva * boardDf
+            val boardIsThreePhase = circ.phases.contains("3")
+            val boardCurrentA = if (boardTdlKva > 0.0) {
+                // Real stored board voltage (CircuitEntity.voltageV) — never a hardcoded default.
+                if (boardIsThreePhase) boardTdlKva * 1000.0 / (kotlin.math.sqrt(3.0) * circ.voltageV)
+                else boardTdlKva * 1000.0 / circ.voltageV
+            } else 0.0
+            val boardTclStr = if (boardTclKva > 0.0) "%.1f kVA".format(boardTclKva) else null
+            val boardTdlStr = if (boardTdlKva > 0.0) "%.1f kVA".format(boardTdlKva) else null
+            val boardDfStr = if (boardTclKva > 0.0 && boardDf > 0.0 && boardDf < 1.0) "%.0f%%".format(boardDf * 100.0) else null
+            val boardCurrentStr = if (boardCurrentA > 0.0) "%.1f A".format(boardCurrentA) else null
+            val boardUnbalStr = boardRollup
+                ?.takeIf { !it.hasCircularReference && it.unbalancePct > 0.0 }
+                ?.let { "%.1f%%".format(it.unbalancePct) }
+
             // 1B: Board header fields — stored on CircuitEntity, previously unrendered.
             val mainIncomingStr = when {
                 !circ.mainIncomingType.isNullOrBlank() && (circ.mainIncomingCount ?: 0) > 1 ->
@@ -1203,6 +1245,11 @@ object ElectricalNetworkGraphBuilder {
                     adsMaxZsOhm = adsRes?.maxZsAllowed?.takeIf { it > 0.0 }?.let { "%.3f Ω".format(it) },
                     adsDisconnectionTime = adsRes?.disconnectionTime?.takeIf { it.isNotBlank() },
                     adsStatus = adsRes?.status?.takeIf { it.isNotBlank() },
+                    boardTotalConnectedKva = boardTclStr,
+                    boardDemandKva = boardTdlStr,
+                    boardDemandFactorPct = boardDfStr,
+                    boardDesignCurrentA = boardCurrentStr,
+                    boardUnbalancePct = boardUnbalStr,
                     statusText = sizingRes?.status ?: "COMPLIANT"
                 ),
                 status = if (isDisconnected) SldValidationStatus.DISCONNECTED else statusVal,
