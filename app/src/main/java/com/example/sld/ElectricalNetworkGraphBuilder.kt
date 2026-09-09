@@ -139,6 +139,8 @@ object ElectricalNetworkGraphBuilder {
                             loadingPct = loadingStr,
                             isc3PhaseKa = iscKaStr,
                             ibAmp = ibAmpStr,
+                            transformerZtMOhm = txRes?.zt?.let { "%.1f mΩ".format(it) },
+                            transformerIsc1PhaseKa = txRes?.isc1Phase?.let { "%.2f kA".format(it) },
                             statusText = txRes?.status ?: "VERIFIED"
                         ),
                         status = if (txRes != null) SldValidationStatus.VALID else SldValidationStatus.VALID,
@@ -190,6 +192,13 @@ object ElectricalNetworkGraphBuilder {
             val genLoadingPct = genRes?.loadingPct?.let { "%.1f%%".format(it) } ?: ""
             val genName = gen.generatorName.ifBlank { "Generator $genId" }
             val genStatusText = if (genRes?.status?.isNotBlank() == true) genRes.status else "EMERGENCY GENERATOR"
+            // Real output frequency: derive from the ATS whose emergency source is this generator
+            // (AtsEntity.systemFrequency is a stored column, default 50). Never fabricated.
+            val genFreq = atsList
+                ?.filter { it.projectId == effectiveProjectId || it.projectId == "DEFAULT_PROJECT" }
+                ?.firstOrNull { it.emergencySourceId?.uppercase() == genId.uppercase() }
+                ?.systemFrequency
+                ?: atsList?.firstOrNull()?.systemFrequency
 
             nodes.add(
                 SldNode(
@@ -203,6 +212,9 @@ object ElectricalNetworkGraphBuilder {
                         voltage = "$sysVoltage V",
                         ibAmp = genIbAmp,
                         loadingPct = genLoadingPct,
+                        generatorMotorStartingKva = genRes?.motorStartingKVA?.takeIf { it > 0.0 }?.let { "%.0f kVA".format(it) },
+                        generatorStepLoadKva = genRes?.stepLoadAtStart?.takeIf { it > 0.0 }?.let { "%.0f kVA".format(it) },
+                        voltageFrequencyHz = genFreq?.let { "$it Hz" },
                         statusText = genStatusText
                     ),
                     status = SldValidationStatus.VALID,
@@ -564,6 +576,10 @@ object ElectricalNetworkGraphBuilder {
                 dataBlock = SldDataBlock(
                     deviceTypeAndRating = atsRating,
                     ibAmp = atsIbAmp,
+                    atsRequiredIcwKa = atsRes?.requiredIcw?.takeIf { it > 0.0 }?.let { "%.2f kA".format(it) },
+                    atsRequiredIcmKa = atsRes?.requiredIcm?.takeIf { it > 0.0 }?.let { "%.2f kA".format(it) },
+                    atsGoverningCurrentA = atsRes?.governingCurrent?.takeIf { it > 0.0 }?.let { "%.0f A".format(it) },
+                    atsTransferTimeS = atsRes?.totalTransferToGenerator?.takeIf { it > 0 }?.let { "${it}s" },
                     statusText = atsRes?.status?.ifBlank { "TRANSFER SWITCH" } ?: "TRANSFER SWITCH"
                 ),
                 status = atsStatus,
@@ -833,6 +849,9 @@ object ElectricalNetworkGraphBuilder {
                         ratedKva = upsRatedKvaStr,
                         voltage = upsSysV,
                         ibAmp = upsIbAmp,
+                        upsBatteryAh = upsRes?.batteryAh?.takeIf { it > 0.0 }?.let { "%.0f Ah".format(it) },
+                        upsBatteryStrings = upsRes?.estimatedBatteryStrings?.takeIf { it > 0 }?.let { "$it str" },
+                        voltageFrequencyHz = "${ups.systemFrequency} Hz",
                         statusText = upsRes?.status?.ifBlank { "UNINTERRUPTIBLE POWER" } ?: "UNINTERRUPTIBLE POWER"
                     ),
                     status = upsStatus,
@@ -1138,6 +1157,13 @@ object ElectricalNetworkGraphBuilder {
                     cumulativeVdPct = cumVdStr,
                     faultLevelKa = ik3Str,
                     interruptingRatingKa = icuStr,
+                    cableIzA = izStr,
+                    cableIbA = ibStr,
+                    cableUtilizationPct = sizingRes?.utilizationPct?.let { "%.1f%%".format(it) },
+                    cableNeutralMm2 = sizingRes?.neutral_mm2,
+                    cableCpcMm2 = sizingRes?.earthCPC_mm2,
+                    cableInstallation = circ.installation.takeIf { it.isNotBlank() },
+                    voltageDropLimitPct = if (circ.maxVDpct > 0.0) "%.2f%%".format(circ.maxVDpct * 100.0) else null,
                     statusText = sizingRes?.status ?: "COMPLIANT"
                 ),
                 status = if (isDisconnected) SldValidationStatus.DISCONNECTED else statusVal,

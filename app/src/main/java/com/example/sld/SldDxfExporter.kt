@@ -854,10 +854,13 @@ object SldDxfExporter {
                 writeText("$runsText$it", textX, fb.y - 6f + step, height = 9.5f, layer = "E-TEXT-DATA")
             }
 
-            // Line 3: Length & voltage drop (E-TEXT-DATA, height 9.5)
+            // Line 3: Length & voltage drop — extended with cumulative VD and VD limit
+            // (cumulative VD% was always computed but previously dropped from DXF)
             val lengthStr = db.lengthM?.takeIf { it.isNotBlank() }?.let { "L = ${it}m" }
             val vdStr = db.voltageDropPct?.takeIf { it.isNotBlank() }?.let { "VD = $it" }
-            val combinedLvd = listOfNotNull(lengthStr, vdStr).joinToString("  ")
+            val cumVdStr = db.cumulativeVdPct?.takeIf { it.isNotBlank() }?.let { "Cum = $it" }
+            val vdLimitStr = db.voltageDropLimitPct?.takeIf { it.isNotBlank() }?.let { "≤$it" }
+            val combinedLvd = listOfNotNull(lengthStr, vdStr, cumVdStr, vdLimitStr).joinToString("  ")
             if (combinedLvd.isNotBlank()) {
                 writeText(combinedLvd, textX, fb.y - 6f + 2 * step, height = 9.5f, layer = "E-TEXT-DATA")
             }
@@ -866,6 +869,23 @@ object SldDxfExporter {
             val ik3 = db.faultLevelKa.orEmpty().replace("kA", "", ignoreCase = true).trim()
             if (ik3.isNotBlank()) {
                 writeText("Isc = $ik3 kA", textX, fb.y - 6f + 3 * step, height = 9.5f, layer = "E-TEXT-DATA")
+            }
+
+            // Line 5: Cable ampacity / utilization / conductors (E-TEXT-DATA, height 9.5)
+            // Dark-data: Iz, Ib, utilization % and CPC/neutral sizes — all engine-backed.
+            val izStr = db.cableIzA?.takeIf { it.isNotBlank() }?.let { "Iz = $it" }
+            val utilizationStr = db.cableUtilizationPct?.takeIf { it.isNotBlank() }?.let { "Util = $it" }
+            val cpcStr = db.cableCpcMm2?.takeIf { it.isNotBlank() }?.let { "CPC $it" }
+            val neutralStr = db.cableNeutralMm2?.takeIf { it.isNotBlank() }?.let { "N $it" }
+            val line5 = listOfNotNull(izStr, utilizationStr, neutralStr, cpcStr).joinToString("  ")
+            if (line5.isNotBlank()) {
+                writeText(line5, textX, fb.y - 6f + 4 * step, height = 9.5f, layer = "E-TEXT-DATA")
+            }
+
+            // Line 6: Device interrupting rating Icu (E-TEXT-DATA, height 9.5)
+            val icuStr = db.interruptingRatingKa?.takeIf { it.isNotBlank() }?.let { "Icu = $it" }
+            if (icuStr != null) {
+                writeText(icuStr, textX, fb.y - 6f + 5 * step, height = 9.5f, layer = "E-TEXT-DATA")
             }
         }
 
@@ -882,20 +902,39 @@ object SldDxfExporter {
                     writeInsert(BLK_TRANSFORMER_DYN11, symbol.cx, symbol.cy, "E-TX")
                     val vectorGroup = node.dataBlock?.windingConnection
                         ?.takeIf { it.isNotBlank() }?.let { " $it" } ?: ""
+                    val txFlc = node.dataBlock?.ibAmp?.takeIf { it.isNotBlank() }?.let { "FLC $it" }
+                    val txZ = node.dataBlock?.transformerZtMOhm?.takeIf { it.isNotBlank() }?.let { "Zt $it" }
+                    val txIsc1 = node.dataBlock?.transformerIsc1PhaseKa?.takeIf { it.isNotBlank() }?.let { "Isc1 $it" }
+                    val txIsc3 = node.dataBlock?.isc3PhaseKa?.takeIf { it.isNotBlank() }?.let { "Isc3 $it" }
+                    val txLoading = node.dataBlock?.loadingPct?.takeIf { it.isNotBlank() }?.let { "Load $it" }
                     writeText(equipmentDesignation(node), symbol.cx + 45f, symbol.cy - 10f, height = 12f, layer = "E-TEXT-TITLE")
                     writeText(
                         "${extractKvaText(node)}\n${cleanEquipmentText(node.ratingText)}$vectorGroup",
                         symbol.cx + 45f, symbol.cy + 8f, height = 9.5f, layer = "E-TEXT-DATA"
+                    )
+                    writeText(
+                        listOfNotNull(txFlc, txZ, txIsc1, txIsc3, txLoading).joinToString("  "),
+                        symbol.cx + 45f, symbol.cy + 34f, height = 8f, layer = "E-TEXT-DATA"
                     )
                 }
 
                 symbol != null && symbol.kind == EquipmentKind.GENERATOR -> {
                     // Synchronous Standby Generator block instance
                     writeInsert(BLK_GENERATOR, symbol.cx, symbol.cy, "E-GEN")
+                    // Real voltage + frequency from the graph builder (real data, never fabricated)
+                    val genVoltage = node.dataBlock?.voltage?.takeIf { it.isNotBlank() }
+                    val genFreq = node.dataBlock?.voltageFrequencyHz?.takeIf { it.isNotBlank() }
+                    val genLoad = node.dataBlock?.loadingPct?.takeIf { it.isNotBlank() }?.let { "Load $it" }
+                    val genStart = node.dataBlock?.generatorMotorStartingKva?.takeIf { it.isNotBlank() }?.let { "Mstart $it" }
+                    val genStep = node.dataBlock?.generatorStepLoadKva?.takeIf { it.isNotBlank() }?.let { "Step $it" }
                     writeText(equipmentDesignation(node), symbol.cx + 45f, symbol.cy - 10f, height = 12f, layer = "E-TEXT-TITLE")
                     writeText(
-                        "${extractKvaText(node)} Prime\n400V 50Hz",
+                        "${extractKvaText(node)} Prime\n${listOfNotNull(genVoltage, genFreq).joinToString(" · ")}",
                         symbol.cx + 45f, symbol.cy + 8f, height = 9.5f, layer = "E-TEXT-DATA"
+                    )
+                    writeText(
+                        listOfNotNull(genLoad, genStart, genStep).joinToString("  "),
+                        symbol.cx + 45f, symbol.cy + 30f, height = 8f, layer = "E-TEXT-DATA"
                     )
                 }
 
@@ -909,20 +948,35 @@ object SldDxfExporter {
                     } else {
                         "AUTO TRANSFER SCHEME"
                     }
+                    val atsIcw = node.dataBlock?.atsRequiredIcwKa?.takeIf { it.isNotBlank() }?.let { "Icw $it" }
+                    val atsIcm = node.dataBlock?.atsRequiredIcmKa?.takeIf { it.isNotBlank() }?.let { "Icm $it" }
+                    val atsIg = node.dataBlock?.atsGoverningCurrentA?.takeIf { it.isNotBlank() }?.let { "Ig $it" }
+                    val atsTt = node.dataBlock?.atsTransferTimeS?.takeIf { it.isNotBlank() }?.let { "Tt $it" }
                     writeText(equipmentDesignation(node), symbol.cx + 45f, symbol.cy - 10f, height = 12f, layer = "E-TEXT-TITLE")
                     writeText(
                         "${extractAtsRatingText(node)}\n$scheme",
                         symbol.cx + 45f, symbol.cy + 8f, height = 9.5f, layer = "E-TEXT-DATA"
+                    )
+                    writeText(
+                        listOfNotNull(atsIcw, atsIcm, atsIg, atsTt).joinToString("  "),
+                        symbol.cx + 45f, symbol.cy + 34f, height = 8f, layer = "E-TEXT-DATA"
                     )
                 }
 
                 symbol != null && symbol.kind == EquipmentKind.UPS -> {
                     // Online Double-Conversion Static UPS block instance
                     writeInsert(BLK_UPS_ONLINE, symbol.cx, symbol.cy, "E-SYMBOLS")
+                    val upsBat = node.dataBlock?.upsBatteryAh?.takeIf { it.isNotBlank() }
+                    val upsStr = node.dataBlock?.upsBatteryStrings?.takeIf { it.isNotBlank() }
+                    val upsFreq = node.dataBlock?.voltageFrequencyHz?.takeIf { it.isNotBlank() }
                     writeText(equipmentDesignation(node), symbol.cx + 45f, symbol.cy - 10f, height = 12f, layer = "E-TEXT-TITLE")
                     writeText(
                         "${cleanEquipmentText(node.ratingText)}\nONLINE DOUBLE CONVERSION",
                         symbol.cx + 45f, symbol.cy + 8f, height = 9.5f, layer = "E-TEXT-DATA"
+                    )
+                    writeText(
+                        listOfNotNull(upsBat, upsStr, upsFreq).joinToString("  "),
+                        symbol.cx + 45f, symbol.cy + 30f, height = 8f, layer = "E-TEXT-DATA"
                     )
                 }
 

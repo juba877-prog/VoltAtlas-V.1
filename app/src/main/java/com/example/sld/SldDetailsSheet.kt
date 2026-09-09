@@ -125,6 +125,24 @@ fun SldDetailsSheet(
                     db.cumulativeVdPct?.let { DetailRow("Cumulative VD", it) }
                     db.faultLevelKa?.let { DetailRow("3Ph Short Circuit", it) }
                     db.loadingPct?.let { DetailRow("Transformer Loading", it) }
+                    // ---- DARK-DATA SLOTS (engine-backed, plumbed end-to-end) ----
+                    db.interruptingRatingKa?.let { DetailRow("Interrupting Rating (Icu)", it) }
+                    db.transformerZtMOhm?.let { DetailRow("Transformer Impedance (Zt)", it) }
+                    db.transformerIsc1PhaseKa?.let { DetailRow("Transformer Isc (1Ph)", it) }
+                    db.cableUtilizationPct?.let { DetailRow("Cable Utilization", it) }
+                    db.cableNeutralMm2?.let { DetailRow("Neutral Conductor", it) }
+                    db.cableCpcMm2?.let { DetailRow("CPC (Earth) Conductor", it) }
+                    db.cableInstallation?.let { DetailRow("Installation Method", it) }
+                    db.voltageDropLimitPct?.let { DetailRow("VD Design Limit", it) }
+                    db.atsRequiredIcwKa?.let { DetailRow("ATS Required Icw", it) }
+                    db.atsRequiredIcmKa?.let { DetailRow("ATS Required Icm", it) }
+                    db.atsGoverningCurrentA?.let { DetailRow("ATS Governing Current", it) }
+                    db.atsTransferTimeS?.let { DetailRow("ATS Transfer Time", it) }
+                    db.upsBatteryAh?.let { DetailRow("UPS Battery Bank", it) }
+                    db.upsBatteryStrings?.let { DetailRow("UPS Battery Strings", it) }
+                    db.generatorMotorStartingKva?.let { DetailRow("Motor-Starting kVA", it) }
+                    db.generatorStepLoadKva?.let { DetailRow("Step Load at Start", it) }
+                    db.voltageFrequencyHz?.let { DetailRow("Output Frequency", it) }
                     DetailRow("Result Provenance", node.provenance.name)
                 }
             }

@@ -127,7 +127,65 @@ data class SldDataBlock(
     /** Protective device interrupting rating (Icu), e.g. "36 kA" (Roadmap §1.2 checklist). */
     val interruptingRatingKa: String? = null,
     val statusText: String = "DATA REQUIRED",
-    val customFields: Map<String, String> = emptyMap()
+    val customFields: Map<String, String> = emptyMap(),
+
+    // ================================================================
+    // DARK-DATA SLOTS (Phase 1 — pre-computed, now plumbed end-to-end)
+    // ================================================================
+
+    /** Derated cable ampacity Iz (A) from [CableSizingEngine.capacity_derated_Iz_A]. */
+    val cableIzA: String? = null,
+
+    /** Design current Ib (A) — already mirrored in [ibAmp]; this slot carries the raw numeric. */
+    val cableIbA: String? = null,
+
+    /** Thermal utilization % from [CableSizingEngine.utilizationPct]. */
+    val cableUtilizationPct: String? = null,
+
+    /** Neutral conductor size mm² (from [SizingResult.neutral_mm2]). */
+    val cableNeutralMm2: String? = null,
+
+    /** CPC / earth conductor size mm² (from [SizingResult.earthCPC_mm2]). */
+    val cableCpcMm2: String? = null,
+
+    /** Installation method (from [CircuitEntity.installation]). */
+    val cableInstallation: String? = null,
+
+    /** Voltage-drop design limit % (from [CircuitEntity.maxVDpct], as percent). */
+    val voltageDropLimitPct: String? = null,
+
+    /** Transformer positive-sequence impedance Zt (mΩ) — computed, never rendered before. */
+    val transformerZtMOhm: String? = null,
+
+    /** Transformer single-phase earth-fault current Isc₁ (kA) — computed, never rendered before. */
+    val transformerIsc1PhaseKa: String? = null,
+
+    /** ATS required rated short-time withstand current Icw (kA) from [AtsResult.requiredIcw]. */
+    val atsRequiredIcwKa: String? = null,
+
+    /** ATS required rated peak withstand current Icm (kA) from [AtsResult.requiredIcm]. */
+    val atsRequiredIcmKa: String? = null,
+
+    /** ATS governing design current (A) from [AtsResult.governingCurrent]. */
+    val atsGoverningCurrentA: String? = null,
+
+    /** ATS mains-failure detection → generator-start transfer time (s). */
+    val atsTransferTimeS: String? = null,
+
+    /** UPS battery bank capacity from [UpsResult.batteryAh] (Ah) + DC bus voltage. */
+    val upsBatteryAh: String? = null,
+
+    /** UPS estimated battery strings from [UpsResult.estimatedBatteryStrings]. */
+    val upsBatteryStrings: String? = null,
+
+    /** Generator motor-starting kVA from [GeneratorResult.motorStartingKVA]. */
+    val generatorMotorStartingKva: String? = null,
+
+    /** Generator step load at start (kVA) from [GeneratorResult.stepLoadAtStart]. */
+    val generatorStepLoadKva: String? = null,
+
+    /** Generator/UPS output frequency (Hz) from the real ATS/UPS systemFrequency column. */
+    val voltageFrequencyHz: String? = null
 )
 
 data class SldNode(
