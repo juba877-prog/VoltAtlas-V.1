@@ -92,7 +92,9 @@ object SldLayoutEngine {
         upsResults: Map<String, com.example.engine.UpsResult> = emptyMap(),
         textMeasurer: androidx.compose.ui.text.TextMeasurer? = null,
         manualPositions: Map<String, androidx.compose.ui.geometry.Offset> = emptyMap(),
-        busTies: List<BusTieEntity> = emptyList()
+        busTies: List<BusTieEntity> = emptyList(),
+        protectionResults: Map<Int, com.example.engine.ProtectionResult> = emptyMap(),
+        adsResults: Map<Int, com.example.engine.AdsResult> = emptyMap()
     ): SldEngineResult {
         val graph = ElectricalNetworkGraphBuilder.buildGraph(
             activeProjectId = activeProjectId,
@@ -112,6 +114,8 @@ object SldLayoutEngine {
             atsResults = atsResults,
             upsList = upsList,
             upsResults = upsResults,
+            protectionResults = protectionResults,
+            adsResults = adsResults,
             busTies = busTies
         )
 

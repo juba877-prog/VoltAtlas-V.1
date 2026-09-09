@@ -724,7 +724,9 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 generators = genList,
                 generatorResults = generatorResults,
                 atsList = atsEntitiesList,
-                atsResults = atsResults
+                atsResults = atsResults,
+                protectionResults = protectionResults,
+                adsResults = adsResults
             )
 
             val totalFailures = graph.validationIssues.count { it.severity == com.example.sld.SldValidationStatus.INVALID } +

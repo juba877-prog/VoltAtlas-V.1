@@ -15,6 +15,7 @@ fun SldScreen(
     onBackToProjects: () -> Unit = {},
     onNavigateToTab: (Int) -> Unit = {},
     manualPositions: MutableMap<String, Offset> = mutableMapOf(),
+    projectRevision: Long? = null,
     modifier: Modifier = Modifier
 ) {
     com.example.ui.SldScreen(
@@ -35,6 +36,9 @@ fun SldScreen(
         upsResult = state.upsResult,
         upsList = state.upsList,
         upsResults = state.upsResults,
+        protectionResults = state.protectionResults,
+        adsResults = state.adsResults,
+        projectRevision = projectRevision,
         manualPositions = manualPositions,
         onNavigateToTab = onNavigateToTab,
         modifier = modifier

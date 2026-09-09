@@ -185,7 +185,57 @@ data class SldDataBlock(
     val generatorStepLoadKva: String? = null,
 
     /** Generator/UPS output frequency (Hz) from the real ATS/UPS systemFrequency column. */
-    val voltageFrequencyHz: String? = null
+    val voltageFrequencyHz: String? = null,
+
+    // ================================================================
+    // BOARD HEADER SLOTS (stored on CircuitEntity, now surfaced — 1B)
+    // ================================================================
+
+    /** Busbar current rating (A) from [CircuitEntity.busbarRatingA]. */
+    val busbarRatingA: String? = null,
+
+    /** Board short-circuit rating (kA) from [CircuitEntity.scRatingKA]. */
+    val scRatingKA: String? = null,
+
+    /** Ingress protection rating from [CircuitEntity.ipRating]. */
+    val ipRating: String? = null,
+
+    /** Physical panel location from [CircuitEntity.panelLocation]. */
+    val panelLocation: String? = null,
+
+    /** Number of ways from [CircuitEntity.numberOfWays]. */
+    val numberOfWays: String? = null,
+
+    /** Main incoming device (type × count) from [CircuitEntity.mainIncomingType/Count]. */
+    val mainIncoming: String? = null,
+
+    // ================================================================
+    // PROTECTION / ADS VERDICT SLOTS (ProtectionEngine / ADS — 1B)
+    // ================================================================
+
+    /** Overload coordination verdict (Ib <= In <= Iz) from [ProtectionResult.overloadStatus]. */
+    val protectionOverload: String? = null,
+
+    /** Short-circuit verdict (Icu >= Isc) from [ProtectionResult.shortCircuitStatus]. */
+    val protectionShortCircuit: String? = null,
+
+    /** Cable thermal-withstand verdict from [ProtectionResult.cableWithstandStatus]. */
+    val protectionCableWithstand: String? = null,
+
+    /** Selectivity verdict from [ProtectionResult.selectivityStatus]. */
+    val protectionSelectivity: String? = null,
+
+    /** Earth-fault loop impedance Zs (Ω) from [AdsResult.calculatedZs]. */
+    val adsZsOhm: String? = null,
+
+    /** Maximum permitted Zs (Ω) from [AdsResult.maxZsAllowed]. */
+    val adsMaxZsOhm: String? = null,
+
+    /** Disconnection time from [AdsResult.disconnectionTime]. */
+    val adsDisconnectionTime: String? = null,
+
+    /** ADS overall verdict from [AdsResult.status]. */
+    val adsStatus: String? = null
 )
 
 data class SldNode(

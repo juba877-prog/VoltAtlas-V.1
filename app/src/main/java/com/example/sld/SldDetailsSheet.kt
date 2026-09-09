@@ -113,7 +113,7 @@ fun SldDetailsSheet(
                     val db = node.dataBlock
                     val displayVoltage = node.voltage?.takeIf { it.isNotBlank() }
                         ?: db.voltage?.takeIf { it.isNotBlank() }
-                        ?: "400 V"
+                        ?: "Not set"
                     DetailRow("Voltage Rating", displayVoltage)
                     db.ratedKva?.let { DetailRow("Rating / Capacity", it) }
                     db.deviceTypeAndRating?.let { DetailRow("Protective Device", it) }
@@ -143,6 +143,23 @@ fun SldDetailsSheet(
                     db.generatorMotorStartingKva?.let { DetailRow("Motor-Starting kVA", it) }
                     db.generatorStepLoadKva?.let { DetailRow("Step Load at Start", it) }
                     db.voltageFrequencyHz?.let { DetailRow("Output Frequency", it) }
+                    // ---- BOARD HEADERS (stored on CircuitEntity) ----
+                    db.busbarRatingA?.let { DetailRow("Busbar Rating", it) }
+                    db.scRatingKA?.let { DetailRow("Board SC Rating", it) }
+                    db.ipRating?.let { DetailRow("Ingress Protection", it) }
+                    db.panelLocation?.let { DetailRow("Panel Location", it) }
+                    db.numberOfWays?.let { DetailRow("Number of Ways", it) }
+                    db.mainIncoming?.let { DetailRow("Main Incoming", it) }
+                    // ---- PROTECTION / ADS VERDICTS (engine-backed) ----
+                    db.protectionOverload?.let { DetailRow("Overload (Ib≤In≤Iz)", it) }
+                    db.protectionShortCircuit?.let { DetailRow("Short Circuit (Icu≥Isc)", it) }
+                    db.protectionCableWithstand?.let { DetailRow("Cable Withstand", it) }
+                    db.protectionSelectivity?.let { DetailRow("Selectivity", it) }
+                    val zsPair = listOfNotNull(db.adsZsOhm, db.adsMaxZsOhm)
+                        .takeIf { it.size == 2 }?.joinToString(" ≤ ") ?: db.adsZsOhm
+                    zsPair?.let { DetailRow("Earth Loop (Zs ≤ Zs,max)", it) }
+                    db.adsDisconnectionTime?.let { DetailRow("Disconnection Time", it) }
+                    db.adsStatus?.let { DetailRow("ADS Verdict", it) }
                     DetailRow("Result Provenance", node.provenance.name)
                 }
             }

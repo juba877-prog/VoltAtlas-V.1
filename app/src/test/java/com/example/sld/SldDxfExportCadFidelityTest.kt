@@ -554,11 +554,15 @@ class SldDxfExportCadFidelityTest {
         val engineResult = createSampleEngineResult()
         val projectName = "Hospital Central Substation"
         val dxf = SldDxfExporter.generateDxf(engineResult, projectName)
+        val dxfWithRevision = SldDxfExporter.generateDxf(engineResult, projectName, projectRevision = 3L)
 
         assertTrue("Title block must include project name", dxf.contains("PROJECT: $projectName"))
         assertTrue("Title block must include drawing subtitle", dxf.contains("DRAWING: SINGLE LINE DIAGRAM (SLD)"))
         assertTrue("Title block must include IEC standard", dxf.contains("STANDARD: IEC 60364 / BS 7671"))
-        assertTrue("Title block must include revision block", dxf.contains("REV: A"))
+        // Golden rule: the revision must come from ProjectEntity.revision — the real
+        // value is rendered when supplied, and NO revision is ever fabricated when absent.
+        assertTrue("Title block must render the real project revision", dxfWithRevision.contains("REV: 3"))
+        assertTrue("Title block must not fabricate a revision when none is supplied", !dxf.contains("REV: "))
         assertTrue("Title block must include date", dxf.contains("DATE: "))
         assertTrue("Sheet frame must be on E-BORDER layer", dxf.contains("8\nE-BORDER\n"))
     }

@@ -437,6 +437,7 @@ fun MainLayout(
                 onBackToProjects = { viewModel.closeProject() },
                 onNavigateToTab = { currentTab = it },
                 manualPositions = sldManualPositions,
+                projectRevision = activeProject?.revision,
                 modifier = Modifier.fillMaxSize().statusBarsPadding()
             )
             return
@@ -1249,6 +1250,10 @@ private fun RenderTabContent(
             upsResult = uiStateVal.upsResult,
             upsList = uiStateVal.upsList,
             upsResults = uiStateVal.upsResults,
+            protectionResults = uiStateVal.protectionResults,
+            adsResults = uiStateVal.adsResults,
+            projectRevision = viewModel.projects.value
+                .find { it.projectId == (viewModel.activeProjectId.value ?: "") }?.revision,
             onNavigateToTab = onNavigateTab
         )
         6 -> ConduitFillScreen(viewModel)

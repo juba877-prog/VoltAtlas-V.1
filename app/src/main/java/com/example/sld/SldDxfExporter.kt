@@ -606,15 +606,18 @@ object SldDxfExporter {
         return if (amp != null) "${amp}A $poles".trim() else clean
     }
 
-    /** Engineering main busbar tag: "[BoardID] Main Busbar: [Rating]A, [Icw]kA/1s, 400V". */
+    /** Engineering main busbar tag: "[BoardID] Main Busbar: [Rating]A, [Icw]kA/1s, [Voltage]". */
     private fun buildMainBusbarTag(node: PositionedSldNode): String {
         val ratingA = Regex("(\\d+(?:\\.\\d+)?)\\s*A(?![A-Za-z])").find(node.ratingText)?.groupValues?.get(1)
         val icw = Regex("(\\d+(?:\\.\\d+)?)\\s*kA", RegexOption.IGNORE_CASE).find(node.ratingText)?.groupValues?.get(1)
+        // Real system voltage from the node data (phases → "400 V"), never a hardcoded default.
+        val voltageStr = node.dataBlock?.voltage?.takeIf { it.isNotBlank() }
+            ?.let { cleanEquipmentText(it) }
         return buildString {
             append(node.id).append(" Main Busbar: ")
             if (ratingA != null) append(ratingA).append("A") else append(cleanEquipmentText(node.ratingText))
             if (icw != null) append(", ").append(icw).append("kA/1s")
-            append(", 400V")
+            if (!voltageStr.isNullOrBlank()) append(", ").append(voltageStr)
         }
     }
 
@@ -623,7 +626,11 @@ object SldDxfExporter {
      * ASCII DXF with the IEC 60617 block library, terminal-snapped routing,
      * annotation corridors and full drafting hygiene.
      */
-    fun generateDxf(engineResult: SldEngineResult, projectName: String = "VoltAtlas_SLD"): String {
+    fun generateDxf(
+        engineResult: SldEngineResult,
+        projectName: String = "VoltAtlas_SLD",
+        projectRevision: Long? = null
+    ): String {
         val sb = StringBuilder()
 
         val bounds = engineResult.bounds
@@ -887,6 +894,31 @@ object SldDxfExporter {
             if (icuStr != null) {
                 writeText(icuStr, textX, fb.y - 6f + 5 * step, height = 9.5f, layer = "E-TEXT-DATA")
             }
+
+            // Line 7: Protection verdicts (E-TEXT-DATA, height 9.5) — dark-data:
+            // overload / short-circuit / cable-withstand / selectivity PASS-FAIL.
+            val protLine = listOfNotNull(
+                db.protectionOverload?.takeIf { it.isNotBlank() }?.let { "OL $it" },
+                db.protectionShortCircuit?.takeIf { it.isNotBlank() }?.let { "SC $it" },
+                db.protectionCableWithstand?.takeIf { it.isNotBlank() }?.let { "Wth $it" },
+                db.protectionSelectivity?.takeIf { it.isNotBlank() }?.let { "Sel $it" }
+            ).joinToString(" | ")
+            if (protLine.isNotBlank()) {
+                writeText(protLine, textX, fb.y - 6f + 6 * step, height = 9.5f, layer = "E-TEXT-DATA")
+            }
+
+            // Line 8: ADS / earth-fault loop impedance (E-TEXT-DATA, height 9.5) — dark-data:
+            // Zs vs Zs,max, disconnection time and the overall verdict.
+            val zsStr = if (db.adsZsOhm?.isNotBlank() == true && db.adsMaxZsOhm?.isNotBlank() == true)
+                "Zs ${db.adsZsOhm} ≤ ${db.adsMaxZsOhm}" else db.adsZsOhm?.takeIf { it.isNotBlank() }?.let { "Zs $it" }
+            val adsLine = listOfNotNull(
+                zsStr,
+                db.adsDisconnectionTime?.takeIf { it.isNotBlank() }?.let { "t $it" },
+                db.adsStatus?.takeIf { it.isNotBlank() }
+            ).joinToString("  ")
+            if (adsLine.isNotBlank()) {
+                writeText(adsLine, textX, fb.y - 6f + 7 * step, height = 9.5f, layer = "E-TEXT-DATA")
+            }
         }
 
         // ==========================================
@@ -1023,8 +1055,24 @@ object SldDxfExporter {
                     // the bar top edge — the zone above stays 100% clean)
                     writeText(node.label, node.x + 8f, node.y + barHeight + 12f, height = 13f, layer = "E-TEXT-TITLE")
 
+                    // Board header dark-data (busbar A / Icw / IP / location / ways /
+                    // main incoming) — all stored on CircuitEntity, now surfaced.
+                    val boardDb = node.dataBlock
+                    val boardHeaders = listOfNotNull(
+                        boardDb?.busbarRatingA?.takeIf { it.isNotBlank() }?.let { "Bus $it" },
+                        boardDb?.scRatingKA?.takeIf { it.isNotBlank() }?.let { "Icw $it" },
+                        boardDb?.ipRating?.takeIf { it.isNotBlank() },
+                        boardDb?.panelLocation?.takeIf { it.isNotBlank() },
+                        boardDb?.numberOfWays?.takeIf { it.isNotBlank() }?.let { "$it ways" },
+                        boardDb?.mainIncoming?.takeIf { it.isNotBlank() }?.let { "In: $it" }
+                    ).joinToString("  |  ")
+
                     if (!isMain && node.ratingText.isNotBlank()) {
                         writeText(node.ratingText, node.x + 8f, node.y + barHeight + 26f, height = 9f, layer = "E-TEXT-DATA")
+                    }
+                    if (boardHeaders.isNotBlank()) {
+                        val headerY = if (isMain) node.y + barHeight + 26f else node.y + barHeight + 40f
+                        writeText(boardHeaders, node.x + 8f, headerY, height = 9f, layer = "E-TEXT-DATA")
                     }
                 }
             }
@@ -1054,8 +1102,10 @@ object SldDxfExporter {
         writeText("PROJECT: $effectiveProjectName", tbX + 12f, tbY + 18f, height = 12f, layer = "E-BORDER")
         writeText("DRAWING: SINGLE LINE DIAGRAM (SLD)", tbX + 12f, tbY + 46f, height = 11f, layer = "E-BORDER")
         writeText("STANDARD: IEC 60364 / BS 7671 / IEC 60617", tbX + 12f, tbY + 74f, height = 9f, layer = "E-BORDER")
+        // Real revision from ProjectEntity.revision when available — never a fabricated "REV: A".
+        val revSegment = projectRevision?.let { "REV: $it | " } ?: ""
         writeText(
-            "DATE: $dateStamp | REV: A | SCALE: NTS | VoltAtlas Electrical CAD Engine",
+            "DATE: $dateStamp | ${revSegment}SCALE: NTS | VoltAtlas Electrical CAD Engine",
             tbX + 12f, tbY + 98f, height = 8f, layer = "E-BORDER"
         )
 
@@ -1068,8 +1118,12 @@ object SldDxfExporter {
     /**
      * Alias for generateDxf conforming to canonical CAD exporter interface.
      */
-    fun exportToDxfString(engineResult: SldEngineResult, projectName: String = "VoltAtlas_SLD"): String =
-        generateDxf(engineResult, projectName)
+    fun exportToDxfString(
+        engineResult: SldEngineResult,
+        projectName: String = "VoltAtlas_SLD",
+        projectRevision: Long? = null
+    ): String =
+        generateDxf(engineResult, projectName, projectRevision)
 
     /**
      * Writes DXF string to an OutputStream and flushes.
@@ -1090,7 +1144,8 @@ object SldDxfExporter {
     fun exportAndShareDxf(
         context: Context,
         engineResult: SldEngineResult,
-        projectName: String = "VoltAtlas_SLD"
+        projectName: String = "VoltAtlas_SLD",
+        projectRevision: Long? = null
     ) {
         if (engineResult.nodes.isEmpty()) {
             Toast.makeText(context, "Diagram empty. Please add components first.", Toast.LENGTH_SHORT).show()
@@ -1098,7 +1153,7 @@ object SldDxfExporter {
         }
 
         try {
-            val dxfString = generateDxf(engineResult, projectName)
+            val dxfString = generateDxf(engineResult, projectName, projectRevision)
             val cacheDir = context.cacheDir
             val cleanProjectName = projectName
                 .trim()

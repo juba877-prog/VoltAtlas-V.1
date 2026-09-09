@@ -70,6 +70,9 @@ fun SldScreen(
     upsResult: com.example.engine.UpsResult? = null,
     upsList: List<com.example.data.UpsEntity> = emptyList(),
     upsResults: Map<String, com.example.engine.UpsResult> = emptyMap(),
+    protectionResults: Map<Int, com.example.engine.ProtectionResult> = emptyMap(),
+    adsResults: Map<Int, com.example.engine.AdsResult> = emptyMap(),
+    projectRevision: Long? = null,
     manualPositions: MutableMap<String, Offset> = remember { mutableStateMapOf() },
     onNavigateToTab: (Int) -> Unit = {},
     modifier: Modifier = Modifier
@@ -98,7 +101,7 @@ fun SldScreen(
         sizingResults.mapValues { (_, res) -> res.utilizationPct }
     }
     
-    val engineResult = remember(circuits, effectiveProjId, transformers, sizingResults, transformerResults, generatorResult, generators, generatorResults, atsResult, atsEntity, atsList, atsResults, upsEntity, upsResult, upsList, upsResults, manualPositions.toMap()) {
+    val engineResult = remember(circuits, effectiveProjId, transformers, sizingResults, transformerResults, generatorResult, generators, generatorResults, atsResult, atsEntity, atsList, atsResults, upsEntity, upsResult, upsList, upsResults, protectionResults, adsResults, manualPositions.toMap()) {
         try {
             SldLayoutEngine.calculateLayout(
                 activeProjectId = effectiveProjId,
@@ -118,6 +121,8 @@ fun SldScreen(
                 atsResults = atsResults,
                 upsList = upsList,
                 upsResults = upsResults,
+                protectionResults = protectionResults,
+                adsResults = adsResults,
                 manualPositions = manualPositions
             )
         } catch (e: Throwable) {
@@ -192,7 +197,8 @@ fun SldScreen(
                     }
                     val dxfContent = com.example.sld.SldDxfExporter.generateDxf(
                         engineResult,
-                        activeProjectId.ifBlank { "VoltAtlas_SLD" }
+                        activeProjectId.ifBlank { "VoltAtlas_SLD" },
+                        projectRevision
                     )
                     context.contentResolver.openOutputStream(uri)?.use { out ->
                         com.example.sld.SldDxfExporter.writeDxfToStream(dxfContent, out)

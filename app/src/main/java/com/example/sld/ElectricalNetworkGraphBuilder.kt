@@ -39,6 +39,8 @@ object ElectricalNetworkGraphBuilder {
         atsResults: Map<String, AtsResult> = emptyMap(),
         upsList: List<UpsEntity>? = null,
         upsResults: Map<String, UpsResult> = emptyMap(),
+        protectionResults: Map<Int, com.example.engine.ProtectionResult> = emptyMap(),
+        adsResults: Map<Int, com.example.engine.AdsResult> = emptyMap(),
         busTies: List<BusTieEntity>? = null
     ): ElectricalNetworkGraph {
         val nodes = mutableListOf<SldNode>()
@@ -76,10 +78,11 @@ object ElectricalNetworkGraphBuilder {
                     id = defaultGridId,
                     projectId = effectiveProjectId,
                     type = SldNodeType.UTILITY_SOURCE,
-                    displayName = "Utility Grid (22 kV)",
-                    voltage = "22 kV",
+                    // Golden rule: never fabricate a voltage — the project has no
+                    // transformer, therefore no known supply voltage to display.
+                    displayName = "Utility Grid",
+                    voltage = null,
                     dataBlock = SldDataBlock(
-                        voltage = "22 kV / 400 V",
                         statusText = "UTILITY GRID INCOMER"
                     ),
                     status = SldValidationStatus.VALID,
@@ -94,7 +97,10 @@ object ElectricalNetworkGraphBuilder {
                 val primaryVoltageStr = if (tx.voltage >= 1000) {
                     val kv = tx.voltage / 1000.0
                     if (kv == kv.toLong().toDouble()) "${kv.toLong()} kV" else "$kv kV"
-                } else "22 kV"
+                } else {
+                    // LV supply point — show the real stored primary voltage, never a fabricated default.
+                    "${tx.voltage} V"
+                }
 
                 nodes.add(
                     SldNode(
@@ -1139,6 +1145,24 @@ object ElectricalNetworkGraphBuilder {
 
             val icuStr = sizingRes?.deviceBreakingKA?.takeIf { it > 0.0 }?.let { "%.0f kA".format(it) }
 
+            // 1B: Protection & ADS verdicts — pre-computed, previously dark.
+            val protRes = protectionResults[circ.id]
+            val adsRes = adsResults[circ.id]
+
+            // 1B: Board header fields — stored on CircuitEntity, previously unrendered.
+            val mainIncomingStr = when {
+                !circ.mainIncomingType.isNullOrBlank() && (circ.mainIncomingCount ?: 0) > 1 ->
+                    "${circ.mainIncomingCount}× ${circ.mainIncomingType}"
+                !circ.mainIncomingType.isNullOrBlank() -> circ.mainIncomingType
+                else -> null
+            }
+            val busbarRatingStr = circ.busbarRatingA?.takeIf { it > 0.0 }?.let {
+                if (it == it.toLong().toDouble()) "${it.toLong()} A" else "$it A"
+            }
+            val scRatingStr = circ.scRatingKA?.takeIf { it > 0.0 }?.let {
+                if (it == it.toLong().toDouble()) "${it.toLong()} kA" else "$it kA"
+            }
+
             val node = SldNode(
                 id = circNodeId,
                 projectId = effectiveProjectId,
@@ -1147,6 +1171,7 @@ object ElectricalNetworkGraphBuilder {
                 parentSourceId = resolvedParentNodeId,
                 voltage = if (circ.phases.contains("3")) "400 V (3Ph)" else "230 V (1Ph)",
                 dataBlock = SldDataBlock(
+                    voltage = if (circ.phases.contains("3")) "400 V (3Ph)" else "230 V (1Ph)",
                     deviceTypeAndRating = cbDesc,
                     cableDescription = cableDesc,
                     parallelRuns = circ.parallelRuns,
@@ -1164,6 +1189,20 @@ object ElectricalNetworkGraphBuilder {
                     cableCpcMm2 = sizingRes?.earthCPC_mm2,
                     cableInstallation = circ.installation.takeIf { it.isNotBlank() },
                     voltageDropLimitPct = if (circ.maxVDpct > 0.0) "%.2f%%".format(circ.maxVDpct * 100.0) else null,
+                    busbarRatingA = busbarRatingStr,
+                    scRatingKA = scRatingStr,
+                    ipRating = circ.ipRating?.takeIf { it.isNotBlank() },
+                    panelLocation = circ.panelLocation?.takeIf { it.isNotBlank() },
+                    numberOfWays = circ.numberOfWays?.takeIf { it > 0 }?.let { "$it" },
+                    mainIncoming = mainIncomingStr,
+                    protectionOverload = protRes?.overloadStatus?.takeIf { it.isNotBlank() },
+                    protectionShortCircuit = protRes?.shortCircuitStatus?.takeIf { it.isNotBlank() },
+                    protectionCableWithstand = protRes?.cableWithstandStatus?.takeIf { it.isNotBlank() },
+                    protectionSelectivity = protRes?.selectivityStatus?.takeIf { it.isNotBlank() },
+                    adsZsOhm = adsRes?.calculatedZs?.takeIf { it > 0.0 }?.let { "%.3f Ω".format(it) },
+                    adsMaxZsOhm = adsRes?.maxZsAllowed?.takeIf { it > 0.0 }?.let { "%.3f Ω".format(it) },
+                    adsDisconnectionTime = adsRes?.disconnectionTime?.takeIf { it.isNotBlank() },
+                    adsStatus = adsRes?.status?.takeIf { it.isNotBlank() },
                     statusText = sizingRes?.status ?: "COMPLIANT"
                 ),
                 status = if (isDisconnected) SldValidationStatus.DISCONNECTED else statusVal,
