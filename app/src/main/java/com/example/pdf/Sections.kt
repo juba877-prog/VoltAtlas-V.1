@@ -22,6 +22,70 @@ fun formatReportStatus(rawStatus: String?): String {
     }
 }
 
+/**
+ * One labelled block rendered for a single power-systems instance.
+ *
+ * The block keys on the identifier of the instance itself — never on a fixed default
+ * identifier and never on an ordinal selection.
+ */
+data class PowerSystemReportBlock(
+    val typeLabel: String,
+    val instanceId: String,
+    val keyValues: List<Pair<String, String>>
+)
+
+/**
+ * Deterministic per-instance report structure for the Power Systems section: N
+ * instances of a type produce N blocks keyed to their own identifiers, and a type
+ * that is absent produces no block without suppressing the others.
+ */
+fun powerSystemsReportBlocks(snapshot: ProjectReportSnapshot): List<PowerSystemReportBlock> =
+    buildList {
+        snapshot.generatorResults.forEach { (id, gen) ->
+            add(
+                PowerSystemReportBlock(
+                    typeLabel = "GENERATOR",
+                    instanceId = id,
+                    keyValues = listOf(
+                        "Design kVA" to "%.1f".format(gen.designCapacity),
+                        "Status" to formatReportStatus(gen.status)
+                    )
+                )
+            )
+        }
+        snapshot.atsResults.forEach { (id, ats) ->
+            add(
+                PowerSystemReportBlock(
+                    typeLabel = "ATS",
+                    instanceId = id,
+                    keyValues = listOf(
+                        "Governing Current" to "%.1f A".format(ats.governingCurrent),
+                        "Status" to formatReportStatus(ats.status)
+                    )
+                )
+            )
+        }
+        snapshot.upsResults.forEach { (id, ups) ->
+            add(
+                PowerSystemReportBlock(
+                    typeLabel = "UPS",
+                    instanceId = id,
+                    keyValues = listOf(
+                        "Design kVA" to "%.1f".format(ups.designUpsKVA),
+                        "Status" to formatReportStatus(ups.status)
+                    )
+                )
+            )
+        }
+    }
+
+/** The Power Systems section reports "Not configured" only when every type is absent. */
+fun powerSystemsReportNotConfigured(snapshot: ProjectReportSnapshot): Boolean =
+    snapshot.generatorResults.isEmpty() &&
+        snapshot.atsResults.isEmpty() &&
+        snapshot.upsResults.isEmpty() &&
+        snapshot.pfCorrectionResults.isEmpty()
+
 class ExecutiveSummarySection : ReportSectionProvider {
     override val sectionName = "Executive Summary"
     override fun render(renderer: PdfDocumentRenderer, snapshot: ProjectReportSnapshot) {
@@ -194,27 +258,12 @@ class PowerSystemsSection : ReportSectionProvider {
         }
         
         // One block per instance, keyed by the instance identifier — no ordinal selection.
-        snapshot.generatorResults.forEach { (genId, gen) ->
-            renderer.drawText("GENERATOR — $genId", renderer.marginX, currentY, renderer.theme.tableHeaderPaint)
+        // The block structure comes from the deterministic powerSystemsReportBlocks() so
+        // the rendered content is exactly what the structural report test asserts.
+        powerSystemsReportBlocks(snapshot).forEach { block ->
+            renderer.drawText("${block.typeLabel} — ${block.instanceId}", renderer.marginX, currentY, renderer.theme.tableHeaderPaint)
             currentY += 15f
-            drawKeyValue("Design kVA", "%.1f".format(gen.designCapacity))
-            drawKeyValue("Status", formatReportStatus(gen.status))
-            currentY += 10f
-        }
-
-        snapshot.atsResults.forEach { (atsId, ats) ->
-            renderer.drawText("ATS — $atsId", renderer.marginX, currentY, renderer.theme.tableHeaderPaint)
-            currentY += 15f
-            drawKeyValue("Governing Current", "%.1f A".format(ats.governingCurrent))
-            drawKeyValue("Status", formatReportStatus(ats.status))
-            currentY += 10f
-        }
-
-        snapshot.upsResults.forEach { (upsId, ups) ->
-            renderer.drawText("UPS — $upsId", renderer.marginX, currentY, renderer.theme.tableHeaderPaint)
-            currentY += 15f
-            drawKeyValue("Design kVA", "%.1f".format(ups.designUpsKVA))
-            drawKeyValue("Status", formatReportStatus(ups.status))
+            block.keyValues.forEach { (key, value) -> drawKeyValue(key, value) }
             currentY += 10f
         }
 
@@ -227,7 +276,7 @@ class PowerSystemsSection : ReportSectionProvider {
             currentY += 10f
         }
         
-        if (snapshot.generatorResults.isEmpty() && snapshot.atsResults.isEmpty() && snapshot.upsResults.isEmpty() && snapshot.pfCorrectionResults.isEmpty()) {
+        if (powerSystemsReportNotConfigured(snapshot)) {
             renderer.drawText("Not configured", renderer.marginX, currentY, renderer.theme.tableBodyPaint)
             currentY += 15f
         }
