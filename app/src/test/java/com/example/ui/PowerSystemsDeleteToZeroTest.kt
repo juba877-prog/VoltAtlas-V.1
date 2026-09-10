@@ -8,195 +8,218 @@ import org.junit.Test
 
 /**
  * Tests verifying:
- * 1. Selection migrates to an adjacent neighbor on deletion (not jumping to first).
+ * 1. Selection migrates to an adjacent neighbor on deletion (by list position, not jumping to first).
  * 2. Selection clears to empty/null on delete-to-zero.
- * 3. Delete is available down to zero instances (no size > 1 guard).
- * Tested symmetrically for Generator, ATS, and UPS.
+ * 3. Delete is available down to zero instances.
+ * All tests call the shared production pure function [resolveEquipmentSelection] directly.
  */
 class PowerSystemsDeleteToZeroTest {
 
-    // Helper simulating the panel's selection resolution and neighbor migration logic
-    private fun resolveNextSelection(
-        currentList: List<String>,
-        previousList: List<String>,
-        currentlySelectedId: String,
-        lastActiveId: String
-    ): Pair<String, String?> {
-        val targetDeletedId = if (currentlySelectedId.isNotEmpty() && !currentList.contains(currentlySelectedId)) {
-            currentlySelectedId
-        } else if (lastActiveId.isNotEmpty() && !currentList.contains(lastActiveId)) {
-            lastActiveId
-        } else {
-            null
-        }
-
-        val updatedSelectedId = if (targetDeletedId != null) {
-            val deletedIdx = previousList.indexOf(targetDeletedId)
-            if (deletedIdx >= 0 && currentList.isNotEmpty()) {
-                val newIdx = deletedIdx.coerceIn(0, currentList.lastIndex)
-                currentList[newIdx]
-            } else {
-                currentList.firstOrNull() ?: ""
-            }
-        } else {
-            currentlySelectedId
-        }
-
-        val activeId = if (updatedSelectedId.isNotEmpty() && currentList.contains(updatedSelectedId)) {
-            updatedSelectedId
-        } else {
-            currentList.firstOrNull()
-        }
-
-        return Pair(updatedSelectedId, activeId)
-    }
-
     @Test
     fun testGeneratorMiddleDeletionMigratesToAdjacentNeighbor() {
-        val initialList = listOf("GEN-01", "GEN-02", "GEN-03")
-        val selectedId = "GEN-02"
-        val lastActiveId = "GEN-02"
+        val idA = "synth-gen-alpha"
+        val idB = "synth-gen-beta"
+        val idC = "synth-gen-gamma"
+        val initialList = listOf(idA, idB, idC)
+        val selectedId = idB
+        val lastActiveId = idB
 
-        val remainingList = listOf("GEN-01", "GEN-03")
+        // Delete middle item idB; remaining list retains relative order
+        val remainingList = listOf(idA, idC)
 
-        val (newSelected, activeId) = resolveNextSelection(
-            currentList = remainingList,
-            previousList = initialList,
-            currentlySelectedId = selectedId,
+        val resolution = resolveEquipmentSelection(
+            currentIds = remainingList,
+            previousIds = initialList,
+            selectedId = selectedId,
             lastActiveId = lastActiveId
         )
 
-        assertEquals("Selection must move to adjacent neighbor GEN-03", "GEN-03", newSelected)
-        assertEquals("Active ID must resolve to GEN-03", "GEN-03", activeId)
+        // The slot formerly occupied by index 1 (idB) is now occupied by index 1 (idC)
+        assertEquals("Selection must move to adjacent neighbor at same index", idC, resolution.updatedSelectedId)
+        assertEquals("Active ID must resolve to adjacent neighbor", idC, resolution.activeId)
     }
 
     @Test
     fun testGeneratorLastDeletionMigratesToPrecedingNeighbor() {
-        val initialList = listOf("GEN-01", "GEN-02", "GEN-03")
-        val selectedId = "GEN-03"
-        val lastActiveId = "GEN-03"
+        val idA = "synth-gen-alpha"
+        val idB = "synth-gen-beta"
+        val idC = "synth-gen-gamma"
+        val initialList = listOf(idA, idB, idC)
+        val selectedId = idC
+        val lastActiveId = idC
 
-        val remainingList = listOf("GEN-01", "GEN-02")
+        // Delete last item idC
+        val remainingList = listOf(idA, idB)
 
-        val (newSelected, activeId) = resolveNextSelection(
-            currentList = remainingList,
-            previousList = initialList,
-            currentlySelectedId = selectedId,
+        val resolution = resolveEquipmentSelection(
+            currentIds = remainingList,
+            previousIds = initialList,
+            selectedId = selectedId,
             lastActiveId = lastActiveId
         )
 
-        assertEquals("Selection must move to preceding neighbor GEN-02", "GEN-02", newSelected)
-        assertEquals("Active ID must resolve to GEN-02", "GEN-02", activeId)
+        // Deleting the end item must clamp index to remainingList.lastIndex (idB), not jump to index 0
+        assertEquals("Selection must move to preceding neighbor", idB, resolution.updatedSelectedId)
+        assertEquals("Active ID must resolve to preceding neighbor", idB, resolution.activeId)
     }
 
     @Test
     fun testGeneratorDeleteToZeroClearsSelectionAndResolvesToNull() {
-        val initialList = listOf("GEN-01")
-        val selectedId = "GEN-01"
-        val lastActiveId = "GEN-01"
+        val idA = "synth-gen-sole"
+        val initialList = listOf(idA)
+        val selectedId = idA
+        val lastActiveId = idA
 
         val remainingList = emptyList<String>()
 
-        val (newSelected, activeId) = resolveNextSelection(
-            currentList = remainingList,
-            previousList = initialList,
-            currentlySelectedId = selectedId,
+        val resolution = resolveEquipmentSelection(
+            currentIds = remainingList,
+            previousIds = initialList,
+            selectedId = selectedId,
             lastActiveId = lastActiveId
         )
 
-        assertEquals("Persisted selection must be cleared to empty", "", newSelected)
-        assertNull("Active identifier must resolve to null on zero collection", activeId)
+        assertEquals("Persisted selection must be cleared to empty string", "", resolution.updatedSelectedId)
+        assertNull("Active identifier must resolve to null on zero collection", resolution.activeId)
     }
 
     @Test
     fun testAtsMiddleDeletionMigratesToAdjacentNeighbor() {
-        val initialList = listOf("ATS-01", "ATS-02", "ATS-03")
-        val selectedId = "ATS-02"
-        val lastActiveId = "ATS-02"
+        val id1 = "synth-ats-101"
+        val id2 = "synth-ats-102"
+        val id3 = "synth-ats-103"
+        val initialList = listOf(id1, id2, id3)
+        val selectedId = id2
+        val lastActiveId = id2
 
-        val remainingList = listOf("ATS-01", "ATS-03")
+        val remainingList = listOf(id1, id3)
 
-        val (newSelected, activeId) = resolveNextSelection(
-            currentList = remainingList,
-            previousList = initialList,
-            currentlySelectedId = selectedId,
+        val resolution = resolveEquipmentSelection(
+            currentIds = remainingList,
+            previousIds = initialList,
+            selectedId = selectedId,
             lastActiveId = lastActiveId
         )
 
-        assertEquals("ATS selection must move to adjacent neighbor ATS-03", "ATS-03", newSelected)
-        assertEquals("Active ATS ID must resolve to ATS-03", "ATS-03", activeId)
+        assertEquals("ATS selection must move to adjacent neighbor", id3, resolution.updatedSelectedId)
+        assertEquals("Active ATS ID must resolve to adjacent neighbor", id3, resolution.activeId)
     }
 
     @Test
     fun testAtsDeleteToZeroClearsSelectionAndResolvesToNull() {
-        val initialList = listOf("ATS-01")
-        val selectedId = "ATS-01"
-        val lastActiveId = "ATS-01"
+        val id1 = "synth-ats-sole"
+        val initialList = listOf(id1)
+        val selectedId = id1
+        val lastActiveId = id1
 
         val remainingList = emptyList<String>()
 
-        val (newSelected, activeId) = resolveNextSelection(
-            currentList = remainingList,
-            previousList = initialList,
-            currentlySelectedId = selectedId,
+        val resolution = resolveEquipmentSelection(
+            currentIds = remainingList,
+            previousIds = initialList,
+            selectedId = selectedId,
             lastActiveId = lastActiveId
         )
 
-        assertEquals("Persisted ATS selection must be cleared to empty", "", newSelected)
-        assertNull("Active ATS identifier must resolve to null on zero collection", activeId)
+        assertEquals("Persisted ATS selection must be cleared to empty string", "", resolution.updatedSelectedId)
+        assertNull("Active ATS identifier must resolve to null on zero collection", resolution.activeId)
     }
 
     @Test
     fun testUpsMiddleDeletionMigratesToAdjacentNeighbor() {
-        val initialList = listOf("UPS-01", "UPS-02", "UPS-03")
-        val selectedId = "UPS-02"
-        val lastActiveId = "UPS-02"
+        val id1 = "synth-ups-east"
+        val id2 = "synth-ups-central"
+        val id3 = "synth-ups-west"
+        val initialList = listOf(id1, id2, id3)
+        val selectedId = id2
+        val lastActiveId = id2
 
-        val remainingList = listOf("UPS-01", "UPS-03")
+        val remainingList = listOf(id1, id3)
 
-        val (newSelected, activeId) = resolveNextSelection(
-            currentList = remainingList,
-            previousList = initialList,
-            currentlySelectedId = selectedId,
+        val resolution = resolveEquipmentSelection(
+            currentIds = remainingList,
+            previousIds = initialList,
+            selectedId = selectedId,
             lastActiveId = lastActiveId
         )
 
-        assertEquals("UPS selection must move to adjacent neighbor UPS-03", "UPS-03", newSelected)
-        assertEquals("Active UPS ID must resolve to UPS-03", "UPS-03", activeId)
+        assertEquals("UPS selection must move to adjacent neighbor", id3, resolution.updatedSelectedId)
+        assertEquals("Active UPS ID must resolve to adjacent neighbor", id3, resolution.activeId)
     }
 
     @Test
     fun testUpsDeleteToZeroClearsSelectionAndResolvesToNull() {
-        val initialList = listOf("UPS-01")
-        val selectedId = "UPS-01"
-        val lastActiveId = "UPS-01"
+        val id1 = "synth-ups-sole"
+        val initialList = listOf(id1)
+        val selectedId = id1
+        val lastActiveId = id1
 
         val remainingList = emptyList<String>()
 
-        val (newSelected, activeId) = resolveNextSelection(
-            currentList = remainingList,
-            previousList = initialList,
-            currentlySelectedId = selectedId,
+        val resolution = resolveEquipmentSelection(
+            currentIds = remainingList,
+            previousIds = initialList,
+            selectedId = selectedId,
             lastActiveId = lastActiveId
         )
 
-        assertEquals("Persisted UPS selection must be cleared to empty", "", newSelected)
-        assertNull("Active UPS identifier must resolve to null on zero collection", activeId)
+        assertEquals("Persisted UPS selection must be cleared to empty string", "", resolution.updatedSelectedId)
+        assertNull("Active UPS identifier must resolve to null on zero collection", resolution.activeId)
     }
 
     @Test
     fun testReAddAfterDeleteToZeroResolvesCleanNewIdentifier() {
         val selectedId = ""
-        val reAddedList = listOf("GEN-01")
+        val newId = "synth-newly-added"
+        val reAddedList = listOf(newId)
 
-        val (newSelected, activeId) = resolveNextSelection(
-            currentList = reAddedList,
-            previousList = emptyList(),
-            currentlySelectedId = selectedId,
+        val resolution = resolveEquipmentSelection(
+            currentIds = reAddedList,
+            previousIds = emptyList(),
+            selectedId = selectedId,
             lastActiveId = ""
         )
 
-        assertEquals("Selection remains empty (or default)", "", newSelected)
-        assertEquals("Active ID resolves to the new instance GEN-01", "GEN-01", activeId)
+        assertEquals("Selection remains empty until user explicitly clicks chip", "", resolution.updatedSelectedId)
+        assertEquals("Active ID resolves to the first element of the new collection", newId, resolution.activeId)
+    }
+
+    @Test
+    fun testGenericMultiInstanceAdjacencyMigrationByListPosition() {
+        // Generic fixture with 4 synthetic instances to verify strict positional adjacency
+        val items = listOf("device-001", "device-002", "device-003", "device-004")
+
+        // 1. Delete middle element index 1 ("device-002") -> should migrate to element now at index 1 ("device-003")
+        val afterDel1 = listOf(items[0], items[2], items[3])
+        val res1 = resolveEquipmentSelection(
+            currentIds = afterDel1,
+            previousIds = items,
+            selectedId = items[1],
+            lastActiveId = items[1]
+        )
+        assertEquals("Must select item now occupying the deleted index position", items[2], res1.updatedSelectedId)
+        assertEquals(items[2], res1.activeId)
+
+        // 2. Delete middle element index 2 ("device-003") from afterDel1 -> should migrate to element now at index 2 ("device-004")
+        val afterDel2 = listOf(items[0], items[3])
+        val res2 = resolveEquipmentSelection(
+            currentIds = afterDel2,
+            previousIds = afterDel1,
+            selectedId = items[2],
+            lastActiveId = items[2]
+        )
+        assertEquals("Must select item now occupying index 1 (clamped to remaining lastIndex)", items[3], res2.updatedSelectedId)
+        assertEquals(items[3], res2.activeId)
+
+        // 3. Delete end element ("device-004") from afterDel2 -> should migrate to preceding element ("device-001")
+        val afterDel3 = listOf(items[0])
+        val res3 = resolveEquipmentSelection(
+            currentIds = afterDel3,
+            previousIds = afterDel2,
+            selectedId = items[3],
+            lastActiveId = items[3]
+        )
+        assertEquals("Must select preceding item when end element is deleted", items[0], res3.updatedSelectedId)
+        assertEquals(items[0], res3.activeId)
     }
 }

@@ -32,17 +32,15 @@ class PowerSystemsIdentifierFallbackTest {
         val state = emptyEquipmentState()
         val generators = state.generators  // emptyList()
 
-        // Replicate the panel's resolution logic (no selectedGenId match)
-        val selectedGenId = ""
-        val activeGenId = if (selectedGenId.isNotEmpty() && generators.any { it.generatorId == selectedGenId }) {
-            selectedGenId
-        } else {
-            generators.firstOrNull()?.generatorId
-        }
+        val resolution = resolveEquipmentSelection(
+            currentIds = generators.map { it.generatorId },
+            selectedId = ""
+        )
 
-        assertNull("Active generator ID must be null when collection is empty", activeGenId)
+        assertNull("Active generator ID must be null when collection is empty", resolution.activeId)
+        assertEquals("Updated selected ID must be empty", "", resolution.updatedSelectedId)
 
-        val activeGen = generators.firstOrNull { it.generatorId == activeGenId }
+        val activeGen = generators.firstOrNull { it.generatorId == resolution.activeId }
         assertNull("Active generator entity must be null when collection is empty", activeGen)
     }
 
@@ -51,16 +49,15 @@ class PowerSystemsIdentifierFallbackTest {
         val state = emptyEquipmentState()
         val atsList = state.atsList  // emptyList()
 
-        val selectedAtsId = ""
-        val activeAtsId = if (selectedAtsId.isNotEmpty() && atsList.any { it.atsId == selectedAtsId }) {
-            selectedAtsId
-        } else {
-            atsList.firstOrNull()?.atsId
-        }
+        val resolution = resolveEquipmentSelection(
+            currentIds = atsList.map { it.atsId },
+            selectedId = ""
+        )
 
-        assertNull("Active ATS ID must be null when collection is empty", activeAtsId)
+        assertNull("Active ATS ID must be null when collection is empty", resolution.activeId)
+        assertEquals("Updated selected ATS ID must be empty", "", resolution.updatedSelectedId)
 
-        val activeAts = atsList.firstOrNull { it.atsId == activeAtsId }
+        val activeAts = atsList.firstOrNull { it.atsId == resolution.activeId }
         assertNull("Active ATS entity must be null when collection is empty", activeAts)
     }
 
@@ -69,16 +66,15 @@ class PowerSystemsIdentifierFallbackTest {
         val state = emptyEquipmentState()
         val upsList = state.upsList  // emptyList()
 
-        val selectedUpsId = ""
-        val activeUpsId = if (selectedUpsId.isNotEmpty() && upsList.any { it.upsId == selectedUpsId }) {
-            selectedUpsId
-        } else {
-            upsList.firstOrNull()?.upsId
-        }
+        val resolution = resolveEquipmentSelection(
+            currentIds = upsList.map { it.upsId },
+            selectedId = ""
+        )
 
-        assertNull("Active UPS ID must be null when collection is empty", activeUpsId)
+        assertNull("Active UPS ID must be null when collection is empty", resolution.activeId)
+        assertEquals("Updated selected UPS ID must be empty", "", resolution.updatedSelectedId)
 
-        val activeUps = upsList.firstOrNull { it.upsId == activeUpsId }
+        val activeUps = upsList.firstOrNull { it.upsId == resolution.activeId }
         assertNull("Active UPS entity must be null when collection is empty", activeUps)
     }
 }

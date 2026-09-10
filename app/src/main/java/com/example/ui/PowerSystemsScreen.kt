@@ -370,6 +370,60 @@ fun PowerSystemsScreen(
     }
 }
 
+data class EquipmentSelectionState(
+    val updatedSelectedId: String,
+    val activeId: String?
+)
+
+/**
+ * Resolves active equipment selection and neighbor migration upon deletion.
+ *
+ * Pure function shared between [PowerSystemsScreen] UI panels and unit tests.
+ *
+ * @param currentIds The current list of identifiers in the collection (in display order).
+ * @param previousIds The previous list of identifiers (before potential deletion).
+ * @param selectedId The user's persisted/remembered selected identifier.
+ * @param lastActiveId The last resolved active identifier.
+ * @return [EquipmentSelectionState] containing the updated persisted selectedId and the activeId (or null if empty).
+ */
+fun resolveEquipmentSelection(
+    currentIds: List<String>,
+    previousIds: List<String> = currentIds,
+    selectedId: String = "",
+    lastActiveId: String = ""
+): EquipmentSelectionState {
+    val targetDeletedId = if (selectedId.isNotEmpty() && !currentIds.contains(selectedId)) {
+        selectedId
+    } else if (lastActiveId.isNotEmpty() && !currentIds.contains(lastActiveId)) {
+        lastActiveId
+    } else {
+        null
+    }
+
+    val updatedSelected = if (targetDeletedId != null) {
+        val deletedIdx = previousIds.indexOf(targetDeletedId)
+        if (deletedIdx >= 0 && currentIds.isNotEmpty()) {
+            val newIdx = deletedIdx.coerceIn(0, currentIds.lastIndex)
+            currentIds[newIdx]
+        } else {
+            currentIds.firstOrNull() ?: ""
+        }
+    } else {
+        selectedId
+    }
+
+    val activeId = if (updatedSelected.isNotEmpty() && currentIds.contains(updatedSelected)) {
+        updatedSelected
+    } else {
+        currentIds.firstOrNull()
+    }
+
+    return EquipmentSelectionState(
+        updatedSelectedId = updatedSelected,
+        activeId = activeId
+    )
+}
+
 @Composable
 fun GeneratorSettingsPanel(
     state: UiState,
@@ -379,7 +433,7 @@ fun GeneratorSettingsPanel(
     onDeleteGenerator: (String) -> Unit = {}
 ) {
     val successState = state as? UiState.Success
-    val generators = successState?.generators ?: emptyList()
+    val generators = successState?.generators ?: listOf(singleSettings)
     val generatorResults = successState?.generatorResults ?: emptyMap()
 
     var selectedGenId by rememberSaveable { mutableStateOf("") }
@@ -387,31 +441,15 @@ fun GeneratorSettingsPanel(
     var lastActiveGenId by rememberSaveable { mutableStateOf("") }
 
     val currentGenIds = generators.map { it.generatorId }
-    val targetDeletedId = if (selectedGenId.isNotEmpty() && !currentGenIds.contains(selectedGenId)) {
-        selectedGenId
-    } else if (lastActiveGenId.isNotEmpty() && !currentGenIds.contains(lastActiveGenId)) {
-        lastActiveGenId
-    } else {
-        null
-    }
-
-    if (targetDeletedId != null) {
-        val deletedIdx = previousGenIds.indexOf(targetDeletedId)
-        val adjacentId = if (deletedIdx >= 0 && currentGenIds.isNotEmpty()) {
-            val newIdx = deletedIdx.coerceIn(0, currentGenIds.lastIndex)
-            currentGenIds[newIdx]
-        } else {
-            currentGenIds.firstOrNull() ?: ""
-        }
-        selectedGenId = adjacentId
-    }
+    val selectionResolution = resolveEquipmentSelection(
+        currentIds = currentGenIds,
+        previousIds = previousGenIds,
+        selectedId = selectedGenId,
+        lastActiveId = lastActiveGenId
+    )
+    selectedGenId = selectionResolution.updatedSelectedId
     previousGenIds = currentGenIds
-
-    val activeGenId = if (selectedGenId.isNotEmpty() && generators.any { it.generatorId == selectedGenId }) {
-        selectedGenId
-    } else {
-        generators.firstOrNull()?.generatorId
-    }
+    val activeGenId = selectionResolution.activeId
     lastActiveGenId = activeGenId ?: ""
     val activeGen = generators.firstOrNull { it.generatorId == activeGenId }
 
@@ -825,7 +863,7 @@ fun AtsSettingsPanel(
     onDeleteAts: (String) -> Unit = {}
 ) {
     val successState = state as? UiState.Success
-    val atsList = successState?.atsList ?: emptyList()
+    val atsList = successState?.atsList ?: listOf(singleSettings)
     val atsResults = successState?.atsResults ?: emptyMap()
     val circuits = successState?.circuits ?: emptyList()
     val generators = successState?.generators ?: emptyList()
@@ -835,31 +873,15 @@ fun AtsSettingsPanel(
     var lastActiveAtsId by rememberSaveable { mutableStateOf("") }
 
     val currentAtsIds = atsList.map { it.atsId }
-    val targetDeletedId = if (selectedAtsId.isNotEmpty() && !currentAtsIds.contains(selectedAtsId)) {
-        selectedAtsId
-    } else if (lastActiveAtsId.isNotEmpty() && !currentAtsIds.contains(lastActiveAtsId)) {
-        lastActiveAtsId
-    } else {
-        null
-    }
-
-    if (targetDeletedId != null) {
-        val deletedIdx = previousAtsIds.indexOf(targetDeletedId)
-        val adjacentId = if (deletedIdx >= 0 && currentAtsIds.isNotEmpty()) {
-            val newIdx = deletedIdx.coerceIn(0, currentAtsIds.lastIndex)
-            currentAtsIds[newIdx]
-        } else {
-            currentAtsIds.firstOrNull() ?: ""
-        }
-        selectedAtsId = adjacentId
-    }
+    val selectionResolution = resolveEquipmentSelection(
+        currentIds = currentAtsIds,
+        previousIds = previousAtsIds,
+        selectedId = selectedAtsId,
+        lastActiveId = lastActiveAtsId
+    )
+    selectedAtsId = selectionResolution.updatedSelectedId
     previousAtsIds = currentAtsIds
-
-    val activeAtsId = if (selectedAtsId.isNotEmpty() && atsList.any { it.atsId == selectedAtsId }) {
-        selectedAtsId
-    } else {
-        atsList.firstOrNull()?.atsId
-    }
+    val activeAtsId = selectionResolution.activeId
     lastActiveAtsId = activeAtsId ?: ""
     val activeAts = atsList.firstOrNull { it.atsId == activeAtsId }
 
@@ -1315,7 +1337,7 @@ fun UpsSettingsPanel(
     onDeleteUps: (String) -> Unit = {}
 ) {
     val successState = state as? UiState.Success
-    val upsList = successState?.upsList ?: emptyList()
+    val upsList = successState?.upsList ?: listOf(singleSettings)
     val upsResults = successState?.upsResults ?: emptyMap()
     val circuits = successState?.circuits ?: emptyList()
 
@@ -1324,31 +1346,15 @@ fun UpsSettingsPanel(
     var lastActiveUpsId by rememberSaveable { mutableStateOf("") }
 
     val currentUpsIds = upsList.map { it.upsId }
-    val targetDeletedId = if (selectedUpsId.isNotEmpty() && !currentUpsIds.contains(selectedUpsId)) {
-        selectedUpsId
-    } else if (lastActiveUpsId.isNotEmpty() && !currentUpsIds.contains(lastActiveUpsId)) {
-        lastActiveUpsId
-    } else {
-        null
-    }
-
-    if (targetDeletedId != null) {
-        val deletedIdx = previousUpsIds.indexOf(targetDeletedId)
-        val adjacentId = if (deletedIdx >= 0 && currentUpsIds.isNotEmpty()) {
-            val newIdx = deletedIdx.coerceIn(0, currentUpsIds.lastIndex)
-            currentUpsIds[newIdx]
-        } else {
-            currentUpsIds.firstOrNull() ?: ""
-        }
-        selectedUpsId = adjacentId
-    }
+    val selectionResolution = resolveEquipmentSelection(
+        currentIds = currentUpsIds,
+        previousIds = previousUpsIds,
+        selectedId = selectedUpsId,
+        lastActiveId = lastActiveUpsId
+    )
+    selectedUpsId = selectionResolution.updatedSelectedId
     previousUpsIds = currentUpsIds
-
-    val activeUpsId = if (selectedUpsId.isNotEmpty() && upsList.any { it.upsId == selectedUpsId }) {
-        selectedUpsId
-    } else {
-        upsList.firstOrNull()?.upsId
-    }
+    val activeUpsId = selectionResolution.activeId
     lastActiveUpsId = activeUpsId ?: ""
     val activeUps = upsList.firstOrNull { it.upsId == activeUpsId }
 
