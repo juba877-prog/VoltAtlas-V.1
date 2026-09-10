@@ -305,14 +305,14 @@ fun GeneratorSettingsPanel(
     onDeleteGenerator: (String) -> Unit = {}
 ) {
     val successState = state as? UiState.Success
-    val generators = successState?.generators ?: listOf(singleSettings)
+    val generators = successState?.generators ?: emptyList()
     val generatorResults = successState?.generatorResults ?: emptyMap()
 
     var selectedGenId by rememberSaveable { mutableStateOf("") }
     val activeGenId = if (selectedGenId.isNotEmpty() && generators.any { it.generatorId == selectedGenId }) {
         selectedGenId
     } else {
-        generators.firstOrNull()?.generatorId ?: singleSettings.generatorId
+        generators.firstOrNull()?.generatorId
     }
     val activeGen = generators.firstOrNull { it.generatorId == activeGenId }
 
@@ -728,7 +728,7 @@ fun AtsSettingsPanel(
     onDeleteAts: (String) -> Unit = {}
 ) {
     val successState = state as? UiState.Success
-    val atsList = successState?.atsList ?: listOf(singleSettings)
+    val atsList = successState?.atsList ?: emptyList()
     val atsResults = successState?.atsResults ?: emptyMap()
     val circuits = successState?.circuits ?: emptyList()
     val generators = successState?.generators ?: emptyList()
@@ -737,7 +737,7 @@ fun AtsSettingsPanel(
     val activeAtsId = if (selectedAtsId.isNotEmpty() && atsList.any { it.atsId == selectedAtsId }) {
         selectedAtsId
     } else {
-        atsList.firstOrNull()?.atsId ?: singleSettings.atsId
+        atsList.firstOrNull()?.atsId
     }
     val activeAts = atsList.firstOrNull { it.atsId == activeAtsId }
 
@@ -1195,7 +1195,7 @@ fun UpsSettingsPanel(
     onDeleteUps: (String) -> Unit = {}
 ) {
     val successState = state as? UiState.Success
-    val upsList = successState?.upsList ?: listOf(singleSettings)
+    val upsList = successState?.upsList ?: emptyList()
     val upsResults = successState?.upsResults ?: emptyMap()
     val circuits = successState?.circuits ?: emptyList()
 
@@ -1203,7 +1203,7 @@ fun UpsSettingsPanel(
     val activeUpsId = if (selectedUpsId.isNotEmpty() && upsList.any { it.upsId == selectedUpsId }) {
         selectedUpsId
     } else {
-        upsList.firstOrNull()?.upsId ?: singleSettings.upsId
+        upsList.firstOrNull()?.upsId
     }
     val activeUps = upsList.firstOrNull { it.upsId == activeUpsId }
 
