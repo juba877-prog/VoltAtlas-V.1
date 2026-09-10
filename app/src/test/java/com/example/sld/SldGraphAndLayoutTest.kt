@@ -563,6 +563,47 @@ class SldGraphAndLayoutTest {
     }
 
     @Test
+    fun testSingleConfiguredAtsRendersItsOwnNodeViaTheCollection() {
+        // Replaces the removed sole-instance-fallback test: a single configured ATS
+        // instance renders under its own identifier through the collection, and no
+        // synthetic default-named node is fabricated.
+        val transformers = listOf(
+            TransformerEntity(projectId = projectId, transformerId = "TX-01", kVA = 1000.0)
+        )
+        val circuits = listOf(
+            CircuitEntity(id = 1, projectId = projectId, circuitName = "MDB-01", fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"),
+            CircuitEntity(id = 20, projectId = projectId, circuitName = "EMERG-DB", fedFrom = "Legacy ATS", panelType = "DB")
+        )
+        val legacyAts = AtsEntity(
+            projectId = projectId,
+            atsId = "ATS-LEGACY",
+            atsName = "Legacy ATS",
+            normalSourceId = "TX-01",
+            emergencySourceId = "GEN-01",
+            outputBoardId = 20
+        )
+
+        val graph = ElectricalNetworkGraphBuilder.buildGraph(
+            activeProjectId = projectId,
+            transformers = transformers,
+            circuits = circuits,
+            atsList = listOf(legacyAts),
+            atsResults = mapOf(legacyAts.atsId to com.example.engine.AtsResult(status = "Valid ATS Sized", finalRating = 630.0))
+        )
+
+        val atsNodes = graph.nodes.filter { it.type == SldNodeType.ATS }
+        assertEquals("A single configured ATS instance renders exactly one ATS node", 1, atsNodes.size)
+        assertTrue(
+            "The configured ATS instance must render under its own identifier",
+            atsNodes.any { it.id == "ats_ATS-LEGACY" && it.displayName == "Legacy ATS" }
+        )
+        assertTrue(
+            "No synthetic default-named ATS node may be fabricated",
+            atsNodes.none { it.id == "ats_1" || it.displayName == "ATS-01" }
+        )
+    }
+
+    @Test
     fun testLegacyNoLoadsResultDoesNotSynthesizeAts() {
         val transformers = listOf(
             TransformerEntity(projectId = projectId, transformerId = "TX-01", kVA = 1000.0)

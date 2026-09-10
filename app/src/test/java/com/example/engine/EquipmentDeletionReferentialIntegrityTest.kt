@@ -432,4 +432,67 @@ class EquipmentDeletionReferentialIntegrityTest {
         val atsAfter = repository.powerSystemsDao.getAllAtsList(pid).first()
         assertNull("Imported ATS->UPS link must be cleared when the UPS is deleted", atsAfter.emergencySourceId)
     }
+
+    @Test
+    fun testDeletionPreventsNodePositionAndOverrideInheritanceOnIdentifierReuse() = runBlocking {
+        val projectId = repository.createProject("Position Inheritance Test", "Client")
+
+        // Configured instances with a saved SLD node position (including manual port
+        // overrides) and a manual sizing override.
+        val gen = repository.createGeneratorAtomic(projectId)
+        repository.powerSystemsDao.saveGeneratorSettings(gen.copy(enableManualOverride = true, manualSizeKVA = 250.0))
+        repository.saveSldNodePosition(
+            SldNodePositionEntity(projectId = projectId, nodeId = "gen_${gen.generatorId}", x = 140f, y = 90f, portOverrides = """{"EMERGENCY":"TOP"}""")
+        )
+
+        val ats = repository.createAtsAtomic(projectId)
+        repository.powerSystemsDao.saveAtsSettings(ats.copy(enableManualOverride = true, manualSizeAmp = 800.0))
+        repository.saveSldNodePosition(
+            SldNodePositionEntity(projectId = projectId, nodeId = "ats_${ats.atsId}", x = 240f, y = 190f, portOverrides = """{"NORMAL":"LEFT"}""")
+        )
+
+        val ups = repository.createUpsAtomic(projectId)
+        repository.powerSystemsDao.saveUpsSettings(ups.copy(enableManualOverride = true, manualSizeKVA = 60.0))
+        repository.saveSldNodePosition(
+            SldNodePositionEntity(projectId = projectId, nodeId = "ups_${ups.upsId}", x = 340f, y = 290f, portOverrides = """{"OUTPUT":"RIGHT"}""")
+        )
+
+        // Delete all three instances.
+        repository.deleteGenerator(projectId, gen.generatorId)
+        repository.deleteAts(projectId, ats.atsId)
+        repository.deleteUps(projectId, ups.upsId)
+
+        // Deterministic identifier reuse: an emptied collection starts at MAX(id)=0,
+        // so a newly created instance receives the exact identifier the deleted one had.
+        val newGen = repository.createGeneratorAtomic(projectId)
+        val newAts = repository.createAtsAtomic(projectId)
+        val newUps = repository.createUpsAtomic(projectId)
+        assertEquals("Identifier reuse after deletion must be deterministic", gen.generatorId, newGen.generatorId)
+        assertEquals(ats.atsId, newAts.atsId)
+        assertEquals(ups.upsId, newUps.upsId)
+
+        // No inherited saved position and no inherited manual port overrides for the
+        // re-created identifiers.
+        val positions = repository.sldNodePositionsFlow(projectId).first()
+        assertTrue(
+            "Re-created ${newGen.generatorId} must not inherit the deleted instance's saved position",
+            positions.none { it.nodeId == "gen_${newGen.generatorId}" }
+        )
+        assertTrue(
+            "Re-created ${newAts.atsId} must not inherit the deleted instance's saved position",
+            positions.none { it.nodeId == "ats_${newAts.atsId}" }
+        )
+        assertTrue(
+            "Re-created ${newUps.upsId} must not inherit the deleted instance's saved position",
+            positions.none { it.nodeId == "ups_${newUps.upsId}" }
+        )
+
+        // No inherited manual sizing override either.
+        assertFalse("Re-created generator must not inherit manual override", newGen.enableManualOverride)
+        assertNull("Re-created generator must not inherit manual size", newGen.manualSizeKVA)
+        assertFalse("Re-created ATS must not inherit manual override", newAts.enableManualOverride)
+        assertNull("Re-created ATS must not inherit manual size", newAts.manualSizeAmp)
+        assertFalse("Re-created UPS must not inherit manual override", newUps.enableManualOverride)
+        assertNull("Re-created UPS must not inherit manual size", newUps.manualSizeKVA)
+    }
 }
