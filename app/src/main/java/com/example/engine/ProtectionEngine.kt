@@ -239,7 +239,8 @@ object ProtectionEngine {
         sizingResult: SizingResult,
         shortCircuitResult: ShortCircuitResult?,
         upstreamIn_A: Double = 0.0,
-        upstreamName: String = "Upstream Board"
+        upstreamName: String = "Upstream Board",
+        hasUpstreamDevice: Boolean = (upstreamIn_A > 0.0 && !upstreamName.startsWith("Incomer", ignoreCase = true))
     ): ProtectionResult {
         val ib = sizingResult.Ib_A
         val in_rating = sizingResult.deviceSize_A
@@ -270,14 +271,14 @@ object ProtectionEngine {
         val selectivityStatus: String
         val messages = mutableListOf<String>()
 
-        if (upstreamIn_A > 0.0) {
+        if (hasUpstreamDevice && upstreamIn_A > 0.0) {
             val coord = CoordinationEngine.checkCoordination(circuit, sizingResult, upstreamName, upstreamIn_A)
             selectivityStatus = if (coord.status.contains("OK")) "PASS" else "WARNING"
             if (!coord.status.contains("OK")) {
                 messages.add("Selectivity Warning: ${coord.reason}")
             }
         } else {
-            selectivityStatus = "PASS"
+            selectivityStatus = "N/A"
         }
 
         if (!overloadPass) {

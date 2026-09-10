@@ -55,6 +55,7 @@ import com.example.ui.theme.*
 fun SldScreen(
     circuits: List<CircuitEntity>,
     activeProjectId: String = "",
+    projectName: String = "",
     sizingResults: Map<Int, SizingResult> = emptyMap(),
     shortCircuitResults: Map<Int, ShortCircuitResult> = emptyMap(),
     atsEntity: com.example.data.AtsEntity? = null,
@@ -82,6 +83,34 @@ fun SldScreen(
     val db = remember { com.example.data.AppDatabase.getDatabase(context) }
     val repository = remember { com.example.data.EngineeringRepository(db) }
     val effectiveProjId = activeProjectId.ifBlank { circuits.firstOrNull()?.projectId ?: transformers.firstOrNull()?.projectId ?: "DEFAULT_PROJECT" }
+
+    val projectEntityFromDb by produceState<com.example.data.ProjectEntity?>(initialValue = null, key1 = effectiveProjId) {
+        value = try {
+            db.projectDao().getProject(effectiveProjId)
+        } catch (e: Exception) {
+            null
+        }
+    }
+    val effectiveProjectName = projectName.takeIf { it.isNotBlank() }
+        ?: projectEntityFromDb?.projectName?.takeIf { it.isNotBlank() }
+        ?: "VoltAtlas SLD"
+    val effectiveRevision = projectRevision ?: projectEntityFromDb?.revision
+
+    val preferences = remember { com.example.data.GlobalPreferences.getInstance(context) }
+    val trustedEngineer by preferences.trustedEngineerIdentity.collectAsState()
+
+    val dxfMetadata = remember(effectiveProjectName, effectiveRevision, projectEntityFromDb, trustedEngineer) {
+        com.example.sld.DxfDrawingMetadata(
+            projectName = effectiveProjectName,
+            projectCode = projectEntityFromDb?.projectCode,
+            clientName = projectEntityFromDb?.clientName,
+            drawingNumber = projectEntityFromDb?.projectCode?.let { "$it-E-SLD-001" },
+            revision = effectiveRevision,
+            drawnBy = trustedEngineer.takeIf { it.isNotBlank() },
+            standard = "IEC 60364 / BS 7671 / IEC 60617",
+            scale = "NTS"
+        )
+    }
 
     val dbPositionsFlow = remember(effectiveProjId) {
         repository.sldNodePositionsFlow(effectiveProjId)
@@ -157,7 +186,7 @@ fun SldScreen(
                 try {
                     val bitmap = com.example.sld.SldImageExporter.renderSldBitmap(
                         engineResult = engineResult,
-                        projectName = activeProjectId.ifBlank { "VoltAtlas_SLD" },
+                        projectName = effectiveProjectName,
                         isDarkTheme = isDarkTheme
                     )
                     if (bitmap != null) {
@@ -196,9 +225,10 @@ fun SldScreen(
                         return@launch
                     }
                     val dxfContent = com.example.sld.SldDxfExporter.generateDxf(
-                        engineResult,
-                        activeProjectId.ifBlank { "VoltAtlas_SLD" },
-                        projectRevision
+                        engineResult = engineResult,
+                        projectName = effectiveProjectName,
+                        projectRevision = effectiveRevision,
+                        metadata = dxfMetadata
                     )
                     context.contentResolver.openOutputStream(uri)?.use { out ->
                         com.example.sld.SldDxfExporter.writeDxfToStream(dxfContent, out)
@@ -379,7 +409,7 @@ fun SldScreen(
             ) {
                 Column {
                     Text(
-                        text = activeProjectId.ifBlank { "VoltAtlas SLD" },
+                        text = effectiveProjectName,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = palette.textPrimary
@@ -539,7 +569,7 @@ fun SldScreen(
                 if (engineResult.nodes.isEmpty()) {
                     android.widget.Toast.makeText(context, "Diagram empty. Please add components first.", android.widget.Toast.LENGTH_SHORT).show()
                 } else {
-                    val safeName = activeProjectId.ifBlank { "VoltAtlas" }.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                    val safeName = effectiveProjectName.replace(Regex("[^a-zA-Z0-9._-]"), "_").takeIf { it.isNotBlank() } ?: "VoltAtlas"
                     savePngLauncher.launch("${safeName}_SLD.png")
                 }
             },
@@ -547,12 +577,12 @@ fun SldScreen(
                 com.example.sld.SldImageExporter.exportAndShareImage(
                     context = context,
                     engineResult = engineResult,
-                    projectName = activeProjectId.ifBlank { "VoltAtlas_SLD" },
+                    projectName = effectiveProjectName,
                     isDarkTheme = isDarkTheme
                 )
             },
             onExportDxf = {
-                val safeProjectName = activeProjectId
+                val safeProjectName = effectiveProjectName
                     .trim()
                     .replace(Regex("[^a-zA-Z0-9_-]"), "_")
                     .takeIf { it.isNotBlank() } ?: "VoltAtlas"
@@ -565,7 +595,7 @@ fun SldScreen(
                 }
             },
             onShareDxf = {
-                val safeProjectName = activeProjectId
+                val safeProjectName = effectiveProjectName
                     .trim()
                     .replace(Regex("[^a-zA-Z0-9_-]"), "_")
                     .takeIf { it.isNotBlank() } ?: "VoltAtlas"
@@ -574,7 +604,9 @@ fun SldScreen(
                     com.example.sld.SldDxfExporter.exportAndShareDxf(
                         context = context,
                         engineResult = engineResult,
-                        projectName = safeProjectName
+                        projectName = effectiveProjectName,
+                        projectRevision = effectiveRevision,
+                        metadata = dxfMetadata
                     )
                 } else {
                     android.widget.Toast.makeText(context, "Diagram not ready or empty. Please add components first.", android.widget.Toast.LENGTH_SHORT).show()

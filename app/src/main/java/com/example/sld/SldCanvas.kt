@@ -445,7 +445,7 @@ fun SldCanvas(
                             }
                         }
 
-                        // Advanced lines (DETAILED only): route length + device interrupting rating (§1.2)
+                        // Advanced lines (DETAILED+): route length, device Icu, Ib/Iz, utilization, installation (§1.2)
                         if (calloutPolicy.advancedLines) {
                             if (lengthText.isNotBlank()) {
                                 linesToDraw.add(Pair(lengthText, defaultTextStyle))
@@ -454,6 +454,65 @@ fun SldCanvas(
                                 ?.takeIf { it.isNotBlank() }?.let { "Icu: $it" }.orEmpty()
                             if (icuText.isNotBlank()) {
                                 linesToDraw.add(Pair(icuText, defaultTextStyle))
+                            }
+                            // Ib / Iz current pair
+                            val ibIzParts = listOfNotNull(
+                                childNode.dataBlock.ibAmp?.takeIf { it.isNotBlank() }?.let { "Ib: $it" },
+                                childNode.dataBlock.izAmp?.takeIf { it.isNotBlank() }?.let { "Iz: $it" }
+                            )
+                            if (ibIzParts.isNotEmpty()) {
+                                linesToDraw.add(Pair(ibIzParts.joinToString(" / "), defaultTextStyle))
+                            }
+                            // Cable thermal utilization
+                            childNode.dataBlock.cableUtilizationPct?.takeIf { it.isNotBlank() }?.let {
+                                linesToDraw.add(Pair("Util: $it", defaultTextStyle))
+                            }
+                            // Installation method
+                            childNode.dataBlock.cableInstallation?.takeIf { it.isNotBlank() }?.let {
+                                linesToDraw.add(Pair(it, TextStyle(color = palette.textSecondary, fontSize = 9.sp)))
+                            }
+                        }
+
+                        // Inspection lines (INSPECTION only): neutral/CPC, VD limit, protection verdicts, ADS loop (§1C)
+                        if (calloutPolicy.inspectionLines) {
+                            // Neutral & CPC conductor sizes
+                            val nCpcParts = listOfNotNull(
+                                childNode.dataBlock.cableNeutralMm2?.takeIf { it.isNotBlank() }?.let { "N: ${it}mm\u00B2" },
+                                childNode.dataBlock.cableCpcMm2?.takeIf { it.isNotBlank() }?.let { "CPC: ${it}mm\u00B2" }
+                            )
+                            if (nCpcParts.isNotEmpty()) {
+                                linesToDraw.add(Pair(nCpcParts.joinToString(" | "), defaultTextStyle))
+                            }
+                            // VD design limit
+                            childNode.dataBlock.voltageDropLimitPct?.takeIf { it.isNotBlank() }?.let {
+                                linesToDraw.add(Pair("VD Limit: $it", defaultTextStyle))
+                            }
+                            // Protection coordination verdicts (compact badge line)
+                            val protParts = listOfNotNull(
+                                childNode.dataBlock.protectionOverload?.takeIf { it.isNotBlank() }?.let { "OL:$it" },
+                                childNode.dataBlock.protectionShortCircuit?.takeIf { it.isNotBlank() }?.let { "SC:$it" },
+                                childNode.dataBlock.protectionCableWithstand?.takeIf { it.isNotBlank() }?.let { "I\u00B2t:$it" },
+                                childNode.dataBlock.protectionSelectivity?.takeIf { it.isNotBlank() }?.let { "Sel:$it" }
+                            )
+                            if (protParts.isNotEmpty()) {
+                                val protLine = protParts.joinToString(" | ")
+                                val hasFailure = protLine.uppercase().contains("FAIL")
+                                val protColor = if (hasFailure) palette.invalidStatus else palette.validStatus
+                                linesToDraw.add(Pair(protLine, TextStyle(color = protColor, fontSize = 9.sp, fontWeight = FontWeight.Bold)))
+                            }
+                            // ADS loop impedance & disconnection time
+                            val adsParts = listOfNotNull(
+                                childNode.dataBlock.adsZsOhm?.takeIf { it.isNotBlank() }?.let { "Zs:$it" },
+                                childNode.dataBlock.adsMaxZsOhm?.takeIf { it.isNotBlank() }?.let { "\u2264$it" },
+                                childNode.dataBlock.adsDisconnectionTime?.takeIf { it.isNotBlank() }
+                            )
+                            if (adsParts.isNotEmpty()) {
+                                val adsLine = adsParts.joinToString(" ")
+                                val adsStatusStr = childNode.dataBlock.adsStatus?.takeIf { it.isNotBlank() }
+                                val fullAdsLine = if (adsStatusStr != null) "$adsLine $adsStatusStr" else adsLine
+                                val adsHasFail = fullAdsLine.uppercase().contains("FAIL")
+                                val adsColor = if (adsHasFail) palette.invalidStatus else palette.validStatus
+                                linesToDraw.add(Pair(fullAdsLine, TextStyle(color = adsColor, fontSize = 9.sp, fontWeight = FontWeight.Bold)))
                             }
                         }
 
@@ -524,6 +583,20 @@ fun SldCanvas(
                                 style = TextStyle(color = palette.textSecondary, fontSize = 10.sp),
                                 topLeft = Offset(labelX, cy + 44f)
                             )
+                            // §1C: Grid dark-data annotations (DETAILED+)
+                            val isDetailed = effectiveDetailLevel == SldDetailLevel.DETAILED || effectiveDetailLevel == SldDetailLevel.INSPECTION
+                            if (isDetailed) {
+                                val db = node.dataBlock
+                                var gridAnnotY = cy + 60f
+                                val annotStyle = TextStyle(color = palette.textSecondary, fontSize = 9.sp)
+                                db?.transformerPrimaryVoltage?.takeIf { it.isNotBlank() }?.let {
+                                    drawSafeText(textMeasurer, "Supply: $it", annotStyle, Offset(labelX, gridAnnotY))
+                                    gridAnnotY += 14f
+                                }
+                                db?.gridFaultMVA?.takeIf { it.isNotBlank() }?.let {
+                                    drawSafeText(textMeasurer, "S_kQ: $it", annotStyle, Offset(labelX, gridAnnotY))
+                                }
+                            }
                         }
                     } else if (panelUpper.contains("TRANSFORMER")) {
                         val cx = node.x + node.width / 2f
@@ -550,6 +623,31 @@ fun SldCanvas(
                                 style = TextStyle(color = palette.textSecondary, fontSize = 11.sp),
                                 topLeft = Offset(labelX, cy + 6f)
                             )
+                            // §1C: Transformer dark-data annotations (DETAILED+)
+                            val isDetailed = effectiveDetailLevel == SldDetailLevel.DETAILED || effectiveDetailLevel == SldDetailLevel.INSPECTION
+                            if (isDetailed) {
+                                val db = node.dataBlock
+                                var txAnnotY = cy + 22f
+                                val annotStyle = TextStyle(color = palette.textSecondary, fontSize = 9.sp)
+                                db?.windingConnection?.takeIf { it.isNotBlank() }?.let {
+                                    drawSafeText(textMeasurer, it, annotStyle, Offset(labelX, txAnnotY))
+                                    txAnnotY += 14f
+                                }
+                                db?.loadingPct?.takeIf { it.isNotBlank() }?.let {
+                                    drawSafeText(textMeasurer, "Loading: $it", annotStyle, Offset(labelX, txAnnotY))
+                                    txAnnotY += 14f
+                                }
+                                db?.transformerZtMOhm?.takeIf { it.isNotBlank() }?.let {
+                                    drawSafeText(textMeasurer, "Zt: $it", annotStyle, Offset(labelX, txAnnotY))
+                                    txAnnotY += 14f
+                                }
+                                // INSPECTION only: single-phase earth fault
+                                if (effectiveDetailLevel == SldDetailLevel.INSPECTION) {
+                                    db?.transformerIsc1PhaseKa?.takeIf { it.isNotBlank() }?.let {
+                                        drawSafeText(textMeasurer, "Isc\u2081\u03C6: $it", annotStyle, Offset(labelX, txAnnotY))
+                                    }
+                                }
+                            }
                         }
                     } else if (panelUpper.contains("GENERATOR")) {
                         val cx = node.x + node.width / 2f
@@ -576,6 +674,20 @@ fun SldCanvas(
                                 style = TextStyle(color = palette.textSecondary, fontSize = 10.sp),
                                 topLeft = Offset(labelX, cy + 44f)
                             )
+                            // §1C: Generator dark-data annotations (DETAILED+)
+                            val isDetailed = effectiveDetailLevel == SldDetailLevel.DETAILED || effectiveDetailLevel == SldDetailLevel.INSPECTION
+                            if (isDetailed) {
+                                val db = node.dataBlock
+                                var genAnnotY = cy + 60f
+                                val annotStyle = TextStyle(color = palette.textSecondary, fontSize = 9.sp)
+                                db?.generatorMotorStartingKva?.takeIf { it.isNotBlank() }?.let {
+                                    drawSafeText(textMeasurer, "Motor Start: $it", annotStyle, Offset(labelX, genAnnotY))
+                                    genAnnotY += 14f
+                                }
+                                db?.generatorStepLoadKva?.takeIf { it.isNotBlank() }?.let {
+                                    drawSafeText(textMeasurer, "Step Load: $it", annotStyle, Offset(labelX, genAnnotY))
+                                }
+                            }
                         }
                     } else if (panelUpper.contains("ATS")) {
                         // Phase 3 §3.1 — anchor-first geometry; falls back to the
@@ -601,6 +713,31 @@ fun SldCanvas(
                                 style = TextStyle(color = palette.textSecondary, fontSize = 11.sp),
                                 topLeft = Offset(labelX, node.y + 6f)
                             )
+                            // §1C: ATS dark-data annotations (DETAILED+)
+                            val isDetailed = effectiveDetailLevel == SldDetailLevel.DETAILED || effectiveDetailLevel == SldDetailLevel.INSPECTION
+                            if (isDetailed) {
+                                val db = node.dataBlock
+                                var atsAnnotY = node.y + 22f
+                                val annotStyle = TextStyle(color = palette.textSecondary, fontSize = 9.sp)
+                                db?.atsGoverningCurrentA?.takeIf { it.isNotBlank() }?.let {
+                                    drawSafeText(textMeasurer, "Ig: $it", annotStyle, Offset(labelX, atsAnnotY))
+                                    atsAnnotY += 14f
+                                }
+                                db?.atsTransferTimeS?.takeIf { it.isNotBlank() }?.let {
+                                    drawSafeText(textMeasurer, "Tt: $it", annotStyle, Offset(labelX, atsAnnotY))
+                                    atsAnnotY += 14f
+                                }
+                                // INSPECTION only: Icw and Icm
+                                if (effectiveDetailLevel == SldDetailLevel.INSPECTION) {
+                                    db?.atsRequiredIcwKa?.takeIf { it.isNotBlank() }?.let {
+                                        drawSafeText(textMeasurer, "Icw: $it", annotStyle, Offset(labelX, atsAnnotY))
+                                        atsAnnotY += 14f
+                                    }
+                                    db?.atsRequiredIcmKa?.takeIf { it.isNotBlank() }?.let {
+                                        drawSafeText(textMeasurer, "Icm: $it", annotStyle, Offset(labelX, atsAnnotY))
+                                    }
+                                }
+                            }
                         }
                     } else if (panelUpper.contains("UPS")) {
                         val cx = node.x + node.width / 2f
@@ -626,6 +763,27 @@ fun SldCanvas(
                                 style = TextStyle(color = palette.textSecondary, fontSize = 11.sp),
                                 topLeft = Offset(labelX, cy + 6f)
                             )
+                            // §1C: UPS dark-data annotations (DETAILED+)
+                            val isDetailed = effectiveDetailLevel == SldDetailLevel.DETAILED || effectiveDetailLevel == SldDetailLevel.INSPECTION
+                            if (isDetailed) {
+                                val db = node.dataBlock
+                                var upsAnnotY = cy + 22f
+                                val annotStyle = TextStyle(color = palette.textSecondary, fontSize = 9.sp)
+                                db?.upsBatteryAh?.takeIf { it.isNotBlank() }?.let {
+                                    drawSafeText(textMeasurer, "Battery: $it", annotStyle, Offset(labelX, upsAnnotY))
+                                    upsAnnotY += 14f
+                                }
+                                db?.upsBatteryStrings?.takeIf { it.isNotBlank() }?.let {
+                                    drawSafeText(textMeasurer, "Strings: $it", annotStyle, Offset(labelX, upsAnnotY))
+                                    upsAnnotY += 14f
+                                }
+                                // INSPECTION only: frequency
+                                if (effectiveDetailLevel == SldDetailLevel.INSPECTION) {
+                                    db?.voltageFrequencyHz?.takeIf { it.isNotBlank() }?.let {
+                                        drawSafeText(textMeasurer, it, annotStyle, Offset(labelX, upsAnnotY))
+                                    }
+                                }
+                            }
                         }
                     } else {
                         drawRect(
@@ -724,9 +882,11 @@ fun SldCanvas(
                                 style = TextStyle(color = palette.textSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold),
                                 topLeft = Offset(dmmCenterX + 24f, dmmCenterY - 18f)
                             )
+                            // §1C-4a: Real system voltage from dataBlock — never hardcoded "400 V • 3Ph"
+                            val dmmVoltageLabel = node.dataBlock?.voltage?.takeIf { it.isNotBlank() } ?: "—"
                             drawSafeText(
                                 textMeasurer = textMeasurer,
-                                text = "400 V • 3Ph",
+                                text = dmmVoltageLabel,
                                 style = TextStyle(color = if (palette.isDark) Color(0xFF64748B) else Color(0xFF475569), fontSize = 8.5.sp),
                                 topLeft = Offset(dmmCenterX + 24f, dmmCenterY - 4f)
                             )
@@ -754,7 +914,8 @@ fun SldCanvas(
 
                         // Centered Busbar Type Tag
                         if (!isMacro) {
-                            val busTag = "MDB"
+                            // §1C-4b: Real board label — never hardcoded "MDB"
+                            val busTag = node.label
                             val tagLayout = textMeasurer.measure(
                                 text = AnnotatedString(busTag),
                                 style = TextStyle(color = Color(0xFF0F172A), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
@@ -763,6 +924,63 @@ fun SldCanvas(
                                 textLayoutResult = tagLayout,
                                 topLeft = Offset(midX - tagLayout.size.width / 2f, busbarY + (busbarH - tagLayout.size.height) / 2f)
                             )
+
+                            // §1C-4c/4d: Board header info block (STANDARD+) and load roll-up badge (DETAILED+)
+                            val isStandard = effectiveDetailLevel != SldDetailLevel.MACRO && effectiveDetailLevel != SldDetailLevel.COMPACT
+                            val isDetailedOrInspection = effectiveDetailLevel == SldDetailLevel.DETAILED || effectiveDetailLevel == SldDetailLevel.INSPECTION
+                            val boardDb = node.dataBlock
+                            if (isStandard && boardDb != null) {
+                                var boardAnnotY = busbarY + busbarH + 14f
+                                val boardAnnotStyle = TextStyle(color = palette.textSecondary, fontSize = 9.sp)
+
+                                // Board header line 1: busbar / Icw / size / IP
+                                val headerLine1 = listOfNotNull(
+                                    boardDb.busbarRatingA?.takeIf { it.isNotBlank() }?.let { "Bus: $it" },
+                                    boardDb.scRatingKA?.takeIf { it.isNotBlank() }?.let { "Icw: $it" },
+                                    boardDb.busbarSize?.takeIf { it.isNotBlank() },
+                                    boardDb.ipRating?.takeIf { it.isNotBlank() }
+                                ).joinToString("  |  ")
+                                if (headerLine1.isNotBlank()) {
+                                    drawSafeText(textMeasurer, headerLine1, boardAnnotStyle, Offset(node.x + 8f, boardAnnotY))
+                                    boardAnnotY += 14f
+                                }
+
+                                // Board header line 2: location
+                                boardDb.panelLocation?.takeIf { it.isNotBlank() }?.let {
+                                    drawSafeText(textMeasurer, it, boardAnnotStyle, Offset(node.x + 8f, boardAnnotY))
+                                    boardAnnotY += 14f
+                                }
+
+                                // Board header line 3: main incoming / ways
+                                val headerLine3 = listOfNotNull(
+                                    boardDb.mainIncoming?.takeIf { it.isNotBlank() }?.let { "In: $it" },
+                                    boardDb.numberOfWays?.takeIf { it.isNotBlank() }?.let { "$it ways" }
+                                ).joinToString("  |  ")
+                                if (headerLine3.isNotBlank()) {
+                                    drawSafeText(textMeasurer, headerLine3, boardAnnotStyle, Offset(node.x + 8f, boardAnnotY))
+                                    boardAnnotY += 14f
+                                }
+
+                                // Board load roll-up (DETAILED+)
+                                if (isDetailedOrInspection) {
+                                    val loadLine1 = listOfNotNull(
+                                        boardDb.boardTotalConnectedKva?.takeIf { it.isNotBlank() }?.let { "TCL: $it" },
+                                        boardDb.boardDemandKva?.takeIf { it.isNotBlank() }?.let { "TDL: $it" },
+                                        boardDb.boardDemandFactorPct?.takeIf { it.isNotBlank() }?.let { "(DF $it)" }
+                                    ).joinToString("  ")
+                                    if (loadLine1.isNotBlank()) {
+                                        drawSafeText(textMeasurer, loadLine1, TextStyle(color = palette.textPrimary, fontSize = 9.sp, fontWeight = FontWeight.Bold), Offset(node.x + 8f, boardAnnotY))
+                                        boardAnnotY += 14f
+                                    }
+                                    val loadLine2 = listOfNotNull(
+                                        boardDb.boardDesignCurrentA?.takeIf { it.isNotBlank() }?.let { "I: $it" },
+                                        boardDb.boardUnbalancePct?.takeIf { it.isNotBlank() }?.let { "Unb: $it" }
+                                    ).joinToString("  |  ")
+                                    if (loadLine2.isNotBlank()) {
+                                        drawSafeText(textMeasurer, loadLine2, boardAnnotStyle, Offset(node.x + 8f, boardAnnotY))
+                                    }
+                                }
+                            }
                         }
                     } else if (isMotor) {
                         // Motor Load Symbol (Circle M with downward load arrow)
@@ -822,6 +1040,38 @@ fun SldCanvas(
                                 textLayoutResult = fittedLabel,
                                 topLeft = Offset(labelX, labelY)
                             )
+
+                            // §1C-4e/4f: SMDB/DB board header (STANDARD+) and load badge (DETAILED+)
+                            val isStandard = effectiveDetailLevel != SldDetailLevel.MACRO && effectiveDetailLevel != SldDetailLevel.COMPACT
+                            val isDetailedOrInspection = effectiveDetailLevel == SldDetailLevel.DETAILED || effectiveDetailLevel == SldDetailLevel.INSPECTION
+                            val subDb = node.dataBlock
+                            if (isStandard && subDb != null) {
+                                var subAnnotY = boxTop + boxH + 6f
+                                val subAnnotStyle = TextStyle(color = palette.textSecondary, fontSize = 8.5.sp)
+
+                                // Board header compact line: busbar / Icw / ways
+                                val subHeaderLine = listOfNotNull(
+                                    subDb.busbarRatingA?.takeIf { it.isNotBlank() }?.let { "Bus: $it" },
+                                    subDb.scRatingKA?.takeIf { it.isNotBlank() }?.let { "Icw: $it" },
+                                    subDb.numberOfWays?.takeIf { it.isNotBlank() }?.let { "$it ways" }
+                                ).joinToString(" | ")
+                                if (subHeaderLine.isNotBlank()) {
+                                    drawSafeText(textMeasurer, subHeaderLine, subAnnotStyle, Offset(node.x + 4f, subAnnotY))
+                                    subAnnotY += 13f
+                                }
+
+                                // Board load badge (DETAILED+)
+                                if (isDetailedOrInspection) {
+                                    val subLoadLine = listOfNotNull(
+                                        subDb.boardTotalConnectedKva?.takeIf { it.isNotBlank() }?.let { "TCL: $it" },
+                                        subDb.boardDemandKva?.takeIf { it.isNotBlank() }?.let { "TDL: $it" },
+                                        subDb.boardDesignCurrentA?.takeIf { it.isNotBlank() }?.let { "I: $it" }
+                                    ).joinToString(" | ")
+                                    if (subLoadLine.isNotBlank()) {
+                                        drawSafeText(textMeasurer, subLoadLine, TextStyle(color = palette.textPrimary, fontSize = 8.5.sp, fontWeight = FontWeight.Bold), Offset(node.x + 4f, subAnnotY))
+                                    }
+                                }
+                            }
                         }
                     }
                 }

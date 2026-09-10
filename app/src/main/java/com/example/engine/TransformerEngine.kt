@@ -25,7 +25,17 @@ data class TransformerResult(
     val status: String,
     val z0: Double,
     val vectorGroup: String,
-    val voltage: Double = 400.0
+    val voltage: Double = 400.0,
+    /** Real MV/HV primary supply voltage (V) from [TransformerEntity.primaryVoltageV] (G5). */
+    val primaryVoltageV: Int? = null,
+    /** Utility short-circuit MVA at the point of supply (S_kQ); 0 = infinite-grid convention (G4). */
+    val gridFaultMVA: Double = 0.0,
+    /** Grid-source impedance Z_Q reflected to the LV side (mΩ) — IEC 60909-0 eq. (G4). */
+    val zGridMOhm: Double = 0.0,
+    /** Grid-source resistance reflected to the LV side (mΩ). */
+    val rGridMOhm: Double = 0.0,
+    /** Grid-source reactance reflected to the LV side (mΩ). */
+    val xGridMOhm: Double = 0.0
 )
 
 object TransformerEngine {
@@ -79,7 +89,9 @@ object TransformerEngine {
                 status = "INACTIVE",
                 z0 = 0.0,
                 vectorGroup = tx.vectorGroup,
-                voltage = 400.0
+                voltage = 400.0,
+                primaryVoltageV = tx.primaryVoltageV,
+                gridFaultMVA = tx.gridFaultMVA ?: 0.0
             )
         }
 
@@ -148,6 +160,21 @@ object TransformerEngine {
         val secondaryVoltage = if (tx.voltage in 100..1000) tx.voltage.toDouble() else 400.0
         val flc = if (selectedSize > 0.0) (selectedSize * 1000.0) / (sqrt(3.0) * secondaryVoltage) else 0.0
 
+        // G4: utility grid source impedance reflected to the LV side (IEC 60909-0).
+        // Z_Q,Lv = (c_max · U_sec²) / S_kQ — the primary voltage cancels during the
+        // transformer impedance reflection, so the LV-side grid impedance depends only
+        // on the secondary voltage and the utility S_kQ. c_max = 1.1 applies on the
+        // MV/HV (grid) side per IEC 60909-0 Table 1.
+        val gridSkMVA = tx.gridFaultMVA?.takeIf { it > 0.0 } ?: 0.0
+        val cGrid = 1.1
+        val zGridOhm = if (gridSkMVA > 0.0) (cGrid * secondaryVoltage * secondaryVoltage) / (gridSkMVA * 1e6) else 0.0
+        // Utility-supply R/X split: X/R = 10 is the standard screening assumption for
+        // a grid infeed (flagged in the short-circuit result note). R = Z/√(1 + 10²),
+        // X = 10·R.
+        val gridXrRatio = 10.0
+        val rGridOhm = if (zGridOhm > 0.0) zGridOhm / sqrt(1.0 + gridXrRatio * gridXrRatio) else 0.0
+        val xGridOhm = rGridOhm * gridXrRatio
+
         // F. Short-circuit basis (per transformer) in milliohms
         // Zt (mΩ) = (V² / (selectedSize * 1000)) * (%Z / 100) * 1000
         val zt = if (selectedSize > 0.0) (secondaryVoltage * secondaryVoltage / (selectedSize * 1000.0)) * (tx.percentZ / 100.0) * 1000.0 else 0.0
@@ -197,7 +224,12 @@ object TransformerEngine {
             status = status,
             z0 = z0_mOhm,
             vectorGroup = tx.vectorGroup,
-            voltage = secondaryVoltage
+            voltage = secondaryVoltage,
+            primaryVoltageV = tx.primaryVoltageV,
+            gridFaultMVA = gridSkMVA,
+            zGridMOhm = zGridOhm * 1000.0,
+            rGridMOhm = rGridOhm * 1000.0,
+            xGridMOhm = xGridOhm * 1000.0
         )
     }
 }

@@ -127,6 +127,8 @@ fun SldDetailsSheet(
                     db.loadingPct?.let { DetailRow("Transformer Loading", it) }
                     // ---- DARK-DATA SLOTS (engine-backed, plumbed end-to-end) ----
                     db.interruptingRatingKa?.let { DetailRow("Interrupting Rating (Icu)", it) }
+                    db.transformerPrimaryVoltage?.let { DetailRow("Primary Supply Voltage", it) }
+                    db.gridFaultMVA?.let { DetailRow("Utility Fault Level (S_kQ)", it) }
                     db.transformerZtMOhm?.let { DetailRow("Transformer Impedance (Zt)", it) }
                     db.transformerIsc1PhaseKa?.let { DetailRow("Transformer Isc (1Ph)", it) }
                     db.cableUtilizationPct?.let { DetailRow("Cable Utilization", it) }
@@ -143,9 +145,14 @@ fun SldDetailsSheet(
                     db.generatorMotorStartingKva?.let { DetailRow("Motor-Starting kVA", it) }
                     db.generatorStepLoadKva?.let { DetailRow("Step Load at Start", it) }
                     db.voltageFrequencyHz?.let { DetailRow("Output Frequency", it) }
-                    // ---- BOARD HEADERS (stored on CircuitEntity) ----
+                    // ---- BOARD HEADERS & BUSBAR SIZING (BusbarSizingEngine & CircuitEntity) ----
                     db.busbarRatingA?.let { DetailRow("Busbar Rating", it) }
-                    db.scRatingKA?.let { DetailRow("Board SC Rating", it) }
+                    db.scRatingKA?.let { DetailRow("Board SC Rating (Icw)", it) }
+                    db.busbarSize?.let { DetailRow("Busbar Cross-Section", it) }
+                    db.busbarIpkKa?.let { DetailRow("Peak Withstand (Ipk)", it) }
+                    db.busbarNeutral?.let { DetailRow("Neutral Busbar", it) }
+                    db.busbarPe?.let { DetailRow("PE Earth Busbar", it) }
+                    db.busbarMaterial?.let { DetailRow("Conductor Material", it) }
                     db.ipRating?.let { DetailRow("Ingress Protection", it) }
                     db.panelLocation?.let { DetailRow("Panel Location", it) }
                     db.numberOfWays?.let { DetailRow("Number of Ways", it) }

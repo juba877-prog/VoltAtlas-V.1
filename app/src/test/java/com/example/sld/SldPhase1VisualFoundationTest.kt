@@ -1,4 +1,4 @@
-﻿package com.example.sld
+package com.example.sld
 
 import com.example.data.AtsEntity
 import com.example.data.CircuitEntity
@@ -57,7 +57,7 @@ class SldPhase1VisualFoundationTest {
     @Test
     fun testUtilityAndTransformerMapping() {
         val transformers = listOf(
-            TransformerEntity(projectId = testProjectId, transformerId = "TX-01", kVA = 1500.0, voltage = 22000)
+            TransformerEntity(projectId = testProjectId, transformerId = "TX-01", kVA = 1500.0, voltage = 400, primaryVoltageV = 22000)
         )
         val graph = ElectricalNetworkGraphBuilder.buildGraph(
             activeProjectId = testProjectId,
@@ -292,5 +292,43 @@ class SldPhase1VisualFoundationTest {
         assertTrue("Tx must be above MDB", tx.y < mdb!!.y)
         assertTrue("MDB must be above SMDB", mdb.y < smdb!!.y)
         assertTrue("SMDB must be above DB", smdb.y < db!!.y)
+    }
+
+    @Test
+    fun testDetailLevelPolicyFeederCalloutTiers() {
+        val macro = SldDetailLevelPolicy.feederCallout(SldDetailLevel.MACRO)
+        assertFalse("Macro must suppress breakerLine", macro.breakerLine)
+        assertFalse("Macro must suppress cableLine", macro.cableLine)
+        assertFalse("Macro must suppress modeMetricLine", macro.modeMetricLine)
+        assertFalse("Macro must suppress advancedLines", macro.advancedLines)
+        assertFalse("Macro must suppress inspectionLines", macro.inspectionLines)
+
+        val compact = SldDetailLevelPolicy.feederCallout(SldDetailLevel.COMPACT)
+        assertTrue("Compact must show breakerLine", compact.breakerLine)
+        assertFalse("Compact must suppress cableLine", compact.cableLine)
+        assertFalse("Compact must suppress modeMetricLine", compact.modeMetricLine)
+        assertFalse("Compact must suppress advancedLines", compact.advancedLines)
+        assertFalse("Compact must suppress inspectionLines", compact.inspectionLines)
+
+        val standard = SldDetailLevelPolicy.feederCallout(SldDetailLevel.STANDARD)
+        assertTrue("Standard must show breakerLine", standard.breakerLine)
+        assertTrue("Standard must show cableLine", standard.cableLine)
+        assertTrue("Standard must show modeMetricLine", standard.modeMetricLine)
+        assertFalse("Standard must suppress advancedLines", standard.advancedLines)
+        assertFalse("Standard must suppress inspectionLines", standard.inspectionLines)
+
+        val detailed = SldDetailLevelPolicy.feederCallout(SldDetailLevel.DETAILED)
+        assertTrue("Detailed must show breakerLine", detailed.breakerLine)
+        assertTrue("Detailed must show cableLine", detailed.cableLine)
+        assertTrue("Detailed must show modeMetricLine", detailed.modeMetricLine)
+        assertTrue("Detailed must show advancedLines", detailed.advancedLines)
+        assertFalse("Detailed must suppress inspectionLines", detailed.inspectionLines)
+
+        val inspection = SldDetailLevelPolicy.feederCallout(SldDetailLevel.INSPECTION)
+        assertTrue("Inspection must show breakerLine", inspection.breakerLine)
+        assertTrue("Inspection must show cableLine", inspection.cableLine)
+        assertTrue("Inspection must show modeMetricLine", inspection.modeMetricLine)
+        assertTrue("Inspection must show advancedLines", inspection.advancedLines)
+        assertTrue("Inspection must enable inspectionLines", inspection.inspectionLines)
     }
 }

@@ -21,6 +21,7 @@ fun SldScreen(
     com.example.ui.SldScreen(
         circuits = state.circuits,
         activeProjectId = activeProjectId,
+        projectName = projectName,
         sizingResults = state.sizingResults,
         shortCircuitResults = state.shortCircuitResults,
         atsEntity = state.atsEntity,

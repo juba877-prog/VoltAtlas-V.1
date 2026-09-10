@@ -34,6 +34,25 @@ import kotlin.math.abs
  * 5. Pure AutoCAD R12 ($ACADVER = AC1009), $DWGCODEPAGE = ANSI_1252, strict
  *    Locale.US numeric formatting, mandatory layer "0", STANDARD text style.
  */
+/**
+ * Stamped engineering drawing metadata for AutoCAD DXF exports (Roadmap Phase 3 §3.1).
+ * All fields are sourced from real project data and system parameters.
+ */
+data class DxfDrawingMetadata(
+    val projectName: String? = null,
+    val projectCode: String? = null,
+    val clientName: String? = null,
+    val drawingNumber: String? = null,
+    val drawingNumberPattern: String? = null,
+    val revision: Long? = null,
+    val drawnBy: String? = null,
+    val checkedBy: String? = null,
+    val approvedBy: String? = null,
+    val dateStamp: String? = null,
+    val standard: String? = null,
+    val scale: String? = null
+)
+
 object SldDxfExporter {
 
     private const val TAG = "SldDxfExporter"
@@ -233,6 +252,29 @@ object SldDxfExporter {
         appendLineEntity(x2, y1, x2, y2, layer, linetype)
         appendLineEntity(x2, y2, x1, y2, layer, linetype)
         appendLineEntity(x1, y2, x1, y1, layer, linetype)
+    }
+
+    fun StringBuilder.appendSolidEntity(
+        x1: Float, y1: Float,
+        x2: Float, y2: Float,
+        x3: Float, y3: Float,
+        x4: Float, y4: Float,
+        layer: String
+    ) {
+        append("0\nSOLID\n")
+        append("8\n").append(layer).append("\n")
+        append("10\n").append(formatFloat(x1)).append("\n")
+        append("20\n").append(formatFloat(y1)).append("\n")
+        append("30\n0.0\n")
+        append("11\n").append(formatFloat(x2)).append("\n")
+        append("21\n").append(formatFloat(y2)).append("\n")
+        append("31\n0.0\n")
+        append("12\n").append(formatFloat(x3)).append("\n")
+        append("22\n").append(formatFloat(y3)).append("\n")
+        append("32\n0.0\n")
+        append("13\n").append(formatFloat(x4)).append("\n")
+        append("23\n").append(formatFloat(y4)).append("\n")
+        append("33\n0.0\n")
     }
 
     // ==================================================================
@@ -530,7 +572,16 @@ object SldDxfExporter {
                 }
                 EquipmentKind.UPS -> {
                     val targetX = if (isEnd) symbol.cx - 34f else symbol.cx + 34f
-                    if (abs(p.second - symbol.cy) < 1f) out[idx] = targetX to p.second
+                    val targetY = symbol.cy
+                    if (abs(p.first - targetX) < 1f && abs(p.second - targetY) < 1f) {
+                        out[idx] = targetX to targetY
+                    } else if (isEnd) {
+                        out[idx] = p.first to targetY
+                        out.add(targetX to targetY)
+                    } else {
+                        out[idx] = targetX to targetY
+                        out.add(1, p.first to targetY)
+                    }
                 }
                 EquipmentKind.ATS -> {
                     val target = when {
@@ -561,6 +612,89 @@ object SldDxfExporter {
     // PART 3 — ANNOTATION CORRIDORS & DATA CLEANING (ZERO TEXT OVERLAP)
     // ==================================================================
 
+    private val RAW_DB_KEY_REGEX = Regex(
+        """\b(?:tx|gen|ats|ups|circ|tie|grid|edge|node|unresolved)[_:](?:[0-9a-zA-Z_-]+)\b""",
+        RegexOption.IGNORE_CASE
+    )
+
+    private val TYPE_PREFIX_REGEX = Regex(
+        """^(?:tx|gen|ats|ups|circ|tie|grid|edge|node|unresolved)[_:\s]+(.*)$""",
+        RegexOption.IGNORE_CASE
+    )
+
+    /**
+     * Single ownership rule for unit tokens: ensures exactly ONE instance of the unit
+     * is attached to a numeric value, preventing doubled tokens (e.g. "50 mm" for 50 metres,
+     * "45.2 AA", "16 mm² mm²", "0.245 ΩΩ", etc.).
+     */
+    fun formatUnit(
+        rawValue: String?,
+        unit: String,
+        space: Boolean = true
+    ): String? {
+        if (rawValue.isNullOrBlank()) return null
+        val trimmed = rawValue.trim()
+
+        val pattern = when (unit.lowercase(Locale.US)) {
+            "m" -> Regex("""^(.*?)(?:\s*(?:mm|m|metres?|meters?))+\s*$""", RegexOption.IGNORE_CASE)
+            "a" -> Regex("""^(.*?)(?:\s*(?:aa|a|amps?|amperes?))+\s*$""", RegexOption.IGNORE_CASE)
+            "v" -> Regex("""^(.*?)(?:\s*(?:vv|v|volts?))+\s*$""", RegexOption.IGNORE_CASE)
+            "ka" -> Regex("""^(.*?)(?:\s*(?:kaka|ka))+\s*$""", RegexOption.IGNORE_CASE)
+            "kva" -> Regex("""^(.*?)(?:\s*(?:kvakva|kva))+\s*$""", RegexOption.IGNORE_CASE)
+            "mva" -> Regex("""^(.*?)(?:\s*(?:mvamva|mva))+\s*$""", RegexOption.IGNORE_CASE)
+            "kw" -> Regex("""^(.*?)(?:\s*(?:kwkw|kw))+\s*$""", RegexOption.IGNORE_CASE)
+            "hz" -> Regex("""^(.*?)(?:\s*(?:hzhz|hz))+\s*$""", RegexOption.IGNORE_CASE)
+            "s" -> Regex("""^(.*?)(?:\s*(?:ss|s|sec|seconds?))+\s*$""", RegexOption.IGNORE_CASE)
+            "ah" -> Regex("""^(.*?)(?:\s*(?:ahah|ah))+\s*$""", RegexOption.IGNORE_CASE)
+            "%" -> Regex("""^(.*?)(?:\s*(?:%%|%|pct|percent))+\s*$""", RegexOption.IGNORE_CASE)
+            "mm²", "mm\u00b2", """mm\u+00b2""" -> Regex("""^(.*?)(?:\s*(?:mm\s*[\u00B22²]|mm\\U\+00B2|sqmm))+\s*$""", RegexOption.IGNORE_CASE)
+            "ω", "\u03a9", """\u+03a9""" -> Regex("""^(.*?)(?:\s*(?:[\u03A9Ω]|\\U\+03A9|ohms?))+\s*$""", RegexOption.IGNORE_CASE)
+            "mω", "m\u03a9", """m\u+03a9""" -> Regex("""^(.*?)(?:\s*(?:m[\u03A9Ω]|m\\U\+03A9|mohms?))+\s*$""", RegexOption.IGNORE_CASE)
+            else -> Regex("""^(.*?)(?:\s*""" + Regex.escape(unit) + """)+\s*$""", RegexOption.IGNORE_CASE)
+        }
+
+        val base = pattern.matchEntire(trimmed)?.groupValues?.get(1)?.trim() ?: trimmed
+        val cleanBase = if (base.isNotBlank()) base else trimmed
+        val sep = if (space) " " else ""
+        return "$cleanBase$sep$unit"
+    }
+
+    /**
+     * Resolves human-facing equipment display name strictly from stored data (C1 / A3).
+     * Renders the stored display-name field (circuitName or label), stripping any
+     * artificial system type prefix (e.g. "Tx: TX-01" -> "TX-01").
+     * If empty or equal to a raw database key, falls back to the raw stored identifier as-is.
+     * Never transforms, renumbers, re-prefixes, synthesizes designations, or infers a board type.
+     */
+    fun resolveDisplayName(node: PositionedSldNode): String {
+        val circuitName = node.circuit?.circuitName?.trim().orEmpty()
+        if (circuitName.isNotBlank() && !circuitName.matches(RAW_DB_KEY_REGEX)) {
+            val stripped = TYPE_PREFIX_REGEX.matchEntire(circuitName)?.groupValues?.get(1)?.trim()
+            return if (!stripped.isNullOrBlank() && !stripped.matches(RAW_DB_KEY_REGEX)) stripped else circuitName
+        }
+
+        val rawLabel = node.label.trim()
+        if (rawLabel.isNotBlank() && !rawLabel.matches(RAW_DB_KEY_REGEX)) {
+            val stripped = TYPE_PREFIX_REGEX.matchEntire(rawLabel)?.groupValues?.get(1)?.trim()
+            return if (!stripped.isNullOrBlank() && !stripped.matches(RAW_DB_KEY_REGEX)) stripped else rawLabel
+        }
+
+        return node.id
+    }
+
+    /**
+     * Identifies nodes lacking a user-entered display name for non-blocking export warnings (A3.5).
+     */
+    fun detectUnnamedNodes(engineResult: SldEngineResult): List<String> {
+        return engineResult.nodes.filter { node ->
+            val circuitName = node.circuit?.circuitName?.trim().orEmpty()
+            val rawLabel = node.label.trim()
+            val hasStoredName = (circuitName.isNotBlank() && !circuitName.matches(RAW_DB_KEY_REGEX)) ||
+                (rawLabel.isNotBlank() && !rawLabel.matches(RAW_DB_KEY_REGEX))
+            !hasStoredName
+        }.map { it.id }
+    }
+
     /**
      * Strips internal database clutter from equipment titles, e.g.
      * "(Dry Type (Cast Resin))" is removed entirely, leaving clean text.
@@ -576,49 +710,214 @@ object SldDxfExporter {
     }
 
     /**
-     * Resolves the equipment designation for the annotation title: uses the first
-     * label token when it reads like an engineering ID (e.g. "TX-01", "GEN-02"),
-     * otherwise falls back to the canonical node id.
+     * Resolves the equipment designation for the annotation title: uses human-facing
+     * display name and eliminates raw database keys (1.2).
      */
-    private fun equipmentDesignation(node: PositionedSldNode): String {
-        val firstToken = node.label.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
-        val looksLikeId = firstToken.isNotEmpty() && firstToken.any { it.isDigit() }
-        return if (looksLikeId) firstToken else node.id
+    private fun equipmentDesignation(node: PositionedSldNode): String =
+        resolveDisplayName(node)
+
+    private fun extractKvaOnly(node: PositionedSldNode): String {
+        val candidates = listOfNotNull(node.dataBlock?.ratedKva, node.ratingText, node.label)
+        val kvaRegex = Regex("""\b(\d+(?:\.\d+)?)\s*k\s*VA\b""", RegexOption.IGNORE_CASE)
+        for (c in candidates) {
+            val m = kvaRegex.find(c)
+            if (m != null) return "${m.groupValues[1]} kVA"
+        }
+        return ""
     }
 
-    /** Extracts a clean "[Rating] kVA" string for transformer/generator titles. */
-    private fun extractKvaText(node: PositionedSldNode): String {
-        node.dataBlock?.ratedKva?.takeIf { it.isNotBlank() }?.let { return it.trim() }
-        val regex = Regex("(\\d+(?:\\.\\d+)?)\\s*k\\s*VA", RegexOption.IGNORE_CASE)
-        val match = regex.find(node.label) ?: regex.find(node.ratingText)
-        return if (match != null) "${match.groupValues[1]} kVA" else cleanEquipmentText(node.ratingText)
+    private fun extractTypeOnly(node: PositionedSldNode, kvaToExclude: String): String {
+        var raw = (node.dataBlock?.ratedKva ?: node.ratingText).trim()
+        if (kvaToExclude.isNotBlank()) {
+            val num = kvaToExclude.replace("kVA", "", ignoreCase = true).trim()
+            raw = raw.replace(Regex("""\b$num\s*k\s*VA\b""", RegexOption.IGNORE_CASE), "")
+        }
+        var s = raw.trim()
+        var prev: String
+        do {
+            prev = s
+            s = s.replace(Regex("""\(\s*\((.*?)\)\s*\)"""), "($1)")
+            s = s.replace(Regex("""\(([^()]*)\(([^()]*)\)([^()]*)\)"""), "($1 $2 $3)")
+        } while (s != prev)
+        return s.trim(' ', '-', '·', ',').trim()
+    }
+
+    /**
+     * Generic equipment title line builder that extracts distinct attributes,
+     * eliminates nested parentheses, removes duplicate attributes/tokens,
+     * and joins them cleanly with a standard bullet separator (1.3).
+     */
+    fun buildEquipmentTitleLine(vararg rawParts: String?): String {
+        val seenTokens = mutableSetOf<String>()
+        val cleanParts = mutableListOf<String>()
+
+        for (part in rawParts) {
+            if (part.isNullOrBlank()) continue
+            var flattened = part.trim()
+            var prev: String
+            do {
+                prev = flattened
+                flattened = flattened.replace(Regex("""\(\s*\((.*?)\)\s*\)"""), "($1)")
+                flattened = flattened.replace(Regex("""\(([^()]*)\(([^()]*)\)([^()]*)\)"""), "($1 $2 $3)")
+            } while (flattened != prev)
+            flattened = flattened.replace(Regex("""\s{2,}"""), " ").trim()
+
+            val normalizedKey = flattened.lowercase(Locale.US).replace(Regex("""[^a-z0-9]"""), "")
+            if (normalizedKey.isEmpty()) continue
+
+            val isDuplicate = seenTokens.any { seen ->
+                seen == normalizedKey ||
+                    (normalizedKey.length > 5 && seen.contains(normalizedKey)) ||
+                    (seen.length > 5 && normalizedKey.contains(seen))
+            }
+            if (!isDuplicate) {
+                seenTokens.add(normalizedKey)
+                cleanParts.add(flattened)
+            }
+        }
+        return cleanParts.joinToString("  ·  ")
     }
 
     /** Extracts a clean "[Rating]A (4P)" string for ATS titles. */
     private fun extractAtsRatingText(node: PositionedSldNode): String {
         val clean = cleanEquipmentText(node.ratingText)
-        val amp = Regex("(\\d+(?:\\.\\d+)?)\\s*A(?![A-Za-z])").find(clean)?.groupValues?.get(1)
+        val ampMatch = Regex("""\b(\d+(?:\.\d+)?)\s*A\b""", RegexOption.IGNORE_CASE).find(clean)
+        val amp = ampMatch?.groupValues?.get(1)
         val poles = when {
-            clean.contains("4P") -> "(4P)"
-            clean.contains("3P") -> "(3P)"
+            clean.contains("4P", ignoreCase = true) -> "(4P)"
+            clean.contains("3P", ignoreCase = true) -> "(3P)"
             else -> ""
         }
-        return if (amp != null) "${amp}A $poles".trim() else clean
+        return when {
+            amp != null && poles.isNotBlank() -> "${amp}A $poles"
+            amp != null -> "${amp}A"
+            else -> clean.ifBlank { "ATS" }
+        }
     }
 
-    /** Engineering main busbar tag: "[BoardID] Main Busbar: [Rating]A, [Icw]kA/1s, [Voltage]". */
+    /**
+     * Engineering main busbar tag: "[BoardLabel] Main Busbar: [Material] Bus [Rating]A, [Voltage], [Icw]/1s".
+     * Strict present-or-omit-cleanly rule for all optional segments.
+     * Zero fabrication: never synthesizes "400A" fallback (A2) and omits unengineered busbar cross-section (A1).
+     */
     private fun buildMainBusbarTag(node: PositionedSldNode): String {
-        val ratingA = Regex("(\\d+(?:\\.\\d+)?)\\s*A(?![A-Za-z])").find(node.ratingText)?.groupValues?.get(1)
-        val icw = Regex("(\\d+(?:\\.\\d+)?)\\s*kA", RegexOption.IGNORE_CASE).find(node.ratingText)?.groupValues?.get(1)
-        // Real system voltage from the node data (phases → "400 V"), never a hardcoded default.
-        val voltageStr = node.dataBlock?.voltage?.takeIf { it.isNotBlank() }
-            ?.let { cleanEquipmentText(it) }
-        return buildString {
-            append(node.id).append(" Main Busbar: ")
-            if (ratingA != null) append(ratingA).append("A") else append(cleanEquipmentText(node.ratingText))
-            if (icw != null) append(", ").append(icw).append("kA/1s")
-            if (!voltageStr.isNullOrBlank()) append(", ").append(voltageStr)
+        val db = node.dataBlock
+        val boardLabel = resolveDisplayName(node)
+        val material = db?.busbarMaterial?.takeIf { it.isNotBlank() } ?: "Copper"
+        val rawRating = db?.busbarRatingA?.takeIf { it.isNotBlank() }
+            ?: node.ratingText.takeIf { it.isNotBlank() }?.let { cleanEquipmentText(it) }
+        val ratingA = rawRating?.let { formatUnit(it, "A", space = false) }
+
+        val segments = mutableListOf<String>()
+        if (ratingA != null) {
+            segments.add("$material Bus $ratingA")
         }
+
+        val vStr = db?.voltage?.takeIf { it.isNotBlank() }?.let { formatUnit(it, "V") }
+        if (vStr != null) segments.add(vStr)
+
+        val icwVal = db?.scRatingKA?.takeIf { it.isNotBlank() }
+        if (icwVal != null) {
+            val icwClean = formatUnit(icwVal, "kA", space = false)
+            if (icwClean != null) {
+                segments.add("$icwClean/1s")
+            }
+        }
+
+        val ip = db?.ipRating?.takeIf { it.isNotBlank() }
+        if (ip != null) segments.add(ip)
+
+        // A1: Busbar cross-section removed per no-fabrication rule (V8)
+
+        return if (segments.isNotEmpty()) {
+            "$boardLabel Main Busbar: " + segments.joinToString(", ")
+        } else {
+            "$boardLabel Main Busbar"
+        }
+    }
+
+    /**
+     * Estimates rendered text width in drawing units for AutoCAD R12 STANDARD text style
+     * (proportional to txt.shx with character width ~0.65 * textHeight).
+     * Properly accounts for AutoCAD escape sequences (%%c, %%d, %%p, \U+XXXX) as single glyphs.
+     */
+    fun estimateTextWidth(text: String?, height: Float): Float {
+        if (text.isNullOrEmpty()) return 0f
+        var charCount = 0
+        var i = 0
+        while (i < text.length) {
+            if (text.startsWith("%%", i) && i + 2 < text.length) {
+                charCount++
+                i += 3
+            } else if (text.startsWith("\\U+", i) && i + 6 < text.length) {
+                charCount++
+                i += 7
+            } else {
+                charCount++
+                i++
+            }
+        }
+        return charCount * (height * 0.65f)
+    }
+
+    /**
+     * Greedily wraps tokens onto stacked lines bounded by [maxCorridorWidth].
+     * If a single token exceeds [maxCorridorWidth], it breaks cleanly on space boundaries.
+     */
+    fun wrapTokensToCorridor(
+        tokens: List<String>,
+        maxCorridorWidth: Float,
+        textHeight: Float,
+        separator: String = "  |  "
+    ): List<String> {
+        if (tokens.isEmpty()) return emptyList()
+
+        val effectiveTokens = mutableListOf<String>()
+        for (token in tokens) {
+            val trimmed = token.trim()
+            if (trimmed.isEmpty()) continue
+            if (estimateTextWidth(trimmed, textHeight) > maxCorridorWidth && trimmed.contains(" ")) {
+                val words = trimmed.split(" ")
+                var chunk = StringBuilder()
+                for (w in words) {
+                    if (chunk.isEmpty()) {
+                        chunk.append(w)
+                    } else {
+                        val cand = "$chunk $w"
+                        if (estimateTextWidth(cand, textHeight) <= maxCorridorWidth) {
+                            chunk.append(" ").append(w)
+                        } else {
+                            effectiveTokens.add(chunk.toString())
+                            chunk = StringBuilder(w)
+                        }
+                    }
+                }
+                if (chunk.isNotEmpty()) effectiveTokens.add(chunk.toString())
+            } else {
+                effectiveTokens.add(trimmed)
+            }
+        }
+
+        val lines = mutableListOf<String>()
+        var currentLine = StringBuilder()
+
+        for (token in effectiveTokens) {
+            if (currentLine.isEmpty()) {
+                currentLine.append(token)
+            } else {
+                val candidate = "$currentLine$separator$token"
+                if (estimateTextWidth(candidate, textHeight) <= maxCorridorWidth) {
+                    currentLine.append(separator).append(token)
+                } else {
+                    lines.add(currentLine.toString())
+                    currentLine = StringBuilder(token)
+                }
+            }
+        }
+        if (currentLine.isNotEmpty()) {
+            lines.add(currentLine.toString())
+        }
+        return lines
     }
 
     /**
@@ -629,20 +928,14 @@ object SldDxfExporter {
     fun generateDxf(
         engineResult: SldEngineResult,
         projectName: String = "VoltAtlas_SLD",
-        projectRevision: Long? = null
+        projectRevision: Long? = null,
+        metadata: DxfDrawingMetadata? = null
     ): String {
+        val meta = metadata ?: DxfDrawingMetadata(
+            projectName = projectName,
+            revision = projectRevision
+        )
         val sb = StringBuilder()
-
-        val bounds = engineResult.bounds
-        val minX = if (bounds.left.isFinite()) bounds.left - 200f else -200f
-        val maxX = maxOf(3000f, if (bounds.right.isFinite()) bounds.right + 400f else 3000f)
-        val minY = if (bounds.top.isFinite()) bounds.top - 120f else -120f
-        val maxY = if (bounds.bottom.isFinite()) bounds.bottom + 120f else 2000f
-
-        val sheetLeft = minX - 100f
-        val sheetRight = maxX + 100f
-        val sheetTop = minY - 60f
-        val sheetBottom = maxY + 60f
 
         val nodesById = engineResult.nodes.associateBy { it.id }
 
@@ -661,6 +954,286 @@ object SldDxfExporter {
         val equipmentBoxes = engineResult.nodes
             .mapNotNull { equipmentSymbolOf(it) }
             .map { equipmentClipBox(it) }
+
+        // Determine available corridor width for each feeder breaker
+        val corridorWidthByBreaker = feederBreakers.associateWith { fb ->
+            val nextBreakerX = feederBreakers
+                .filter { it.x > fb.x + 10f && abs(it.y - fb.y) < 300f }
+                .minOfOrNull { it.x }
+            val nextWireX = engineResult.edges.flatMap { edge ->
+                edge.pathPoints.zipWithNext().mapNotNull { (p1, p2) ->
+                    if (abs(p1.first - p2.first) < 1f && p1.first > fb.x + 10f) {
+                        val minY = minOf(p1.second, p2.second)
+                        val maxY = maxOf(p1.second, p2.second)
+                        if (minY <= fb.y + 120f && maxY >= fb.y - 30f) p1.first else null
+                    } else null
+                }
+            }.minOfOrNull { it }
+            val nextNodeX = engineResult.nodes
+                .filter { it.x > fb.x + 10f && it.y <= fb.y + 150f && it.y + it.height >= fb.y - 50f }
+                .minOfOrNull { it.x }
+
+            val nearestRightObstacle = listOfNotNull(nextBreakerX, nextWireX, nextNodeX).minOfOrNull { it }
+            if (nearestRightObstacle != null) {
+                val available = (nearestRightObstacle - fb.x) - (TEXT_CORRIDOR_OFFSET + 16f)
+                available.coerceIn(140f, 320f)
+            } else {
+                240f
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // TRUE CONTENT BOUNDING BOX (ROADMAP PHASE 2 §2.3)
+        // Eliminates the hardcoded 3000x2000 empty void by measuring the true
+        // geometric extents of all nodes, cards, enclosures, wires, and corridors.
+        // ------------------------------------------------------------------
+        var cMinX = Float.MAX_VALUE
+        var cMaxX = -Float.MAX_VALUE
+        var cMinY = Float.MAX_VALUE
+        var cMaxY = -Float.MAX_VALUE
+
+        fun includePoint(x: Float, y: Float) {
+            if (x.isFinite()) {
+                if (x < cMinX) cMinX = x
+                if (x > cMaxX) cMaxX = x
+            }
+            if (y.isFinite()) {
+                if (y < cMinY) cMinY = y
+                if (y > cMaxY) cMaxY = y
+            }
+        }
+
+        fun includeRect(x: Float, y: Float, w: Float, h: Float) {
+            includePoint(x, y)
+            includePoint(x + w, y + h)
+        }
+
+        // 1. Margin datums
+        engineResult.tierDatums.forEach { datum ->
+            includePoint(20f, datum.y - 15f)
+            includePoint(120f, datum.y + 15f)
+        }
+
+        // 2. Wire paths
+        engineResult.edges.forEach { edge ->
+            edge.pathPoints.forEach { pt ->
+                includePoint(pt.first, pt.second)
+            }
+        }
+
+        // 3. Feeder breaker corridors
+        feederBreakers.forEach { fb ->
+            val corrW = corridorWidthByBreaker[fb] ?: 240f
+            includePoint(fb.x - 14f, fb.y - 14f)
+            includePoint(fb.x + TEXT_CORRIDOR_OFFSET + corrW, fb.y + 70f)
+        }
+
+        // 4. Nodes, cards, and enclosures
+        engineResult.nodes.forEach { node ->
+            val panelUpper = node.panelType.uppercase()
+            val symbol = equipmentSymbolOf(node)
+            when {
+                symbol != null -> {
+                    // Equipment symbol + right-side annotation lines
+                    includeRect(symbol.cx - 35f, symbol.cy - 40f, 260f, 80f)
+                }
+                node.isSource && (panelUpper.contains("GRID") || panelUpper.contains("UTILITY") || panelUpper.contains("SOURCE")) -> {
+                    val gridName = resolveDisplayName(node)
+                    val gridDb = node.dataBlock
+                    val gridU = gridDb?.transformerPrimaryVoltage?.takeIf { it.isNotBlank() }?.let {
+                        val withUnit = formatUnit(it, "kV") ?: formatUnit(it, "V") ?: it
+                        "U $withUnit"
+                    }
+                    val gridSk = formatUnit(gridDb?.gridFaultMVA, "MVA")?.let { "S_kQ $it" }
+                    val gridInfeedLine = listOfNotNull(gridU, gridSk).joinToString("  |  ")
+                    val titleW = estimateTextWidth(gridName, 12f)
+                    val infeedW = estimateTextWidth(gridInfeedLine, 9f)
+                    val gridW = maxOf(node.width, maxOf(titleW, infeedW) + 28f)
+                    val gridH = if (gridInfeedLine.isNotBlank()) 48f else 34f
+                    includeRect(node.x, node.y - 17f, gridW, gridH)
+                }
+                node.panelType == SldNodeType.BUS_TIE.name -> {
+                    val barHeight = maxOf(node.height, 16f)
+                    includeRect(node.x, node.y, node.width, barHeight + 24f)
+                }
+                else -> {
+                    // Main switchboard or distribution board
+                    val isMain = (panelUpper.startsWith("MDB") && !panelUpper.contains("SMDB")) ||
+                        panelUpper.contains("MAIN")
+                    val barHeight = maxOf(node.height, 16f)
+                    val boardTitle = resolveDisplayName(node)
+                    val boardDb = node.dataBlock
+                    val busA = formatUnit(boardDb?.busbarRatingA, "A", space = false)?.let { "Bus $it" }
+                    val busIcw = formatUnit(boardDb?.scRatingKA, "kA", space = false)?.let { "Icw $it" }
+                    val waysStr = boardDb?.numberOfWays?.takeIf { it.isNotBlank() }?.let {
+                        if (it.endsWith("ways", ignoreCase = true)) it else "$it ways"
+                    }
+                    val headerTokens = listOfNotNull(
+                        busA, busIcw, boardDb?.ipRating?.takeIf { it.isNotBlank() },
+                        boardDb?.panelLocation?.takeIf { it.isNotBlank() },
+                        waysStr, boardDb?.mainIncoming?.takeIf { it.isNotBlank() }?.let { "In: $it" }
+                    ).distinct()
+                    val ratingClean = cleanEquipmentText(node.ratingText)
+                    val shouldShowRating = !isMain && ratingClean.isNotBlank() && !headerTokens.any { it.contains(ratingClean) }
+                    val tcl = formatUnit(boardDb?.boardTotalConnectedKva, "kVA")?.let { "TCL $it" }
+                    val tdl = formatUnit(boardDb?.boardDemandKva, "kVA")?.let { "TDL $it" }
+                    val df = formatUnit(boardDb?.boardDemandFactorPct, "%", space = false)?.let { "DF $it" }
+                    val ib = formatUnit(boardDb?.boardDesignCurrentA, "A")?.let { "I $it" }
+                    val unb = formatUnit(boardDb?.boardUnbalancePct, "%", space = false)?.let { "Unb $it" }
+                    val loadTokens = listOfNotNull(tcl, tdl, df, ib, unb).distinct()
+
+                    val rightNeighborX = engineResult.nodes
+                        .filter { it.id != node.id && it.x > node.x + 1f && Math.abs(it.y - node.y) < 80f }
+                        .minOfOrNull { it.x }
+                    val maxCorridorWidth = if (rightNeighborX != null) {
+                        ((rightNeighborX - node.x) - 20f).coerceAtLeast(node.width)
+                    } else {
+                        maxOf(node.width, 320f)
+                    }
+
+                    val textCorridor = maxCorridorWidth - 16f
+                    val headerLines = wrapTokensToCorridor(headerTokens, textCorridor, 9f, separator = "  |  ")
+                    val loadLines = wrapTokensToCorridor(loadTokens, textCorridor, 9f, separator = "  |  ")
+
+                    val titleW = estimateTextWidth(boardTitle, 13f)
+                    val ratingW = if (shouldShowRating) estimateTextWidth(ratingClean, 9f) else 0f
+                    val allTextWidths = listOf(titleW, ratingW) +
+                        headerLines.map { estimateTextWidth(it, 9f) } +
+                        loadLines.map { estimateTextWidth(it, 9f) }
+                    val maxTextW = allTextWidths.maxOrNull() ?: 0f
+                    val effectiveW = if (isMain) {
+                        maxOf(node.width, maxTextW + 24f)
+                    } else {
+                        maxOf(node.width, minOf(maxCorridorWidth, maxTextW + 24f))
+                    }
+
+                    var textY = node.y + barHeight + 14f
+                    textY += 15f // board title
+                    if (shouldShowRating) textY += 13f
+                    headerLines.forEach { textY += 13f }
+                    loadLines.forEach { textY += 13f }
+                    val lastBottom = textY + 4f
+
+                    if (isMain) {
+                        val encPad = 36f
+                        val encLeft = node.x - encPad
+                        val encTop = node.y - 110f
+                        val tagW = estimateTextWidth(buildMainBusbarTag(node), 10f)
+                        val encW = maxOf(effectiveW + encPad * 2f, tagW + 28f)
+                        val encH = (lastBottom + 16f) - encTop
+                        includeRect(encLeft, encTop, encW, encH)
+                    } else {
+                        includeRect(node.x, node.y, effectiveW, lastBottom - node.y)
+                    }
+                }
+            }
+        }
+
+        if (cMinX > cMaxX) {
+            cMinX = 0f; cMaxX = 600f; cMinY = 0f; cMaxY = 400f
+        }
+
+        val contentW = maxOf(400f, cMaxX - cMinX)
+        val contentH = maxOf(300f, cMaxY - cMinY)
+
+        // ------------------------------------------------------------------
+        // Dynamic Legend Item Discovery (Roadmap Phase 3 §3.2)
+        // Scans the active diagram for real symbols, line styles, and engineering
+        // abbreviations in use. Never a static literal block.
+        // ------------------------------------------------------------------
+        val hasTx = engineResult.nodes.any { equipmentSymbolOf(it)?.kind == EquipmentKind.TRANSFORMER }
+        val hasGen = engineResult.nodes.any { equipmentSymbolOf(it)?.kind == EquipmentKind.GENERATOR }
+        val hasAts = engineResult.nodes.any { equipmentSymbolOf(it)?.kind == EquipmentKind.ATS }
+        val hasUps = engineResult.nodes.any { equipmentSymbolOf(it)?.kind == EquipmentKind.UPS }
+        val hasBusTie = engineResult.nodes.any { it.panelType == SldNodeType.BUS_TIE.name }
+        val hasMccb = feederBreakers.isNotEmpty()
+        val hasBusbar = engineResult.nodes.any {
+            val pt = it.panelType.uppercase()
+            pt == SldNodeType.MDB.name || pt == SldNodeType.SMDB.name || pt == SldNodeType.DB.name || pt == SldNodeType.MCC.name ||
+                pt.startsWith("MDB") || pt.startsWith("DB") || pt.startsWith("SMDB") || pt.contains("MAIN")
+        }
+        val hasEmerg = engineResult.edges.any { it.isEmergency }
+        val hasNormal = engineResult.edges.any { !it.isEmergency }
+
+        val symbolLegendItems = mutableListOf<String>()
+        if (hasBusbar) symbolLegendItems.add("= CU BUSBAR (E-BUSBAR)")
+        if (hasMccb) symbolLegendItems.add("[X] LV CIRCUIT BREAKER")
+        if (hasTx) symbolLegendItems.add("(8) DYN11 TRANSFORMER")
+        if (hasGen) symbolLegendItems.add("(G) STANDBY GENERATOR")
+        if (hasAts) symbolLegendItems.add("[ATS] TRANSFER SWITCH")
+        if (hasUps) symbolLegendItems.add("[UPS] STATIC UPS")
+        if (hasBusTie) symbolLegendItems.add("|-| BUS TIE BREAKER")
+        if (hasNormal) symbolLegendItems.add("--- NORMAL FEEDER (SOLID)")
+        if (hasEmerg) symbolLegendItems.add("- - EMERG FEEDER (DASHED)")
+
+        val allDataBlocks = engineResult.nodes.mapNotNull { it.dataBlock }
+        val hasIcu = allDataBlocks.any { !it.interruptingRatingKa.isNullOrBlank() }
+        val hasIb = allDataBlocks.any { it.cableIbA != null || it.boardDesignCurrentA != null }
+        val hasIz = allDataBlocks.any { it.cableIzA != null }
+        val hasVd = allDataBlocks.any { it.voltageDropPct != null || it.cumulativeVdPct != null }
+        val hasIsc = allDataBlocks.any { it.faultLevelKa != null }
+        val hasCpc = allDataBlocks.any { it.cableCpcMm2 != null }
+        val hasZs = allDataBlocks.any { it.adsZsOhm != null }
+        val hasProt = allDataBlocks.any {
+            !it.protectionOverload.isNullOrBlank() || !it.protectionShortCircuit.isNullOrBlank() ||
+                !it.protectionCableWithstand.isNullOrBlank() || !it.protectionSelectivity.isNullOrBlank()
+        }
+        val hasTcl = allDataBlocks.any { it.boardTotalConnectedKva != null }
+        val hasTdl = allDataBlocks.any { it.boardDemandKva != null }
+        val hasDf = allDataBlocks.any { it.boardDemandFactorPct != null }
+        val hasIcw = allDataBlocks.any { !it.scRatingKA.isNullOrBlank() }
+        val hasUnb = allDataBlocks.any { it.boardUnbalancePct != null }
+        val hasFlc = hasTx && allDataBlocks.any { it.ibAmp != null }
+        val hasZt = allDataBlocks.any { it.transformerZtMOhm != null }
+        val hasBat = allDataBlocks.any { !it.upsBatteryAh.isNullOrBlank() }
+
+        val abbrLegendItems = mutableListOf<String>()
+        if (hasIcu) abbrLegendItems.add("Icu: Breaking Capacity (kA)")
+        if (hasIb) abbrLegendItems.add("Ib: Design Current (A)")
+        if (hasIz) abbrLegendItems.add("Iz: Cable Rating Derated (A)")
+        if (hasVd) abbrLegendItems.add("VD / Cum: Volt Drop / Cumul (%)")
+        if (hasIsc) abbrLegendItems.add("Isc: Fault Level at Board (kA)")
+        if (hasCpc) abbrLegendItems.add("CPC: Circuit Protective Cond")
+        if (hasZs) abbrLegendItems.add("Zs: Loop Impedance (ADS)")
+        if (hasProt) abbrLegendItems.add("OL/SC/Wth: Protection Verdict")
+        if (hasTcl) abbrLegendItems.add("TCL: Total Conn Load (kVA)")
+        if (hasTdl) abbrLegendItems.add("TDL: Total Demand Load (kVA)")
+        if (hasDf) abbrLegendItems.add("DF: Coincident Demand Factor")
+        if (hasIcw) abbrLegendItems.add("Icw: Busbar Withstand (kA 1s)")
+        if (hasUnb) abbrLegendItems.add("Unb: Phase Unbalance (%)")
+        if (hasFlc) abbrLegendItems.add("FLC: TX Full Load Current (A)")
+        if (hasZt) abbrLegendItems.add("Zt: Transformer Impedance")
+        if (hasBat) abbrLegendItems.add("Bat: UPS Battery Autonomy")
+
+        val marginX = 60f
+        val marginY = 60f
+        val tbW = 440f
+        val tbH = 120f
+        val legW = 440f
+        val maxLegendRows = maxOf(symbolLegendItems.size, abbrLegendItems.size, 1)
+        val legH = maxOf(90f, 32f + maxLegendRows * 10f)
+
+        val minSheetW = legW + tbW + 40f + 2f * marginX
+        val rawW = maxOf(contentW + 2f * marginX, minSheetW)
+        val rawH = contentH + 2f * marginY
+
+        val bottomBandH = maxOf(tbH, legH) + 25f
+        val minRequiredBottom = cMaxY + bottomBandH
+        val minRequiredTop = cMinY - marginY
+        val minRequiredH = minRequiredBottom - minRequiredTop
+
+        // Standard ISO drawing sheet aspect ratio (1.414 : 1 landscape)
+        val targetAR = 1.414f
+        var sheetH = maxOf(rawH, minRequiredH)
+        var sheetW = maxOf(rawW, sheetH * targetAR)
+        sheetH = maxOf(sheetH, sheetW / targetAR)
+        sheetW = sheetH * targetAR
+
+        var sheetLeft = cMinX - (sheetW - contentW) / 2f
+        var sheetRight = sheetLeft + sheetW
+        val extraH = sheetH - minRequiredH
+        var sheetTop = minRequiredTop - extraH / 2f
+        var sheetBottom = sheetTop + sheetH
 
         // 1. DXF HEADER (AutoCAD R12 - AC1009)
         sb.append("0\nSECTION\n2\nHEADER\n")
@@ -689,9 +1262,10 @@ object SldDxfExporter {
         // therefore carried by the STANDARD LAYER NAMES (E-PANEL heavy copper,
         // E-NORMAL/E-EMERG medium feeders, E-SYMBOLS/E-TX/E-GEN standard,
         // E-TEXT/E-BORDER thin), which plot styles (CTB) map to weights.
-        sb.append("0\nTABLE\n2\nLAYER\n70\n11\n")
+        sb.append("0\nTABLE\n2\nLAYER\n70\n12\n")
         val layers = listOf(
             Triple("0", 7, "CONTINUOUS"),            // White (ACI 7) - MANDATORY default layer 0
+            Triple("E-BUSBAR", 30, "CONTINUOUS"),    // Orange (ACI 30) - Heavy Solid Copper Busbars
             Triple("E-TX", 4, "CONTINUOUS"),         // Cyan (ACI 4) - Transformers
             Triple("E-GEN", 2, "CONTINUOUS"),        // Yellow (ACI 2) - Generators
             Triple("E-EMERG", 1, "DASHED"),          // Red (ACI 1) - Emergency Feeders / ATS Lines
@@ -751,12 +1325,38 @@ object SldDxfExporter {
             writeLine(x, y + height, x, y, layer, linetype)
         }
 
+        fun writeSolid(x: Float, y: Float, width: Float, height: Float, layer: String) {
+            sb.appendSolidEntity(
+                x1 = x, y1 = flipY(y + height),
+                x2 = x + width, y2 = flipY(y + height),
+                x3 = x, y3 = flipY(y),
+                x4 = x + width, y4 = flipY(y),
+                layer = layer
+            )
+        }
+
         fun writeCircle(cx: Float, cy: Float, radius: Float, layer: String) {
             sb.appendCircleEntity(cx, flipY(cy), radius, layer)
         }
 
         fun writeText(text: String?, x: Float, y: Float, height: Float = 10f, layer: String = "E-TEXT-DATA") {
-            sb.appendTextEntity(x, flipY(y), text, height, layer)
+            if (text.isNullOrBlank()) return
+            // Guard: substitute real display name if a raw database key leaked into text (A3.4)
+            val sanitized = text.replace(RAW_DB_KEY_REGEX) { match ->
+                val rawKey = match.value
+                val matchedNode = nodesById[rawKey]
+                if (matchedNode != null) {
+                    val realName = resolveDisplayName(matchedNode)
+                    if (realName.isNotBlank() && !realName.matches(RAW_DB_KEY_REGEX)) {
+                        realName
+                    } else {
+                        rawKey
+                    }
+                } else {
+                    rawKey
+                }
+            }
+            sb.appendTextEntity(x, flipY(y), sanitized, height, layer)
         }
 
         fun writeInsert(blockName: String, x: Float, y: Float, layer: String) {
@@ -838,6 +1438,7 @@ object SldDxfExporter {
         // Incoming wire terminated at (Xbrk, Ybrk + 14); outgoing wire originates
         // at (Xbrk, Ybrk - 14) — enforced by the exclusion cut above. The breaker
         // symbol itself is a reusable BLK_MCCB INSERT.
+        // Stacked multi-line wrapped corridor prevents any text-on-text overlap (Roadmap Phase 2 §2.1).
         // ==========================================
         feederBreakers.forEach { fb ->
             val child = nodesById[fb.edge.toId] ?: return@forEach
@@ -846,78 +1447,65 @@ object SldDxfExporter {
             // Breaker block instance (terminal-snapped)
             writeInsert(BLK_MCCB, fb.x, fb.y, "E-SYMBOLS")
 
-            // Dedicated right-hand annotation corridor (Xwire + 18.0, dY = -13.0)
+            // Dedicated right-hand annotation corridor (Xwire + 18.0)
             val textX = fb.x + TEXT_CORRIDOR_OFFSET
-            val step = CORRIDOR_LINE_SPACING
+            val corridorWidth = corridorWidthByBreaker[fb] ?: 240f
+            var currentY = fb.y - 14f
 
-            // Line 1: Breaker rating (E-TEXT-TITLE, height 11.0)
-            db.deviceTypeAndRating?.takeIf { it.isNotBlank() }?.let {
-                writeText(it, textX, fb.y - 6f, height = 11f, layer = "E-TEXT-TITLE")
+            // Line 1: Protection Device + Trip + Breaking Capacity Icu (E-TEXT-TITLE, height 10.0)
+            val icuStr = db.interruptingRatingKa?.takeIf { it.isNotBlank() }?.let { "Icu $it" }
+            val line1Parts = listOfNotNull(db.deviceTypeAndRating?.takeIf { it.isNotBlank() }, icuStr)
+            val line1Lines = wrapTokensToCorridor(line1Parts, corridorWidth, 10f)
+            line1Lines.forEach { line ->
+                writeText(line, textX, currentY, height = 10f, layer = "E-TEXT-TITLE")
+                currentY += 12.5f
             }
 
-            // Line 2: Cable size & material (E-TEXT-DATA, height 9.5)
+            // Line 2: Cable specification (E-TEXT-DATA, height 8.5)
             val runsText = if (db.parallelRuns > 1) "${db.parallelRuns}x " else ""
-            db.cableDescription?.takeIf { it.isNotBlank() }?.let {
-                writeText("$runsText$it", textX, fb.y - 6f + step, height = 9.5f, layer = "E-TEXT-DATA")
+            val cableSpec = db.cableDescription?.takeIf { it.isNotBlank() }?.let { "$runsText$it" }
+            val line2Lines = wrapTokensToCorridor(listOfNotNull(cableSpec), corridorWidth, 8.5f)
+            line2Lines.forEach { line ->
+                writeText(line, textX, currentY, height = 8.5f, layer = "E-TEXT-DATA")
+                currentY += 11f
             }
 
-            // Line 3: Length & voltage drop — extended with cumulative VD and VD limit
-            // (cumulative VD% was always computed but previously dropped from DXF)
-            val lengthStr = db.lengthM?.takeIf { it.isNotBlank() }?.let { "L = ${it}m" }
-            val vdStr = db.voltageDropPct?.takeIf { it.isNotBlank() }?.let { "VD = $it" }
-            val cumVdStr = db.cumulativeVdPct?.takeIf { it.isNotBlank() }?.let { "Cum = $it" }
-            val vdLimitStr = db.voltageDropLimitPct?.takeIf { it.isNotBlank() }?.let { "≤$it" }
-            val combinedLvd = listOfNotNull(lengthStr, vdStr, cumVdStr, vdLimitStr).joinToString("  ")
-            if (combinedLvd.isNotBlank()) {
-                writeText(combinedLvd, textX, fb.y - 6f + 2 * step, height = 9.5f, layer = "E-TEXT-DATA")
+            // Line 3: Route Length, Operating Current (Ib), Derated Capacity (Iz), and Voltage Drop (E-TEXT-DATA, height 8.5)
+            val lengthStr = formatUnit(db.lengthM, "m")?.let { "L = $it" }
+            val ibStr = formatUnit(db.cableIbA, "A")
+            val izStr = formatUnit(db.cableIzA, "A")
+            val utilStr = formatUnit(db.cableUtilizationPct, "%", space = false)?.let { " ($it)" } ?: ""
+            val currentUtilStr = when {
+                ibStr != null && izStr != null -> "Ib $ibStr / Iz $izStr$utilStr"
+                izStr != null -> "Iz $izStr$utilStr"
+                else -> null
+            }
+            val vdStr = formatUnit(db.voltageDropPct, "%", space = false)?.let { "VD $it" }
+            val cumVdStr = formatUnit(db.cumulativeVdPct, "%", space = false)?.let { "(Cum $it)" }
+            val vdFull = listOfNotNull(vdStr, cumVdStr).joinToString(" ")
+            val line3Parts = listOfNotNull(lengthStr, currentUtilStr, vdFull.takeIf { it.isNotBlank() })
+            val line3Lines = wrapTokensToCorridor(line3Parts, corridorWidth, 8.5f)
+            line3Lines.forEach { line ->
+                writeText(line, textX, currentY, height = 8.5f, layer = "E-TEXT-DATA")
+                currentY += 11f
             }
 
-            // Line 4: Short-circuit fault level (E-TEXT-DATA, height 9.5)
-            val ik3 = db.faultLevelKa.orEmpty().replace("kA", "", ignoreCase = true).trim()
-            if (ik3.isNotBlank()) {
-                writeText("Isc = $ik3 kA", textX, fb.y - 6f + 3 * step, height = 9.5f, layer = "E-TEXT-DATA")
-            }
-
-            // Line 5: Cable ampacity / utilization / conductors (E-TEXT-DATA, height 9.5)
-            // Dark-data: Iz, Ib, utilization % and CPC/neutral sizes — all engine-backed.
-            val izStr = db.cableIzA?.takeIf { it.isNotBlank() }?.let { "Iz = $it" }
-            val utilizationStr = db.cableUtilizationPct?.takeIf { it.isNotBlank() }?.let { "Util = $it" }
-            val cpcStr = db.cableCpcMm2?.takeIf { it.isNotBlank() }?.let { "CPC $it" }
-            val neutralStr = db.cableNeutralMm2?.takeIf { it.isNotBlank() }?.let { "N $it" }
-            val line5 = listOfNotNull(izStr, utilizationStr, neutralStr, cpcStr).joinToString("  ")
-            if (line5.isNotBlank()) {
-                writeText(line5, textX, fb.y - 6f + 4 * step, height = 9.5f, layer = "E-TEXT-DATA")
-            }
-
-            // Line 6: Device interrupting rating Icu (E-TEXT-DATA, height 9.5)
-            val icuStr = db.interruptingRatingKa?.takeIf { it.isNotBlank() }?.let { "Icu = $it" }
-            if (icuStr != null) {
-                writeText(icuStr, textX, fb.y - 6f + 5 * step, height = 9.5f, layer = "E-TEXT-DATA")
-            }
-
-            // Line 7: Protection verdicts (E-TEXT-DATA, height 9.5) — dark-data:
-            // overload / short-circuit / cable-withstand / selectivity PASS-FAIL.
-            val protLine = listOfNotNull(
-                db.protectionOverload?.takeIf { it.isNotBlank() }?.let { "OL $it" },
-                db.protectionShortCircuit?.takeIf { it.isNotBlank() }?.let { "SC $it" },
-                db.protectionCableWithstand?.takeIf { it.isNotBlank() }?.let { "Wth $it" },
-                db.protectionSelectivity?.takeIf { it.isNotBlank() }?.let { "Sel $it" }
-            ).joinToString(" | ")
-            if (protLine.isNotBlank()) {
-                writeText(protLine, textX, fb.y - 6f + 6 * step, height = 9.5f, layer = "E-TEXT-DATA")
-            }
-
-            // Line 8: ADS / earth-fault loop impedance (E-TEXT-DATA, height 9.5) — dark-data:
-            // Zs vs Zs,max, disconnection time and the overall verdict.
-            val zsStr = if (db.adsZsOhm?.isNotBlank() == true && db.adsMaxZsOhm?.isNotBlank() == true)
-                "Zs ${db.adsZsOhm} ≤ ${db.adsMaxZsOhm}" else db.adsZsOhm?.takeIf { it.isNotBlank() }?.let { "Zs $it" }
-            val adsLine = listOfNotNull(
-                zsStr,
-                db.adsDisconnectionTime?.takeIf { it.isNotBlank() }?.let { "t $it" },
-                db.adsStatus?.takeIf { it.isNotBlank() }
-            ).joinToString("  ")
-            if (adsLine.isNotBlank()) {
-                writeText(adsLine, textX, fb.y - 6f + 7 * step, height = 9.5f, layer = "E-TEXT-DATA")
+            // Line 4: Fault Level (Isc), CPC/Neutral, Protection & ADS Verdicts (E-TEXT-DATA, height 8.5)
+            val iscPart = formatUnit(db.faultLevelKa, "kA")?.let { "Isc = $it" }
+            val cpcPart = formatUnit(db.cableCpcMm2, "mm\u00B2")?.let { "CPC $it" }
+            val protParts = listOfNotNull(
+                db.protectionOverload?.takeIf { it.isNotBlank() }?.let { "OL:$it" },
+                db.protectionShortCircuit?.takeIf { it.isNotBlank() }?.let { "SC:$it" },
+                db.protectionCableWithstand?.takeIf { it.isNotBlank() }?.let { "Wth:$it" },
+                db.protectionSelectivity?.takeIf { it.isNotBlank() }?.let { "Sel:$it" }
+            )
+            val protSummary = if (protParts.isNotEmpty()) protParts.joinToString(" ") else null
+            val zsStr = formatUnit(db.adsZsOhm, "\u03A9")?.let { "Zs $it" }
+            val line4Parts = listOfNotNull(iscPart, cpcPart, protSummary, zsStr)
+            val line4Lines = wrapTokensToCorridor(line4Parts, corridorWidth, 8.5f)
+            line4Lines.forEach { line ->
+                writeText(line, textX, currentY, height = 8.5f, layer = "E-TEXT-DATA")
+                currentY += 11f
             }
         }
 
@@ -932,84 +1520,97 @@ object SldDxfExporter {
                 symbol != null && symbol.kind == EquipmentKind.TRANSFORMER -> {
                     // Dyn11 Step-Down Power Transformer block instance
                     writeInsert(BLK_TRANSFORMER_DYN11, symbol.cx, symbol.cy, "E-TX")
-                    val vectorGroup = node.dataBlock?.windingConnection
-                        ?.takeIf { it.isNotBlank() }?.let { " $it" } ?: ""
-                    val txFlc = node.dataBlock?.ibAmp?.takeIf { it.isNotBlank() }?.let { "FLC $it" }
-                    val txZ = node.dataBlock?.transformerZtMOhm?.takeIf { it.isNotBlank() }?.let { "Zt $it" }
-                    val txIsc1 = node.dataBlock?.transformerIsc1PhaseKa?.takeIf { it.isNotBlank() }?.let { "Isc1 $it" }
-                    val txIsc3 = node.dataBlock?.isc3PhaseKa?.takeIf { it.isNotBlank() }?.let { "Isc3 $it" }
-                    val txLoading = node.dataBlock?.loadingPct?.takeIf { it.isNotBlank() }?.let { "Load $it" }
-                    writeText(equipmentDesignation(node), symbol.cx + 45f, symbol.cy - 10f, height = 12f, layer = "E-TEXT-TITLE")
-                    writeText(
-                        "${extractKvaText(node)}\n${cleanEquipmentText(node.ratingText)}$vectorGroup",
-                        symbol.cx + 45f, symbol.cy + 8f, height = 9.5f, layer = "E-TEXT-DATA"
-                    )
-                    writeText(
-                        listOfNotNull(txFlc, txZ, txIsc1, txIsc3, txLoading).joinToString("  "),
-                        symbol.cx + 45f, symbol.cy + 34f, height = 8f, layer = "E-TEXT-DATA"
-                    )
+                    val txName = resolveDisplayName(node)
+                    val txKva = extractKvaOnly(node)
+                    val txType = extractTypeOnly(node, txKva)
+                    val vectorGroup = node.dataBlock?.windingConnection?.takeIf { it.isNotBlank() }
+                    val txFlc = formatUnit(node.dataBlock?.ibAmp, "A")?.let { "FLC $it" }
+                    val txZ = formatUnit(node.dataBlock?.transformerZtMOhm, "m\u03A9")?.let { "Zt $it" }
+                    val txIsc1 = formatUnit(node.dataBlock?.transformerIsc1PhaseKa, "kA")?.let { "Isc1 $it" }
+                    val txIsc3 = formatUnit(node.dataBlock?.isc3PhaseKa, "kA")?.let { "Isc3 $it" }
+                    val txLoading = formatUnit(node.dataBlock?.loadingPct, "%", space = false)?.let { "Load $it" }
+
+                    writeText(txName, symbol.cx + 40f, symbol.cy - 16f, height = 11f, layer = "E-TEXT-TITLE")
+                    val txRatingLine = buildEquipmentTitleLine(txKva, txType, vectorGroup)
+                    if (txRatingLine.isNotBlank()) {
+                        writeText(txRatingLine, symbol.cx + 40f, symbol.cy - 2f, height = 9f, layer = "E-TEXT-DATA")
+                    }
+                    val txMetrics = listOfNotNull(txFlc, txZ, txIsc1, txIsc3, txLoading).joinToString("  |  ")
+                    if (txMetrics.isNotBlank()) {
+                        writeText(txMetrics, symbol.cx + 40f, symbol.cy + 12f, height = 8f, layer = "E-TEXT-DATA")
+                    }
                 }
 
                 symbol != null && symbol.kind == EquipmentKind.GENERATOR -> {
                     // Synchronous Standby Generator block instance
                     writeInsert(BLK_GENERATOR, symbol.cx, symbol.cy, "E-GEN")
-                    // Real voltage + frequency from the graph builder (real data, never fabricated)
-                    val genVoltage = node.dataBlock?.voltage?.takeIf { it.isNotBlank() }
-                    val genFreq = node.dataBlock?.voltageFrequencyHz?.takeIf { it.isNotBlank() }
-                    val genLoad = node.dataBlock?.loadingPct?.takeIf { it.isNotBlank() }?.let { "Load $it" }
-                    val genStart = node.dataBlock?.generatorMotorStartingKva?.takeIf { it.isNotBlank() }?.let { "Mstart $it" }
-                    val genStep = node.dataBlock?.generatorStepLoadKva?.takeIf { it.isNotBlank() }?.let { "Step $it" }
-                    writeText(equipmentDesignation(node), symbol.cx + 45f, symbol.cy - 10f, height = 12f, layer = "E-TEXT-TITLE")
-                    writeText(
-                        "${extractKvaText(node)} Prime\n${listOfNotNull(genVoltage, genFreq).joinToString(" · ")}",
-                        symbol.cx + 45f, symbol.cy + 8f, height = 9.5f, layer = "E-TEXT-DATA"
-                    )
-                    writeText(
-                        listOfNotNull(genLoad, genStart, genStep).joinToString("  "),
-                        symbol.cx + 45f, symbol.cy + 30f, height = 8f, layer = "E-TEXT-DATA"
-                    )
+                    val genName = resolveDisplayName(node)
+                    val genKva = extractKvaOnly(node)
+                    val genVoltage = formatUnit(node.dataBlock?.voltage, "V")
+                    val genFreq = formatUnit(node.dataBlock?.voltageFrequencyHz, "Hz")
+                    val genLoad = formatUnit(node.dataBlock?.loadingPct, "%", space = false)?.let { "Load $it" }
+                    val genStart = formatUnit(node.dataBlock?.generatorMotorStartingKva, "kVA")?.let { "Mstart $it" }
+                    val genStep = formatUnit(node.dataBlock?.generatorStepLoadKva, "kVA")?.let { "Step $it" }
+
+                    writeText(genName, symbol.cx + 40f, symbol.cy - 18f, height = 11f, layer = "E-TEXT-TITLE")
+                    val genRatingStr = if (genKva.isNotBlank()) "$genKva Prime" else "Standby Generator"
+                    val genSpecLine = buildEquipmentTitleLine(genRatingStr, genVoltage, genFreq)
+                    if (genSpecLine.isNotBlank()) {
+                        writeText(genSpecLine, symbol.cx + 40f, symbol.cy - 4f, height = 9f, layer = "E-TEXT-DATA")
+                    }
+                    val genMetrics = listOfNotNull(genLoad, genStart, genStep).joinToString("  |  ")
+                    if (genMetrics.isNotBlank()) {
+                        writeText(genMetrics, symbol.cx + 40f, symbol.cy + 10f, height = 8f, layer = "E-TEXT-DATA")
+                    }
                 }
 
                 symbol != null && symbol.kind == EquipmentKind.ATS -> {
                     // 3-Terminal Automatic Transfer Switch block instance
                     writeInsert(BLK_ATS_3P, symbol.cx, symbol.cy, "E-SYMBOLS")
+                    val atsName = resolveDisplayName(node)
                     val scheme = if (
                         (node.label + node.ratingText).contains("INTERLOCK", ignoreCase = true)
                     ) {
-                        "MECHANICALLY INTERLOCKED"
+                        "MECH INTERLOCKED"
                     } else {
-                        "AUTO TRANSFER SCHEME"
+                        "AUTO TRANSFER"
                     }
-                    val atsIcw = node.dataBlock?.atsRequiredIcwKa?.takeIf { it.isNotBlank() }?.let { "Icw $it" }
-                    val atsIcm = node.dataBlock?.atsRequiredIcmKa?.takeIf { it.isNotBlank() }?.let { "Icm $it" }
-                    val atsIg = node.dataBlock?.atsGoverningCurrentA?.takeIf { it.isNotBlank() }?.let { "Ig $it" }
-                    val atsTt = node.dataBlock?.atsTransferTimeS?.takeIf { it.isNotBlank() }?.let { "Tt $it" }
-                    writeText(equipmentDesignation(node), symbol.cx + 45f, symbol.cy - 10f, height = 12f, layer = "E-TEXT-TITLE")
-                    writeText(
-                        "${extractAtsRatingText(node)}\n$scheme",
-                        symbol.cx + 45f, symbol.cy + 8f, height = 9.5f, layer = "E-TEXT-DATA"
-                    )
-                    writeText(
-                        listOfNotNull(atsIcw, atsIcm, atsIg, atsTt).joinToString("  "),
-                        symbol.cx + 45f, symbol.cy + 34f, height = 8f, layer = "E-TEXT-DATA"
-                    )
+                    val atsRating = extractAtsRatingText(node)
+                    val atsIcw = formatUnit(node.dataBlock?.atsRequiredIcwKa, "kA")?.let { "Icw $it" }
+                    val atsIcm = formatUnit(node.dataBlock?.atsRequiredIcmKa, "kA")?.let { "Icm $it" }
+                    val atsIg = formatUnit(node.dataBlock?.atsGoverningCurrentA, "A")?.let { "Ig $it" }
+                    val atsTt = formatUnit(node.dataBlock?.atsTransferTimeS, "s", space = false)?.let { "Tt $it" }
+
+                    writeText(atsName, symbol.cx + 40f, symbol.cy - 16f, height = 11f, layer = "E-TEXT-TITLE")
+                    val atsLine2 = buildEquipmentTitleLine(atsRating, scheme)
+                    if (atsLine2.isNotBlank()) {
+                        writeText(atsLine2, symbol.cx + 40f, symbol.cy - 2f, height = 9f, layer = "E-TEXT-DATA")
+                    }
+                    val atsMetrics = listOfNotNull(atsIcw, atsIcm, atsIg, atsTt).joinToString("  |  ")
+                    if (atsMetrics.isNotBlank()) {
+                        writeText(atsMetrics, symbol.cx + 40f, symbol.cy + 12f, height = 8f, layer = "E-TEXT-DATA")
+                    }
                 }
 
                 symbol != null && symbol.kind == EquipmentKind.UPS -> {
                     // Online Double-Conversion Static UPS block instance
                     writeInsert(BLK_UPS_ONLINE, symbol.cx, symbol.cy, "E-SYMBOLS")
-                    val upsBat = node.dataBlock?.upsBatteryAh?.takeIf { it.isNotBlank() }
+                    val upsName = resolveDisplayName(node)
+                    val upsKva = extractKvaOnly(node)
+                    val upsBat = formatUnit(node.dataBlock?.upsBatteryAh, "Ah")?.let { "Bat $it" }
                     val upsStr = node.dataBlock?.upsBatteryStrings?.takeIf { it.isNotBlank() }
-                    val upsFreq = node.dataBlock?.voltageFrequencyHz?.takeIf { it.isNotBlank() }
-                    writeText(equipmentDesignation(node), symbol.cx + 45f, symbol.cy - 10f, height = 12f, layer = "E-TEXT-TITLE")
-                    writeText(
-                        "${cleanEquipmentText(node.ratingText)}\nONLINE DOUBLE CONVERSION",
-                        symbol.cx + 45f, symbol.cy + 8f, height = 9.5f, layer = "E-TEXT-DATA"
-                    )
-                    writeText(
-                        listOfNotNull(upsBat, upsStr, upsFreq).joinToString("  "),
-                        symbol.cx + 45f, symbol.cy + 30f, height = 8f, layer = "E-TEXT-DATA"
-                    )
+                    val upsFreq = formatUnit(node.dataBlock?.voltageFrequencyHz, "Hz")
+
+                    writeText(upsName, symbol.cx + 40f, symbol.cy - 16f, height = 11f, layer = "E-TEXT-TITLE")
+                    val upsRatingStr = if (upsKva.isNotBlank()) upsKva else cleanEquipmentText(node.ratingText)
+                    val upsLine2 = buildEquipmentTitleLine(upsRatingStr, "ONLINE CONV")
+                    if (upsLine2.isNotBlank()) {
+                        writeText(upsLine2, symbol.cx + 40f, symbol.cy - 2f, height = 9f, layer = "E-TEXT-DATA")
+                    }
+                    val upsMetrics = listOfNotNull(upsBat, upsStr, upsFreq).joinToString("  |  ")
+                    if (upsMetrics.isNotBlank()) {
+                        writeText(upsMetrics, symbol.cx + 40f, symbol.cy + 12f, height = 8f, layer = "E-TEXT-DATA")
+                    }
                 }
 
                 node.panelType == SldNodeType.BUS_TIE.name -> {
@@ -1018,114 +1619,247 @@ object SldDxfExporter {
                     val midX = node.x + node.width / 2f
                     val midY = node.y + barHeight / 2f
                     writeInsert(BLK_BUS_TIE, midX, midY, "E-TIE")
-                    writeText(cleanEquipmentText(node.label), node.x, midY + 18f, height = 10f, layer = "E-TEXT-TITLE")
+                    val tieName = resolveDisplayName(node)
+                    writeText(tieName, node.x, midY + 18f, height = 10f, layer = "E-TEXT-TITLE")
                 }
 
                 node.isSource && (
                     panelUpper.contains("GRID") || panelUpper.contains("UTILITY") || panelUpper.contains("SOURCE")
                     ) -> {
-                    // Utility / grid infeed enclosure
-                    val gridW = maxOf(node.width, 140f)
-                    writeRectangle(node.x, node.y - 15f, gridW, 36f, "E-NORMAL")
-                    writeText(node.label, node.x + 12f, node.y - 8f, height = 12f, layer = "E-TEXT-TITLE")
+                    // Utility / grid infeed enclosure (measure-then-draw: zero text escaping)
+                    val gridName = resolveDisplayName(node)
+                    val gridDb = node.dataBlock
+                    val gridU = gridDb?.transformerPrimaryVoltage?.takeIf { it.isNotBlank() }?.let {
+                        val withUnit = formatUnit(it, "kV") ?: formatUnit(it, "V") ?: it
+                        "U $withUnit"
+                    }
+                    val gridSk = formatUnit(gridDb?.gridFaultMVA, "MVA")?.let { "S_kQ $it" }
+                    val gridInfeedLine = listOfNotNull(gridU, gridSk).joinToString("  |  ")
+
+                    val padH = 14f
+                    val titleW = estimateTextWidth(gridName, 12f)
+                    val infeedW = estimateTextWidth(gridInfeedLine, 9f)
+                    val maxTextW = maxOf(titleW, infeedW)
+                    val gridW = maxOf(node.width, maxTextW + padH * 2f)
+                    val hasInfeed = gridInfeedLine.isNotBlank()
+                    val gridH = if (hasInfeed) 48f else 34f
+                    val gridTop = node.y - 17f
+
+                    writeRectangle(node.x, gridTop, gridW, gridH, "E-NORMAL")
+                    writeText(gridName, node.x + padH, gridTop + 14f, height = 12f, layer = "E-TEXT-TITLE")
+                    if (hasInfeed) {
+                        writeText(gridInfeedLine, node.x + padH, gridTop + 32f, height = 9f, layer = "E-TEXT-DATA")
+                    }
                 }
 
                 else -> {
                     // Main Switchboard / Sub-Distribution Board.
-                    // NOTE: "SMDB" contains the substring "MDB" — classification must
-                    // not treat sub-distribution boards as main boards, otherwise the
-                    // dashed main enclosure would impale in-line feeder breakers.
+                    // Measure-then-draw geometry ensures zero text escapes cards or enclosures (Roadmap Phase 2 §2.2).
                     val isMain = (panelUpper.startsWith("MDB") && !panelUpper.contains("SMDB")) ||
                         panelUpper.contains("MAIN")
                     val barHeight = maxOf(node.height, 16f)
 
-                    if (isMain) {
-                        // Outer enclosure frame (dashed boundary)
-                        val encPad = 36f
-                        writeRectangle(node.x - encPad, node.y - 110f, node.width + encPad * 2f, barHeight + 130f, "E-PANEL", "DASHED")
-                        // Engineering main busbar tag parked ABOVE the enclosure,
-                        // clear of all risers and feeder taps
-                        writeText(buildMainBusbarTag(node), node.x - encPad + 8f, node.y - 126f, height = 9f, layer = "E-TEXT-DATA")
-                    }
-
-                    // Heavy copper busbar body (E-PANEL, 0.50mm lineweight)
-                    writeRectangle(node.x, node.y, node.width, barHeight, "E-PANEL")
-
-                    // Board title parked BELOW the bar (incoming risers terminate on
-                    // the bar top edge — the zone above stays 100% clean)
-                    writeText(node.label, node.x + 8f, node.y + barHeight + 12f, height = 13f, layer = "E-TEXT-TITLE")
-
-                    // Board header dark-data (busbar A / Icw / IP / location / ways /
-                    // main incoming) — all stored on CircuitEntity, now surfaced.
+                    val boardTitle = resolveDisplayName(node)
                     val boardDb = node.dataBlock
-                    val boardHeaders = listOfNotNull(
-                        boardDb?.busbarRatingA?.takeIf { it.isNotBlank() }?.let { "Bus $it" },
-                        boardDb?.scRatingKA?.takeIf { it.isNotBlank() }?.let { "Icw $it" },
+                    val busA = formatUnit(boardDb?.busbarRatingA, "A", space = false)?.let { "Bus $it" }
+                    val busIcw = formatUnit(boardDb?.scRatingKA, "kA", space = false)?.let { "Icw $it" }
+                    val waysStr = boardDb?.numberOfWays?.takeIf { it.isNotBlank() }?.let {
+                        if (it.endsWith("ways", ignoreCase = true)) it else "$it ways"
+                    }
+                    val headerTokens = listOfNotNull(
+                        busA,
+                        busIcw,
                         boardDb?.ipRating?.takeIf { it.isNotBlank() },
                         boardDb?.panelLocation?.takeIf { it.isNotBlank() },
-                        boardDb?.numberOfWays?.takeIf { it.isNotBlank() }?.let { "$it ways" },
+                        waysStr,
                         boardDb?.mainIncoming?.takeIf { it.isNotBlank() }?.let { "In: $it" }
-                    ).joinToString("  |  ")
+                    ).distinct()
 
-                    if (!isMain && node.ratingText.isNotBlank()) {
-                        writeText(node.ratingText, node.x + 8f, node.y + barHeight + 26f, height = 9f, layer = "E-TEXT-DATA")
-                    }
-                    if (boardHeaders.isNotBlank()) {
-                        val headerY = if (isMain) node.y + barHeight + 26f else node.y + barHeight + 40f
-                        writeText(boardHeaders, node.x + 8f, headerY, height = 9f, layer = "E-TEXT-DATA")
+                    val ratingClean = cleanEquipmentText(node.ratingText)
+                    val shouldShowRating = !isMain && ratingClean.isNotBlank() && !headerTokens.any { it.contains(ratingClean) }
+
+                    val tcl = formatUnit(boardDb?.boardTotalConnectedKva, "kVA")?.let { "TCL $it" }
+                    val tdl = formatUnit(boardDb?.boardDemandKva, "kVA")?.let { "TDL $it" }
+                    val df = formatUnit(boardDb?.boardDemandFactorPct, "%", space = false)?.let { "DF $it" }
+                    val ib = formatUnit(boardDb?.boardDesignCurrentA, "A")?.let { "I $it" }
+                    val unb = formatUnit(boardDb?.boardUnbalancePct, "%", space = false)?.let { "Unb $it" }
+                    val loadTokens = listOfNotNull(tcl, tdl, df, ib, unb).distinct()
+
+                    val rightNeighborX = engineResult.nodes
+                        .filter { it.id != node.id && it.x > node.x + 1f && Math.abs(it.y - node.y) < 80f }
+                        .minOfOrNull { it.x }
+                    val maxCorridorWidth = if (rightNeighborX != null) {
+                        ((rightNeighborX - node.x) - 20f).coerceAtLeast(node.width)
+                    } else {
+                        maxOf(node.width, 320f)
                     }
 
-                    // Board load roll-up (Phase 2A): TCL / TDL (with DF) / board
-                    // design current / phase unbalance — all engine-backed.
-                    val boardLoadLine = listOfNotNull(
-                        boardDb?.boardTotalConnectedKva?.takeIf { it.isNotBlank() }?.let { "TCL $it" },
-                        boardDb?.boardDemandKva?.takeIf { it.isNotBlank() }?.let { "TDL $it" },
-                        boardDb?.boardDemandFactorPct?.takeIf { it.isNotBlank() }?.let { "DF $it" },
-                        boardDb?.boardDesignCurrentA?.takeIf { it.isNotBlank() }?.let { "I $it" },
-                        boardDb?.boardUnbalancePct?.takeIf { it.isNotBlank() }?.let { "Unb $it" }
-                    ).joinToString("  |  ")
-                    if (boardLoadLine.isNotBlank()) {
-                        val loadY = when {
-                            isMain -> node.y + barHeight + 40f
-                            boardHeaders.isNotBlank() -> node.y + barHeight + 54f
-                            else -> node.y + barHeight + 40f
-                        }
-                        writeText(boardLoadLine, node.x + 8f, loadY, height = 9f, layer = "E-TEXT-DATA")
+                    val textCorridor = maxCorridorWidth - 16f
+                    val headerLines = wrapTokensToCorridor(headerTokens, textCorridor, 9f, separator = "  |  ")
+                    val loadLines = wrapTokensToCorridor(loadTokens, textCorridor, 9f, separator = "  |  ")
+
+                    val titleW = estimateTextWidth(boardTitle, 13f)
+                    val ratingW = if (shouldShowRating) estimateTextWidth(ratingClean, 9f) else 0f
+                    val allTextWidths = listOf(titleW, ratingW) +
+                        headerLines.map { estimateTextWidth(it, 9f) } +
+                        loadLines.map { estimateTextWidth(it, 9f) }
+                    val maxTextW = allTextWidths.maxOrNull() ?: 0f
+
+                    val busbarTag = if (isMain) buildMainBusbarTag(node) else ""
+                    val tagW = if (isMain) estimateTextWidth(busbarTag, 10f) else 0f
+
+                    val effectiveWidth = if (isMain) {
+                        maxOf(node.width, maxTextW + 24f)
+                    } else {
+                        maxOf(node.width, minOf(maxCorridorWidth, maxTextW + 24f))
+                    }
+
+                    var textY = node.y + barHeight + 14f
+                    val linePositions = mutableListOf<Pair<String, Pair<Float, Float>>>()
+
+                    linePositions.add(boardTitle to (textY to 13f))
+                    textY += 15f
+
+                    if (shouldShowRating) {
+                        linePositions.add(ratingClean to (textY to 9f))
+                        textY += 13f
+                    }
+                    headerLines.forEach { line ->
+                        linePositions.add(line to (textY to 9f))
+                        textY += 13f
+                    }
+                    loadLines.forEach { line ->
+                        linePositions.add(line to (textY to 9f))
+                        textY += 13f
+                    }
+
+                    val lastTextBottom = textY + 4f
+
+                    if (isMain) {
+                        // Outer enclosure frame (dashed boundary) sized dynamically to contain both tag and bottom lines
+                        val encPad = 36f
+                        val encLeft = node.x - encPad
+                        val encTop = node.y - 110f
+                        val encWidth = maxOf(effectiveWidth + encPad * 2f, tagW + 28f)
+                        val encHeight = (lastTextBottom + 16f) - encTop
+                        writeRectangle(encLeft, encTop, encWidth, encHeight, "E-PANEL", "DASHED")
+                        // Switchboard designation / nameplate placed cleanly inside the cubicle top-left
+                        writeText(busbarTag, encLeft + 14f, encTop + 14f, height = 10f, layer = "E-TEXT-TITLE")
+                    }
+
+                    // Heavy solid copper busbar body (E-BUSBAR, ACI 30 Vivid Copper Orange)
+                    writeSolid(node.x, node.y, effectiveWidth, barHeight, "E-BUSBAR")
+                    writeRectangle(node.x, node.y, effectiveWidth, barHeight, "E-BUSBAR")
+
+                    // Board lines written below the busbar, completely contained by the busbar's span
+                    linePositions.forEach { (text, yAndH) ->
+                        val (yPos, h) = yAndH
+                        val layer = if (h > 10f) "E-TEXT-TITLE" else "E-TEXT-DATA"
+                        writeText(text, node.x + 8f, yPos, height = h, layer = layer)
                     }
                 }
             }
         }
 
         // ==========================================
-        // D. Drawing Sheet Border & Professional Title Block (PART 4.4)
+        // D. Drawing Sheet Border, Stamped Title Block & Dynamic Legend (Roadmap Phase 3)
         // ==========================================
         // Outer Sheet Frame
         writeRectangle(sheetLeft, sheetTop, sheetRight - sheetLeft, sheetBottom - sheetTop, "E-BORDER")
         // Inner Margin Frame
         writeRectangle(sheetLeft + 10f, sheetTop + 10f, sheetRight - sheetLeft - 20f, sheetBottom - sheetTop - 20f, "E-BORDER")
 
-        // Title Block (Bottom-Right Corner)
-        val tbW = 420f
-        val tbH = 110f
-        val tbX = sheetRight - tbW - 10f
-        val tbY = sheetBottom - tbH - 10f
+        // ------------------------------------------------------------------
+        // Stamped Engineering Title Block (Bottom-Right Corner, Roadmap Phase 3 §3.1)
+        // ------------------------------------------------------------------
+        val tbX = sheetRight - tbW - 12f
+        val tbY = sheetBottom - tbH - 12f
 
         writeRectangle(tbX, tbY, tbW, tbH, "E-BORDER")
-        writeLine(tbX, tbY + 30f, tbX + tbW, tbY + 30f, "E-BORDER")
-        writeLine(tbX, tbY + 60f, tbX + tbW, tbY + 60f, "E-BORDER")
-        writeLine(tbX, tbY + 85f, tbX + tbW, tbY + 85f, "E-BORDER")
 
-        val effectiveProjectName = projectName.ifBlank { "VoltAtlas Project" }
-        val dateStamp = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-        writeText("PROJECT: $effectiveProjectName", tbX + 12f, tbY + 18f, height = 12f, layer = "E-BORDER")
-        writeText("DRAWING: SINGLE LINE DIAGRAM (SLD)", tbX + 12f, tbY + 46f, height = 11f, layer = "E-BORDER")
-        writeText("STANDARD: IEC 60364 / BS 7671 / IEC 60617", tbX + 12f, tbY + 74f, height = 9f, layer = "E-BORDER")
-        // Real revision from ProjectEntity.revision when available — never a fabricated "REV: A".
-        val revSegment = projectRevision?.let { "REV: $it | " } ?: ""
+        // Row 1: Project & Client / Project Code
+        writeLine(tbX, tbY + 28f, tbX + tbW, tbY + 28f, "E-BORDER")
+        writeLine(tbX + 295f, tbY, tbX + 295f, tbY + 28f, "E-BORDER")
+
+        val effectiveProjectName = meta.projectName?.takeIf { it.isNotBlank() } ?: projectName.takeIf { it.isNotBlank() } ?: "VoltAtlas Project"
+        writeText("PROJECT: $effectiveProjectName", tbX + 10f, tbY + 12f, height = 9.5f, layer = "E-BORDER")
+        val clientLine = meta.clientName?.takeIf { it.isNotBlank() }?.let { "CLIENT: $it" }
+        if (clientLine != null) {
+            writeText(clientLine, tbX + 10f, tbY + 23f, height = 7.5f, layer = "E-BORDER")
+        }
+        val codeLine = meta.projectCode?.takeIf { it.isNotBlank() }?.let { "CODE: $it" }
+        if (codeLine != null) {
+            writeText(codeLine, tbX + 303f, tbY + 12f, height = 7.5f, layer = "E-BORDER")
+        }
+        writeText("STATUS: ISSUED FOR REVIEW", tbX + 303f, tbY + 23f, height = 7f, layer = "E-BORDER")
+
+        // Row 2: Drawing Title & Drawing Number
+        writeLine(tbX, tbY + 52f, tbX + tbW, tbY + 52f, "E-BORDER")
+        writeLine(tbX + 295f, tbY + 28f, tbX + 295f, tbY + 52f, "E-BORDER")
+        writeText("DRAWING: SINGLE LINE DIAGRAM (SLD)", tbX + 10f, tbY + 42f, height = 9.5f, layer = "E-BORDER")
+        val dwgNoStr = meta.drawingNumber?.takeIf { it.isNotBlank() }
+            ?: meta.drawingNumberPattern?.takeIf { it.isNotBlank() }?.let { pattern ->
+                var s = pattern
+                meta.projectCode?.let { s = s.replace("{projectCode}", it) }
+                (meta.revision ?: projectRevision)?.let { s = s.replace("{revision}", it.toString()) }
+                s
+            }
+            ?: "-"
+        writeText("DWG NO: $dwgNoStr", tbX + 303f, tbY + 42f, height = 8f, layer = "E-BORDER")
+
+        // Row 3: Engineering Sign-off Box (Drawn / Checked / Approved table)
+        writeLine(tbX, tbY + 68f, tbX + tbW, tbY + 68f, "E-BORDER")
+        writeLine(tbX, tbY + 92f, tbX + tbW, tbY + 92f, "E-BORDER")
+        val col1W = 146f
+        writeLine(tbX + col1W, tbY + 52f, tbX + col1W, tbY + 92f, "E-BORDER")
+        writeLine(tbX + col1W * 2f, tbY + 52f, tbX + col1W * 2f, tbY + 92f, "E-BORDER")
+
+        writeText("DESIGN / DRAWN", tbX + 10f, tbY + 63f, height = 7f, layer = "E-BORDER")
+        writeText("CHECKED", tbX + col1W + 10f, tbY + 63f, height = 7f, layer = "E-BORDER")
+        writeText("APPROVED", tbX + col1W * 2f + 10f, tbY + 63f, height = 7f, layer = "E-BORDER")
+
+        writeText(meta.drawnBy?.takeIf { it.isNotBlank() } ?: "-", tbX + 10f, tbY + 83f, height = 8f, layer = "E-BORDER")
+        writeText(meta.checkedBy?.takeIf { it.isNotBlank() } ?: "-", tbX + col1W + 10f, tbY + 83f, height = 8f, layer = "E-BORDER")
+        writeText(meta.approvedBy?.takeIf { it.isNotBlank() } ?: "-", tbX + col1W * 2f + 10f, tbY + 83f, height = 8f, layer = "E-BORDER")
+
+        // Row 4: Standards and Drawing Control footer
+        writeLine(tbX, tbY + 106f, tbX + tbW, tbY + 106f, "E-BORDER")
+        val standardStr = meta.standard?.takeIf { it.isNotBlank() }?.let { "STANDARD: $it" }
+        if (standardStr != null) {
+            writeText(standardStr, tbX + 10f, tbY + 102f, height = 7.5f, layer = "E-BORDER")
+        }
+        val dateStamp = meta.dateStamp?.takeIf { it.isNotBlank() } ?: SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val effectiveRevision = meta.revision ?: projectRevision
+        val revSegment = effectiveRevision?.let { "REV: $it | " } ?: ""
+        val scaleSegment = meta.scale?.takeIf { it.isNotBlank() }?.let { "SCALE: $it | " } ?: ""
         writeText(
-            "DATE: $dateStamp | ${revSegment}SCALE: NTS | VoltAtlas Electrical CAD Engine",
-            tbX + 12f, tbY + 98f, height = 8f, layer = "E-BORDER"
+            "DATE: $dateStamp | $revSegment${scaleSegment}VoltAtlas Electrical CAD Engine",
+            tbX + 10f, tbY + 115f, height = 7f, layer = "E-BORDER"
         )
+
+        // ------------------------------------------------------------------
+        // Dynamic Drawing Legend (Bottom-Left Corner, Roadmap Phase 3 §3.2)
+        // ------------------------------------------------------------------
+        val legX = sheetLeft + 12f
+        val legY = sheetBottom - legH - 12f
+
+        writeRectangle(legX, legY, legW, legH, "E-BORDER")
+        writeLine(legX, legY + 18f, legX + legW, legY + 18f, "E-BORDER")
+        writeText("DRAWING LEGEND & DESIGNATIONS", legX + 10f, legY + 13f, height = 9f, layer = "E-BORDER")
+
+        val legMidX = legX + 215f
+        writeLine(legMidX, legY + 18f, legMidX, legY + legH, "E-BORDER")
+        writeLine(legX, legY + 30f, legX + legW, legY + 30f, "E-BORDER")
+
+        writeText("SYMBOLS & CIRCUITS", legX + 10f, legY + 26f, height = 7f, layer = "E-TEXT-TITLE")
+        writeText("ENGINEERING DATA & STATUS", legMidX + 10f, legY + 26f, height = 7f, layer = "E-TEXT-TITLE")
+
+        symbolLegendItems.forEachIndexed { idx, item ->
+            writeText(item, legX + 10f, legY + 41f + idx * 10f, height = 6.5f, layer = "E-TEXT-DATA")
+        }
+        abbrLegendItems.forEachIndexed { idx, item ->
+            writeText(item, legMidX + 10f, legY + 41f + idx * 10f, height = 6.5f, layer = "E-TEXT-DATA")
+        }
 
         // 5. DXF FOOTER
         sb.append("0\nENDSEC\n0\nEOF\n")
@@ -1139,9 +1873,10 @@ object SldDxfExporter {
     fun exportToDxfString(
         engineResult: SldEngineResult,
         projectName: String = "VoltAtlas_SLD",
-        projectRevision: Long? = null
+        projectRevision: Long? = null,
+        metadata: DxfDrawingMetadata? = null
     ): String =
-        generateDxf(engineResult, projectName, projectRevision)
+        generateDxf(engineResult, projectName, projectRevision, metadata)
 
     /**
      * Writes DXF string to an OutputStream and flushes.
@@ -1163,7 +1898,8 @@ object SldDxfExporter {
         context: Context,
         engineResult: SldEngineResult,
         projectName: String = "VoltAtlas_SLD",
-        projectRevision: Long? = null
+        projectRevision: Long? = null,
+        metadata: DxfDrawingMetadata? = null
     ) {
         if (engineResult.nodes.isEmpty()) {
             Toast.makeText(context, "Diagram empty. Please add components first.", Toast.LENGTH_SHORT).show()
@@ -1171,7 +1907,11 @@ object SldDxfExporter {
         }
 
         try {
-            val dxfString = generateDxf(engineResult, projectName, projectRevision)
+            val unnamedNodes = detectUnnamedNodes(engineResult)
+            if (unnamedNodes.isNotEmpty()) {
+                android.util.Log.w(TAG, "SLD Export Warning: nodes lacking stored display names: $unnamedNodes")
+            }
+            val dxfString = generateDxf(engineResult, projectName, projectRevision, metadata)
             val cacheDir = context.cacheDir
             val cleanProjectName = projectName
                 .trim()

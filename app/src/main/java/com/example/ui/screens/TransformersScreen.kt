@@ -457,6 +457,76 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = DsType.bodySmall
                         )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // 4. Primary (HV/MV) supply voltage — G5. Real column-backed;
+                        // drives the genuine SLD "Utility Grid (X kV)" label.
+                        Text("Primary Supply Voltage (V):", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.labelSmall)
+                        Text(
+                            "MV/HV side of the transformer, e.g. 11000 for 11 kV, 22000 for 22 kV.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = DsType.bodySmall
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        var hvVText by remember(activeTx.primaryVoltageV) { mutableStateOf(activeTx.primaryVoltageV?.toString() ?: "") }
+                        OutlinedTextField(
+                            value = hvVText,
+                            onValueChange = { input ->
+                                hvVText = input
+                                val parsed = input.toIntOrNull()
+                                viewModel.updateTransformer(
+                                    activeTx.copy(primaryVoltageV = parsed?.takeIf { it > 0 })
+                                )
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            trailingIcon = { Text("V", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 12.dp)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // 5. Utility fault level S_kQ (MVA) — G4. When set, the grid's own
+                        // impedance becomes part of the source-to-feeder fault path (IEC 60909).
+                        Text("Utility Fault Level S_kQ (MVA):", color = MaterialTheme.colorScheme.onSurfaceVariant, style = DsType.labelSmall)
+                        Text(
+                            "Available short-circuit power at the point of supply. Leave blank for the infinite-grid convention.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = DsType.bodySmall
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        var skqText by remember(activeTx.gridFaultMVA) { mutableStateOf(activeTx.gridFaultMVA?.toString() ?: "") }
+                        OutlinedTextField(
+                            value = skqText,
+                            onValueChange = { input ->
+                                skqText = input
+                                val parsed = input.toDoubleOrNull()
+                                viewModel.updateTransformer(
+                                    activeTx.copy(gridFaultMVA = parsed?.takeIf { it > 0.0 })
+                                )
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            trailingIcon = { Text("MVA", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 12.dp)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                            )
+                        )
                     }
                 }
             }

@@ -46,14 +46,16 @@ object ProtectionCalculationService {
         sizingResult: SizingResult,
         shortCircuitResult: ShortCircuitResult?,
         upstreamIn_A: Double = 0.0,
-        upstreamName: String = "Upstream Board"
+        upstreamName: String = "Upstream Board",
+        hasUpstreamDevice: Boolean = (upstreamIn_A > 0.0 && !upstreamName.startsWith("Incomer", ignoreCase = true))
     ): ProtectionResult {
         return ProtectionEngine.evaluateProtection(
             circuit = circuit,
             sizingResult = sizingResult,
             shortCircuitResult = shortCircuitResult,
             upstreamIn_A = upstreamIn_A,
-            upstreamName = upstreamName
+            upstreamName = upstreamName,
+            hasUpstreamDevice = hasUpstreamDevice
         )
     }
 
@@ -122,8 +124,9 @@ object ProtectionCalculationService {
         sizingResult: SizingResult,
         shortCircuitResult: ShortCircuitResult?,
         upstreamIn_A: Double = 0.0,
-        upstreamName: String = "Upstream Board"
+        upstreamName: String = "Upstream Board",
+        hasUpstreamDevice: Boolean = (upstreamIn_A > 0.0 && !upstreamName.startsWith("Incomer", ignoreCase = true))
     ): ProtectionResult = withContext(Dispatchers.Default) {
-        evaluateProtection(circuit, sizingResult, shortCircuitResult, upstreamIn_A, upstreamName)
+        evaluateProtection(circuit, sizingResult, shortCircuitResult, upstreamIn_A, upstreamName, hasUpstreamDevice)
     }
 }

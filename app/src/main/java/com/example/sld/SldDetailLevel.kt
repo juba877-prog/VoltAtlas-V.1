@@ -73,15 +73,18 @@ object SldDetailLevelPolicy {
         val cableLine: Boolean,
         /** Line 3: display-mode engineering metric or validation status. */
         val modeMetricLine: Boolean,
-        /** Extra DETAILED-only lines: route length, device Icu. */
-        val advancedLines: Boolean
+        /** Extra DETAILED-only lines: route length, device Icu, Ib/Iz, utilization, installation. */
+        val advancedLines: Boolean,
+        /** Full INSPECTION-only lines: neutral/CPC, VD limit, protection verdicts, ADS loop. */
+        val inspectionLines: Boolean = false
     )
 
     fun feederCallout(level: SldDetailLevel): FeederCalloutPolicy = when (level) {
         SldDetailLevel.MACRO -> FeederCalloutPolicy(breakerLine = false, cableLine = false, modeMetricLine = false, advancedLines = false)
         SldDetailLevel.COMPACT -> FeederCalloutPolicy(breakerLine = true, cableLine = false, modeMetricLine = false, advancedLines = false)
         SldDetailLevel.STANDARD -> FeederCalloutPolicy(breakerLine = true, cableLine = true, modeMetricLine = true, advancedLines = false)
-        SldDetailLevel.DETAILED, SldDetailLevel.INSPECTION -> FeederCalloutPolicy(breakerLine = true, cableLine = true, modeMetricLine = true, advancedLines = true)
+        SldDetailLevel.DETAILED -> FeederCalloutPolicy(breakerLine = true, cableLine = true, modeMetricLine = true, advancedLines = true)
+        SldDetailLevel.INSPECTION -> FeederCalloutPolicy(breakerLine = true, cableLine = true, modeMetricLine = true, advancedLines = true, inspectionLines = true)
     }
 
     /** Cycles COMPACT → STANDARD → DETAILED → COMPACT (toolbar overflow action). */

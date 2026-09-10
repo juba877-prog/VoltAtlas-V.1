@@ -116,6 +116,8 @@ data class TransformerEntity(
     val xr: Double = 6.0,
     val txType: String = "Dry",
     val sourceType: String = "Utility Grid",
+    /** Real MV/HV primary-side supply voltage in V, e.g. 11000 for 11 kV, 22000 for 22 kV (G5). */
+    val primaryVoltageV: Int? = null,
     val status: String = "Active",             // "Active", "Inactive"
     val sizeMode: String = "Auto",           // "Auto", "Manual"
     val manualKVA: Double = 1000.0,
@@ -128,7 +130,9 @@ data class TransformerEntity(
     @ColumnInfo(defaultValue = "1.0")
     val z0OverZ1: Double = 1.0,
     @ColumnInfo(defaultValue = "0.8")
-    val pf: Double = 0.8
+    val pf: Double = 0.8,
+    /** Utility grid short-circuit MVA at the point of supply (S_kQ). Null = infinite-grid convention (G4). */
+    val gridFaultMVA: Double? = null
 )
 
 

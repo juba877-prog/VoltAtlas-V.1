@@ -113,8 +113,17 @@ object ShortCircuitEngine {
                         continue
                     }
                     un = txResult.voltage
-                    rTotalOhm = txResult.rt / 1000.0
-                    xTotalOhm = txResult.xt / 1000.0
+                    // G4: include the utility grid-source impedance (reflected to the LV side)
+                    // when the transformer carries a real S_kQ. Infinite-grid convention
+                    // (gridFaultMVA == 0) keeps the historical behavior unchanged.
+                    rTotalOhm = (txResult.rt + txResult.rGridMOhm) / 1000.0
+                    xTotalOhm = (txResult.xt + txResult.xGridMOhm) / 1000.0
+                    if (txResult.gridFaultMVA > 0.0) {
+                        sourceWarnings.add(
+                            "Grid source impedance included (S_kQ = %.1f MVA, X/R assumption 10, reflected to LV) — IEC 60909-0"
+                                .format(txResult.gridFaultMVA)
+                        )
+                    }
                 }
             }
 

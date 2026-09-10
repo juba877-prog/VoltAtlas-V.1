@@ -1095,16 +1095,19 @@ object EngineeringCalculationCoordinator {
 
         val upstreamIn: Double
         val upstreamName: String
+        val hasUpstreamDevice: Boolean
         if (parent != null && parent.id != circuit.id) {
             val parentSizing = calculateCableSizing(parent, allCircuits, allTransformers)
             upstreamIn = parentSizing.deviceSize_A
             upstreamName = parent.circuitName
+            hasUpstreamDevice = upstreamIn > 0.0
         } else {
             val txResult = if (circuit.transformerId.isNotBlank()) {
                 calculateTransformer(circuit.transformerId, allCircuits, allTransformers)
             } else null
             upstreamIn = txResult?.flc ?: 0.0
             upstreamName = if (circuit.transformerId.isNotBlank()) "Incomer (${circuit.transformerId})" else "Incomer"
+            hasUpstreamDevice = false
         }
 
         val sig = computeProtectionSignature(circuit, sizingResult, scResult, upstreamIn, upstreamName)
@@ -1132,7 +1135,8 @@ object EngineeringCalculationCoordinator {
                 sizingResult = sizingResult,
                 shortCircuitResult = scResult,
                 upstreamIn_A = upstreamIn,
-                upstreamName = upstreamName
+                upstreamName = upstreamName,
+                hasUpstreamDevice = hasUpstreamDevice
             )
             val rev = getProjectRevision(pid)
             protectionCache[protKey] = VersionedCacheEntry(sig, fresh, rev)
@@ -1230,8 +1234,9 @@ object EngineeringCalculationCoordinator {
             val sc = shortCircuitResults[circuit.id]
             val parentId = circuitParents[circuit.id]
             val parentSizing = if (parentId != null) sizingResults[parentId] else null
-            val upstreamIn = parentSizing?.deviceSize_A ?: (transformerResults[circuit.transformerId]?.flc ?: 0.0)
-            val parentName = if (parentId != null) {
+            val hasUpstreamDevice = parentSizing != null && parentSizing.deviceSize_A > 0.0
+            val upstreamIn = if (hasUpstreamDevice) parentSizing!!.deviceSize_A else (transformerResults[circuit.transformerId]?.flc ?: 0.0)
+            val parentName = if (hasUpstreamDevice) {
                 (allCircuits.find { it.id == parentId }?.circuitName ?: "Parent Board")
             } else {
                 "Incomer (${circuit.transformerId})"
@@ -1250,7 +1255,8 @@ object EngineeringCalculationCoordinator {
                     sizingResult = sizing,
                     shortCircuitResult = sc,
                     upstreamIn_A = upstreamIn,
-                    upstreamName = parentName
+                    upstreamName = parentName,
+                    hasUpstreamDevice = hasUpstreamDevice
                 )
                 val rev = liveRev
                 protectionCache[protKey] = VersionedCacheEntry(sig, fresh, rev)
@@ -1706,16 +1712,19 @@ object EngineeringCalculationCoordinator {
 
         val upstreamIn: Double
         val upstreamName: String
+        val hasUpstreamDevice: Boolean
         if (parent != null && parent.id != circuit.id) {
             val parentSizing = calculateCableSizing(parent, allCircuits, allTransformers)
             upstreamIn = parentSizing.deviceSize_A
             upstreamName = parent.circuitName
+            hasUpstreamDevice = upstreamIn > 0.0
         } else {
             val txResult = if (circuit.transformerId.isNotBlank()) {
                 calculateTransformer(circuit.transformerId, allCircuits, allTransformers)
             } else null
             upstreamIn = txResult?.flc ?: 0.0
             upstreamName = if (circuit.transformerId.isNotBlank()) "Incomer (${circuit.transformerId})" else "Incomer"
+            hasUpstreamDevice = false
         }
 
         // Atomically compute both ADS and Protection outputs
@@ -1725,7 +1734,8 @@ object EngineeringCalculationCoordinator {
             sizingResult = sizingResult,
             shortCircuitResult = scResult,
             upstreamIn_A = upstreamIn,
-            upstreamName = upstreamName
+            upstreamName = upstreamName,
+            hasUpstreamDevice = hasUpstreamDevice
         )
 
         val sigAds = computeAdsSignature(circuit, sizingResult, ze_ohm)

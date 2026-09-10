@@ -553,8 +553,17 @@ class SldDxfExportCadFidelityTest {
     fun titleBlock_isGeneratedWithProjectMetadata() {
         val engineResult = createSampleEngineResult()
         val projectName = "Hospital Central Substation"
-        val dxf = SldDxfExporter.generateDxf(engineResult, projectName)
-        val dxfWithRevision = SldDxfExporter.generateDxf(engineResult, projectName, projectRevision = 3L)
+        val dxf = SldDxfExporter.generateDxf(
+            engineResult = engineResult,
+            projectName = projectName,
+            metadata = DxfDrawingMetadata(standard = "IEC 60364 / BS 7671")
+        )
+        val dxfWithRevision = SldDxfExporter.generateDxf(
+            engineResult = engineResult,
+            projectName = projectName,
+            projectRevision = 3L,
+            metadata = DxfDrawingMetadata(standard = "IEC 60364 / BS 7671")
+        )
 
         assertTrue("Title block must include project name", dxf.contains("PROJECT: $projectName"))
         assertTrue("Title block must include drawing subtitle", dxf.contains("DRAWING: SINGLE LINE DIAGRAM (SLD)"))
@@ -590,5 +599,18 @@ class SldDxfExportCadFidelityTest {
         // 3. Assert file ends strictly with 0 followed by EOF
         org.junit.Assert.assertEquals("0", lines[lines.size - 2])
         org.junit.Assert.assertEquals("EOF", lines[lines.size - 1])
+    }
+
+    @Test
+    fun busbarLayerAndSolidColor_areExportedCorrectly() {
+        val sampleEngineResult = createSampleEngineResult()
+        val dxf = SldDxfExporter.generateDxf(sampleEngineResult, "Gate 3")
+
+        // 1. Assert E-BUSBAR layer is declared in TABLES with color 30 (Vivid Orange)
+        assertTrue("DXF must define layer E-BUSBAR", dxf.contains("2\nE-BUSBAR\n"))
+        assertTrue("Layer table must include color 30 for E-BUSBAR", dxf.contains("2\nE-BUSBAR\n70\n64\n62\n30\n"))
+
+        // 2. Assert busbar is rendered with a SOLID entity on E-BUSBAR
+        assertTrue("DXF must emit a filled SOLID entity for the copper busbar", dxf.contains("0\nSOLID\n8\nE-BUSBAR\n"))
     }
 }

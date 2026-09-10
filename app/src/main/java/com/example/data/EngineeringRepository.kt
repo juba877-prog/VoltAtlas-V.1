@@ -348,6 +348,8 @@ class EngineeringRepository(
             obj.put("transformerName", t.transformerName)
             obj.put("kVA", t.kVA)
             obj.put("voltage", t.voltage)
+            if (t.primaryVoltageV != null) obj.put("primaryVoltageV", t.primaryVoltageV)
+            if (t.gridFaultMVA != null) obj.put("gridFaultMVA", t.gridFaultMVA)
             obj.put("percentZ", t.percentZ)
             obj.put("xr", t.xr)
             obj.put("txType", t.txType)
@@ -648,6 +650,8 @@ class EngineeringRepository(
                             transformerName = obj.optString("transformerName", "Transformer ${i + 1}"),
                             kVA = obj.optDouble("kVA", 1000.0),
                             voltage = obj.optInt("voltage", 400),
+                            primaryVoltageV = obj.optInt("primaryVoltageV", 0).takeIf { it > 0 },
+                            gridFaultMVA = obj.optDouble("gridFaultMVA", 0.0).takeIf { it > 0.0 },
                             percentZ = obj.optDouble("percentZ", 5.0),
                             xr = obj.optDouble("xr", 7.0),
                             txType = obj.optString("txType", "Dry Type (Cast Resin)"),

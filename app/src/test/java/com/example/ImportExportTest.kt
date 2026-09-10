@@ -7,6 +7,7 @@ import com.example.ui.StartupState
 import com.example.ui.UiState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -35,8 +36,13 @@ class ImportExportTest {
 
     @After
     fun tearDown() {
-        Dispatchers.resetMain()
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
         com.example.data.AppDatabase.useTestExecutors = false
+        try {
+            Dispatchers.resetMain()
+        } catch (_: IllegalStateException) {
+            // Guard against background scheduler worker thread race during full suite runs
+        }
     }
 
     @Test
@@ -152,7 +158,8 @@ class ImportExportTest {
         println("Returned success: $malformedSuccess")
         println("Error message: $malformedErrorMsg")
 
-        collectJob.cancel()
+        collectJob.cancelAndJoin()
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
     }
 }
 

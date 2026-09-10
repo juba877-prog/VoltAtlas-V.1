@@ -157,6 +157,12 @@ data class SldDataBlock(
     /** Transformer positive-sequence impedance Zt (mΩ) — computed, never rendered before. */
     val transformerZtMOhm: String? = null,
 
+    /** Real MV/HV primary-side supply voltage (e.g. "22 kV") from [TransformerEntity.primaryVoltageV] (G5). */
+    val transformerPrimaryVoltage: String? = null,
+
+    /** Utility grid short-circuit MVA at the point of supply (S_kQ), e.g. "250 MVA" (G4). */
+    val gridFaultMVA: String? = null,
+
     /** Transformer single-phase earth-fault current Isc₁ (kA) — computed, never rendered before. */
     val transformerIsc1PhaseKa: String? = null,
 
@@ -191,11 +197,26 @@ data class SldDataBlock(
     // BOARD HEADER SLOTS (stored on CircuitEntity, now surfaced — 1B)
     // ================================================================
 
-    /** Busbar current rating (A) from [CircuitEntity.busbarRatingA]. */
+    /** Busbar current rating (A) from [CircuitEntity.busbarRatingA] or [BusbarSizingEngine]. */
     val busbarRatingA: String? = null,
 
-    /** Board short-circuit rating (kA) from [CircuitEntity.scRatingKA]. */
+    /** Board short-circuit rating (kA) from [CircuitEntity.scRatingKA] or [BusbarSizingEngine.icwKA]. */
     val scRatingKA: String? = null,
+
+    /** Busbar physical arrangement profile (e.g. "1×(40×10) mm²") from [BusbarSizingEngine]. */
+    val busbarSize: String? = null,
+
+    /** Busbar dynamic peak withstand (kA) from [BusbarSizingEngine.ipkKA]. */
+    val busbarIpkKa: String? = null,
+
+    /** Busbar neutral conductor cross-section from [BusbarSizingEngine]. */
+    val busbarNeutral: String? = null,
+
+    /** Busbar protective earth conductor cross-section from [BusbarSizingEngine]. */
+    val busbarPe: String? = null,
+
+    /** Busbar conductor material (e.g. "Copper" or "Aluminium") from [BusbarSizingEngine]. */
+    val busbarMaterial: String? = null,
 
     /** Ingress protection rating from [CircuitEntity.ipRating]. */
     val ipRating: String? = null,

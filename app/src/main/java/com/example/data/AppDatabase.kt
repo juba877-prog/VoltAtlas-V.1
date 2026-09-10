@@ -927,6 +927,26 @@ val MIGRATION_23_24 = object : Migration(23, 24) {
     }
 }
 
+/**
+ * v24 -> v25 (Roadmap Phase 2B — utility source modeling foundation):
+ *
+ *  1. `transformers.primaryVoltageV` (INTEGER, nullable) — real MV/HV primary-side
+ *     supply voltage in volts (e.g. 11000 for 11 kV). Previously the SLD mislabeled
+ *     the transformer's LV `voltage` column as the grid supply voltage (G5).
+ *  2. `transformers.gridFaultMVA` (REAL, nullable) — utility short-circuit MVA at the
+ *     point of supply (S_kQ, IEC 60909). Nullable: NULL keeps the historical
+ *     infinite-grid convention (fault study begins at the transformer); setting a
+ *     value makes the grid's own impedance part of the source-to-feeder fault path (G4).
+ *
+ * Both columns are added idempotently via [migrationEnsureColumn] — zero data loss.
+ */
+val MIGRATION_24_25 = object : Migration(24, 25) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        migrationEnsureColumn(db, "ALTER TABLE `transformers` ADD COLUMN `primaryVoltageV` INTEGER DEFAULT NULL")
+        migrationEnsureColumn(db, "ALTER TABLE `transformers` ADD COLUMN `gridFaultMVA` REAL DEFAULT NULL")
+    }
+}
+
 @Dao
 interface SldNodePositionDao {
     @Query("SELECT * FROM sld_node_positions WHERE projectId = :projectId")
@@ -963,7 +983,7 @@ interface SldNodePositionDao {
         MutationExecutionReceiptEntity::class,
         BusTieEntity::class
     ],
-    version = 24,
+    version = 25,
     exportSchema = false
 )
 @TypeConverters(AiDatabaseConverters::class)
@@ -997,7 +1017,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                     MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-                    MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24
+                    MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24,
+                    MIGRATION_24_25
                 )
 
 

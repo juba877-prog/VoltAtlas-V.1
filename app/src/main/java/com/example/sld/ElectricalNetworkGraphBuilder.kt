@@ -99,24 +99,32 @@ object ElectricalNetworkGraphBuilder {
             projTransformers.forEach { tx ->
                 val txNodeId = "tx_${tx.transformerId}"
                 val gridNodeId = "grid_${tx.transformerId}"
-                val primaryVoltageStr = if (tx.voltage >= 1000) {
-                    val kv = tx.voltage / 1000.0
-                    if (kv == kv.toLong().toDouble()) "${kv.toLong()} kV" else "$kv kV"
-                } else {
-                    // LV supply point — show the real stored primary voltage, never a fabricated default.
-                    "${tx.voltage} V"
+                // G5: the grid (utility) side is the REAL primary voltage column. `tx.voltage`
+                // is the LV secondary (used for FLC/fault math). Never fabricate a supply
+                // voltage — when the primary is unset the grid node carries none.
+                val primaryVoltageStr = tx.primaryVoltageV?.takeIf { it > 0 }?.let { pv ->
+                    if (pv >= 1000) {
+                        val kv = pv / 1000.0
+                        if (kv == kv.toLong().toDouble()) "${kv.toLong()} kV" else "$kv kV"
+                    } else {
+                        "$pv V"
+                    }
                 }
+                val gridDisplayName = if (primaryVoltageStr != null) "Utility Grid ($primaryVoltageStr)" else "Utility Grid"
 
                 nodes.add(
                     SldNode(
                         id = gridNodeId,
                         projectId = effectiveProjectId,
                         type = SldNodeType.UTILITY_SOURCE,
-                        displayName = "Utility Grid ($primaryVoltageStr)",
+                        displayName = gridDisplayName,
                         voltage = primaryVoltageStr,
                         dataBlock = SldDataBlock(
                             voltage = primaryVoltageStr,
-                            statusText = "GRID SOURCE INCOMER"
+                            statusText = "GRID SOURCE INCOMER",
+                            // G4: surface the utility S_kQ when the engineer enters it.
+                            gridFaultMVA = tx.gridFaultMVA?.takeIf { it > 0.0 }?.let { "%.1f MVA".format(it) },
+                            transformerPrimaryVoltage = primaryVoltageStr
                         ),
                         status = SldValidationStatus.VALID,
                         provenance = SldProvenance.APPROVED_STANDARD,
@@ -128,11 +136,16 @@ object ElectricalNetworkGraphBuilder {
                 val txRes = transformerResults[tx.transformerId]
                 val ratedKvaVal = txRes?.selectedSize?.takeIf { it > 0.0 } ?: tx.kVA
                 val ratedKvaStr = if (ratedKvaVal > 0) "${ratedKvaVal.toInt()} kVA" else "DATA REQUIRED"
-                val secondaryVoltage = 400.0
+                // G5: the LV secondary voltage is the real `tx.voltage` column — never a fabricated 400 V.
+                val realSecondaryVoltage = if (tx.voltage in 100..1000) tx.voltage.toDouble() else 400.0
+                val secondaryVoltage = realSecondaryVoltage
                 val fallbackFlc = (ratedKvaVal * 1000) / (Math.sqrt(3.0) * secondaryVoltage)
                 val ibAmpStr = txRes?.flc?.let { "%.0f A".format(it) } ?: "%.0f A".format(fallbackFlc)
                 val loadingStr = txRes?.loadingPct?.let { "%.1f%%".format(it) } ?: ""
                 val iscKaStr = txRes?.isc3Phase?.let { "%.2f kA".format(it) } ?: ""
+                val secondaryVoltageStr = if (secondaryVoltage == secondaryVoltage.toLong().toDouble())
+                    "${secondaryVoltage.toLong()} V" else "$secondaryVoltage V"
+                val txCombinedVoltageStr = if (primaryVoltageStr != null) "$primaryVoltageStr / $secondaryVoltageStr" else secondaryVoltageStr
 
                 nodes.add(
                     SldNode(
@@ -141,10 +154,10 @@ object ElectricalNetworkGraphBuilder {
                         type = SldNodeType.TRANSFORMER,
                         displayName = "Tx: ${tx.transformerId}",
                         parentSourceId = gridNodeId,
-                        voltage = "$primaryVoltageStr / 400 V",
+                        voltage = txCombinedVoltageStr,
                         dataBlock = SldDataBlock(
                             ratedKva = "$ratedKvaStr (${tx.txType})",
-                            voltage = "$primaryVoltageStr / 400 V",
+                            voltage = txCombinedVoltageStr,
                             impedancePct = "${tx.percentZ}%",
                             windingConnection = tx.vectorGroup,
                             loadingPct = loadingStr,
@@ -152,6 +165,8 @@ object ElectricalNetworkGraphBuilder {
                             ibAmp = ibAmpStr,
                             transformerZtMOhm = txRes?.zt?.let { "%.1f mΩ".format(it) },
                             transformerIsc1PhaseKa = txRes?.isc1Phase?.let { "%.2f kA".format(it) },
+                            transformerPrimaryVoltage = primaryVoltageStr,
+                            gridFaultMVA = tx.gridFaultMVA?.takeIf { it > 0.0 }?.let { "%.1f MVA".format(it) },
                             statusText = txRes?.status ?: "VERIFIED"
                         ),
                         status = if (txRes != null) SldValidationStatus.VALID else SldValidationStatus.VALID,
@@ -1159,8 +1174,8 @@ object ElectricalNetworkGraphBuilder {
             val protRes = protectionResults[circ.id]
             val adsRes = adsResults[circ.id]
 
-            // Phase 2A: board-level load roll-up (TCL / TDL / DF / board current) —
-            // real PanelScheduleEngine output, computed only for switchboard nodes.
+            // Phase 2A & 3B: board-level load roll-up (TCL / TDL / DF / board current)
+            // real PanelScheduleEngine + DiversityCalculationEngine, computed for switchboard nodes.
             val boardRollup = if (nodeType in BOARD_ROLLUP_NODE_TYPES) {
                 boardRollupMemo.getOrPut("id_${circ.id}") {
                     com.example.engine.PanelScheduleEngine.generateScheduleRecursive(
@@ -1172,12 +1187,64 @@ object ElectricalNetworkGraphBuilder {
                 }
             } else null
 
-            val boardTclKva = boardRollup
-                ?.takeIf { !it.hasCircularReference && it.totalPanelLoadKVA > 0.0 }
-                ?.totalPanelLoadKVA ?: 0.0
-            val boardDf = circ.demandFactor
-            val boardTdlKva = boardTclKva * boardDf
+            val directChildren = if (nodeType in BOARD_ROLLUP_NODE_TYPES) {
+                projCircuits.filter { child ->
+                    child.parentId == circ.id || child.fedFrom.trim().equals(circ.circuitName.trim(), ignoreCase = true)
+                }
+            } else emptyList()
+
+            val subPanelLoads = if (directChildren.isNotEmpty()) {
+                directChildren.filter { child ->
+                    val pType = child.panelType?.trim()?.uppercase() ?: ""
+                    val isExplicitPanel = pType in setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER")
+                    isExplicitPanel || projCircuits.any { it.parentId == child.id || it.fedFrom.trim().equals(child.circuitName.trim(), ignoreCase = true) }
+                }.associate { sub ->
+                    val subRollup = boardRollupMemo.getOrPut("id_${sub.id}") {
+                        com.example.engine.PanelScheduleEngine.generateScheduleRecursive(
+                            panelName = sub.circuitName,
+                            circuits = projCircuits,
+                            targetCircuitId = sub.id,
+                            memo = boardRollupMemo
+                        )
+                    }
+                    sub.id to (subRollup.takeIf { !it.hasCircularReference && it.totalPanelLoadKVA > 0.0 }?.totalPanelLoadKVA ?: sub.loadKVA)
+                }
+            } else emptyMap()
+
             val boardIsThreePhase = circ.phases.contains("3")
+            val diversityRes = if (nodeType in BOARD_ROLLUP_NODE_TYPES && directChildren.isNotEmpty()) {
+                com.example.engine.DiversityCalculationEngine.calculateBoardDiversity(
+                    circuits = directChildren,
+                    subPanelLoads = subPanelLoads,
+                    boardVoltageV = if (circ.voltageV > 0) circ.voltageV.toDouble() else 400.0,
+                    isThreePhase = boardIsThreePhase
+                )
+            } else null
+
+            val boardTclKva = if (diversityRes != null && diversityRes.totalConnectedKva > 0.0) {
+                diversityRes.totalConnectedKva
+            } else {
+                boardRollup
+                    ?.takeIf { !it.hasCircularReference && it.totalPanelLoadKVA > 0.0 }
+                    ?.totalPanelLoadKVA ?: 0.0
+            }
+
+            val boardDf = if (circ.demandFactor > 0.0 && circ.demandFactor < 1.0) {
+                circ.demandFactor
+            } else if (diversityRes != null && diversityRes.overallDiversityFactor > 0.0 && diversityRes.overallDiversityFactor < 1.0) {
+                diversityRes.overallDiversityFactor
+            } else {
+                circ.demandFactor
+            }
+
+            val boardTdlKva = if (circ.demandFactor > 0.0 && circ.demandFactor < 1.0) {
+                boardTclKva * boardDf
+            } else if (diversityRes != null && diversityRes.totalDemandKva > 0.0) {
+                diversityRes.totalDemandKva
+            } else {
+                boardTclKva * boardDf
+            }
+
             val boardCurrentA = if (boardTdlKva > 0.0) {
                 // Real stored board voltage (CircuitEntity.voltageV) — never a hardcoded default.
                 if (boardIsThreePhase) boardTdlKva * 1000.0 / (kotlin.math.sqrt(3.0) * circ.voltageV)
@@ -1191,19 +1258,47 @@ object ElectricalNetworkGraphBuilder {
                 ?.takeIf { !it.hasCircularReference && it.unbalancePct > 0.0 }
                 ?.let { "%.1f%%".format(it.unbalancePct) }
 
-            // 1B: Board header fields — stored on CircuitEntity, previously unrendered.
+            // Phase 3A: Busbar Sizing Engine (IEC 61439-1 / DIN 43671 / IEC 60865)
+            val busbarSizing = if (nodeType in BOARD_ROLLUP_NODE_TYPES) {
+                val scKaAtBoard = scRes?.iscKA ?: 0.0
+                val incRating = sizingRes?.deviceSize_A?.takeIf { it > 0.0 } ?: circ.overrideDeviceSize
+                com.example.engine.BusbarSizingEngine.sizeBusbar(
+                    designCurrentA = boardCurrentA,
+                    incomerRatingA = incRating,
+                    faultLevelKa = scKaAtBoard,
+                    faultDurationS = 1.0,
+                    voltageV = if (circ.voltageV > 0) circ.voltageV.toDouble() else 400.0,
+                    material = com.example.engine.BusbarMaterial.COPPER,
+                    finish = com.example.engine.BusbarFinish.BARE,
+                    ipRating = circ.ipRating ?: "IP54",
+                    ambientTempC = 35.0,
+                    manualRatingA = circ.busbarRatingA,
+                    manualScKa = circ.scRatingKA
+                )
+            } else null
+
+            // 1B + Phase 3A: Board header fields — engine-backed or stored on CircuitEntity
             val mainIncomingStr = when {
                 !circ.mainIncomingType.isNullOrBlank() && (circ.mainIncomingCount ?: 0) > 1 ->
                     "${circ.mainIncomingCount}× ${circ.mainIncomingType}"
                 !circ.mainIncomingType.isNullOrBlank() -> circ.mainIncomingType
                 else -> null
             }
-            val busbarRatingStr = circ.busbarRatingA?.takeIf { it > 0.0 }?.let {
+            val busbarRatingStr = busbarSizing?.ratedCurrentA?.let {
+                if (it == it.toLong().toDouble()) "${it.toLong()} A" else "$it A"
+            } ?: circ.busbarRatingA?.takeIf { it > 0.0 }?.let {
                 if (it == it.toLong().toDouble()) "${it.toLong()} A" else "$it A"
             }
-            val scRatingStr = circ.scRatingKA?.takeIf { it > 0.0 }?.let {
+            val scRatingStr = busbarSizing?.icwKA?.let {
+                if (it == it.toLong().toDouble()) "${it.toLong()} kA" else "$it kA"
+            } ?: circ.scRatingKA?.takeIf { it > 0.0 }?.let {
                 if (it == it.toLong().toDouble()) "${it.toLong()} kA" else "$it kA"
             }
+            val busbarSizeStr = busbarSizing?.profile?.description
+            val busbarIpkStr = busbarSizing?.ipkKA?.let { "$it kA" }
+            val busbarNeutralStr = busbarSizing?.neutralProfile
+            val busbarPeStr = busbarSizing?.peProfile
+            val busbarMaterialStr = busbarSizing?.material?.displayName
 
             val node = SldNode(
                 id = circNodeId,
@@ -1233,6 +1328,11 @@ object ElectricalNetworkGraphBuilder {
                     voltageDropLimitPct = if (circ.maxVDpct > 0.0) "%.2f%%".format(circ.maxVDpct * 100.0) else null,
                     busbarRatingA = busbarRatingStr,
                     scRatingKA = scRatingStr,
+                    busbarSize = busbarSizeStr,
+                    busbarIpkKa = busbarIpkStr,
+                    busbarNeutral = busbarNeutralStr,
+                    busbarPe = busbarPeStr,
+                    busbarMaterial = busbarMaterialStr,
                     ipRating = circ.ipRating?.takeIf { it.isNotBlank() },
                     panelLocation = circ.panelLocation?.takeIf { it.isNotBlank() },
                     numberOfWays = circ.numberOfWays?.takeIf { it > 0 }?.let { "$it" },

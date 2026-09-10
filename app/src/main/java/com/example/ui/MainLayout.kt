@@ -431,7 +431,7 @@ fun MainLayout(
             SldScreen(
                 state = uiStateVal,
                 activeProjectId = activeProject?.projectId ?: "",
-                projectName = projectName,
+                projectName = activeProject?.projectName ?: "VoltAtlas",
                 isFullscreen = true,
                 onToggleFullscreen = { isSldFullscreen = it },
                 onBackToProjects = { viewModel.closeProject() },
@@ -1232,30 +1232,35 @@ private fun RenderTabContent(
             )
         }
         4 -> ProtectionScreen(uiStateVal, onSaveEarthing = { viewModel.onSaveEarthing(it) })
-        5 -> SldScreen(
-            circuits = uiStateVal.circuits,
-            activeProjectId = viewModel.activeProjectId.value ?: "",
-            sizingResults = uiStateVal.sizingResults,
-            shortCircuitResults = uiStateVal.shortCircuitResults,
-            atsEntity = uiStateVal.atsEntity,
-            transformers = uiStateVal.transformers,
-            transformerResults = uiStateVal.transformerResults,
-            generatorResult = uiStateVal.generatorResult,
-            generators = uiStateVal.generators,
-            generatorResults = uiStateVal.generatorResults,
-            atsResult = uiStateVal.atsResult,
-            atsList = uiStateVal.atsList,
-            atsResults = uiStateVal.atsResults,
-            upsEntity = uiStateVal.upsList.firstOrNull(),
-            upsResult = uiStateVal.upsResult,
-            upsList = uiStateVal.upsList,
-            upsResults = uiStateVal.upsResults,
-            protectionResults = uiStateVal.protectionResults,
-            adsResults = uiStateVal.adsResults,
-            projectRevision = viewModel.projects.value
-                .find { it.projectId == (viewModel.activeProjectId.value ?: "") }?.revision,
-            onNavigateToTab = onNavigateTab
-        )
+        5 -> {
+            val projectsVal by viewModel.projects.collectAsState()
+            val activeIdVal by viewModel.activeProjectId.collectAsState()
+            val activeProjVal = projectsVal.find { it.projectId == activeIdVal }
+            SldScreen(
+                circuits = uiStateVal.circuits,
+                activeProjectId = activeIdVal ?: "",
+                projectName = activeProjVal?.projectName ?: "VoltAtlas",
+                sizingResults = uiStateVal.sizingResults,
+                shortCircuitResults = uiStateVal.shortCircuitResults,
+                atsEntity = uiStateVal.atsEntity,
+                transformers = uiStateVal.transformers,
+                transformerResults = uiStateVal.transformerResults,
+                generatorResult = uiStateVal.generatorResult,
+                generators = uiStateVal.generators,
+                generatorResults = uiStateVal.generatorResults,
+                atsResult = uiStateVal.atsResult,
+                atsList = uiStateVal.atsList,
+                atsResults = uiStateVal.atsResults,
+                upsEntity = uiStateVal.upsList.firstOrNull(),
+                upsResult = uiStateVal.upsResult,
+                upsList = uiStateVal.upsList,
+                upsResults = uiStateVal.upsResults,
+                protectionResults = uiStateVal.protectionResults,
+                adsResults = uiStateVal.adsResults,
+                projectRevision = activeProjVal?.revision,
+                onNavigateToTab = onNavigateTab
+            )
+        }
         6 -> ConduitFillScreen(viewModel)
         7 -> BoqProcurementScreen(uiStateVal)
         8 -> {
