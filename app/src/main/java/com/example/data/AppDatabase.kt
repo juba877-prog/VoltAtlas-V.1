@@ -947,6 +947,81 @@ val MIGRATION_24_25 = object : Migration(24, 25) {
     }
 }
 
+/**
+ * v25 -> v26 (Phase 1 Referential Integrity & Multi-Instance Power Systems Migration):
+ *
+ * One-time data migration converting legacy equipment inclusion flags into explicit assignments:
+ * 1. Where legacy intent is UNAMBIGUOUS (exactly 1 generator/ATS/UPS exists in the project),
+ *    write the explicit assignment (assignedGeneratorId / assignedAtsId / assignedUpsId) so
+ *    the previously computed attribution is preserved.
+ * 2. Where AMBIGUOUS (more than 1 instance, or 0 instances exist in the project), leave the
+ *    circuit unassigned and clear the stale legacy boolean inclusion flag (generatorIncluded /
+ *    atsIncluded / upsBacked) to prevent phantom adoption or stale reattachment.
+ */
+val MIGRATION_25_26 = object : Migration(25, 26) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // 1. Generator: Unambiguous (count == 1) -> assign explicit ID
+        db.execSQL("""
+            UPDATE `circuits`
+            SET `assignedGeneratorId` = (
+                SELECT `generatorId` FROM `generator_settings` g WHERE g.`projectId` = `circuits`.`projectId`
+            )
+            WHERE `generatorIncluded` = 1
+              AND (`assignedGeneratorId` IS NULL OR `assignedGeneratorId` = '')
+              AND (SELECT COUNT(*) FROM `generator_settings` g WHERE g.`projectId` = `circuits`.`projectId`) = 1
+        """.trimIndent())
+
+        // Generator: Ambiguous (count != 1) -> clear legacy flag
+        db.execSQL("""
+            UPDATE `circuits`
+            SET `generatorIncluded` = 0
+            WHERE `generatorIncluded` = 1
+              AND (`assignedGeneratorId` IS NULL OR `assignedGeneratorId` = '')
+              AND (SELECT COUNT(*) FROM `generator_settings` g WHERE g.`projectId` = `circuits`.`projectId`) != 1
+        """.trimIndent())
+
+        // 2. ATS: Unambiguous (count == 1) -> assign explicit ID
+        db.execSQL("""
+            UPDATE `circuits`
+            SET `assignedAtsId` = (
+                SELECT `atsId` FROM `ats_settings` a WHERE a.`projectId` = `circuits`.`projectId`
+            )
+            WHERE `atsIncluded` = 1
+              AND (`assignedAtsId` IS NULL OR `assignedAtsId` = '')
+              AND (SELECT COUNT(*) FROM `ats_settings` a WHERE a.`projectId` = `circuits`.`projectId`) = 1
+        """.trimIndent())
+
+        // ATS: Ambiguous (count != 1) -> clear legacy flag
+        db.execSQL("""
+            UPDATE `circuits`
+            SET `atsIncluded` = 0
+            WHERE `atsIncluded` = 1
+              AND (`assignedAtsId` IS NULL OR `assignedAtsId` = '')
+              AND (SELECT COUNT(*) FROM `ats_settings` a WHERE a.`projectId` = `circuits`.`projectId`) != 1
+        """.trimIndent())
+
+        // 3. UPS: Unambiguous (count == 1) -> assign explicit ID
+        db.execSQL("""
+            UPDATE `circuits`
+            SET `assignedUpsId` = (
+                SELECT `upsId` FROM `ups_settings` u WHERE u.`projectId` = `circuits`.`projectId`
+            )
+            WHERE `upsBacked` = 1
+              AND (`assignedUpsId` IS NULL OR `assignedUpsId` = '')
+              AND (SELECT COUNT(*) FROM `ups_settings` u WHERE u.`projectId` = `circuits`.`projectId`) = 1
+        """.trimIndent())
+
+        // UPS: Ambiguous (count != 1) -> clear legacy flag
+        db.execSQL("""
+            UPDATE `circuits`
+            SET `upsBacked` = 0
+            WHERE `upsBacked` = 1
+              AND (`assignedUpsId` IS NULL OR `assignedUpsId` = '')
+              AND (SELECT COUNT(*) FROM `ups_settings` u WHERE u.`projectId` = `circuits`.`projectId`) != 1
+        """.trimIndent())
+    }
+}
+
 @Dao
 interface SldNodePositionDao {
     @Query("SELECT * FROM sld_node_positions WHERE projectId = :projectId")
@@ -963,6 +1038,9 @@ interface SldNodePositionDao {
 
     @Query("DELETE FROM sld_node_positions WHERE projectId = :projectId")
     suspend fun clearPositionsForProject(projectId: String)
+
+    @Query("DELETE FROM sld_node_positions WHERE projectId = :projectId AND nodeId = :nodeId")
+    suspend fun deletePositionForNode(projectId: String, nodeId: String)
 }
 
 @Database(
@@ -983,7 +1061,7 @@ interface SldNodePositionDao {
         MutationExecutionReceiptEntity::class,
         BusTieEntity::class
     ],
-    version = 25,
+    version = 26,
     exportSchema = false
 )
 @TypeConverters(AiDatabaseConverters::class)
@@ -1018,7 +1096,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                     MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                     MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24,
-                    MIGRATION_24_25
+                    MIGRATION_24_25, MIGRATION_25_26
                 )
 
 

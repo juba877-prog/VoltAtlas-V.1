@@ -26,7 +26,7 @@ class GeneratorEngineTest {
         )
 
         val circuits = listOf(
-            CircuitEntity(id = 1, circuitName = "EMERGENCY-MDB", loadKVA = 250.0, generatorIncluded = true)
+            CircuitEntity(id = 1, circuitName = "EMERGENCY-MDB", loadKVA = 250.0, generatorIncluded = true, assignedGeneratorId = "GEN-01")
         )
 
         val result = GeneratorEngine.calculate(settings, circuits, 250.0)
@@ -59,7 +59,7 @@ class GeneratorEngineTest {
         )
 
         val circuits = listOf(
-            CircuitEntity(id = 1, circuitName = "EMERGENCY-LOAD", loadKVA = 300.0, generatorIncluded = true)
+            CircuitEntity(id = 1, circuitName = "EMERGENCY-LOAD", loadKVA = 300.0, generatorIncluded = true, assignedGeneratorId = "GEN-01")
         )
 
         val result = GeneratorEngine.calculate(settings, circuits, 300.0)
@@ -93,7 +93,7 @@ class GeneratorEngineTest {
             enableManualOverride = true,
             manualSizeKVA = 500.0
         )
-        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-MDB", loadKVA = 250.0, generatorIncluded = true))
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-MDB", loadKVA = 250.0, generatorIncluded = true, assignedGeneratorId = "GEN-01"))
         val result = GeneratorEngine.calculate(settings, circuits, 250.0)
 
         assertEquals("Manual Override Active", result.status)
@@ -107,7 +107,7 @@ class GeneratorEngineTest {
             enableManualOverride = true,
             manualSizeKVA = 100.0
         )
-        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-MDB", loadKVA = 250.0, generatorIncluded = true))
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-MDB", loadKVA = 250.0, generatorIncluded = true, assignedGeneratorId = "GEN-01"))
         val result = GeneratorEngine.calculate(settings, circuits, 250.0)
 
         assertEquals("Manual Override Active", result.status)
@@ -118,7 +118,7 @@ class GeneratorEngineTest {
     @Test
     fun testGeneratorDefaultAutoSizingRegression() {
         val settings = GeneratorEntity(enableManualOverride = false, manualSizeKVA = null)
-        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-MDB", loadKVA = 250.0, generatorIncluded = true))
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-MDB", loadKVA = 250.0, generatorIncluded = true, assignedGeneratorId = "GEN-01"))
         val result = GeneratorEngine.calculate(settings, circuits, 250.0)
 
         assertEquals(250.0, result.finalSize ?: 0.0, 0.1)

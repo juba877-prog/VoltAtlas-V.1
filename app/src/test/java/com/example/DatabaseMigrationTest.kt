@@ -499,7 +499,7 @@ class DatabaseMigrationTest {
                 MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                 MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                 MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24,
-                MIGRATION_24_25
+                MIGRATION_24_25, MIGRATION_25_26
             )
             .allowMainThreadQueries()
             .build()
@@ -564,9 +564,9 @@ class DatabaseMigrationTest {
                 assertEquals("Post-migration revision must advance from 1 to 2 after repository mutation", 2L, snapAfterMutation.revision)
             }
 
-            // Confirm database version is now 25 (Phase 2B v24→v25 schema) and canonical paths are identical
+            // Confirm database version is now 26 (Phase 1 referential integrity & multi-instance schema) and canonical paths are identical
             val supportDb = appDb.openHelper.writableDatabase
-            assertEquals("Database version must be 25 after Room migration", 25, supportDb.version)
+            assertEquals("Database version must be 26 after Room migration", 26, supportDb.version)
 
             val openedCanonicalPath = java.io.File(supportDb.path!!).canonicalPath
             val setupCanonicalPath = tempDbFile.canonicalPath
@@ -576,6 +576,13 @@ class DatabaseMigrationTest {
             appDb.close()
             tempDbFile.delete()
         }
+    }
+
+    @Test
+    fun testMigration25To26SQLDefinition() {
+        val migration = MIGRATION_25_26
+        assertEquals(25, migration.startVersion)
+        assertEquals(26, migration.endVersion)
     }
 
     @Test

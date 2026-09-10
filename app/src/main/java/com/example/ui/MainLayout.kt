@@ -1211,6 +1211,7 @@ private fun RenderTabContent(
             val upsSet = viewModel.upsSettings.collectAsState().value ?: com.example.data.UpsEntity()
             val pfGlob = viewModel.pfGlobalSettings.collectAsState().value ?: com.example.data.PfGlobalEntity()
             val pfTrans = viewModel.pfTransformerSettings.collectAsState().value
+            val pendingDeleteVal by viewModel.pendingDeleteConfirmation.collectAsState()
             PowerSystemsScreen(
                 state = uiStateVal,
                 generatorSettings = genSet,
@@ -1224,11 +1225,14 @@ private fun RenderTabContent(
                 onSavePfGlobal = { viewModel.savePfGlobalSettings(it) },
                 onSavePfTransformer = { viewModel.savePfTransformerSettings(it) },
                 onAddGenerator = { viewModel.addGenerator() },
-                onDeleteGenerator = { viewModel.deleteGenerator(it) },
+                onDeleteGenerator = { viewModel.requestDeleteGenerator(it) },
                 onAddAts = { viewModel.addAts() },
-                onDeleteAts = { viewModel.deleteAts(it) },
+                onDeleteAts = { viewModel.requestDeleteAts(it) },
                 onAddUps = { viewModel.addUps() },
-                onDeleteUps = { viewModel.deleteUps(it) }
+                onDeleteUps = { viewModel.requestDeleteUps(it) },
+                pendingDeleteConfirmation = pendingDeleteVal,
+                onConfirmDelete = { viewModel.confirmPendingDelete() },
+                onCancelDelete = { viewModel.cancelPendingDelete() }
             )
         }
         4 -> ProtectionScreen(uiStateVal, onSaveEarthing = { viewModel.onSaveEarthing(it) })

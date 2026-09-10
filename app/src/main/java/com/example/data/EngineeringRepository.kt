@@ -75,7 +75,7 @@ class EngineeringRepository(
 
 
     // Power Systems
-    private val powerSystemsDao = db.powerSystemsDao()
+    val powerSystemsDao = db.powerSystemsDao()
     
     fun generatorSettingsFlow(projectId: String) = powerSystemsDao.getGeneratorSettings(projectId)
     fun generatorsFlow(projectId: String) = powerSystemsDao.getAllGeneratorSettings(projectId)
@@ -85,13 +85,41 @@ class EngineeringRepository(
     suspend fun deleteGenerator(projectId: String, generatorId: String) = withProjectMutation(projectId) {
         val circuits = circuitDao.getCircuitsListForProject(projectId)
         circuits.filter { it.assignedGeneratorId == generatorId }.forEach { c ->
-            circuitDao.insertCircuit(c.copy(assignedGeneratorId = null))
+            circuitDao.insertCircuit(c.copy(assignedGeneratorId = null, generatorIncluded = false))
         }
-        val atsList = powerSystemsDao.getAllAtsSettings(projectId).firstOrNull() ?: emptyList()
-        atsList.filter { it.emergencySourceId == generatorId }.forEach { ats ->
-            powerSystemsDao.saveAtsSettings(ats.copy(emergencySourceId = null))
+        val atsList = powerSystemsDao.getAllAtsList(projectId)
+        atsList.filter { it.emergencySourceId == generatorId || it.normalSourceId == generatorId }.forEach { ats ->
+            powerSystemsDao.saveAtsSettings(
+                ats.copy(
+                    emergencySourceId = if (ats.emergencySourceId == generatorId) null else ats.emergencySourceId,
+                    normalSourceId = if (ats.normalSourceId == generatorId) null else ats.normalSourceId
+                )
+            )
         }
+
+        // Dissolve paralleling group if remaining membership drops below shared threshold (K3, K4)
+        val deletedGen = powerSystemsDao.getAllGeneratorsList(projectId)
+            .firstOrNull { it.generatorId == generatorId }
+        if (deletedGen != null) {
+            val groupKey = deletedGen.parallelingGroupKey()
+            if (groupKey != null) {
+                val allGens = powerSystemsDao.getAllGeneratorsList(projectId)
+                val remainingMembers = allGens.filter { gen ->
+                    gen.generatorId != generatorId && gen.parallelingGroupKey() == groupKey
+                }
+                if (remainingMembers.size < GeneratorEntity.MIN_PARALLELING_GROUP_SIZE) {
+                    remainingMembers.forEach { member ->
+                        powerSystemsDao.saveGeneratorSettings(
+                            member.copy(parallelingGroupId = null, syncBusId = null)
+                        )
+                    }
+                }
+            }
+        }
+
+        sldNodePositionDao.deletePositionForNode(projectId, "gen_$generatorId")
         powerSystemsDao.deleteGeneratorSettings(projectId, generatorId)
+        EngineeringCalculationCoordinator.clearProjectCache(projectId)
     }
 
     suspend fun createGeneratorAtomic(projectId: String, baseSettings: GeneratorEntity = GeneratorEntity()): GeneratorEntity = withProjectMutation(projectId) {
@@ -117,9 +145,23 @@ class EngineeringRepository(
     suspend fun deleteAts(projectId: String, atsId: String) = withProjectMutation(projectId) {
         val circuits = circuitDao.getCircuitsListForProject(projectId)
         circuits.filter { it.assignedAtsId == atsId }.forEach { c ->
-            circuitDao.insertCircuit(c.copy(assignedAtsId = null))
+            circuitDao.insertCircuit(c.copy(assignedAtsId = null, atsIncluded = false))
         }
+
+        // Clear reverse-direction ATS source links on other ATS devices referencing this ATS (K2)
+        val allAts = powerSystemsDao.getAllAtsList(projectId)
+        allAts.filter { it.atsId != atsId && (it.emergencySourceId == atsId || it.normalSourceId == atsId) }.forEach { otherAts ->
+            powerSystemsDao.saveAtsSettings(
+                otherAts.copy(
+                    emergencySourceId = if (otherAts.emergencySourceId == atsId) null else otherAts.emergencySourceId,
+                    normalSourceId = if (otherAts.normalSourceId == atsId) null else otherAts.normalSourceId
+                )
+            )
+        }
+
+        sldNodePositionDao.deletePositionForNode(projectId, "ats_$atsId")
         powerSystemsDao.deleteAtsSettings(projectId, atsId)
+        EngineeringCalculationCoordinator.clearProjectCache(projectId)
     }
 
     suspend fun createAtsAtomic(projectId: String, baseSettings: AtsEntity = AtsEntity()): AtsEntity = withProjectMutation(projectId) {
@@ -145,9 +187,23 @@ class EngineeringRepository(
     suspend fun deleteUps(projectId: String, upsId: String) = withProjectMutation(projectId) {
         val circuits = circuitDao.getCircuitsListForProject(projectId)
         circuits.filter { it.assignedUpsId == upsId }.forEach { c ->
-            circuitDao.insertCircuit(c.copy(assignedUpsId = null))
+            circuitDao.insertCircuit(c.copy(assignedUpsId = null, upsBacked = false))
         }
+
+        // Defensive check for any ATS referencing this UPS (K2)
+        val allAts = powerSystemsDao.getAllAtsList(projectId)
+        allAts.filter { it.emergencySourceId == upsId || it.normalSourceId == upsId }.forEach { ats ->
+            powerSystemsDao.saveAtsSettings(
+                ats.copy(
+                    emergencySourceId = if (ats.emergencySourceId == upsId) null else ats.emergencySourceId,
+                    normalSourceId = if (ats.normalSourceId == upsId) null else ats.normalSourceId
+                )
+            )
+        }
+
+        sldNodePositionDao.deletePositionForNode(projectId, "ups_$upsId")
         powerSystemsDao.deleteUpsSettings(projectId, upsId)
+        EngineeringCalculationCoordinator.clearProjectCache(projectId)
     }
 
     suspend fun createUpsAtomic(projectId: String, baseSettings: UpsEntity = UpsEntity()): UpsEntity = withProjectMutation(projectId) {
@@ -1114,6 +1170,114 @@ class EngineeringRepository(
                             )
                             importedSldCount++
                         }
+                    }
+                }
+
+                // 12. Post-import referential integrity migration for legacy power system flags (K1)
+                val importedGens = powerSystemsDao.getAllGeneratorsList(newProjectId)
+                val importedAtsList = powerSystemsDao.getAllAtsList(newProjectId)
+                val importedUpsList = powerSystemsDao.getAllUpsList(newProjectId)
+                val importedCircuits = circuitDao.getCircuitsListForProject(newProjectId)
+
+                for (circ in importedCircuits) {
+                    var updated = circ
+                    var changed = false
+
+                    // Generator migration
+                    if (circ.generatorIncluded && circ.assignedGeneratorId.isNullOrBlank()) {
+                        if (importedGens.size == 1) {
+                            val soleGen = importedGens.single()
+                            updated = updated.copy(assignedGeneratorId = soleGen.generatorId)
+                            changed = true
+                            notices.add(
+                                MigrationNotice(
+                                    "Circuit",
+                                    circ.circuitName,
+                                    "assignedGeneratorId",
+                                    MigrationFieldClassification.MIGRATED,
+                                    "Assigned legacy generator-included circuit to unambiguous generator ${soleGen.generatorId}."
+                                )
+                            )
+                        } else {
+                            updated = updated.copy(generatorIncluded = false)
+                            changed = true
+                            notices.add(
+                                MigrationNotice(
+                                    "Circuit",
+                                    circ.circuitName,
+                                    "generatorIncluded",
+                                    MigrationFieldClassification.INVALID,
+                                    "Ambiguous legacy generator inclusion cleared (${importedGens.size} generators present); circuit remains unassigned."
+                                )
+                            )
+                            warnings.add("Circuit '${circ.circuitName}' was marked for generator supply but could not be unambiguously assigned (${importedGens.size} generators present). Assign explicitly.")
+                        }
+                    }
+
+                    // ATS migration
+                    if (circ.atsIncluded && circ.assignedAtsId.isNullOrBlank()) {
+                        if (importedAtsList.size == 1) {
+                            val soleAts = importedAtsList.single()
+                            updated = updated.copy(assignedAtsId = soleAts.atsId)
+                            changed = true
+                            notices.add(
+                                MigrationNotice(
+                                    "Circuit",
+                                    circ.circuitName,
+                                    "assignedAtsId",
+                                    MigrationFieldClassification.MIGRATED,
+                                    "Assigned legacy ATS-included circuit to unambiguous ATS ${soleAts.atsId}."
+                                )
+                            )
+                        } else {
+                            updated = updated.copy(atsIncluded = false)
+                            changed = true
+                            notices.add(
+                                MigrationNotice(
+                                    "Circuit",
+                                    circ.circuitName,
+                                    "atsIncluded",
+                                    MigrationFieldClassification.INVALID,
+                                    "Ambiguous legacy ATS inclusion cleared (${importedAtsList.size} ATS instances present); circuit remains unassigned."
+                                )
+                            )
+                            warnings.add("Circuit '${circ.circuitName}' was marked for ATS transfer but could not be unambiguously assigned (${importedAtsList.size} ATS present). Assign explicitly.")
+                        }
+                    }
+
+                    // UPS migration
+                    if (circ.upsBacked && circ.assignedUpsId.isNullOrBlank()) {
+                        if (importedUpsList.size == 1) {
+                            val soleUps = importedUpsList.single()
+                            updated = updated.copy(assignedUpsId = soleUps.upsId)
+                            changed = true
+                            notices.add(
+                                MigrationNotice(
+                                    "Circuit",
+                                    circ.circuitName,
+                                    "assignedUpsId",
+                                    MigrationFieldClassification.MIGRATED,
+                                    "Assigned legacy UPS-backed circuit to unambiguous UPS ${soleUps.upsId}."
+                                )
+                            )
+                        } else {
+                            updated = updated.copy(upsBacked = false)
+                            changed = true
+                            notices.add(
+                                MigrationNotice(
+                                    "Circuit",
+                                    circ.circuitName,
+                                    "upsBacked",
+                                    MigrationFieldClassification.INVALID,
+                                    "Ambiguous legacy UPS-backed flag cleared (${importedUpsList.size} UPS present); circuit remains unassigned."
+                                )
+                            )
+                            warnings.add("Circuit '${circ.circuitName}' was marked as UPS-backed but could not be unambiguously assigned (${importedUpsList.size} UPS present). Assign explicitly.")
+                        }
+                    }
+
+                    if (changed) {
+                        circuitDao.updateCircuit(updated)
                     }
                 }
             }

@@ -205,18 +205,27 @@ object AtsEngine {
         totalConnectedLoad: Double = 0.0
     ): Map<String, AtsResult> {
         if (atsList.isEmpty()) return emptyMap()
+
+        val unassignedAtsCircuits = circuits.filter { circ ->
+            circ.atsIncluded && circ.assignedAtsId == null
+        }
+        val unassignedWarnings = if (unassignedAtsCircuits.isNotEmpty()) {
+            val names = unassignedAtsCircuits.joinToString { it.circuitName.ifBlank { "ID ${it.id}" } }
+            listOf("WARNING: ${unassignedAtsCircuits.size} circuit(s) flagged as ATS-included but not assigned to any ATS: $names. Assign explicitly.")
+        } else emptyList()
+
         return atsList.associate { ats ->
-            val emergencyGenId = ats.emergencySourceId ?: "GEN-01"
-            val genSize = generatorSelectedSizes[emergencyGenId] ?: 0.0
+            val emergencyGenId = ats.emergencySourceId
+            val genSize = emergencyGenId?.let { generatorSelectedSizes[it] } ?: 0.0
             val atsCircuits = circuits.filter { circ ->
                 if (circ.assignedAtsId != null) {
                     circ.assignedAtsId == ats.atsId
                 } else {
-                    circ.atsIncluded && ats.atsId == "ATS-01"
+                    false
                 }
             }
             val essentialLoadKVA = atsCircuits.sumOf { it.loadKVA }
-            ats.atsId to calculate(
+            val res = calculate(
                 settings = ats,
                 totalConnectedLoad = totalConnectedLoad,
                 essentialLoadKVA = essentialLoadKVA,
@@ -225,6 +234,8 @@ object AtsEngine {
                 isc3PhaseAtTransformer = isc3PhaseAtTransformer,
                 circuits = circuits
             )
+            val mergedMessages = if (unassignedWarnings.isNotEmpty()) res.messages + unassignedWarnings else res.messages
+            ats.atsId to res.copy(messages = mergedMessages)
         }
     }
 }

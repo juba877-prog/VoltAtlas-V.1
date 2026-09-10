@@ -66,10 +66,10 @@ object ShortCircuitEngine {
                 val fedLower = curr.fedFrom.trim().lowercase()
                 if (fedLower in listOf("transformer", "ats", "generator", "grid")) {
                     val atsSource = if (fedLower == "ats")
-                        atsSelectedSource[curr.assignedAtsId?.uppercase() ?: "ATS-01"]?.uppercase()
+                        curr.assignedAtsId?.let { atsSelectedSource[it.uppercase()] }?.uppercase()
                     else null
                     sourceKind = if (fedLower == "generator" || atsSource == "EMERGENCY") "generator" else "transformer"
-                    sourceId = if (sourceKind == "generator") (curr.assignedGeneratorId ?: "GEN-01") else curr.transformerId
+                    sourceId = if (sourceKind == "generator") (curr.assignedGeneratorId ?: "") else curr.transformerId
                     break
                 }
                 val parentId = circuitParents[curr.id]
@@ -89,7 +89,6 @@ object ShortCircuitEngine {
                     // Z_G = (x″d/100)·(U_rG²/S_rG); R_G ≈ 0.15·X″d for LV machines
                     // (X″d = Z_G/√(1 + 0.15²)). x″d is ASSUMED and flagged; K_G assumed 1.0 (flagged).
                     val genRes = generatorResults[sourceId]
-                        ?: if (generatorResults.size == 1) generatorResults.values.first() else null
                     val genKVA = genRes?.finalSize ?: genRes?.designCapacity ?: 0.0
                     if (genRes == null || genKVA <= 0.0) {
                         results[circuit.id] = buildMissingResult(circuit, "DATA MISSING", "Generator source not found or capacity data unavailable")

@@ -618,7 +618,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
 
             val totalConnectedLoad = transformerResults.values.sumOf { it.connectedLoad }
             val generatorResults = com.example.engine.GeneratorEngine.calculateAll(genList, atsEntitiesList, normalizedCircuits, totalConnectedLoad)
-            val generatorResult = generatorResults["GEN-01"] ?: generatorResults.values.firstOrNull()
+            val generatorResult = generatorResults.values.firstOrNull()
             
             val shortCircuitResults = com.example.engine.coordinator.EngineeringCalculationCoordinator.calculateProjectShortCircuit(
                 resolvedCircuits = resolvedList,
@@ -905,6 +905,99 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    val pendingDeleteConfirmation = MutableStateFlow<EquipmentDeleteConfirmation?>(null)
+
+    fun requestDeleteGenerator(generatorId: String) {
+        val prj = _activeProjectId.value ?: return
+        viewModelScope.launch {
+            val circuits = repository.circuitDao.getCircuitsListForProject(prj)
+            val affectedCircuits = circuits.filter { it.assignedGeneratorId == generatorId }
+                .map { it.circuitName.ifBlank { "Circuit ${it.id}" } }
+            val atsList = repository.powerSystemsDao.getAllAtsList(prj)
+            val affectedAts = atsList.filter { it.emergencySourceId == generatorId || it.normalSourceId == generatorId }.map { ats ->
+                val role = if (ats.emergencySourceId == generatorId) "emergency" else "normal"
+                "${ats.atsName} (${ats.atsId}) loses $role source link"
+            }
+            val allGens = repository.powerSystemsDao.getAllGeneratorsList(prj)
+            val deletedGen = allGens.firstOrNull { it.generatorId == generatorId }
+            val groupKey = deletedGen?.parallelingGroupKey()
+            val groupDissolution = if (groupKey != null) {
+                val remaining = allGens.filter { it.generatorId != generatorId && it.parallelingGroupKey() == groupKey }
+                if (remaining.size < GeneratorEntity.MIN_PARALLELING_GROUP_SIZE) {
+                    val remainingNames = remaining.joinToString { it.generatorName }
+                    "Paralleling group '$groupKey' will be dissolved ($remainingNames becomes standalone)"
+                } else null
+            } else null
+
+            pendingDeleteConfirmation.value = EquipmentDeleteConfirmation(
+                equipmentType = "Generator",
+                equipmentId = generatorId,
+                equipmentName = deletedGen?.generatorName ?: generatorId,
+                affectedCircuits = affectedCircuits,
+                affectedSourceLinks = affectedAts,
+                groupDissolution = groupDissolution
+            )
+        }
+    }
+
+    fun requestDeleteAts(atsId: String) {
+        val prj = _activeProjectId.value ?: return
+        viewModelScope.launch {
+            val circuits = repository.circuitDao.getCircuitsListForProject(prj)
+            val affectedCircuits = circuits.filter { it.assignedAtsId == atsId }
+                .map { it.circuitName.ifBlank { "Circuit ${it.id}" } }
+            val allAts = repository.powerSystemsDao.getAllAtsList(prj)
+            val deletedAts = allAts.firstOrNull { it.atsId == atsId }
+            val affectedAts = allAts.filter { it.atsId != atsId && (it.emergencySourceId == atsId || it.normalSourceId == atsId) }.map { ats ->
+                val role = if (ats.emergencySourceId == atsId) "emergency" else "normal"
+                "${ats.atsName} (${ats.atsId}) loses $role source link"
+            }
+
+            pendingDeleteConfirmation.value = EquipmentDeleteConfirmation(
+                equipmentType = "ATS",
+                equipmentId = atsId,
+                equipmentName = deletedAts?.atsName ?: atsId,
+                affectedCircuits = affectedCircuits,
+                affectedSourceLinks = affectedAts,
+                groupDissolution = null
+            )
+        }
+    }
+
+    fun requestDeleteUps(upsId: String) {
+        val prj = _activeProjectId.value ?: return
+        viewModelScope.launch {
+            val circuits = repository.circuitDao.getCircuitsListForProject(prj)
+            val affectedCircuits = circuits.filter { it.assignedUpsId == upsId }
+                .map { it.circuitName.ifBlank { "Circuit ${it.id}" } }
+            val allUps = repository.powerSystemsDao.getAllUpsList(prj)
+            val deletedUps = allUps.firstOrNull { it.upsId == upsId }
+
+            pendingDeleteConfirmation.value = EquipmentDeleteConfirmation(
+                equipmentType = "UPS",
+                equipmentId = upsId,
+                equipmentName = deletedUps?.upsName ?: upsId,
+                affectedCircuits = affectedCircuits,
+                affectedSourceLinks = emptyList(),
+                groupDissolution = null
+            )
+        }
+    }
+
+    fun confirmPendingDelete() {
+        val conf = pendingDeleteConfirmation.value ?: return
+        pendingDeleteConfirmation.value = null
+        when (conf.equipmentType) {
+            "Generator" -> deleteGenerator(conf.equipmentId)
+            "ATS" -> deleteAts(conf.equipmentId)
+            "UPS" -> deleteUps(conf.equipmentId)
+        }
+    }
+
+    fun cancelPendingDelete() {
+        pendingDeleteConfirmation.value = null
+    }
+
     fun deleteGenerator(generatorId: String) {
         val prj = _activeProjectId.value ?: return
         viewModelScope.launch {
@@ -1047,5 +1140,14 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 }
+
+data class EquipmentDeleteConfirmation(
+    val equipmentType: String,
+    val equipmentId: String,
+    val equipmentName: String,
+    val affectedCircuits: List<String>,
+    val affectedSourceLinks: List<String>,
+    val groupDissolution: String?
+)
 
 

@@ -260,13 +260,11 @@ object ElectricalNetworkGraphBuilder {
         run {
             val syncGroups = linkedMapOf<String, MutableList<GeneratorEntity>>()
             projGenerators.forEach { gen ->
-                val groupKey = gen.syncBusId?.takeIf { it.isNotBlank() }
-                    ?: gen.parallelingGroupId?.takeIf { it.isNotBlank() }
-                    ?: return@forEach
+                val groupKey = gen.parallelingGroupKey() ?: return@forEach
                 syncGroups.getOrPut(groupKey) { mutableListOf() }.add(gen)
             }
             syncGroups.forEach { (groupKey, groupGens) ->
-                if (groupGens.size < 2) return@forEach
+                if (groupGens.size < GeneratorEntity.MIN_PARALLELING_GROUP_SIZE) return@forEach
                 val syncNodeId = "sync_$groupKey"
                 val groupKva = groupGens.sumOf { (it.manualSizeKVA ?: 0.0) }
                 val groupKvaStr = if (groupKva > 0.0) " %.0f kVA total".format(groupKva) else ""
@@ -1061,10 +1059,45 @@ object ElectricalNetworkGraphBuilder {
 
                 val matchedUps = if (!circ.assignedUpsId.isNullOrBlank()) {
                     projUpsList.firstOrNull { it.upsId.equals(circ.assignedUpsId, ignoreCase = true) }
-                } else if (circ.upsBacked) {
-                    projUpsList.firstOrNull()
                 } else {
                     projUpsList.firstOrNull { it.upsName.equals(circ.fedFrom.trim(), ignoreCase = true) || it.upsId.equals(circ.fedFrom.trim(), ignoreCase = true) }
+                }
+
+                if (circ.upsBacked && circ.assignedUpsId.isNullOrBlank() && matchedUps == null) {
+                    validationIssues.add(
+                        SldValidationIssue(
+                            affectedNodeId = circNodeId,
+                            componentName = circ.circuitName,
+                            failedCondition = "Circuit is marked as UPS-backed but is not explicitly assigned to any UPS instance",
+                            issueCode = "UNASSIGNED_UPS_CIRCUIT",
+                            severity = SldValidationStatus.WARNING,
+                            recommendedCorrection = "Explicitly assign a UPS instance in the circuit editor"
+                        )
+                    )
+                }
+                if (circ.atsIncluded && circ.assignedAtsId.isNullOrBlank() && matchedAts == null) {
+                    validationIssues.add(
+                        SldValidationIssue(
+                            affectedNodeId = circNodeId,
+                            componentName = circ.circuitName,
+                            failedCondition = "Circuit is marked as ATS-included but is not explicitly assigned to any ATS instance",
+                            issueCode = "UNASSIGNED_ATS_CIRCUIT",
+                            severity = SldValidationStatus.WARNING,
+                            recommendedCorrection = "Explicitly assign an ATS instance in the circuit editor"
+                        )
+                    )
+                }
+                if (circ.generatorIncluded && circ.assignedGeneratorId.isNullOrBlank() && circ.assignedAtsId.isNullOrBlank() && matchedGen == null) {
+                    validationIssues.add(
+                        SldValidationIssue(
+                            affectedNodeId = circNodeId,
+                            componentName = circ.circuitName,
+                            failedCondition = "Circuit is marked as generator-included but is not explicitly assigned to any generator or emergency ATS",
+                            issueCode = "UNASSIGNED_GENERATOR_CIRCUIT",
+                            severity = SldValidationStatus.WARNING,
+                            recommendedCorrection = "Explicitly assign a generator or ATS instance in the circuit editor"
+                        )
+                    )
                 }
 
                 if (matchedUps != null) {

@@ -28,7 +28,7 @@ object GeneratorEngine {
         atsList: List<com.example.data.AtsEntity> = emptyList()
     ): GeneratorResult {
         val genId = settings.generatorId
-        val atsFeedingThisGen = atsList.filter { it.emergencySourceId == genId || (it.emergencySourceId.isNullOrBlank() && genId == "GEN-01") }.map { it.atsId }.toSet()
+        val atsFeedingThisGen = atsList.filter { it.emergencySourceId == genId }.map { it.atsId }.toSet()
 
         val generatorCircuits = circuits.filter { circ ->
             if (circ.assignedGeneratorId != null) {
@@ -36,10 +36,10 @@ object GeneratorEngine {
                 circ.assignedGeneratorId == genId
             } else if (circ.assignedAtsId != null) {
                 // If no direct generator assigned, route via ATS emergency source
-                atsFeedingThisGen.contains(circ.assignedAtsId) || (circ.assignedAtsId == "ATS-01" && genId == "GEN-01")
+                atsFeedingThisGen.contains(circ.assignedAtsId)
             } else {
-                // Legacy fallback for single-instance projects
-                circ.generatorIncluded && genId == "GEN-01"
+                // Unassigned circuits with legacy/stale flags are attributed to NO instance (B1)
+                false
             }
         }
         
@@ -185,8 +185,21 @@ object GeneratorEngine {
         totalConnectedLoad: Double
     ): Map<String, GeneratorResult> {
         if (generators.isEmpty()) return emptyMap()
+
+        // Unassigned circuits warning (B1)
+        val unassignedGenCircuits = circuits.filter { circ ->
+            circ.generatorIncluded && circ.assignedGeneratorId == null &&
+            !atsList.any { ats -> ats.emergencySourceId != null && circ.assignedAtsId == ats.atsId }
+        }
+        val unassignedWarnings = if (unassignedGenCircuits.isNotEmpty()) {
+            val names = unassignedGenCircuits.joinToString { it.circuitName.ifBlank { "ID ${it.id}" } }
+            listOf("WARNING: ${unassignedGenCircuits.size} circuit(s) flagged as generator-included but not assigned to any generator: $names. Assign explicitly.")
+        } else emptyList()
+
         return generators.associate { gen ->
-            gen.generatorId to calculate(gen, circuits, totalConnectedLoad, atsList)
+            val res = calculate(gen, circuits, totalConnectedLoad, atsList)
+            val mergedMessages = if (unassignedWarnings.isNotEmpty()) res.messages + unassignedWarnings else res.messages
+            gen.generatorId to res.copy(messages = mergedMessages)
         }
     }
 }

@@ -184,9 +184,67 @@ fun PowerSystemsScreen(
     onAddAts: () -> Unit = {},
     onDeleteAts: (String) -> Unit = {},
     onAddUps: () -> Unit = {},
-    onDeleteUps: (String) -> Unit = {}
+    onDeleteUps: (String) -> Unit = {},
+    pendingDeleteConfirmation: EquipmentDeleteConfirmation? = null,
+    onConfirmDelete: () -> Unit = {},
+    onCancelDelete: () -> Unit = {}
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(0) }
+
+    if (pendingDeleteConfirmation != null) {
+        AlertDialog(
+            onDismissRequest = onCancelDelete,
+            title = {
+                Text(
+                    text = "Delete ${pendingDeleteConfirmation.equipmentType}: ${pendingDeleteConfirmation.equipmentName}?",
+                    style = DsType.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                    Text(
+                        text = "Are you sure you want to delete ${pendingDeleteConfirmation.equipmentId}? This action cannot be undone.",
+                        style = DsType.bodyMedium
+                    )
+                    if (pendingDeleteConfirmation.affectedCircuits.isNotEmpty()) {
+                        Text(
+                            text = "• ${pendingDeleteConfirmation.affectedCircuits.size} circuit(s) will lose equipment assignment: ${pendingDeleteConfirmation.affectedCircuits.joinToString()}",
+                            style = DsType.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (pendingDeleteConfirmation.affectedSourceLinks.isNotEmpty()) {
+                        Text(
+                            text = "• Dependent source links detached: ${pendingDeleteConfirmation.affectedSourceLinks.joinToString()}",
+                            style = DsType.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (pendingDeleteConfirmation.groupDissolution != null) {
+                        Text(
+                            text = "• ${pendingDeleteConfirmation.groupDissolution}",
+                            style = DsType.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = onConfirmDelete,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.dsExtendedColors.danger)
+                ) {
+                    Text("Delete", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onCancelDelete) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -602,16 +660,16 @@ fun GeneratorSettingsPanel(
             item {
                 val atsList = successState?.atsList ?: emptyList()
                 val atsFeedingThisGen = atsList.filter {
-                    it.emergencySourceId == activeGen.generatorId || (it.emergencySourceId.isNullOrBlank() && activeGen.generatorId == "GEN-01")
+                    it.emergencySourceId == activeGen.generatorId
                 }.map { it.atsId }.toSet()
 
                 val connectedLoads = successState?.circuits?.filter { circ ->
                     if (circ.assignedGeneratorId != null) {
                         circ.assignedGeneratorId == activeGen.generatorId
                     } else if (circ.assignedAtsId != null) {
-                        atsFeedingThisGen.contains(circ.assignedAtsId) || (circ.assignedAtsId == "ATS-01" && activeGen.generatorId == "GEN-01")
+                        atsFeedingThisGen.contains(circ.assignedAtsId)
                     } else {
-                        circ.generatorIncluded && activeGen.generatorId == "GEN-01"
+                        false
                     }
                 } ?: emptyList()
 
@@ -1078,7 +1136,7 @@ fun AtsSettingsPanel(
                     if (circ.assignedAtsId != null) {
                         circ.assignedAtsId == activeAts.atsId
                     } else {
-                        circ.atsIncluded && activeAts.atsId == "ATS-01"
+                        false
                     }
                 }
 
@@ -1525,7 +1583,7 @@ fun UpsSettingsPanel(
                     if (circ.assignedUpsId != null) {
                         circ.assignedUpsId == activeUps.upsId
                     } else {
-                        circ.upsBacked && activeUps.upsId == "UPS-01"
+                        false
                     }
                 }
 

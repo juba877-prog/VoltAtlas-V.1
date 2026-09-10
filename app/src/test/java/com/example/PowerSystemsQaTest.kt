@@ -34,7 +34,7 @@ class PowerSystemsQaTest {
         )
         // 150 kVA essential load
         val circuits = listOf(
-            CircuitEntity(circuitName = "C1", loadKVA = 150.0, generatorIncluded = true, loadType = "Emergency", fedFrom = "Transformer", transformerId = "TX-01", phases = "3P", voltageV = 400, pf = 0.8, safetyFactor = 1.0, manufacturer = "ABB", cableType = "Cu/XLPE", installation = "Laid in Ducts", parallelRuns = 1, airTempC = 40, gndTempC = 40, burialDepth_m = 0.6, soilRes = 125, noCircuits = 1, formation = "Flat", spacing = "Touching", length_m = 50.0, maxVDpct = 0.03)
+            CircuitEntity(circuitName = "C1", loadKVA = 150.0, generatorIncluded = true, assignedGeneratorId = "GEN-01", loadType = "Emergency", fedFrom = "Transformer", transformerId = "TX-01", phases = "3P", voltageV = 400, pf = 0.8, safetyFactor = 1.0, manufacturer = "ABB", cableType = "Cu/XLPE", installation = "Laid in Ducts", parallelRuns = 1, airTempC = 40, gndTempC = 40, burialDepth_m = 0.6, soilRes = 125, noCircuits = 1, formation = "Flat", spacing = "Touching", length_m = 50.0, maxVDpct = 0.03)
         )
         
         val result = GeneratorEngine.calculate(settings, circuits, 500.0)
@@ -345,7 +345,7 @@ class PowerSystemsQaTest {
             largestMotorKW = 0.0
         )
         val circuits = listOf(
-            CircuitEntity(id = 1, circuitName = "ESSENTIAL", loadKVA = 38.00, generatorIncluded = true)
+            CircuitEntity(id = 1, circuitName = "ESSENTIAL", loadKVA = 38.00, generatorIncluded = true, assignedGeneratorId = "GEN-01")
         )
         val result = GeneratorEngine.calculate(settings, circuits, 87.90)
 

@@ -166,7 +166,26 @@ data class GeneratorEntity(
     val parallelingGroupId: String? = null,
     @ColumnInfo(name = "syncBusId", defaultValue = "NULL")
     val syncBusId: String? = null
-)
+) {
+    companion object {
+        /**
+         * Minimum number of generators required to constitute a paralleling / synchronizing group.
+         * A single generator runs standalone and does not warrant a synchronizing bus.
+         * Used both for synchronizing bus synthesis in network topology (SLD) and for
+         * group dissolution upon member deletion to maintain referential integrity.
+         */
+        const val MIN_PARALLELING_GROUP_SIZE = 2
+    }
+
+    /**
+     * Authoritative shared paralleling group key.
+     * Evaluates syncBusId first (preferred), falling back to parallelingGroupId.
+     * Returns null if neither column is populated with a non-blank value.
+     */
+    fun parallelingGroupKey(): String? =
+        syncBusId?.takeIf { it.isNotBlank() }
+            ?: parallelingGroupId?.takeIf { it.isNotBlank() }
+}
 
 @Entity(
     tableName = "ats_settings",

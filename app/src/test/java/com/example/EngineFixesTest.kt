@@ -132,7 +132,7 @@ class EngineFixesTest {
     @Test
     fun testGeneratorSizingDoubleDerating() {
         // Essential load kVA = 100.0
-        val circuit = CircuitEntity(id = 4, circuitName = "Gen-Load", loadKVA = 100.0, generatorIncluded = true)
+        val circuit = CircuitEntity(id = 4, circuitName = "Gen-Load", loadKVA = 100.0, generatorIncluded = true, assignedGeneratorId = "GEN-01")
         val settings = GeneratorEntity(projectId = "DEFAULT_PROJECT", id = 1, generatorPf = 0.8, oversizingFactor = 1.0, stepLoadPct = 0.0, demandFactor = 1.0)
 
         val result = GeneratorEngine.calculate(settings, listOf(circuit), totalConnectedLoad = 100.0)
