@@ -493,7 +493,7 @@ class SldDxfExportCadFidelityTest {
 
         var foundDashedEmergencyWire = false
         forEachEntity(entities) { tag, body ->
-            if (tag == "LINE" && bodyValue(body, 8) == "E-EMERG" && bodyValue(body, 6) == "DASHED") {
+            if ((tag == "LINE" || tag == "POLYLINE") && bodyValue(body, 8) == "E-EMERG" && bodyValue(body, 6) == "DASHED") {
                 foundDashedEmergencyWire = true
                 return@forEachEntity false
             }
@@ -544,9 +544,14 @@ class SldDxfExportCadFidelityTest {
 
         val dxf = SldDxfExporter.generateDxf(crossingResult, "Hop Test")
 
-        // Assert that a true CAD ARC primitive was generated
-        assertTrue("Crossing vertical wire must generate a DXF ARC bridge", dxf.contains("0\nARC\n"))
-        assertTrue("ARC must have radius 8.000", dxf.contains("40\n8.000\n"))
+        // Assert that a true CAD ARC primitive or AC1009 polyline bulge bridge was generated
+        val hasArcOrBulge = dxf.contains("0\nARC\n") || (dxf.contains("0\nPOLYLINE\n") && (dxf.contains("42\n-1.000\n") || dxf.contains("42\n1.000\n")))
+        assertTrue("Crossing vertical wire must generate a DXF ARC or POLYLINE bulge bridge", hasArcOrBulge)
+        if (dxf.contains("0\nARC\n")) {
+            assertTrue("ARC must have radius 8.000", dxf.contains("40\n8.000\n"))
+        } else {
+            assertTrue("POLYLINE must contain bulge 1.0", dxf.contains("42\n-1.000\n") || dxf.contains("42\n1.000\n"))
+        }
     }
 
     @Test

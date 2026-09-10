@@ -102,6 +102,53 @@ class SldDxfGeometryAndCorridorTest {
                 continue
             }
 
+            if (inEntities && code == "0" && value == "POLYLINE") {
+                var layer = ""
+                var linetype = "CONTINUOUS"
+                i += 2
+                while (i < lines.size && lines[i].trim() != "0") {
+                    val c = lines[i].trim()
+                    val v = if (i + 1 < lines.size) lines[i + 1].trim() else ""
+                    when (c) {
+                        "8" -> layer = v
+                        "6" -> linetype = v
+                    }
+                    i += 2
+                }
+                val vertices = mutableListOf<Pair<Float, Float>>()
+                while (i < lines.size) {
+                    val entityType = if (i + 1 < lines.size && lines[i].trim() == "0") lines[i + 1].trim() else ""
+                    if (entityType == "SEQEND") {
+                        i += 2
+                        while (i < lines.size && lines[i].trim() != "0") i += 2
+                        break
+                    }
+                    if (entityType == "VERTEX") {
+                        var vx = 0f
+                        var vy = 0f
+                        i += 2
+                        while (i < lines.size && lines[i].trim() != "0") {
+                            val c = lines[i].trim()
+                            val v = if (i + 1 < lines.size) lines[i + 1].trim() else ""
+                            when (c) {
+                                "10" -> vx = v.toFloat()
+                                "20" -> vy = v.toFloat()
+                            }
+                            i += 2
+                        }
+                        vertices.add(vx to vy)
+                    } else {
+                        break
+                    }
+                }
+                for (j in 0 until vertices.size - 1) {
+                    val (x1, y1) = vertices[j]
+                    val (x2, y2) = vertices[j + 1]
+                    parsedLines.add(DxfLine(layer, x1, y1, x2, y2, linetype))
+                }
+                continue
+            }
+
             if (inEntities && code == "0" && value == "TEXT") {
                 var layer = ""
                 var x = 0f

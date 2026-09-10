@@ -71,11 +71,21 @@ object SldDxfExporter {
     /** MCCB half-height incl. terminal stubs — feeder wires terminate exactly here. */
     const val MCCB_TERMINAL_HALF = 14.0f
 
+    /** ACB half-height incl. terminal stubs. */
+    const val ACB_TERMINAL_HALF = 18.0f
+
     /** Right-hand annotation corridor offset from the wire X (>= 16.0 clearance). */
     const val TEXT_CORRIDOR_OFFSET = 18.0f
 
     /** Corridor vertical line spacing (Cartesian, per master specification). */
     const val CORRIDOR_LINE_SPACING = 13.0f
+
+    /** A 2D polyline vertex with optional bulge for curved arc segments (AC1009 group 42). */
+    data class PolylineVertex(
+        val x: Float,
+        val y: Float,
+        val bulge: Float = 0.0f
+    )
 
     // Locale.US float formatter - MANDATORY for valid DXF group code values
     fun formatFloat(value: Float): String =
@@ -107,6 +117,92 @@ object SldDxfExporter {
         append("11\n").append(formatFloat(x2)).append("\n")
         append("21\n").append(formatFloat(y2)).append("\n")
         append("31\n0.0\n")
+    }
+
+    /**
+     * Appends an AutoCAD R12 (AC1009) 2D POLYLINE entity with discrete VERTEX and SEQEND entities.
+     * Supports DXF Group Code 42 (bulge) for 180-degree hop-arc bridge crossings.
+     */
+    fun StringBuilder.appendPolylineEntity(
+        vertices: List<PolylineVertex>,
+        layer: String,
+        linetype: String = "CONTINUOUS"
+    ) {
+        if (vertices.size < 2) return
+        append("0\nPOLYLINE\n")
+        append("8\n").append(layer).append("\n")
+        if (linetype != "CONTINUOUS") {
+            append("6\n").append(linetype).append("\n")
+        }
+        append("66\n1\n")
+        append("10\n0.0\n20\n0.0\n30\n0.0\n")
+        append("70\n0\n")
+        for (v in vertices) {
+            append("0\nVERTEX\n")
+            append("8\n").append(layer).append("\n")
+            append("10\n").append(formatFloat(v.x)).append("\n")
+            append("20\n").append(formatFloat(v.y)).append("\n")
+            append("30\n0.0\n")
+            if (abs(v.bulge) > 1e-4f) {
+                append("42\n").append(formatFloat(v.bulge)).append("\n")
+            }
+        }
+        append("0\nSEQEND\n")
+        append("8\n").append(layer).append("\n")
+    }
+
+    /**
+     * Groups a sequence of path commands (lines, 90-degree bends, hop-arcs) into continuous polyline chains.
+     * Contiguous commands where consecutive points are within 0.5f are chained together.
+     * Breaker exclusion gaps split paths into distinct polylines, keeping the terminal gap open.
+     */
+    fun groupCommandsIntoPolylineChains(
+        commands: List<SldHopArcEngine.HopPathCommand>
+    ): List<List<PolylineVertex>> {
+        if (commands.isEmpty()) return emptyList()
+
+        val chains = mutableListOf<List<PolylineVertex>>()
+        var currentChain = mutableListOf<PolylineVertex>()
+        var currentEnd: Offset? = null
+
+        for (cmd in commands) {
+            val start = cmd.start
+            val end = cmd.end
+            if (abs(start.x - end.x) < 0.01f && abs(start.y - end.y) < 0.01f) continue
+
+            val bulge = when (cmd) {
+                is SldHopArcEngine.HopPathCommand.Arc -> {
+                    // Downward in screen coords (Y increasing) maps to Cartesian Y decreasing;
+                    // bowing rightwards is clockwise in Cartesian space (bulge = -1.0)
+                    if (cmd.start.y < cmd.end.y) -1.0f else 1.0f
+                }
+                else -> 0.0f
+            }
+
+            val lastEnd = currentEnd
+            if (lastEnd != null && (abs(lastEnd.x - start.x) > 0.5f || abs(lastEnd.y - start.y) > 0.5f)) {
+                if (currentChain.size >= 2) {
+                    chains.add(currentChain.toList())
+                }
+                currentChain = mutableListOf()
+            }
+
+            if (currentChain.isEmpty()) {
+                currentChain.add(PolylineVertex(start.x, flipY(start.y), bulge))
+            } else {
+                val prevLast = currentChain.removeAt(currentChain.size - 1)
+                currentChain.add(prevLast.copy(bulge = bulge))
+            }
+
+            currentChain.add(PolylineVertex(end.x, flipY(end.y), 0.0f))
+            currentEnd = end
+        }
+
+        if (currentChain.size >= 2) {
+            chains.add(currentChain.toList())
+        }
+
+        return chains
     }
 
     fun StringBuilder.appendCircleEntity(
@@ -166,28 +262,39 @@ object SldDxfExporter {
     /**
      * Sanitizes strings for AutoCAD ASCII DXF compatibility.
      * Converts special engineering and Unicode glyphs to standard AutoCAD escape
-     * codes (%%c for diameter/phase, \U+XXXX for Unicode characters like Delta, mm2).
-     * Ensures the emitted DXF is 100% clean 7-bit ASCII/UTF-8 (1 char = 1 byte in
-     * windows-1252) with no decoding conflicts in desktop or mobile CAD viewers.
+     * codes (%%c for diameter/phase, %%d for degree, %%p for plus-minus, \U+XXXX for
+     * Unicode characters like mm2, mm3). Maps Ohm/Delta and bullets cleanly to ASCII.
+     * Guarantees that all emitted characters fall strictly in printable ASCII (0x20..0x7E).
      */
     fun sanitizeDxfText(raw: String): String {
-        val sb = StringBuilder(raw.length)
+        var text = raw
+            .replace("m\u03A9", "mOhm")
+            .replace("mΩ", "mOhm")
+            .replace("m\\U+03A9", "mOhm")
+            .replace("\u03A9", "Ohm")
+            .replace("Ω", "Ohm")
+            .replace("\\U+03A9", "Ohm")
+            .replace("\u0394", "Delta")
+            .replace("Δ", "Delta")
+            .replace("\\U+0394", "Delta")
+            .replace("·", " | ")
+            .replace("•", " - ")
+
+        val sb = StringBuilder(text.length)
         var i = 0
-        while (i < raw.length) {
-            val ch = raw[i]
+        while (i < text.length) {
+            val ch = text[i]
             when (ch) {
                 'Ø', 'ø' -> sb.append("%%c")
                 '°' -> sb.append("%%d")
                 '±' -> sb.append("%%p")
                 '•' -> sb.append(" - ")
-                'Δ' -> sb.append("\\U+0394")
-                'Ω' -> sb.append("\\U+03A9")
                 '²' -> sb.append("\\U+00B2")
                 '³' -> sb.append("\\U+00B3")
                 '\r' -> {} // Strip carriage return
                 in ' '..'~' -> {
                     if (ch == '\\') {
-                        if (i + 2 < raw.length && raw[i + 1] == 'U' && raw[i + 2] == '+') {
+                        if (i + 6 < text.length && text[i + 1] == 'U' && text[i + 2] == '+') {
                             sb.append('\\')
                         } else {
                             sb.append('/')
@@ -213,7 +320,8 @@ object SldDxfExporter {
         x: Float, y: Float,
         text: String?,
         height: Float = 10f,
-        layer: String = "E-TEXT-DATA"
+        layer: String = "E-TEXT-DATA",
+        rotationDeg: Float = 0f
     ) {
         if (text.isNullOrBlank()) return
         val sanitized = text.replace("\r", "").trim()
@@ -221,18 +329,26 @@ object SldDxfExporter {
 
         // Multiline strings decomposed into individual clean 0/TEXT entities
         val lines = sanitized.split("\n")
+        var currentX = x
         var currentY = y
         for (line in lines) {
             val cleanLine = sanitizeDxfText(line).trim()
             if (cleanLine.isNotEmpty()) {
                 append("0\nTEXT\n")
                 append("8\n").append(layer).append("\n")
-                append("10\n").append(formatFloat(x)).append("\n")
+                append("10\n").append(formatFloat(currentX)).append("\n")
                 append("20\n").append(formatFloat(currentY)).append("\n")
                 append("30\n0.0\n")
                 append("40\n").append(formatFloat(height)).append("\n")
+                if (abs(rotationDeg) > 0.01f) {
+                    append("50\n").append(formatFloat(normalizeAngle(rotationDeg))).append("\n")
+                }
                 append("1\n").append(cleanLine).append("\n")
-                currentY -= (height * 1.35f) // Clean vertical line spacing
+                if (abs(rotationDeg - 90f) < 1f) {
+                    currentX += (height * 1.35f)
+                } else {
+                    currentY -= (height * 1.35f) // Clean vertical line spacing
+                }
             }
         }
     }
@@ -940,11 +1056,38 @@ object SldDxfExporter {
         val nodesById = engineResult.nodes.associateBy { it.id }
 
         // Pre-compute in-line feeder breaker centers (screen coords, y-down)
-        data class FeederBreaker(val edge: PositionedSldEdge, val x: Float, val y: Float)
+        data class BreakerInstance(
+            val edge: PositionedSldEdge,
+            val x: Float,
+            val y: Float,
+            val blockName: String,
+            val terminalHalf: Float,
+            val isIncomer: Boolean = false
+        )
+
+        fun selectBreakerBlock(node: PositionedSldNode): Pair<String, Float> {
+            val db = node.dataBlock
+            val typeStr = listOfNotNull(db?.deviceTypeAndRating, db?.mainIncoming).joinToString(" ")
+            if (typeStr.contains("ACB", ignoreCase = true)) return BLK_ACB to ACB_TERMINAL_HALF
+            val ratingStr = db?.busbarRatingA ?: db?.boardDesignCurrentA ?: node.ratingText
+            val ratingA = ratingStr.let { r ->
+                Regex("""(\d+(?:\.\d+)?)\s*A""").find(r)?.groupValues?.get(1)?.toFloatOrNull()
+            }
+            if (ratingA != null && ratingA >= 800f) return BLK_ACB to ACB_TERMINAL_HALF
+            return BLK_MCCB to MCCB_TERMINAL_HALF
+        }
+
         val feederBreakers = engineResult.edges.mapNotNull { edge ->
             val child = nodesById[edge.toId]
             if (child != null && !child.isSource && child.dataBlock != null) {
-                feederBreakerCenter(edge.pathPoints)?.let { FeederBreaker(edge, it.first, it.second) }
+                val center = feederBreakerCenter(edge.pathPoints)
+                if (center != null) {
+                    val fromNode = nodesById[edge.fromId]
+                    val isIncomingToBoard = (fromNode?.isSource == true || fromNode?.panelType == SldNodeType.ATS.name) &&
+                        (child.panelType.startsWith("MDB") || child.panelType.startsWith("SMDB") || child.panelType.startsWith("DB") || child.panelType == "MCC")
+                    val (blk, termHalf) = selectBreakerBlock(child)
+                    BreakerInstance(edge, center.first, center.second, blk, termHalf, isIncomer = isIncomingToBoard)
+                } else null
             } else {
                 null
             }
@@ -955,30 +1098,29 @@ object SldDxfExporter {
             .mapNotNull { equipmentSymbolOf(it) }
             .map { equipmentClipBox(it) }
 
-        // Determine available corridor width for each feeder breaker
-        val corridorWidthByBreaker = feederBreakers.associateWith { fb ->
+        // Adaptive clearance calculation for each wire drop
+        fun calculateClearance(wireX: Float, wireY: Float): Float {
             val nextBreakerX = feederBreakers
-                .filter { it.x > fb.x + 10f && abs(it.y - fb.y) < 300f }
+                .filter { it.x > wireX + 10f && abs(it.y - wireY) < 80f }
                 .minOfOrNull { it.x }
             val nextWireX = engineResult.edges.flatMap { edge ->
                 edge.pathPoints.zipWithNext().mapNotNull { (p1, p2) ->
-                    if (abs(p1.first - p2.first) < 1f && p1.first > fb.x + 10f) {
+                    if (abs(p1.first - p2.first) < 1f && p1.first > wireX + 10f) {
                         val minY = minOf(p1.second, p2.second)
                         val maxY = maxOf(p1.second, p2.second)
-                        if (minY <= fb.y + 120f && maxY >= fb.y - 30f) p1.first else null
+                        if (minY <= wireY + 120f && maxY >= wireY - 30f) p1.first else null
                     } else null
                 }
             }.minOfOrNull { it }
             val nextNodeX = engineResult.nodes
-                .filter { it.x > fb.x + 10f && it.y <= fb.y + 150f && it.y + it.height >= fb.y - 50f }
+                .filter { it.x > wireX + 10f && it.y <= wireY + 70f && it.y + it.height >= wireY - 20f }
                 .minOfOrNull { it.x }
 
             val nearestRightObstacle = listOfNotNull(nextBreakerX, nextWireX, nextNodeX).minOfOrNull { it }
-            if (nearestRightObstacle != null) {
-                val available = (nearestRightObstacle - fb.x) - (TEXT_CORRIDOR_OFFSET + 16f)
-                available.coerceIn(140f, 320f)
+            return if (nearestRightObstacle != null) {
+                nearestRightObstacle - wireX
             } else {
-                240f
+                320f
             }
         }
 
@@ -1023,9 +1165,15 @@ object SldDxfExporter {
 
         // 3. Feeder breaker corridors
         feederBreakers.forEach { fb ->
-            val corrW = corridorWidthByBreaker[fb] ?: 240f
-            includePoint(fb.x - 14f, fb.y - 14f)
-            includePoint(fb.x + TEXT_CORRIDOR_OFFSET + corrW, fb.y + 70f)
+            val clearance = calculateClearance(fb.x, fb.y)
+            if (clearance >= 120f) {
+                val corrW = (clearance - (TEXT_CORRIDOR_OFFSET + 16f)).coerceIn(60f, 320f)
+                includePoint(fb.x - 14f, fb.y - fb.terminalHalf)
+                includePoint(fb.x + TEXT_CORRIDOR_OFFSET + corrW, fb.y + 70f)
+            } else {
+                includePoint(fb.x - 14f, fb.y - fb.terminalHalf)
+                includePoint(fb.x + TEXT_CORRIDOR_OFFSET + 45f, fb.y + 120f)
+            }
         }
 
         // 4. Nodes, cards, and enclosures
@@ -1083,7 +1231,7 @@ object SldDxfExporter {
                     val loadTokens = listOfNotNull(tcl, tdl, df, ib, unb).distinct()
 
                     val rightNeighborX = engineResult.nodes
-                        .filter { it.id != node.id && it.x > node.x + 1f && Math.abs(it.y - node.y) < 80f }
+                        .filter { it.id != node.id && it.x > node.x + 1f && abs(it.y - node.y) < 80f }
                         .minOfOrNull { it.x }
                     val maxCorridorWidth = if (rightNeighborX != null) {
                         ((rightNeighborX - node.x) - 20f).coerceAtLeast(node.width)
@@ -1123,7 +1271,8 @@ object SldDxfExporter {
                         val encH = (lastBottom + 16f) - encTop
                         includeRect(encLeft, encTop, encW, encH)
                     } else {
-                        includeRect(node.x, node.y, effectiveW, lastBottom - node.y)
+                        val encPad = 6f
+                        includeRect(node.x - encPad, node.y - encPad, effectiveW + encPad * 2f, (lastBottom + encPad) - (node.y - encPad))
                     }
                 }
             }
@@ -1205,29 +1354,32 @@ object SldDxfExporter {
         if (hasZt) abbrLegendItems.add("Zt: Transformer Impedance")
         if (hasBat) abbrLegendItems.add("Bat: UPS Battery Autonomy")
 
-        val marginX = 60f
-        val marginY = 60f
+        val marginX = (contentW * 0.045f).coerceIn(25f, 50f)
+        val marginY = (contentH * 0.045f).coerceIn(25f, 50f)
         val tbW = 440f
         val tbH = 120f
         val legW = 440f
         val maxLegendRows = maxOf(symbolLegendItems.size, abbrLegendItems.size, 1)
-        val legH = maxOf(90f, 32f + maxLegendRows * 10f)
+        val legH = maxOf(tbH, 36f + maxLegendRows * 8.0f)
 
         val minSheetW = legW + tbW + 40f + 2f * marginX
         val rawW = maxOf(contentW + 2f * marginX, minSheetW)
-        val rawH = contentH + 2f * marginY
 
-        val bottomBandH = maxOf(tbH, legH) + 25f
+        val bottomBandH = legH + 15f
         val minRequiredBottom = cMaxY + bottomBandH
         val minRequiredTop = cMinY - marginY
         val minRequiredH = minRequiredBottom - minRequiredTop
 
-        // Standard ISO drawing sheet aspect ratio (1.414 : 1 landscape)
+        // Dynamic responsive sheet aspect ratio with void elimination (utilization >= 40%)
         val targetAR = 1.414f
-        var sheetH = maxOf(rawH, minRequiredH)
+        var sheetH = maxOf(contentH + 2f * marginY, minRequiredH)
         var sheetW = maxOf(rawW, sheetH * targetAR)
-        sheetH = maxOf(sheetH, sheetW / targetAR)
-        sheetW = sheetH * targetAR
+        if (rawW > sheetW) {
+            sheetW = rawW
+            sheetH = sheetW / targetAR
+        } else {
+            sheetW = sheetH * targetAR
+        }
 
         var sheetLeft = cMinX - (sheetW - contentW) / 2f
         var sheetRight = sheetLeft + sheetW
@@ -1339,7 +1491,14 @@ object SldDxfExporter {
             sb.appendCircleEntity(cx, flipY(cy), radius, layer)
         }
 
-        fun writeText(text: String?, x: Float, y: Float, height: Float = 10f, layer: String = "E-TEXT-DATA") {
+        fun writeText(
+            text: String?,
+            x: Float,
+            y: Float,
+            height: Float = 10f,
+            layer: String = "E-TEXT-DATA",
+            rotationDeg: Float = 0f
+        ) {
             if (text.isNullOrBlank()) return
             // Guard: substitute real display name if a raw database key leaked into text (A3.4)
             val sanitized = text.replace(RAW_DB_KEY_REGEX) { match ->
@@ -1356,7 +1515,7 @@ object SldDxfExporter {
                     rawKey
                 }
             }
-            sb.appendTextEntity(x, flipY(y), sanitized, height, layer)
+            sb.appendTextEntity(x, flipY(y), sanitized, height, layer, rotationDeg)
         }
 
         fun writeInsert(blockName: String, x: Float, y: Float, layer: String) {
@@ -1399,29 +1558,23 @@ object SldDxfExporter {
             val commands = SldHopArcEngine.buildPathCommands(edge.copy(pathPoints = snapped), hopCrossings)
 
             // 3. Cut every wire segment out of all equipment exclusion zones and
-            //    this feeder's own breaker exclusion zone (Ybrk +/- 14.0)
+            //    this feeder's own breaker exclusion zone (Ybrk +/- terminalHalf)
             val ownBreaker = feederBreakers.firstOrNull { it.edge == edge }
             val boxes = if (ownBreaker != null) {
                 equipmentBoxes + ClipBox(
                     ownBreaker.x - 10f, ownBreaker.x + 10f,
-                    ownBreaker.y - MCCB_TERMINAL_HALF, ownBreaker.y + MCCB_TERMINAL_HALF
+                    ownBreaker.y - ownBreaker.terminalHalf, ownBreaker.y + ownBreaker.terminalHalf
                 )
             } else {
                 equipmentBoxes
             }
             val routed = clipCommandsAgainstBoxes(commands, boxes)
 
-            for (cmd in routed) {
-                when (cmd) {
-                    is SldHopArcEngine.HopPathCommand.Line -> {
-                        writeLine(cmd.start.x, cmd.start.y, cmd.end.x, cmd.end.y, wireLayer, wireLinetype)
-                    }
-                    is SldHopArcEngine.HopPathCommand.Arc -> {
-                        // Semicircular bridge hop arc in Cartesian space (Y flipped):
-                        // start 270 degrees (Cartesian bottom), sweep CCW to 90 (Cartesian top)
-                        writeArc(cmd.center.x, cmd.center.y, cmd.radius, 270f, 90f, wireLayer, wireLinetype)
-                    }
-                }
+            // CONTINUOUS POLYLINE ENGINE:
+            // Group continuous wire segments and 180° hop-arcs into unified AC1009 POLYLINE entities
+            val chains = groupCommandsIntoPolylineChains(routed)
+            for (chain in chains) {
+                sb.appendPolylineEntity(chain, wireLayer, wireLinetype)
             }
 
             // Busbar tap junction dot at origin (panels only — never on equipment terminals)
@@ -1435,42 +1588,35 @@ object SldDxfExporter {
 
         // ==========================================
         // B2. In-Line Breaker Blocks & Feeder Data Corridor (PART 2.1 + PART 3.1)
-        // Incoming wire terminated at (Xbrk, Ybrk + 14); outgoing wire originates
-        // at (Xbrk, Ybrk - 14) — enforced by the exclusion cut above. The breaker
-        // symbol itself is a reusable BLK_MCCB INSERT.
-        // Stacked multi-line wrapped corridor prevents any text-on-text overlap (Roadmap Phase 2 §2.1).
+        // Incoming wire terminated at (Xbrk, Ybrk + terminalHalf); outgoing wire originates
+        // at (Xbrk, Ybrk - terminalHalf) — enforced by the exclusion cut above. The breaker
+        // symbol itself is a reusable BLK_ACB or BLK_MCCB INSERT.
+        // Adaptive corridor selects Mode A (horizontal stacked) or Mode B (vertical 90° rotated).
         // ==========================================
         feederBreakers.forEach { fb ->
             val child = nodesById[fb.edge.toId] ?: return@forEach
             val db = child.dataBlock ?: return@forEach
 
-            // Breaker block instance (terminal-snapped)
-            writeInsert(BLK_MCCB, fb.x, fb.y, "E-SYMBOLS")
+            // Breaker block instance (terminal-snapped, BLK_ACB or BLK_MCCB)
+            writeInsert(fb.blockName, fb.x, fb.y, "E-SYMBOLS")
 
-            // Dedicated right-hand annotation corridor (Xwire + 18.0)
-            val textX = fb.x + TEXT_CORRIDOR_OFFSET
-            val corridorWidth = corridorWidthByBreaker[fb] ?: 240f
-            var currentY = fb.y - 14f
+            val clearance = calculateClearance(fb.x, fb.y)
 
-            // Line 1: Protection Device + Trip + Breaking Capacity Icu (E-TEXT-TITLE, height 10.0)
+            // Line 1: Protection Device + Trip + Breaking Capacity Icu
             val icuStr = db.interruptingRatingKa?.takeIf { it.isNotBlank() }?.let { "Icu $it" }
-            val line1Parts = listOfNotNull(db.deviceTypeAndRating?.takeIf { it.isNotBlank() }, icuStr)
-            val line1Lines = wrapTokensToCorridor(line1Parts, corridorWidth, 10f)
-            line1Lines.forEach { line ->
-                writeText(line, textX, currentY, height = 10f, layer = "E-TEXT-TITLE")
-                currentY += 12.5f
+            val rawDev = if (fb.isIncomer) {
+                db.mainIncoming?.takeIf { it.isNotBlank() } ?: db.deviceTypeAndRating?.takeIf { it.isNotBlank() }
+            } else {
+                db.deviceTypeAndRating?.takeIf { it.isNotBlank() }
             }
+            val line1Parts = listOfNotNull(rawDev, icuStr)
 
-            // Line 2: Cable specification (E-TEXT-DATA, height 8.5)
+            // Line 2: Cable specification
             val runsText = if (db.parallelRuns > 1) "${db.parallelRuns}x " else ""
             val cableSpec = db.cableDescription?.takeIf { it.isNotBlank() }?.let { "$runsText$it" }
-            val line2Lines = wrapTokensToCorridor(listOfNotNull(cableSpec), corridorWidth, 8.5f)
-            line2Lines.forEach { line ->
-                writeText(line, textX, currentY, height = 8.5f, layer = "E-TEXT-DATA")
-                currentY += 11f
-            }
+            val line2Parts = listOfNotNull(cableSpec)
 
-            // Line 3: Route Length, Operating Current (Ib), Derated Capacity (Iz), and Voltage Drop (E-TEXT-DATA, height 8.5)
+            // Line 3: Route Length, Operating Current (Ib), Derated Capacity (Iz), and Voltage Drop
             val lengthStr = formatUnit(db.lengthM, "m")?.let { "L = $it" }
             val ibStr = formatUnit(db.cableIbA, "A")
             val izStr = formatUnit(db.cableIzA, "A")
@@ -1484,13 +1630,8 @@ object SldDxfExporter {
             val cumVdStr = formatUnit(db.cumulativeVdPct, "%", space = false)?.let { "(Cum $it)" }
             val vdFull = listOfNotNull(vdStr, cumVdStr).joinToString(" ")
             val line3Parts = listOfNotNull(lengthStr, currentUtilStr, vdFull.takeIf { it.isNotBlank() })
-            val line3Lines = wrapTokensToCorridor(line3Parts, corridorWidth, 8.5f)
-            line3Lines.forEach { line ->
-                writeText(line, textX, currentY, height = 8.5f, layer = "E-TEXT-DATA")
-                currentY += 11f
-            }
 
-            // Line 4: Fault Level (Isc), CPC/Neutral, Protection & ADS Verdicts (E-TEXT-DATA, height 8.5)
+            // Line 4: Fault Level (Isc), CPC/Neutral, Protection & ADS Verdicts
             val iscPart = formatUnit(db.faultLevelKa, "kA")?.let { "Isc = $it" }
             val cpcPart = formatUnit(db.cableCpcMm2, "mm\u00B2")?.let { "CPC $it" }
             val protParts = listOfNotNull(
@@ -1502,10 +1643,58 @@ object SldDxfExporter {
             val protSummary = if (protParts.isNotEmpty()) protParts.joinToString(" ") else null
             val zsStr = formatUnit(db.adsZsOhm, "\u03A9")?.let { "Zs $it" }
             val line4Parts = listOfNotNull(iscPart, cpcPart, protSummary, zsStr)
-            val line4Lines = wrapTokensToCorridor(line4Parts, corridorWidth, 8.5f)
-            line4Lines.forEach { line ->
-                writeText(line, textX, currentY, height = 8.5f, layer = "E-TEXT-DATA")
-                currentY += 11f
+
+            if (clearance >= 120f) {
+                // Mode A: Horizontal multi-line stacked text in a right-hand corridor (Xwire + 18.0)
+                val textX = fb.x + TEXT_CORRIDOR_OFFSET
+                val corridorWidth = (clearance - (TEXT_CORRIDOR_OFFSET + 16f)).coerceIn(60f, 320f)
+                var currentY = fb.y - fb.terminalHalf
+
+                val line1Lines = wrapTokensToCorridor(line1Parts, corridorWidth, 10f)
+                line1Lines.forEach { line ->
+                    writeText(line, textX, currentY, height = 10f, layer = "E-TEXT-TITLE")
+                    currentY += 12.5f
+                }
+
+                val line2Lines = wrapTokensToCorridor(line2Parts, corridorWidth, 8.5f)
+                line2Lines.forEach { line ->
+                    writeText(line, textX, currentY, height = 8.5f, layer = "E-TEXT-DATA")
+                    currentY += 11f
+                }
+
+                val line3Lines = wrapTokensToCorridor(line3Parts, corridorWidth, 8.5f)
+                line3Lines.forEach { line ->
+                    writeText(line, textX, currentY, height = 8.5f, layer = "E-TEXT-DATA")
+                    currentY += 11f
+                }
+
+                val line4Lines = wrapTokensToCorridor(line4Parts, corridorWidth, 8.5f)
+                line4Lines.forEach { line ->
+                    writeText(line, textX, currentY, height = 8.5f, layer = "E-TEXT-DATA")
+                    currentY += 11f
+                }
+            } else {
+                // Mode B: Vertical text rotated 90° (50\n90.0\n) parallel to wire drop
+                val textX = fb.x + TEXT_CORRIDOR_OFFSET
+                var currentX = textX
+                val line1Text = line1Parts.joinToString("  |  ")
+                val line2Text = line2Parts.joinToString("  |  ")
+                val line3Text = line3Parts.joinToString("  |  ")
+                val line4Text = line4Parts.joinToString("  |  ")
+
+                val modeBLines = listOfNotNull(
+                    line1Text.takeIf { it.isNotBlank() } to ("E-TEXT-TITLE" to 9.5f),
+                    line2Text.takeIf { it.isNotBlank() } to ("E-TEXT-DATA" to 8.0f),
+                    line3Text.takeIf { it.isNotBlank() } to ("E-TEXT-DATA" to 8.0f),
+                    line4Text.takeIf { it.isNotBlank() } to ("E-TEXT-DATA" to 8.0f)
+                )
+
+                val startY = fb.y + 110f
+                for ((text, layerAndH) in modeBLines) {
+                    val (layer, h) = layerAndH
+                    writeText(text, currentX, startY, height = h, layer = layer, rotationDeg = 90f)
+                    currentX += (h * 1.35f)
+                }
             }
         }
 
@@ -1745,6 +1934,14 @@ object SldDxfExporter {
                         writeRectangle(encLeft, encTop, encWidth, encHeight, "E-PANEL", "DASHED")
                         // Switchboard designation / nameplate placed cleanly inside the cubicle top-left
                         writeText(busbarTag, encLeft + 14f, encTop + 14f, height = 10f, layer = "E-TEXT-TITLE")
+                    } else {
+                        // Formal Panel Enclosure for Sub-Distribution Boards (DB, SMDB, MCC, LPP, PP)
+                        val encPad = 6f
+                        val encLeft = node.x - encPad
+                        val encTop = node.y - encPad
+                        val encWidth = effectiveWidth + encPad * 2f
+                        val encHeight = (lastTextBottom + encPad) - encTop
+                        writeRectangle(encLeft, encTop, encWidth, encHeight, "E-PANEL", "CONTINUOUS")
                     }
 
                     // Heavy solid copper busbar body (E-BUSBAR, ACI 30 Vivid Copper Orange)
@@ -1851,14 +2048,14 @@ object SldDxfExporter {
         writeLine(legMidX, legY + 18f, legMidX, legY + legH, "E-BORDER")
         writeLine(legX, legY + 30f, legX + legW, legY + 30f, "E-BORDER")
 
-        writeText("SYMBOLS & CIRCUITS", legX + 10f, legY + 26f, height = 7f, layer = "E-TEXT-TITLE")
-        writeText("ENGINEERING DATA & STATUS", legMidX + 10f, legY + 26f, height = 7f, layer = "E-TEXT-TITLE")
+        writeText("SYMBOLS & CIRCUITS", legX + 10f, legY + 26f, height = 7f, layer = "E-BORDER")
+        writeText("ENGINEERING DATA & STATUS", legMidX + 10f, legY + 26f, height = 7f, layer = "E-BORDER")
 
         symbolLegendItems.forEachIndexed { idx, item ->
-            writeText(item, legX + 10f, legY + 41f + idx * 10f, height = 6.5f, layer = "E-TEXT-DATA")
+            writeText(item, legX + 10f, legY + 40f + idx * 8.0f, height = 6.0f, layer = "E-BORDER")
         }
         abbrLegendItems.forEachIndexed { idx, item ->
-            writeText(item, legMidX + 10f, legY + 41f + idx * 10f, height = 6.5f, layer = "E-TEXT-DATA")
+            writeText(item, legMidX + 10f, legY + 40f + idx * 8.0f, height = 6.0f, layer = "E-BORDER")
         }
 
         // 5. DXF FOOTER
