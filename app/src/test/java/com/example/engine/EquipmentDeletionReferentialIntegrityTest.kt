@@ -495,4 +495,100 @@ class EquipmentDeletionReferentialIntegrityTest {
         assertFalse("Re-created UPS must not inherit manual override", newUps.enableManualOverride)
         assertNull("Re-created UPS must not inherit manual size", newUps.manualSizeKVA)
     }
+
+    @Test
+    fun testDeleteToZeroCleansCircuitAssignmentsAndFedFrom() = runBlocking {
+        val projectId = repository.createProject("Delete To Zero Circuit Cleanliness", "Client")
+
+        // 1. Create one of each equipment type
+        val gen = repository.createGeneratorAtomic(projectId)
+        val ats = repository.createAtsAtomic(projectId)
+        val ups = repository.createUpsAtomic(projectId)
+        assertEquals("GEN-01", gen.generatorId)
+        assertEquals("ATS-01", ats.atsId)
+        assertEquals("UPS-01", ups.upsId)
+
+        // 2. Insert circuits referencing them
+        val circGen = CircuitEntity(
+            id = 101,
+            projectId = projectId,
+            circuitName = "Gen Circuit",
+            loadKVA = 50.0,
+            assignedGeneratorId = "GEN-01",
+            generatorIncluded = true,
+            fedFrom = "GEN-01",
+            sourceType = "GENERATOR"
+        )
+        val circAts = CircuitEntity(
+            id = 102,
+            projectId = projectId,
+            circuitName = "Ats Circuit",
+            loadKVA = 30.0,
+            assignedAtsId = "ATS-01",
+            atsIncluded = true,
+            fedFrom = "ATS-01",
+            sourceType = "ATS"
+        )
+        val circUps = CircuitEntity(
+            id = 103,
+            projectId = projectId,
+            circuitName = "Ups Circuit",
+            loadKVA = 20.0,
+            assignedUpsId = "UPS-01",
+            upsBacked = true,
+            fedFrom = "UPS-01",
+            sourceType = "UPS-01"
+        )
+        repository.insertCircuit(circGen)
+        repository.insertCircuit(circAts)
+        repository.insertCircuit(circUps)
+
+        // 3. Delete all equipment down to zero
+        repository.deleteGenerator(projectId, "GEN-01")
+        repository.deleteAts(projectId, "ATS-01")
+        repository.deleteUps(projectId, "UPS-01")
+
+        // 4. Assert collections in repository are empty
+        assertTrue("Generators list must be empty", repository.powerSystemsDao.getAllGeneratorsList(projectId).isEmpty())
+        assertTrue("ATS list must be empty", repository.powerSystemsDao.getAllAtsList(projectId).isEmpty())
+        assertTrue("UPS list must be empty", repository.powerSystemsDao.getAllUpsList(projectId).isEmpty())
+
+        // 5. Assert all circuits have cleared assignments, inclusion flags, and reset fedFrom/sourceType
+        val c1After = repository.circuitDao.getCircuitById(101)!!
+        assertNull("assignedGeneratorId must be null", c1After.assignedGeneratorId)
+        assertFalse("generatorIncluded must be false", c1After.generatorIncluded)
+        assertEquals("fedFrom must be reset to Transformer", "Transformer", c1After.fedFrom)
+        assertEquals("sourceType must be reset to TRANSFORMER", "TRANSFORMER", c1After.sourceType)
+
+        val c2After = repository.circuitDao.getCircuitById(102)!!
+        assertNull("assignedAtsId must be null", c2After.assignedAtsId)
+        assertFalse("atsIncluded must be false", c2After.atsIncluded)
+        assertEquals("fedFrom must be reset to Transformer", "Transformer", c2After.fedFrom)
+        assertEquals("sourceType must be reset to TRANSFORMER", "TRANSFORMER", c2After.sourceType)
+
+        val c3After = repository.circuitDao.getCircuitById(103)!!
+        assertNull("assignedUpsId must be null", c3After.assignedUpsId)
+        assertFalse("upsBacked must be false", c3After.upsBacked)
+        assertEquals("fedFrom must be reset to Transformer", "Transformer", c3After.fedFrom)
+        assertEquals("sourceType must be reset to TRANSFORMER", "TRANSFORMER", c3After.sourceType)
+
+        // 6. Re-create instances (deterministic reuse -> GEN-01, ATS-01, UPS-01)
+        val newGen = repository.createGeneratorAtomic(projectId)
+        val newAts = repository.createAtsAtomic(projectId)
+        val newUps = repository.createUpsAtomic(projectId)
+        assertEquals("GEN-01", newGen.generatorId)
+        assertEquals("ATS-01", newAts.atsId)
+        assertEquals("UPS-01", newUps.upsId)
+
+        // 7. Verify newly created instances calculate with zero inherited loads
+        val circuitsAfterReAdd = repository.circuitDao.getCircuitsListForProject(projectId)
+        val genResult = GeneratorEngine.calculate(newGen, circuitsAfterReAdd, 100.0)
+        assertEquals("Re-created generator must have 0 essential load", 0.0, genResult.essentialLoadKVA, 0.001)
+
+        val atsResult = AtsEngine.calculate(newAts, 100.0, 0.0, 0.0, 0.0, 10.0, circuitsAfterReAdd)
+        assertEquals("Re-created ATS must have 0 selected load", 0.0, atsResult.selectedLoad, 0.001)
+
+        val upsResult = UpsEngine.calculate(newUps, circuitsAfterReAdd)
+        assertEquals("Re-created UPS must have 0 critical load", 0.0, upsResult.totalCriticalLoadKVA, 0.001)
+    }
 }

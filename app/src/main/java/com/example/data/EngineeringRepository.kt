@@ -84,8 +84,22 @@ class EngineeringRepository(
     }
     suspend fun deleteGenerator(projectId: String, generatorId: String) = withProjectMutation(projectId) {
         val circuits = circuitDao.getCircuitsListForProject(projectId)
-        circuits.filter { it.assignedGeneratorId == generatorId }.forEach { c ->
-            circuitDao.insertCircuit(c.copy(assignedGeneratorId = null, generatorIncluded = false))
+        val deletedGen = powerSystemsDao.getAllGeneratorsList(projectId)
+            .firstOrNull { it.generatorId == generatorId }
+        circuits.filter {
+            it.assignedGeneratorId == generatorId ||
+            it.fedFrom == generatorId ||
+            (deletedGen != null && it.fedFrom.equals(deletedGen.generatorName, ignoreCase = true)) ||
+            it.sourceType == generatorId
+        }.forEach { c ->
+            var updated = c
+            if (updated.assignedGeneratorId == generatorId) {
+                updated = updated.copy(assignedGeneratorId = null, generatorIncluded = false)
+            }
+            if (updated.fedFrom == generatorId || (deletedGen != null && updated.fedFrom.equals(deletedGen.generatorName, ignoreCase = true)) || updated.sourceType == generatorId) {
+                updated = updated.copy(fedFrom = "Transformer", sourceType = SourceType.TRANSFORMER.name)
+            }
+            circuitDao.insertCircuit(updated)
         }
         val atsList = powerSystemsDao.getAllAtsList(projectId)
         atsList.filter { it.emergencySourceId == generatorId || it.normalSourceId == generatorId }.forEach { ats ->
@@ -98,8 +112,6 @@ class EngineeringRepository(
         }
 
         // Dissolve paralleling group if remaining membership drops below shared threshold (K3, K4)
-        val deletedGen = powerSystemsDao.getAllGeneratorsList(projectId)
-            .firstOrNull { it.generatorId == generatorId }
         if (deletedGen != null) {
             val groupKey = deletedGen.parallelingGroupKey()
             if (groupKey != null) {
@@ -144,8 +156,21 @@ class EngineeringRepository(
     }
     suspend fun deleteAts(projectId: String, atsId: String) = withProjectMutation(projectId) {
         val circuits = circuitDao.getCircuitsListForProject(projectId)
-        circuits.filter { it.assignedAtsId == atsId }.forEach { c ->
-            circuitDao.insertCircuit(c.copy(assignedAtsId = null, atsIncluded = false))
+        val deletedAts = powerSystemsDao.getAllAtsList(projectId).firstOrNull { it.atsId == atsId }
+        circuits.filter {
+            it.assignedAtsId == atsId ||
+            it.fedFrom == atsId ||
+            (deletedAts != null && it.fedFrom.equals(deletedAts.atsName, ignoreCase = true)) ||
+            it.sourceType == atsId
+        }.forEach { c ->
+            var updated = c
+            if (updated.assignedAtsId == atsId) {
+                updated = updated.copy(assignedAtsId = null, atsIncluded = false)
+            }
+            if (updated.fedFrom == atsId || (deletedAts != null && updated.fedFrom.equals(deletedAts.atsName, ignoreCase = true)) || updated.sourceType == atsId) {
+                updated = updated.copy(fedFrom = "Transformer", sourceType = SourceType.TRANSFORMER.name)
+            }
+            circuitDao.insertCircuit(updated)
         }
 
         // Clear reverse-direction ATS source links on other ATS devices referencing this ATS (K2)
@@ -186,8 +211,21 @@ class EngineeringRepository(
     }
     suspend fun deleteUps(projectId: String, upsId: String) = withProjectMutation(projectId) {
         val circuits = circuitDao.getCircuitsListForProject(projectId)
-        circuits.filter { it.assignedUpsId == upsId }.forEach { c ->
-            circuitDao.insertCircuit(c.copy(assignedUpsId = null, upsBacked = false))
+        val deletedUps = powerSystemsDao.getAllUpsList(projectId).firstOrNull { it.upsId == upsId }
+        circuits.filter {
+            it.assignedUpsId == upsId ||
+            it.fedFrom == upsId ||
+            (deletedUps != null && it.fedFrom.equals(deletedUps.upsName, ignoreCase = true)) ||
+            it.sourceType == upsId
+        }.forEach { c ->
+            var updated = c
+            if (updated.assignedUpsId == upsId) {
+                updated = updated.copy(assignedUpsId = null, upsBacked = false)
+            }
+            if (updated.fedFrom == upsId || (deletedUps != null && updated.fedFrom.equals(deletedUps.upsName, ignoreCase = true)) || updated.sourceType == upsId) {
+                updated = updated.copy(fedFrom = "Transformer", sourceType = SourceType.TRANSFORMER.name)
+            }
+            circuitDao.insertCircuit(updated)
         }
 
         // Clear source links on any ATS referencing this UPS (K2). This case is reachable

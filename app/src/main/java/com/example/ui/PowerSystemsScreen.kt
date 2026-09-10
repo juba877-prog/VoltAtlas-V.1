@@ -190,13 +190,18 @@ fun PowerSystemsScreen(
     onCancelDelete: () -> Unit = {}
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(0) }
+    var localPendingConfirmation by remember { mutableStateOf<EquipmentDeleteConfirmation?>(null) }
+    val activeConfirmation = pendingDeleteConfirmation ?: localPendingConfirmation
 
-    if (pendingDeleteConfirmation != null) {
+    if (activeConfirmation != null) {
         AlertDialog(
-            onDismissRequest = onCancelDelete,
+            onDismissRequest = {
+                localPendingConfirmation = null
+                onCancelDelete()
+            },
             title = {
                 Text(
-                    text = "Delete ${pendingDeleteConfirmation.equipmentType}: ${pendingDeleteConfirmation.equipmentName}?",
+                    text = "Delete ${activeConfirmation.equipmentType}: ${activeConfirmation.equipmentName}?",
                     style = DsType.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -204,26 +209,26 @@ fun PowerSystemsScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
                     Text(
-                        text = "Are you sure you want to delete ${pendingDeleteConfirmation.equipmentId}? This action cannot be undone.",
+                        text = "Are you sure you want to delete ${activeConfirmation.equipmentId}? This action cannot be undone.",
                         style = DsType.bodyMedium
                     )
-                    if (pendingDeleteConfirmation.affectedCircuits.isNotEmpty()) {
+                    if (activeConfirmation.affectedCircuits.isNotEmpty()) {
                         Text(
-                            text = "• ${pendingDeleteConfirmation.affectedCircuits.size} circuit(s) will lose equipment assignment: ${pendingDeleteConfirmation.affectedCircuits.joinToString()}",
+                            text = "• ${activeConfirmation.affectedCircuits.size} circuit(s) will lose equipment assignment: ${activeConfirmation.affectedCircuits.joinToString()}",
                             style = DsType.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (pendingDeleteConfirmation.affectedSourceLinks.isNotEmpty()) {
+                    if (activeConfirmation.affectedSourceLinks.isNotEmpty()) {
                         Text(
-                            text = "• Dependent source links detached: ${pendingDeleteConfirmation.affectedSourceLinks.joinToString()}",
+                            text = "• Dependent source links detached: ${activeConfirmation.affectedSourceLinks.joinToString()}",
                             style = DsType.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (pendingDeleteConfirmation.groupDissolution != null) {
+                    if (activeConfirmation.groupDissolution != null) {
                         Text(
-                            text = "• ${pendingDeleteConfirmation.groupDissolution}",
+                            text = "• ${activeConfirmation.groupDissolution}",
                             style = DsType.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -231,19 +236,88 @@ fun PowerSystemsScreen(
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = onConfirmDelete,
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.dsExtendedColors.danger)
+                FilledTonalButton(
+                    onClick = {
+                        val localConf = localPendingConfirmation
+                        if (localConf != null) {
+                            when (localConf.equipmentType) {
+                                "Generator" -> onDeleteGenerator(localConf.equipmentId)
+                                "ATS" -> onDeleteAts(localConf.equipmentId)
+                                "UPS" -> onDeleteUps(localConf.equipmentId)
+                            }
+                            localPendingConfirmation = null
+                        } else {
+                            onConfirmDelete()
+                        }
+                    },
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    )
                 ) {
                     Text("Delete", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = onCancelDelete) {
+                TextButton(onClick = {
+                    localPendingConfirmation = null
+                    onCancelDelete()
+                }) {
                     Text("Cancel")
                 }
             }
         )
+    }
+
+    val handleDeleteGenerator: (String) -> Unit = { genId ->
+        if (pendingDeleteConfirmation != null || onConfirmDelete != {}) {
+            onDeleteGenerator(genId)
+        } else {
+            val success = state as? UiState.Success
+            val gen = success?.generators?.firstOrNull { it.generatorId == genId }
+            localPendingConfirmation = EquipmentDeleteConfirmation(
+                equipmentType = "Generator",
+                equipmentId = genId,
+                equipmentName = gen?.generatorName ?: genId,
+                affectedCircuits = emptyList(),
+                affectedSourceLinks = emptyList(),
+                groupDissolution = null
+            )
+        }
+    }
+
+    val handleDeleteAts: (String) -> Unit = { atsId ->
+        if (pendingDeleteConfirmation != null || onConfirmDelete != {}) {
+            onDeleteAts(atsId)
+        } else {
+            val success = state as? UiState.Success
+            val ats = success?.atsList?.firstOrNull { it.atsId == atsId }
+            localPendingConfirmation = EquipmentDeleteConfirmation(
+                equipmentType = "ATS",
+                equipmentId = atsId,
+                equipmentName = ats?.atsName ?: atsId,
+                affectedCircuits = emptyList(),
+                affectedSourceLinks = emptyList(),
+                groupDissolution = null
+            )
+        }
+    }
+
+    val handleDeleteUps: (String) -> Unit = { upsId ->
+        if (pendingDeleteConfirmation != null || onConfirmDelete != {}) {
+            onDeleteUps(upsId)
+        } else {
+            val success = state as? UiState.Success
+            val ups = success?.upsList?.firstOrNull { it.upsId == upsId }
+            localPendingConfirmation = EquipmentDeleteConfirmation(
+                equipmentType = "UPS",
+                equipmentId = upsId,
+                equipmentName = ups?.upsName ?: upsId,
+                affectedCircuits = emptyList(),
+                affectedSourceLinks = emptyList(),
+                groupDissolution = null
+            )
+        }
     }
 
     Surface(
@@ -267,21 +341,21 @@ fun PowerSystemsScreen(
                         singleSettings = generatorSettings,
                         onSave = onSaveGenerator,
                         onAddGenerator = onAddGenerator,
-                        onDeleteGenerator = onDeleteGenerator
+                        onDeleteGenerator = handleDeleteGenerator
                     )
                     1 -> AtsSettingsPanel(
                         state = state,
                         singleSettings = atsSettings,
                         onSave = onSaveAts,
                         onAddAts = onAddAts,
-                        onDeleteAts = onDeleteAts
+                        onDeleteAts = handleDeleteAts
                     )
                     2 -> UpsSettingsPanel(
                         state = state,
                         singleSettings = upsSettings,
                         onSave = onSaveUps,
                         onAddUps = onAddUps,
-                        onDeleteUps = onDeleteUps
+                        onDeleteUps = handleDeleteUps
                     )
                     3 -> PfCorrectionPanel(
                         state = state,
@@ -309,11 +383,36 @@ fun GeneratorSettingsPanel(
     val generatorResults = successState?.generatorResults ?: emptyMap()
 
     var selectedGenId by rememberSaveable { mutableStateOf("") }
+    var previousGenIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var lastActiveGenId by rememberSaveable { mutableStateOf("") }
+
+    val currentGenIds = generators.map { it.generatorId }
+    val targetDeletedId = if (selectedGenId.isNotEmpty() && !currentGenIds.contains(selectedGenId)) {
+        selectedGenId
+    } else if (lastActiveGenId.isNotEmpty() && !currentGenIds.contains(lastActiveGenId)) {
+        lastActiveGenId
+    } else {
+        null
+    }
+
+    if (targetDeletedId != null) {
+        val deletedIdx = previousGenIds.indexOf(targetDeletedId)
+        val adjacentId = if (deletedIdx >= 0 && currentGenIds.isNotEmpty()) {
+            val newIdx = deletedIdx.coerceIn(0, currentGenIds.lastIndex)
+            currentGenIds[newIdx]
+        } else {
+            currentGenIds.firstOrNull() ?: ""
+        }
+        selectedGenId = adjacentId
+    }
+    previousGenIds = currentGenIds
+
     val activeGenId = if (selectedGenId.isNotEmpty() && generators.any { it.generatorId == selectedGenId }) {
         selectedGenId
     } else {
         generators.firstOrNull()?.generatorId
     }
+    lastActiveGenId = activeGenId ?: ""
     val activeGen = generators.firstOrNull { it.generatorId == activeGenId }
 
     LazyColumn(
@@ -433,18 +532,16 @@ fun GeneratorSettingsPanel(
                             )
                         }
 
-                        if (generators.size > 1) {
-                            IconButton(
-                                onClick = { onDeleteGenerator(activeGen.generatorId) },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete Generator",
-                                    tint = MaterialTheme.dsExtendedColors.danger,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                        IconButton(
+                            onClick = { onDeleteGenerator(activeGen.generatorId) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete Generator",
+                                tint = MaterialTheme.dsExtendedColors.danger,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
 
@@ -734,11 +831,36 @@ fun AtsSettingsPanel(
     val generators = successState?.generators ?: emptyList()
 
     var selectedAtsId by rememberSaveable { mutableStateOf("") }
+    var previousAtsIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var lastActiveAtsId by rememberSaveable { mutableStateOf("") }
+
+    val currentAtsIds = atsList.map { it.atsId }
+    val targetDeletedId = if (selectedAtsId.isNotEmpty() && !currentAtsIds.contains(selectedAtsId)) {
+        selectedAtsId
+    } else if (lastActiveAtsId.isNotEmpty() && !currentAtsIds.contains(lastActiveAtsId)) {
+        lastActiveAtsId
+    } else {
+        null
+    }
+
+    if (targetDeletedId != null) {
+        val deletedIdx = previousAtsIds.indexOf(targetDeletedId)
+        val adjacentId = if (deletedIdx >= 0 && currentAtsIds.isNotEmpty()) {
+            val newIdx = deletedIdx.coerceIn(0, currentAtsIds.lastIndex)
+            currentAtsIds[newIdx]
+        } else {
+            currentAtsIds.firstOrNull() ?: ""
+        }
+        selectedAtsId = adjacentId
+    }
+    previousAtsIds = currentAtsIds
+
     val activeAtsId = if (selectedAtsId.isNotEmpty() && atsList.any { it.atsId == selectedAtsId }) {
         selectedAtsId
     } else {
         atsList.firstOrNull()?.atsId
     }
+    lastActiveAtsId = activeAtsId ?: ""
     val activeAts = atsList.firstOrNull { it.atsId == activeAtsId }
 
     LazyColumn(
@@ -894,18 +1016,16 @@ fun AtsSettingsPanel(
                             )
                         }
 
-                        if (atsList.size > 1) {
-                            IconButton(
-                                onClick = { onDeleteAts(activeAts.atsId) },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete ATS",
-                                    tint = MaterialTheme.dsExtendedColors.danger,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                        IconButton(
+                            onClick = { onDeleteAts(activeAts.atsId) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete ATS",
+                                tint = MaterialTheme.dsExtendedColors.danger,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
 
@@ -1200,11 +1320,36 @@ fun UpsSettingsPanel(
     val circuits = successState?.circuits ?: emptyList()
 
     var selectedUpsId by rememberSaveable { mutableStateOf("") }
+    var previousUpsIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var lastActiveUpsId by rememberSaveable { mutableStateOf("") }
+
+    val currentUpsIds = upsList.map { it.upsId }
+    val targetDeletedId = if (selectedUpsId.isNotEmpty() && !currentUpsIds.contains(selectedUpsId)) {
+        selectedUpsId
+    } else if (lastActiveUpsId.isNotEmpty() && !currentUpsIds.contains(lastActiveUpsId)) {
+        lastActiveUpsId
+    } else {
+        null
+    }
+
+    if (targetDeletedId != null) {
+        val deletedIdx = previousUpsIds.indexOf(targetDeletedId)
+        val adjacentId = if (deletedIdx >= 0 && currentUpsIds.isNotEmpty()) {
+            val newIdx = deletedIdx.coerceIn(0, currentUpsIds.lastIndex)
+            currentUpsIds[newIdx]
+        } else {
+            currentUpsIds.firstOrNull() ?: ""
+        }
+        selectedUpsId = adjacentId
+    }
+    previousUpsIds = currentUpsIds
+
     val activeUpsId = if (selectedUpsId.isNotEmpty() && upsList.any { it.upsId == selectedUpsId }) {
         selectedUpsId
     } else {
         upsList.firstOrNull()?.upsId
     }
+    lastActiveUpsId = activeUpsId ?: ""
     val activeUps = upsList.firstOrNull { it.upsId == activeUpsId }
 
     LazyColumn(
@@ -1324,18 +1469,16 @@ fun UpsSettingsPanel(
                             )
                         }
 
-                        if (upsList.size > 1) {
-                            IconButton(
-                                onClick = { onDeleteUps(activeUps.upsId) },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete UPS",
-                                    tint = MaterialTheme.dsExtendedColors.danger,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                        IconButton(
+                            onClick = { onDeleteUps(activeUps.upsId) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete UPS",
+                                tint = MaterialTheme.dsExtendedColors.danger,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
 
