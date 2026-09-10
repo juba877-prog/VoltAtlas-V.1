@@ -117,7 +117,7 @@ class EngineFixesTest {
     @Test
     fun testUpsSizingApparentPowerCapacity() {
         // Sizing critical load with PF = 0.8
-        val circuit = CircuitEntity(id = 3, circuitName = "UPS-Load", loadKVA = 100.0, pf = 0.8, upsBacked = true)
+        val circuit = CircuitEntity(id = 3, circuitName = "UPS-Load", loadKVA = 100.0, pf = 0.8, upsBacked = true, assignedUpsId = "UPS-01")
         val settings = UpsEntity(projectId = "DEFAULT_PROJECT", id = 1, upsPf = 0.9, designMarginPct = 0.0, autonomyMinutes = 30)
 
         val result = UpsEngine.calculate(settings, listOf(circuit))

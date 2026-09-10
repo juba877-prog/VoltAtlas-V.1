@@ -124,9 +124,6 @@ class CircuitsVisualCaptureTest {
             drums = emptyList(),
             procurement = emptyList(),
             panels = emptyList(),
-            generatorResult = null,
-            atsResult = null,
-            upsResult = null,
             pfCorrectionResults = emptyList()
         )
     }

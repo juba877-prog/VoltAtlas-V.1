@@ -186,20 +186,11 @@ object GeneratorEngine {
     ): Map<String, GeneratorResult> {
         if (generators.isEmpty()) return emptyMap()
 
-        // Unassigned circuits warning (B1)
-        val unassignedGenCircuits = circuits.filter { circ ->
-            circ.generatorIncluded && circ.assignedGeneratorId == null &&
-            !atsList.any { ats -> ats.emergencySourceId != null && circ.assignedAtsId == ats.atsId }
-        }
-        val unassignedWarnings = if (unassignedGenCircuits.isNotEmpty()) {
-            val names = unassignedGenCircuits.joinToString { it.circuitName.ifBlank { "ID ${it.id}" } }
-            listOf("WARNING: ${unassignedGenCircuits.size} circuit(s) flagged as generator-included but not assigned to any generator: $names. Assign explicitly.")
-        } else emptyList()
-
+        // Unassigned flagged circuits are surfaced ONCE at project level via the graph
+        // builder's UNASSIGNED_GENERATOR_CIRCUIT validation issue — never per instance.
         return generators.associate { gen ->
             val res = calculate(gen, circuits, totalConnectedLoad, atsList)
-            val mergedMessages = if (unassignedWarnings.isNotEmpty()) res.messages + unassignedWarnings else res.messages
-            gen.generatorId to res.copy(messages = mergedMessages)
+            gen.generatorId to res
         }
     }
 }

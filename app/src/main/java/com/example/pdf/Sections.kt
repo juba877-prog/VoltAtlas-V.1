@@ -193,30 +193,31 @@ class PowerSystemsSection : ReportSectionProvider {
             currentY += 15f
         }
         
-        snapshot.generatorResult?.let { gen ->
-            renderer.drawText("GENERATOR", renderer.marginX, currentY, renderer.theme.tableHeaderPaint)
+        // One block per instance, keyed by the instance identifier — no ordinal selection.
+        snapshot.generatorResults.forEach { (genId, gen) ->
+            renderer.drawText("GENERATOR — $genId", renderer.marginX, currentY, renderer.theme.tableHeaderPaint)
             currentY += 15f
             drawKeyValue("Design kVA", "%.1f".format(gen.designCapacity))
             drawKeyValue("Status", formatReportStatus(gen.status))
             currentY += 10f
         }
-        
-        snapshot.atsResult?.let { ats ->
-            renderer.drawText("ATS", renderer.marginX, currentY, renderer.theme.tableHeaderPaint)
+
+        snapshot.atsResults.forEach { (atsId, ats) ->
+            renderer.drawText("ATS — $atsId", renderer.marginX, currentY, renderer.theme.tableHeaderPaint)
             currentY += 15f
             drawKeyValue("Governing Current", "%.1f A".format(ats.governingCurrent))
             drawKeyValue("Status", formatReportStatus(ats.status))
             currentY += 10f
         }
-        
-        snapshot.upsResult?.let { ups ->
-            renderer.drawText("UPS", renderer.marginX, currentY, renderer.theme.tableHeaderPaint)
+
+        snapshot.upsResults.forEach { (upsId, ups) ->
+            renderer.drawText("UPS — $upsId", renderer.marginX, currentY, renderer.theme.tableHeaderPaint)
             currentY += 15f
             drawKeyValue("Design kVA", "%.1f".format(ups.designUpsKVA))
             drawKeyValue("Status", formatReportStatus(ups.status))
             currentY += 10f
         }
-        
+
         if (snapshot.pfCorrectionResults.isNotEmpty()) {
             renderer.drawText("PF CORRECTION", renderer.marginX, currentY, renderer.theme.tableHeaderPaint)
             currentY += 15f
@@ -226,7 +227,7 @@ class PowerSystemsSection : ReportSectionProvider {
             currentY += 10f
         }
         
-        if (snapshot.generatorResult == null && snapshot.atsResult == null && snapshot.upsResult == null && snapshot.pfCorrectionResults.isEmpty()) {
+        if (snapshot.generatorResults.isEmpty() && snapshot.atsResults.isEmpty() && snapshot.upsResults.isEmpty() && snapshot.pfCorrectionResults.isEmpty()) {
             renderer.drawText("Not configured", renderer.marginX, currentY, renderer.theme.tableBodyPaint)
             currentY += 15f
         }

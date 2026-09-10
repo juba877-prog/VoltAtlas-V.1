@@ -30,7 +30,7 @@ class UpsEngineTest {
         )
 
         val circuits = listOf(
-            CircuitEntity(id = 1, circuitName = "CRITICAL-SERVER", loadKVA = 55.55555555555556, pf = 0.9, upsBacked = true)
+            CircuitEntity(id = 1, circuitName = "CRITICAL-SERVER", loadKVA = 55.55555555555556, pf = 0.9, upsBacked = true, assignedUpsId = "UPS-01")
         )
 
         val result = UpsEngine.calculate(settings, circuits)
@@ -65,7 +65,7 @@ class UpsEngineTest {
         )
 
         val circuits = listOf(
-            CircuitEntity(id = 1, circuitName = "CRITICAL-DATA-CENTER", loadKVA = 111.11111111111111, pf = 0.9, upsBacked = true)
+            CircuitEntity(id = 1, circuitName = "CRITICAL-DATA-CENTER", loadKVA = 111.11111111111111, pf = 0.9, upsBacked = true, assignedUpsId = "UPS-01")
         )
 
         val result = UpsEngine.calculate(settings, circuits)
@@ -81,7 +81,7 @@ class UpsEngineTest {
     @Test
     fun testUpsManualOverride_ValidSize() {
         val settings = UpsEntity(enableManualOverride = true, manualSizeKVA = 100.0)
-        val circuits = listOf(CircuitEntity(id = 1, circuitName = "CRITICAL-SERVER", loadKVA = 55.56, pf = 0.9, upsBacked = true))
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "CRITICAL-SERVER", loadKVA = 55.56, pf = 0.9, upsBacked = true, assignedUpsId = "UPS-01"))
         val result = UpsEngine.calculate(settings, circuits)
 
         assertEquals("Manual Override Active", result.status)
@@ -92,7 +92,7 @@ class UpsEngineTest {
     @Test
     fun testUpsManualOverride_UndersizedWarning() {
         val settings = UpsEntity(enableManualOverride = true, manualSizeKVA = 15.0)
-        val circuits = listOf(CircuitEntity(id = 1, circuitName = "CRITICAL-SERVER", loadKVA = 55.56, pf = 0.9, upsBacked = true))
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "CRITICAL-SERVER", loadKVA = 55.56, pf = 0.9, upsBacked = true, assignedUpsId = "UPS-01"))
         val result = UpsEngine.calculate(settings, circuits)
 
         assertEquals("Manual Override Active", result.status)
@@ -103,7 +103,7 @@ class UpsEngineTest {
     @Test
     fun testUpsDefaultAutoSizingRegression() {
         val settings = UpsEntity(enableManualOverride = false, manualSizeKVA = null)
-        val circuits = listOf(CircuitEntity(id = 1, circuitName = "CRITICAL-SERVER", loadKVA = 55.56, pf = 0.9, upsBacked = true))
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "CRITICAL-SERVER", loadKVA = 55.56, pf = 0.9, upsBacked = true, assignedUpsId = "UPS-01"))
         val result = UpsEngine.calculate(settings, circuits)
 
         assertEquals(100.0, result.recommendedSize ?: 0.0, 0.1)

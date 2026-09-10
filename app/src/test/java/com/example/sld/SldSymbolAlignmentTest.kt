@@ -38,7 +38,7 @@ class SldSymbolAlignmentTest {
             activeProjectId = "p",
             transformers = transformers,
             circuits = circuits,
-            atsResult = AtsResult(finalRating = 1600.0, governingCurrent = 1443.0, status = "PASS"),
+            atsResults = mapOf("1" to AtsResult(finalRating = 1600.0, governingCurrent = 1443.0, status = "PASS")),
             atsList = atsList
         )
     }

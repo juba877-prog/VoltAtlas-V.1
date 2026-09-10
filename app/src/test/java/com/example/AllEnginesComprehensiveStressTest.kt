@@ -160,7 +160,7 @@ class AllEnginesComprehensiveStressTest {
     fun testAtsEngineLocalizedIcwWithstand() {
         val atsSettings = AtsEntity(projectId = "PROJ-1", systemVoltage = 400, designSafetyFactor = 1.25)
         val circuits = listOf(
-            CircuitEntity(id = 1, circuitName = "ATS-CIRCUIT", loadKVA = 150.0, atsIncluded = true)
+            CircuitEntity(id = 1, circuitName = "ATS-CIRCUIT", loadKVA = 150.0, atsIncluded = true, assignedAtsId = "ATS-01")
         )
 
         val atsRes = AtsEngine.calculate(
@@ -190,7 +190,7 @@ class AllEnginesComprehensiveStressTest {
             designMarginPct = 20.0
         )
         val circuits = listOf(
-            CircuitEntity(id = 1, circuitName = "CRITICAL-SERVER-1", loadKVA = 80.0, pf = 0.8, upsBacked = true)
+            CircuitEntity(id = 1, circuitName = "CRITICAL-SERVER-1", loadKVA = 80.0, pf = 0.8, upsBacked = true, assignedUpsId = "UPS-01")
         )
 
         val upsRes = UpsEngine.calculate(upsSettings, circuits)

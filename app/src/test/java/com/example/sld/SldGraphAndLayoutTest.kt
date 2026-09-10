@@ -241,8 +241,10 @@ class SldGraphAndLayoutTest {
             activeProjectId = projectId,
             transformers = transformers,
             circuits = circuits,
-            generatorResult = genResult,
-            atsResult = atsResult
+            generators = listOf(GeneratorEntity(projectId = projectId, generatorId = "1", generatorName = "Generator")),
+            generatorResults = mapOf("1" to genResult),
+            atsList = listOf(AtsEntity(projectId = projectId, atsId = "1", atsName = "ATS-01")),
+            atsResults = mapOf("1" to atsResult)
         )
 
         val atsNode = graph.nodes.firstOrNull { it.type == SldNodeType.ATS }
@@ -276,8 +278,8 @@ class SldGraphAndLayoutTest {
             activeProjectId = projectId,
             transformers = emptyList(),
             circuits = emptyList(),
-            generatorResult = null,
-            atsResult = atsResult
+            atsList = listOf(AtsEntity(projectId = projectId, atsId = "1", atsName = "ATS-01")),
+            atsResults = mapOf("1" to atsResult)
         )
 
         val atsNode = graph.nodes.firstOrNull { it.type == SldNodeType.ATS }
@@ -551,44 +553,13 @@ class SldGraphAndLayoutTest {
             activeProjectId = projectId,
             transformers = transformers,
             circuits = circuits,
-            atsEntity = AtsEntity(), // Dummy fallback entity from ViewModel
-            atsResult = null,
-            atsList = emptyList() // Modern explicit empty list
+            atsList = emptyList(), // Modern explicit empty list
+            atsResults = emptyMap()
         )
 
         // Assert zero ATS nodes and zero ATS validation issues
         assertTrue("Graph must have zero ATS nodes when modern atsList is emptyList()", graph.nodes.none { it.type == SldNodeType.ATS })
         assertTrue("Graph must have zero ATS validation issues when modern atsList is emptyList()", graph.validationIssues.none { it.issueCode.startsWith("ATS_") })
-    }
-
-    @Test
-    fun testLegacySingularAtsEntityFallbackWhenAtsListOmitted() {
-        val transformers = listOf(
-            TransformerEntity(projectId = projectId, transformerId = "TX-01", kVA = 1000.0)
-        )
-        val circuits = listOf(
-            CircuitEntity(id = 1, projectId = projectId, circuitName = "MDB-01", fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB"),
-            CircuitEntity(id = 20, projectId = projectId, circuitName = "EMERG-DB", fedFrom = "Legacy ATS", panelType = "DB")
-        )
-        val legacyAts = AtsEntity(
-            projectId = projectId,
-            atsId = "ATS-LEGACY",
-            atsName = "Legacy ATS",
-            normalSourceId = "TX-01",
-            emergencySourceId = "GEN-01",
-            outputBoardId = 20
-        )
-
-        val graph = ElectricalNetworkGraphBuilder.buildGraph(
-            activeProjectId = projectId,
-            transformers = transformers,
-            circuits = circuits,
-            atsEntity = legacyAts,
-            atsResult = null,
-            atsList = null // Legacy caller omitting atsList parameter
-        )
-
-        assertTrue("Legacy ATS node ats_ATS-LEGACY must be generated when atsList is null", graph.nodes.any { it.id == "ats_ATS-LEGACY" })
     }
 
     @Test
@@ -599,23 +570,19 @@ class SldGraphAndLayoutTest {
         val circuits = listOf(
             CircuitEntity(id = 1, projectId = projectId, circuitName = "MDB-01", fedFrom = "Transformer", transformerId = "TX-01", panelType = "MDB")
         )
-        val noLoadsResult = com.example.engine.AtsResult(
-            governingCurrent = 0.0,
-            finalRating = 0.0,
-            status = "NO_LOADS"
-        )
 
+        // A NO_LOADS engine result must never synthesize an ATS node: with no stored
+        // ATS instances there is nothing to render and nothing to validate.
         val graph = ElectricalNetworkGraphBuilder.buildGraph(
             activeProjectId = projectId,
             transformers = transformers,
             circuits = circuits,
-            atsEntity = null,
-            atsResult = noLoadsResult,
-            atsList = null
+            atsList = emptyList(),
+            atsResults = emptyMap()
         )
 
-        assertTrue("Graph must have zero ATS nodes when atsResult is NO_LOADS", graph.nodes.none { it.type == SldNodeType.ATS })
-        assertTrue("Graph must have zero ATS validation issues when atsResult is NO_LOADS", graph.validationIssues.none { it.issueCode.startsWith("ATS_") })
+        assertTrue("Graph must have zero ATS nodes when no ATS is configured", graph.nodes.none { it.type == SldNodeType.ATS })
+        assertTrue("Graph must have zero ATS validation issues when no ATS is configured", graph.validationIssues.none { it.issueCode.startsWith("ATS_") })
     }
 
     @Test

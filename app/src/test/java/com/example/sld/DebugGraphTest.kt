@@ -24,9 +24,7 @@ class DebugGraphTest {
             sizingResults = emptyMap(),
             shortCircuitResults = emptyMap(),
             transformerResults = emptyMap(),
-            generatorResult = null,
-            atsResult = null,
-            atsEntity = atsEntity
+            atsList = listOf(atsEntity)
         )
         
         val engineResult = RiserLayoutEngine.calculateLayout(graph, circuits, null)

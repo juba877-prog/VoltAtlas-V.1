@@ -1,4 +1,4 @@
-package com.example
+﻿package com.example
 
 import com.example.data.AtsEntity
 import com.example.data.CircuitEntity
@@ -240,13 +240,10 @@ class MultiInstancePowerSystemsTest {
                 drums = emptyList(),
                 procurement = emptyList(),
                 panels = emptyList(),
-                generatorResult = genResults.values.firstOrNull(),
                 generatorResults = genResults,
                 generators = genList,
-                atsResult = null,
                 atsResults = emptyMap(),
                 atsList = atsEntitiesList,
-                upsResult = null,
                 upsResults = emptyMap(),
                 upsList = emptyList(),
                 pfCorrectionResults = emptyList()

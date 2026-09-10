@@ -69,7 +69,8 @@ class ValidationAndUiRegressionTest {
             activeProjectId = "P1",
             transformers = transformers,
             circuits = circuits,
-            atsResult = com.example.engine.AtsResult(status = "Valid ATS Sized", finalRating = 250.0)
+            atsList = listOf(AtsEntity(projectId = "P1", atsId = "1", atsName = "ATS-01")),
+            atsResults = mapOf("1" to com.example.engine.AtsResult(status = "Valid ATS Sized", finalRating = 250.0))
         )
 
         val atsFailures = graph.validationIssues.filter { 

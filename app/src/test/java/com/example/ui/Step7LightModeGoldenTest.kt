@@ -1,4 +1,4 @@
-package com.example.ui
+﻿package com.example.ui
 
 import android.app.Application
 import android.graphics.Bitmap
@@ -90,9 +90,6 @@ class Step7LightModeGoldenTest {
         drums = emptyList(),
         procurement = emptyList(),
         panels = emptyList(),
-        generatorResult = null,
-        atsResult = null,
-        upsResult = null,
         pfCorrectionResults = emptyList()
     )
 

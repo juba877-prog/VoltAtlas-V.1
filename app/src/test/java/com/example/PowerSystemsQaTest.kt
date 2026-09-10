@@ -55,7 +55,9 @@ class PowerSystemsQaTest {
     fun testAtsZeroLoad() {
         val settings = AtsEntity()
         val result = AtsEngine.calculate(settings, 0.0, 0.0, 0.0, 0.0, 0.0, listOf(CircuitEntity(circuitName = "C1", loadKVA = 150.0, generatorIncluded = true, loadType = "Emergency", fedFrom = "Transformer", transformerId = "TX-01", phases = "3P", voltageV = 400, pf = 0.8, safetyFactor = 1.0, manufacturer = "ABB", cableType = "Cu/XLPE", installation = "Laid in Ducts", parallelRuns = 1, airTempC = 40, gndTempC = 40, burialDepth_m = 0.6, soilRes = 125, noCircuits = 1, formation = "Flat", spacing = "Touching", length_m = 50.0, maxVDpct = 0.03, atsIncluded = true)))
-        assertEquals("N/A — No Generator", result.status)
+        // The circuit is flagged but NOT assigned to any ATS, so it is attributed to no
+        // instance: the honest result is SELECT_LOADS with no rating (never fabricated).
+        assertEquals("SELECT_LOADS", result.status)
         assertNull(result.finalRating)
     }
 
@@ -68,7 +70,7 @@ class PowerSystemsQaTest {
             futureGrowthFactor = 10.0
         )
         // Inputs from generator test
-        val result = AtsEngine.calculate(settings, totalConnectedLoad = 500.0, essentialLoadKVA = 150.0, generatorSelectedSize = 750.0, transformerFLC = 288.68, isc3PhaseAtTransformer = 7.58, circuits = listOf(CircuitEntity(circuitName = "C1", loadKVA = 150.0, generatorIncluded = true, loadType = "Emergency", fedFrom = "Transformer", transformerId = "TX-01", phases = "3P", voltageV = 400, pf = 0.8, safetyFactor = 1.0, manufacturer = "ABB", cableType = "Cu/XLPE", installation = "Laid in Ducts", parallelRuns = 1, airTempC = 40, gndTempC = 40, burialDepth_m = 0.6, soilRes = 125, noCircuits = 1, formation = "Flat", spacing = "Touching", length_m = 50.0, maxVDpct = 0.03, atsIncluded = true)))
+        val result = AtsEngine.calculate(settings, totalConnectedLoad = 500.0, essentialLoadKVA = 150.0, generatorSelectedSize = 750.0, transformerFLC = 288.68, isc3PhaseAtTransformer = 7.58, circuits = listOf(CircuitEntity(circuitName = "C1", loadKVA = 150.0, generatorIncluded = true, assignedAtsId = "ATS-01", loadType = "Emergency", fedFrom = "Transformer", transformerId = "TX-01", phases = "3P", voltageV = 400, pf = 0.8, safetyFactor = 1.0, manufacturer = "ABB", cableType = "Cu/XLPE", installation = "Laid in Ducts", parallelRuns = 1, airTempC = 40, gndTempC = 40, burialDepth_m = 0.6, soilRes = 125, noCircuits = 1, formation = "Flat", spacing = "Touching", length_m = 50.0, maxVDpct = 0.03, atsIncluded = true)))
         
         assertEquals(150.0, result.selectedLoad, 0.01)
         assertEquals(216.51, result.loadCurrent, 0.01)
@@ -103,7 +105,7 @@ class PowerSystemsQaTest {
             designMarginPct = 20.0
         )
         val circuits = listOf(
-            CircuitEntity(circuitName = "C1", loadKVA = 50.0, upsBacked = true, loadType = "Normal", fedFrom = "Transformer", transformerId = "TX-01", phases = "3P", voltageV = 400, pf = 0.8, safetyFactor = 1.0, manufacturer = "ABB", cableType = "Cu/XLPE", installation = "Laid in Ducts", parallelRuns = 1, airTempC = 40, gndTempC = 40, burialDepth_m = 0.6, soilRes = 125, noCircuits = 1, formation = "Flat", spacing = "Touching", length_m = 50.0, maxVDpct = 0.03)
+            CircuitEntity(circuitName = "C1", loadKVA = 50.0, upsBacked = true, assignedUpsId = "UPS-01", loadType = "Normal", fedFrom = "Transformer", transformerId = "TX-01", phases = "3P", voltageV = 400, pf = 0.8, safetyFactor = 1.0, manufacturer = "ABB", cableType = "Cu/XLPE", installation = "Laid in Ducts", parallelRuns = 1, airTempC = 40, gndTempC = 40, burialDepth_m = 0.6, soilRes = 125, noCircuits = 1, formation = "Flat", spacing = "Touching", length_m = 50.0, maxVDpct = 0.03)
         )
         
         val result = UpsEngine.calculate(settings, circuits)
@@ -417,7 +419,7 @@ class PowerSystemsQaTest {
             systemVoltage = 400
         )
         val circuits = listOf(
-            CircuitEntity(id = 1, circuitName = "CRITICAL", loadKVA = 6.40, upsBacked = true, pf = 0.8)
+            CircuitEntity(id = 1, circuitName = "CRITICAL", loadKVA = 6.40, upsBacked = true, assignedUpsId = "UPS-01", pf = 0.8)
         )
         val result = UpsEngine.calculate(settings, circuits)
 

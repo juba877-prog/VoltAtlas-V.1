@@ -1,4 +1,4 @@
-package com.example.ui
+﻿package com.example.ui
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
@@ -41,9 +41,6 @@ class DashboardScreenshotTest {
             drums = emptyList(),
             procurement = emptyList(),
             panels = emptyList(),
-            generatorResult = null,
-            atsResult = null,
-            upsResult = null,
             pfCorrectionResults = emptyList(),
             validationSummary = summary
         )
@@ -92,9 +89,6 @@ class DashboardScreenshotTest {
             drums = emptyList(),
             procurement = emptyList(),
             panels = emptyList(),
-            generatorResult = null,
-            atsResult = null,
-            upsResult = null,
             pfCorrectionResults = emptyList(),
             validationSummary = summary
         )
@@ -127,9 +121,6 @@ class DashboardScreenshotTest {
             drums = emptyList(),
             procurement = emptyList(),
             panels = emptyList(),
-            generatorResult = null,
-            atsResult = null,
-            upsResult = null,
             pfCorrectionResults = emptyList(),
             validationSummary = summary
         )
@@ -160,9 +151,6 @@ class DashboardScreenshotTest {
             drums = emptyList(),
             procurement = emptyList(),
             panels = emptyList(),
-            generatorResult = null,
-            atsResult = null,
-            upsResult = null,
             pfCorrectionResults = emptyList(),
             validationSummary = summary
         )

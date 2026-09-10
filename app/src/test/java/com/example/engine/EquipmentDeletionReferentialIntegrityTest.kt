@@ -91,7 +91,9 @@ class EquipmentDeletionReferentialIntegrityTest {
             generatorIncluded = true,
             assignedGeneratorId = null,
             atsIncluded = true,
-            assignedAtsId = null
+            assignedAtsId = null,
+            upsBacked = true,
+            assignedUpsId = null
         )
 
         // GeneratorEngine must attribute to neither generator
@@ -100,12 +102,101 @@ class EquipmentDeletionReferentialIntegrityTest {
         val resGen2 = GeneratorEngine.calculate(gen2, listOf(unassignedCircuit), 30.0)
         assertEquals(0.0, resGen2.essentialLoadKVA, 0.001)
 
-        // AtsEngine must attribute to neither ATS
+        // AtsEngine must attribute to neither ATS (aggregate entry point)
         val ats1 = AtsEntity(projectId = "p1", atsId = "ATS-01", atsName = "ATS 1")
         val ats2 = AtsEntity(projectId = "p1", atsId = "ATS-02", atsName = "ATS 2")
         val atsResMap = AtsEngine.calculateAll(listOf(ats1, ats2), listOf(unassignedCircuit))
         assertEquals(0.0, atsResMap["ATS-01"]!!.selectedLoad, 0.001)
         assertEquals(0.0, atsResMap["ATS-02"]!!.selectedLoad, 0.001)
+
+        // AtsEngine PER-INSTANCE entry point: the literal "ATS-01" fallback lived on this
+        // path only, so it must be exercised directly. A flagged-but-unassigned circuit
+        // must be attributed to no instance at all.
+        val atsRes1 = AtsEngine.calculate(
+            settings = ats1, totalConnectedLoad = 0.0, essentialLoadKVA = 30.0,
+            generatorSelectedSize = 0.0, transformerFLC = 0.0,
+            isc3PhaseAtTransformer = 10.0, circuits = listOf(unassignedCircuit)
+        )
+        assertEquals(
+            "Per-instance ATS-01 must not adopt a flagged-but-unassigned circuit",
+            0.0, atsRes1.selectedLoad, 0.001
+        )
+        assertEquals(
+            "Per-instance ATS-01 must report SELECT_LOADS with no assigned circuits",
+            "SELECT_LOADS", atsRes1.status
+        )
+        val atsRes2 = AtsEngine.calculate(
+            settings = ats2, totalConnectedLoad = 0.0, essentialLoadKVA = 30.0,
+            generatorSelectedSize = 0.0, transformerFLC = 0.0,
+            isc3PhaseAtTransformer = 10.0, circuits = listOf(unassignedCircuit)
+        )
+        assertEquals(0.0, atsRes2.selectedLoad, 0.001)
+
+        // UpsEngine must attribute to neither UPS (aggregate entry point)
+        val ups1 = UpsEntity(projectId = "p1", upsId = "UPS-01", upsName = "UPS 1")
+        val ups2 = UpsEntity(projectId = "p1", upsId = "UPS-02", upsName = "UPS 2")
+        val upsResMap = UpsEngine.calculateAll(listOf(ups1, ups2), listOf(unassignedCircuit))
+        assertEquals(0.0, upsResMap["UPS-01"]!!.totalCriticalLoadKVA, 0.001)
+        assertEquals(0.0, upsResMap["UPS-02"]!!.totalCriticalLoadKVA, 0.001)
+
+        // UpsEngine PER-INSTANCE entry point: the literal "UPS-01" fallback lived here and
+        // was reachable in production via calculateAll -> calculate. It must adopt nothing.
+        val upsRes1 = UpsEngine.calculate(ups1, listOf(unassignedCircuit))
+        assertEquals(
+            "Per-instance UPS-01 must not adopt a flagged-but-unassigned circuit",
+            0.0, upsRes1.totalCriticalLoadKVA, 0.001
+        )
+        assertEquals(
+            "Per-instance UPS-01 must report SELECT_LOADS with no assigned circuits",
+            "SELECT_LOADS", upsRes1.status
+        )
+        val upsRes2 = UpsEngine.calculate(ups2, listOf(unassignedCircuit))
+        assertEquals(0.0, upsRes2.totalCriticalLoadKVA, 0.001)
+    }
+
+    @Test
+    fun testMigratedSingleInstanceProjectRetainsAttribution() {
+        // Post-migration state produced by MIGRATION_25_26 for an unambiguous legacy
+        // project: legacy flags remain set AND explicit assignments are populated.
+        // Attribution must be preserved by the explicit assignment alone — no
+        // literal-identifier fallback may be required to keep the original result.
+        val circuit = CircuitEntity(
+            id = 20,
+            projectId = "p1",
+            circuitName = "Legacy Emergency Feeder",
+            loadKVA = 40.0,
+            generatorIncluded = true,
+            atsIncluded = true,
+            upsBacked = true,
+            assignedGeneratorId = "GEN-01",
+            assignedAtsId = "ATS-01",
+            assignedUpsId = "UPS-01"
+        )
+        val soleGen = GeneratorEntity(projectId = "p1", generatorId = "GEN-01", generatorName = "Gen 1")
+        val soleAts = AtsEntity(projectId = "p1", atsId = "ATS-01", atsName = "ATS 1")
+        val soleUps = UpsEntity(projectId = "p1", upsId = "UPS-01", upsName = "UPS 1")
+
+        val genRes = GeneratorEngine.calculate(soleGen, listOf(circuit), 40.0)
+        assertEquals(
+            "Migrated generator attribution must be preserved via explicit assignment",
+            40.0, genRes.essentialLoadKVA, 0.001
+        )
+
+        val atsRes = AtsEngine.calculate(
+            settings = soleAts, totalConnectedLoad = 40.0, essentialLoadKVA = 40.0,
+            generatorSelectedSize = 0.0, transformerFLC = 0.0,
+            isc3PhaseAtTransformer = 10.0, circuits = listOf(circuit)
+        )
+        assertEquals(
+            "Migrated ATS attribution must be preserved via explicit assignment",
+            40.0, atsRes.selectedLoad, 0.001
+        )
+
+        val upsRes = UpsEngine.calculate(soleUps, listOf(circuit))
+        assertEquals(
+            "Migrated UPS attribution must be preserved via explicit assignment",
+            40.0, upsRes.totalCriticalLoadKVA, 0.001
+        )
     }
 
     @Test
@@ -133,9 +224,10 @@ class EquipmentDeletionReferentialIntegrityTest {
         assertEquals(0.0, results["GEN-01"]!!.essentialLoadKVA, 0.001)
         assertEquals(0.0, results["GEN-02"]!!.essentialLoadKVA, 0.001)
 
-        // Unassigned warning message must be emitted on each result
-        assertTrue(results["GEN-01"]!!.messages.any { it.contains("Floating Circuit") && it.contains("not assigned to any generator") })
-        assertTrue(results["GEN-02"]!!.messages.any { it.contains("Floating Circuit") && it.contains("not assigned to any generator") })
+        // Unassigned circuits are surfaced ONCE at project level via the graph builder's
+        // UNASSIGNED_GENERATOR_CIRCUIT validation issue — not duplicated on every instance.
+        assertTrue(results["GEN-01"]!!.messages.none { it.contains("not assigned to any generator") })
+        assertTrue(results["GEN-02"]!!.messages.none { it.contains("not assigned to any generator") })
     }
 
     @Test
@@ -309,5 +401,35 @@ class EquipmentDeletionReferentialIntegrityTest {
         assertFalse("Ambiguous UPS flag must be cleared", cMulti.upsBacked)
 
         assertTrue("Warnings must report ambiguous circuits", resultAmbiguous.warnings.isNotEmpty())
+    }
+
+    @Test
+    fun testImportedAtsToUpsSourceLinkClearedOnUpsDeletion() = runBlocking {
+        // The JSON import persists ATS source strings without validation, so an ATS->UPS
+        // source link can exist even though the power-systems UI cannot create one.
+        // Deleting the UPS must clear the imported link (M4: real case, not defensive).
+        val json = JSONObject().apply {
+            put("version", 1)
+            put("projectName", "Imported Ats Ups Link")
+            put("circuits", org.json.JSONArray())
+            put("ats", org.json.JSONArray().apply {
+                put(JSONObject().apply {
+                    put("atsId", "ATS-01")
+                    put("emergencySourceId", "UPS-01")
+                })
+            })
+            put("ups", org.json.JSONArray().apply {
+                put(JSONObject().apply { put("upsId", "UPS-01") })
+            })
+        }
+        val result = repository.importProjectFromJsonDetailed(json.toString())
+        val pid = result.projectId!!
+        val atsBefore = repository.powerSystemsDao.getAllAtsList(pid).first()
+        assertEquals("Import must persist the ATS->UPS link", "UPS-01", atsBefore.emergencySourceId)
+
+        repository.deleteUps(pid, "UPS-01")
+
+        val atsAfter = repository.powerSystemsDao.getAllAtsList(pid).first()
+        assertNull("Imported ATS->UPS link must be cleared when the UPS is deleted", atsAfter.emergencySourceId)
     }
 }

@@ -1,4 +1,4 @@
-package com.example.sld
+﻿package com.example.sld
 
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -77,9 +77,10 @@ class SldZoomControlsA11yTest {
                 com.example.ui.SldScreen(
                     circuits = circuits,
                     transformers = transformers,
-                    generatorResult = genResult,
-                    atsEntity = atsEntity,
-                    atsResult = atsResult,
+                    generators = listOf(com.example.data.GeneratorEntity(projectId = "proj_1", generatorId = "GEN-01", generatorName = "Generator 1", manualSizeKVA = genResult.finalSize)),
+                    generatorResults = mapOf("GEN-01" to genResult),
+                    atsList = listOf(atsEntity),
+                    atsResults = mapOf(atsEntity.atsId to atsResult),
                     transformerResults = transformerResults
                 )
             }

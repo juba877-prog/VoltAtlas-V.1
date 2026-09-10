@@ -138,9 +138,6 @@ class PowerAndShortCircuitScreenshotTest {
             drums = emptyList(),
             procurement = procurement,
             panels = emptyList(),
-            generatorResult = null,
-            atsResult = null,
-            upsResult = null,
             pfCorrectionResults = emptyList(),
             shortCircuitResults = scResults
         )

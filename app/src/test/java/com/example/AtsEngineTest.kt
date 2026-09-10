@@ -22,7 +22,7 @@ class AtsEngineTest {
         )
 
         val circuits = listOf(
-            CircuitEntity(id = 1, circuitName = "EMERGENCY-PANEL", loadKVA = 200.0, atsIncluded = true)
+            CircuitEntity(id = 1, circuitName = "EMERGENCY-PANEL", loadKVA = 200.0, atsIncluded = true, assignedAtsId = "ATS-01")
         )
 
         val result = AtsEngine.calculate(
@@ -56,7 +56,7 @@ class AtsEngineTest {
         )
 
         val circuits = listOf(
-            CircuitEntity(id = 1, circuitName = "EMERGENCY-PANEL", loadKVA = 350.0, atsIncluded = true)
+            CircuitEntity(id = 1, circuitName = "EMERGENCY-PANEL", loadKVA = 350.0, atsIncluded = true, assignedAtsId = "ATS-01")
         )
 
         val result = AtsEngine.calculate(
@@ -79,7 +79,7 @@ class AtsEngineTest {
     fun testTcAts03WithstandIcmPeakFactor() {
         // TC-ATS-03: given Icw = 47.36 kA -> Icm = 47.36 * 2.2 = 104.19 kA
         val settings = AtsEntity()
-        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-ATS", loadKVA = 100.0, atsIncluded = true))
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-ATS", loadKVA = 100.0, atsIncluded = true, assignedAtsId = "ATS-01"))
 
         val result = AtsEngine.calculate(
             settings = settings,
@@ -98,7 +98,7 @@ class AtsEngineTest {
     @Test
     fun testAtsManualOverride_ValidSize() {
         val settings = AtsEntity(enableManualOverride = true, manualSizeAmp = 630.0)
-        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-PANEL", loadKVA = 200.0, atsIncluded = true))
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-PANEL", loadKVA = 200.0, atsIncluded = true, assignedAtsId = "ATS-01"))
         val result = AtsEngine.calculate(settings = settings, totalConnectedLoad = 500.0, essentialLoadKVA = 200.0, generatorSelectedSize = 0.0, transformerFLC = 721.7, isc3PhaseAtTransformer = 25.0, circuits = circuits)
 
         assertEquals("Manual Override Active", result.status)
@@ -109,7 +109,7 @@ class AtsEngineTest {
     @Test
     fun testAtsManualOverride_UndersizedWarning() {
         val settings = AtsEntity(enableManualOverride = true, manualSizeAmp = 100.0)
-        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-PANEL", loadKVA = 200.0, atsIncluded = true))
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-PANEL", loadKVA = 200.0, atsIncluded = true, assignedAtsId = "ATS-01"))
         val result = AtsEngine.calculate(settings = settings, totalConnectedLoad = 500.0, essentialLoadKVA = 200.0, generatorSelectedSize = 0.0, transformerFLC = 721.7, isc3PhaseAtTransformer = 25.0, circuits = circuits)
 
         assertEquals("Manual Override Active", result.status)
@@ -120,7 +120,7 @@ class AtsEngineTest {
     @Test
     fun testAtsDefaultAutoSizingRegression() {
         val settings = AtsEntity(enableManualOverride = false, manualSizeAmp = null)
-        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-PANEL", loadKVA = 200.0, atsIncluded = true))
+        val circuits = listOf(CircuitEntity(id = 1, circuitName = "EMERGENCY-PANEL", loadKVA = 200.0, atsIncluded = true, assignedAtsId = "ATS-01"))
         val result = AtsEngine.calculate(settings = settings, totalConnectedLoad = 500.0, essentialLoadKVA = 200.0, generatorSelectedSize = 0.0, transformerFLC = 721.7, isc3PhaseAtTransformer = 25.0, circuits = circuits)
 
         assertEquals(400.0, result.finalRating ?: 0.0, 0.1)

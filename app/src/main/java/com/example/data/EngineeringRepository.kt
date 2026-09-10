@@ -190,7 +190,10 @@ class EngineeringRepository(
             circuitDao.insertCircuit(c.copy(assignedUpsId = null, upsBacked = false))
         }
 
-        // Defensive check for any ATS referencing this UPS (K2)
+        // Clear source links on any ATS referencing this UPS (K2). This case is reachable
+        // through imported projects: the JSON import persists ATS source strings without
+        // validation, so an ATS->UPS link can exist even though the power-systems UI
+        // cannot create one.
         val allAts = powerSystemsDao.getAllAtsList(projectId)
         allAts.filter { it.emergencySourceId == upsId || it.normalSourceId == upsId }.forEach { ats ->
             powerSystemsDao.saveAtsSettings(

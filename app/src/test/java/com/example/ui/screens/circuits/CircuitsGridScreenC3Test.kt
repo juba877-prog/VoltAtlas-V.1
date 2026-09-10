@@ -1,4 +1,4 @@
-package com.example.ui.screens.circuits
+﻿package com.example.ui.screens.circuits
 
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.test.*
@@ -72,8 +72,8 @@ class CircuitsGridScreenC3Test {
     ) = UiState.Success(
         circuits = circuits, transformers = emptyList(), sizingResults = sizingResults,
         shortCircuitResults = shortCircuitResults, transformerResults = emptyMap(), boq = emptyList(),
-        drums = emptyList(), procurement = emptyList(), panels = emptyList(), generatorResult = null,
-        atsResult = null, upsResult = null, pfCorrectionResults = emptyList()
+        drums = emptyList(), procurement = emptyList(), panels = emptyList(),
+        pfCorrectionResults = emptyList()
     )
 
     private fun setScreen(
@@ -309,3 +309,4 @@ class CircuitsGridScreenC3Test {
         composeTestRule.onNodeWithText("CIRCUITS (1)", substring = true, useUnmergedTree = true).assertExists()
     }
 }
+

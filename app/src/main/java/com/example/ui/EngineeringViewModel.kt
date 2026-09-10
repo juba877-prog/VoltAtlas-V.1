@@ -474,9 +474,9 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 boq = currentState.boq,
                 procurement = currentState.procurement,
                 drums = currentState.drums,
-                generatorResult = currentState.generatorResult,
-                atsResult = currentState.atsResult,
-                upsResult = currentState.upsResult,
+                generatorResults = currentState.generatorResults,
+                atsResults = currentState.atsResults,
+                upsResults = currentState.upsResults,
                 pfCorrectionResults = currentState.pfCorrectionResults,
                 earthingResult = currentState.earthingResult,
                 options = options
@@ -618,8 +618,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
 
             val totalConnectedLoad = transformerResults.values.sumOf { it.connectedLoad }
             val generatorResults = com.example.engine.GeneratorEngine.calculateAll(genList, atsEntitiesList, normalizedCircuits, totalConnectedLoad)
-            val generatorResult = generatorResults.values.firstOrNull()
-            
+
             val shortCircuitResults = com.example.engine.coordinator.EngineeringCalculationCoordinator.calculateProjectShortCircuit(
                 resolvedCircuits = resolvedList,
                 circuitParents = circuitParents,
@@ -644,11 +643,8 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 isc3PhaseAtTransformer = atsCircuitIsc,
                 totalConnectedLoad = totalConnectedLoad
             )
-            val atsResult = atsResults["ATS-01"] ?: atsResults.values.firstOrNull()
-            
             val upsResults = com.example.engine.UpsEngine.calculateAll(upsEntitiesList, normalizedCircuits)
-            val upsResult = upsResults["UPS-01"] ?: upsResults.values.firstOrNull()
-            
+
             val pfCorrectionResults = com.example.engine.PfCorrectionEngine.calculate(pfGlob, pfTrans, transformers, transformerResults)
 
             val adsResults = com.example.engine.coordinator.EngineeringCalculationCoordinator.calculateProjectAds(
@@ -713,18 +709,13 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 transformerResults = transformerResults,
                 shortCircuitResults = shortCircuitResults,
                 conduitResults = conduitResultsMap,
-                generatorResult = generatorResult,
-                atsResult = atsResult,
-                atsEntity = atsSetResolved,
-                upsResult = upsResult,
-                upsEntity = upsSet,
-                upsList = upsEntitiesList,
-                upsResults = upsResults,
                 pfCorrectionResults = pfCorrectionResults,
                 generators = genList,
                 generatorResults = generatorResults,
                 atsList = atsEntitiesList,
                 atsResults = atsResults,
+                upsList = upsEntitiesList,
+                upsResults = upsResults,
                 protectionResults = protectionResults,
                 adsResults = adsResults
             )
@@ -759,14 +750,11 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 drums = drums,
                 procurement = procurement,
                 panels = panels,
-                generatorResult = generatorResult,
                 generatorResults = generatorResults,
                 generators = genList,
-                atsResult = atsResult,
                 atsResults = atsResults,
                 atsEntity = atsSetResolved,
                 atsList = atsEntitiesList,
-                upsResult = upsResult,
                 upsResults = upsResults,
                 upsList = upsEntitiesList,
                 pfCorrectionResults = pfCorrectionResults,

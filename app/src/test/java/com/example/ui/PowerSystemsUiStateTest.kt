@@ -1,4 +1,4 @@
-package com.example.ui
+﻿package com.example.ui
 
 import com.example.data.*
 import org.junit.Assert.*
@@ -74,11 +74,8 @@ class PowerSystemsUiStateTest {
             drums = emptyList(),
             procurement = emptyList(),
             panels = emptyList(),
-            generatorResult = null,
             generators = genList,
-            atsResult = null,
             atsList = atsList,
-            upsResult = null,
             upsList = upsList,
             pfCorrectionResults = emptyList()
         )

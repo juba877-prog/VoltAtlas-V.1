@@ -1,4 +1,4 @@
-package com.example.sld
+﻿package com.example.sld
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -82,9 +82,10 @@ class SldScreenScreenshotTest {
                 com.example.ui.SldScreen(
                     circuits = circuits,
                     transformers = transformers,
-                    generatorResult = genResult,
-                    atsEntity = atsEntity,
-                    atsResult = atsResult,
+                    generators = listOf(com.example.data.GeneratorEntity(projectId = "proj_1", generatorId = "GEN-01", generatorName = "Generator 1", manualSizeKVA = genResult.finalSize)),
+                    generatorResults = mapOf("GEN-01" to genResult),
+                    atsList = listOf(atsEntity),
+                    atsResults = mapOf(atsEntity.atsId to atsResult),
                     transformerResults = transformerResults
                 )
             }
@@ -104,9 +105,10 @@ class SldScreenScreenshotTest {
                 com.example.ui.SldScreen(
                     circuits = circuits,
                     transformers = transformers,
-                    generatorResult = genResult,
-                    atsEntity = atsEntity,
-                    atsResult = atsResult,
+                    generators = listOf(com.example.data.GeneratorEntity(projectId = "proj_1", generatorId = "GEN-01", generatorName = "Generator 1", manualSizeKVA = genResult.finalSize)),
+                    generatorResults = mapOf("GEN-01" to genResult),
+                    atsList = listOf(atsEntity),
+                    atsResults = mapOf(atsEntity.atsId to atsResult),
                     transformerResults = transformerResults
                 )
             }
@@ -156,9 +158,10 @@ class SldScreenScreenshotTest {
                 com.example.ui.SldScreen(
                     circuits = circuits,
                     transformers = transformers,
-                    generatorResult = genResult,
-                    atsEntity = atsEntity,
-                    atsResult = atsResult,
+                    generators = listOf(com.example.data.GeneratorEntity(projectId = "proj_1", generatorId = "GEN-01", generatorName = "Generator 1", manualSizeKVA = genResult.finalSize)),
+                    generatorResults = mapOf("GEN-01" to genResult),
+                    atsList = listOf(atsEntity),
+                    atsResults = mapOf(atsEntity.atsId to atsResult),
                     transformerResults = transformerResults
                 )
             }
@@ -306,4 +309,6 @@ class SldScreenScreenshotTest {
         composeTestRule.onNodeWithTag("sld_screen_container").captureRoboImage(file = File(outputDir, "scenario_4_wide_busbar_high_feeder.png"))
     }
 }
+
+
 

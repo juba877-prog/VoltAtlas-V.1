@@ -41,12 +41,11 @@ object AtsEngine {
         circuits: List<CircuitEntity>
     ): AtsResult {
         val atsId = settings.atsId
+        // Attribution is by explicit assignment only (B1): a circuit that is flagged but
+        // unassigned is attributed to no ATS instance — there is no engineering basis for
+        // choosing one, and picking a literal default identifier is fabrication.
         val atsCircuits = circuits.filter { circ ->
-            if (circ.assignedAtsId != null) {
-                circ.assignedAtsId == atsId
-            } else {
-                circ.atsIncluded && atsId == "ATS-01"
-            }
+            circ.assignedAtsId != null && circ.assignedAtsId == atsId
         }
 
         if (atsCircuits.isEmpty()) {
@@ -206,23 +205,13 @@ object AtsEngine {
     ): Map<String, AtsResult> {
         if (atsList.isEmpty()) return emptyMap()
 
-        val unassignedAtsCircuits = circuits.filter { circ ->
-            circ.atsIncluded && circ.assignedAtsId == null
-        }
-        val unassignedWarnings = if (unassignedAtsCircuits.isNotEmpty()) {
-            val names = unassignedAtsCircuits.joinToString { it.circuitName.ifBlank { "ID ${it.id}" } }
-            listOf("WARNING: ${unassignedAtsCircuits.size} circuit(s) flagged as ATS-included but not assigned to any ATS: $names. Assign explicitly.")
-        } else emptyList()
-
+        // Unassigned flagged circuits are surfaced ONCE at project level via the graph
+        // builder's UNASSIGNED_ATS_CIRCUIT validation issue — never per instance.
         return atsList.associate { ats ->
             val emergencyGenId = ats.emergencySourceId
             val genSize = emergencyGenId?.let { generatorSelectedSizes[it] } ?: 0.0
             val atsCircuits = circuits.filter { circ ->
-                if (circ.assignedAtsId != null) {
-                    circ.assignedAtsId == ats.atsId
-                } else {
-                    false
-                }
+                circ.assignedAtsId != null && circ.assignedAtsId == ats.atsId
             }
             val essentialLoadKVA = atsCircuits.sumOf { it.loadKVA }
             val res = calculate(
@@ -234,8 +223,7 @@ object AtsEngine {
                 isc3PhaseAtTransformer = isc3PhaseAtTransformer,
                 circuits = circuits
             )
-            val mergedMessages = if (unassignedWarnings.isNotEmpty()) res.messages + unassignedWarnings else res.messages
-            ats.atsId to res.copy(messages = mergedMessages)
+            ats.atsId to res
         }
     }
 }

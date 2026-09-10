@@ -32,11 +32,6 @@ object ElectricalNetworkGraphBuilder {
         transformerResults: Map<String, TransformerResult> = emptyMap(),
         shortCircuitResults: Map<Int, ShortCircuitResult> = emptyMap(),
         conduitResults: Map<Int, ConduitFillResult> = emptyMap(),
-        generatorResult: GeneratorResult? = null,
-        atsResult: AtsResult? = null,
-        atsEntity: AtsEntity? = null,
-        upsResult: UpsResult? = null,
-        upsEntity: UpsEntity? = null,
         pfCorrectionResults: List<PfCorrectionResult> = emptyList(),
         generators: List<GeneratorEntity>? = null,
         generatorResults: Map<String, GeneratorResult> = emptyMap(),
@@ -188,28 +183,16 @@ object ElectricalNetworkGraphBuilder {
         }
 
         // 2. Multi-Instance Generator Processing
-        val projGenerators = when {
-            generators != null -> {
-                generators.filter { it.projectId == effectiveProjectId || (it.projectId == "DEFAULT_PROJECT" && effectiveProjectId != "DEFAULT_PROJECT") }
-            }
-            generatorResult != null && ((generatorResult.finalSize ?: 0.0) > 0.0 || generatorResult.status.isNotBlank()) -> {
-                listOf(GeneratorEntity(projectId = effectiveProjectId, generatorId = "1", generatorName = "Generator", manualSizeKVA = generatorResult.finalSize))
-            }
-            else -> emptyList()
-        }
+        val projGenerators = generators?.filter {
+            it.projectId == effectiveProjectId || (it.projectId == "DEFAULT_PROJECT" && effectiveProjectId != "DEFAULT_PROJECT")
+        } ?: emptyList()
 
-        val effectiveGenResults: Map<String, GeneratorResult> = if (generatorResults.isNotEmpty()) {
-            generatorResults
-        } else if (generatorResult != null) {
-            mapOf("1" to generatorResult)
-        } else {
-            emptyMap()
-        }
+        val effectiveGenResults: Map<String, GeneratorResult> = generatorResults
 
         projGenerators.forEach { gen ->
             val genId = gen.generatorId.ifBlank { "1" }
             val genNodeId = "gen_$genId"
-            val genRes = effectiveGenResults[genId] ?: (if (genId == "1") generatorResult else null)
+            val genRes = effectiveGenResults[genId]
             val genRatedKva = genRes?.finalSize?.takeIf { it > 0.0 } ?: gen.manualSizeKVA ?: 0.0
             val genRatedKvaStr = if (genRatedKva > 0.0) "${genRatedKva.toInt()} kVA" else "DATA REQUIRED"
             val sysVoltage = 400
@@ -302,48 +285,20 @@ object ElectricalNetworkGraphBuilder {
         }
 
         // Multi-Instance ATS Processing
-        val projAtsList = when {
-            atsList != null -> {
-                atsList.filter {
-                    it.projectId == effectiveProjectId ||
-                        (
-                            it.projectId == "DEFAULT_PROJECT" &&
-                                effectiveProjectId != "DEFAULT_PROJECT"
-                        )
-                }
-            }
-
-            atsEntity != null -> {
-                listOf(atsEntity)
-            }
-
-            atsResult != null &&
-                atsResult.status.isNotBlank() &&
-                atsResult.status !in setOf("SELECT_LOADS", "NO_LOADS") -> {
-                listOf(
-                    AtsEntity(
-                        projectId = effectiveProjectId,
-                        atsId = "1",
-                        atsName = "ATS-01"
-                    )
+        val projAtsList = atsList?.filter {
+            it.projectId == effectiveProjectId ||
+                (
+                    it.projectId == "DEFAULT_PROJECT" &&
+                        effectiveProjectId != "DEFAULT_PROJECT"
                 )
-            }
+        } ?: emptyList()
 
-            else -> emptyList()
-        }
-
-        val effectiveAtsResults: Map<String, AtsResult> = if (atsResults.isNotEmpty()) {
-            atsResults
-        } else if (atsResult != null) {
-            mapOf((atsEntity?.atsId ?: "1") to atsResult)
-        } else {
-            emptyMap()
-        }
+        val effectiveAtsResults: Map<String, AtsResult> = atsResults
 
         projAtsList.forEach { ats ->
             val atsId = ats.atsId.ifBlank { "1" }
             val atsNodeId = "ats_$atsId"
-            val atsRes = effectiveAtsResults[atsId] ?: (if (atsId == "1" || atsId == atsEntity?.atsId) atsResult else null)
+            val atsRes = effectiveAtsResults[atsId]
             val atsOutputBoardId = ats.outputBoardId
             val atsName = ats.atsName.ifBlank { "ATS-$atsId" }
 
@@ -777,39 +732,17 @@ object ElectricalNetworkGraphBuilder {
         }
 
         // 2.5 Multi-Instance UPS Processing
-        val projUpsList = when {
-            upsList != null -> {
-                upsList.filter {
-                    it.projectId == effectiveProjectId ||
-                        (it.projectId == "DEFAULT_PROJECT" && effectiveProjectId != "DEFAULT_PROJECT")
-                }
-            }
-            upsEntity != null -> listOf(upsEntity)
-            upsResult != null && upsResult.status.isNotBlank() -> {
-                listOf(
-                    UpsEntity(
-                        projectId = effectiveProjectId,
-                        upsId = "1",
-                        upsName = "UPS 1",
-                        manualSizeKVA = upsResult.recommendedSize ?: upsResult.designUpsKVA
-                    )
-                )
-            }
-            else -> emptyList()
-        }
+        val projUpsList = upsList?.filter {
+            it.projectId == effectiveProjectId ||
+                (it.projectId == "DEFAULT_PROJECT" && effectiveProjectId != "DEFAULT_PROJECT")
+        } ?: emptyList()
 
-        val effectiveUpsResults: Map<String, UpsResult> = if (upsResults.isNotEmpty()) {
-            upsResults
-        } else if (upsResult != null) {
-            mapOf((upsEntity?.upsId ?: "1") to upsResult)
-        } else {
-            emptyMap()
-        }
+        val effectiveUpsResults: Map<String, UpsResult> = upsResults
 
         projUpsList.forEach { ups ->
             val upsId = ups.upsId.ifBlank { "1" }
             val upsNodeId = "ups_$upsId"
-            val upsRes = effectiveUpsResults[upsId] ?: (if (upsId == "1" || upsId == upsEntity?.upsId) upsResult else null)
+            val upsRes = effectiveUpsResults[upsId]
             val upsRatedKva = upsRes?.recommendedSize?.takeIf { it > 0.0 } ?: upsRes?.designUpsKVA?.takeIf { it > 0.0 } ?: ups.manualSizeKVA ?: 0.0
             val upsRatedKvaStr = if (upsRatedKva > 0.0) "${upsRatedKva.toInt()} kVA" else "DATA REQUIRED"
             val upsSysV = if (ups.systemVoltage > 0) "${ups.systemVoltage} V" else "400 V"

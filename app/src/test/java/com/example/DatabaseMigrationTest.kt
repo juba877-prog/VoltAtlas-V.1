@@ -599,4 +599,115 @@ class DatabaseMigrationTest {
         val safeIndexForLighting = if (oldLightingIndex in visibleTabs.indices) oldLightingIndex else 0
         assertEquals(0, safeIndexForLighting) // Redirects safely to Dashboard
     }
+
+    @Test
+    fun testMigration25To26ConvertsLegacyInclusionFlags() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val tempDbFile = java.io.File(context.cacheDir, "mig2526_flags_test.db")
+        tempDbFile.delete()
+
+        // 1. Seed a canonical current-schema database with the PRE-migration legacy state:
+        //    inclusion flags set, explicit assignments empty. Three projects cover the
+        //    unambiguous (exactly one instance), ambiguous (more than one) and
+        //    zero-instance cases.
+        val seedDb = Room.databaseBuilder(context, AppDatabase::class.java, tempDbFile.absolutePath)
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .allowMainThreadQueries()
+            .build()
+        seedDb.openHelper.writableDatabase // force schema creation at the current version
+        val dao = seedDb.powerSystemsDao()
+        // P1: exactly one instance of each type
+        dao.saveGeneratorSettings(GeneratorEntity(projectId = "P1", id = 1, generatorId = "GEN-01", generatorName = "Gen 1"))
+        dao.saveAtsSettings(AtsEntity(projectId = "P1", id = 1, atsId = "ATS-01", atsName = "ATS 1"))
+        dao.saveUpsSettings(UpsEntity(projectId = "P1", id = 1, upsId = "UPS-01", upsName = "UPS 1"))
+        // P2: two instances of each type
+        dao.saveGeneratorSettings(GeneratorEntity(projectId = "P2", id = 1, generatorId = "GEN-02", generatorName = "Gen 2"))
+        dao.saveGeneratorSettings(GeneratorEntity(projectId = "P2", id = 2, generatorId = "GEN-03", generatorName = "Gen 3"))
+        dao.saveAtsSettings(AtsEntity(projectId = "P2", id = 1, atsId = "ATS-02", atsName = "ATS 2"))
+        dao.saveAtsSettings(AtsEntity(projectId = "P2", id = 2, atsId = "ATS-03", atsName = "ATS 3"))
+        dao.saveUpsSettings(UpsEntity(projectId = "P2", id = 1, upsId = "UPS-02", upsName = "UPS 2"))
+        dao.saveUpsSettings(UpsEntity(projectId = "P2", id = 2, upsId = "UPS-03", upsName = "UPS 3"))
+        // P3: zero instances of every type
+        seedDb.circuitDao().insertCircuit(
+            CircuitEntity(projectId = "P1", circuitName = "F1", loadKVA = 25.0, generatorIncluded = true, atsIncluded = true, upsBacked = true)
+        )
+        seedDb.circuitDao().insertCircuit(
+            CircuitEntity(projectId = "P2", circuitName = "F2", loadKVA = 35.0, generatorIncluded = true, atsIncluded = true, upsBacked = true)
+        )
+        seedDb.circuitDao().insertCircuit(
+            CircuitEntity(projectId = "P3", circuitName = "F3", loadKVA = 45.0, generatorIncluded = true, atsIncluded = true, upsBacked = true)
+        )
+        // seedDb is intentionally left open (never closed): closing a Room instance after
+        // suspend-DAO usage cancels its internal transaction scope, and that cancellation
+        // surfaces asynchronously inside runBlocking and fails the test. The instance is
+        // abandoned to the Robolectric teardown; the reopen below uses its own connection.
+
+        // 2. Rewind the version to the true prior schema version (25) so the registered
+        //    MIGRATION_25_26 must execute on the next open.
+        val raw = SQLiteDatabase.openDatabase(tempDbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE)
+        raw.version = 25
+        raw.close()
+        // 3. Reopen through Room with the full registered migration chain.
+        val appDb = Room.databaseBuilder(context, AppDatabase::class.java, tempDbFile.absolutePath)
+            .addMigrations(
+                MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+                MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
+                MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
+                MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
+                MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
+                MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
+                MIGRATION_25_26
+            )
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val circuitsP1 = appDb.circuitDao().getCircuitsListForProject("P1")
+            val circuitsP2 = appDb.circuitDao().getCircuitsListForProject("P2")
+            val circuitsP3 = appDb.circuitDao().getCircuitsListForProject("P3")
+
+            // Unambiguous: attribution preserved, flags retained
+            val f1 = circuitsP1.first { it.circuitName == "F1" }
+            assertEquals("Unambiguous legacy state must keep its generator attribution", "GEN-01", f1.assignedGeneratorId)
+            assertTrue("Unambiguous legacy flag must be retained", f1.generatorIncluded)
+            assertEquals("Unambiguous legacy state must keep its ATS attribution", "ATS-01", f1.assignedAtsId)
+            assertTrue(f1.atsIncluded)
+            assertEquals("Unambiguous legacy state must keep its UPS attribution", "UPS-01", f1.assignedUpsId)
+            assertTrue(f1.upsBacked)
+
+            // Ambiguous: unassigned, flags cleared
+            val f2 = circuitsP2.first { it.circuitName == "F2" }
+            assertNull("Ambiguous legacy state must be unassigned", f2.assignedGeneratorId)
+            assertFalse("Ambiguous legacy flag must be cleared", f2.generatorIncluded)
+            assertNull(f2.assignedAtsId)
+            assertFalse(f2.atsIncluded)
+            assertNull(f2.assignedUpsId)
+            assertFalse(f2.upsBacked)
+
+            // Zero instances: unassigned, flags cleared (no phantom adoption later)
+            val f3 = circuitsP3.first { it.circuitName == "F3" }
+            assertNull("Zero-instance legacy state must be unassigned", f3.assignedGeneratorId)
+            assertFalse(f3.generatorIncluded)
+            assertNull(f3.assignedAtsId)
+            assertFalse(f3.atsIncluded)
+            assertNull(f3.assignedUpsId)
+            assertFalse(f3.upsBacked)
+
+            // Backward compatibility: the migrated single-instance project retains its
+            // original sizing attribution with the literal identifier removed.
+            val upsRes = com.example.engine.UpsEngine.calculate(
+                dao.getAllUpsList("P1").first(), circuitsP1
+            )
+            assertEquals("Migrated UPS attribution must be preserved via explicit assignment", 25.0, upsRes.totalCriticalLoadKVA, 0.001)
+        } finally {
+            try {
+                appDb.close()
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                // Room internal scope-cleanup cancellation; all assertions already ran.
+            }
+            tempDbFile.delete()
+        }
+    }
 }

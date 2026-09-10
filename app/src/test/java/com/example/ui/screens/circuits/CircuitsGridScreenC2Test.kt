@@ -107,9 +107,6 @@ class CircuitsGridScreenC2Test {
         drums = emptyList(),
         procurement = emptyList(),
         panels = emptyList(),
-        generatorResult = null,
-        atsResult = null,
-        upsResult = null,
         pfCorrectionResults = emptyList()
     )
 

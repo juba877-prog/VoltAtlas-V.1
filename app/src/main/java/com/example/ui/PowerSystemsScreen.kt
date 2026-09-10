@@ -332,7 +332,7 @@ fun GeneratorSettingsPanel(
             ) {
                 generators.forEach { gen ->
                     val isSelected = gen.generatorId == activeGenId
-                    val res = generatorResults[gen.generatorId] ?: successState?.generatorResult
+                    val res = generatorResults[gen.generatorId]
                     val ratingText = res?.finalSize?.let { " (${formatRatingVal(it)} kVA)" } ?: ""
                     DsSelectableChip(
                         text = "${gen.generatorName}$ratingText",
@@ -401,7 +401,7 @@ fun GeneratorSettingsPanel(
                 }
             }
         } else {
-            val result = generatorResults[activeGen.generatorId] ?: successState?.generatorResult
+            val result = generatorResults[activeGen.generatorId]
 
             // Card 1: Hero Sizing & Telemetry Card
             item {
@@ -757,7 +757,7 @@ fun AtsSettingsPanel(
             ) {
                 atsList.forEach { ats ->
                     val isSelected = ats.atsId == activeAtsId
-                    val res = atsResults[ats.atsId] ?: successState?.atsResult
+                    val res = atsResults[ats.atsId]
                     val ratingText = res?.finalRating?.let { " (${formatRatingVal(it)} A)" } ?: ""
                     DsSelectableChip(
                         text = "${ats.atsName}$ratingText",
@@ -826,7 +826,7 @@ fun AtsSettingsPanel(
                 }
             }
         } else {
-            val result = atsResults[activeAts.atsId] ?: successState?.atsResult
+            val result = atsResults[activeAts.atsId]
 
             val generatorLabelMap = generators.associate { gen ->
                 val label = if (generators.count { it.generatorName.trim().equals(gen.generatorName.trim(), ignoreCase = true) } > 1) {
@@ -1223,7 +1223,7 @@ fun UpsSettingsPanel(
             ) {
                 upsList.forEach { ups ->
                     val isSelected = ups.upsId == activeUpsId
-                    val res = upsResults[ups.upsId] ?: successState?.upsResult
+                    val res = upsResults[ups.upsId]
                     val sizeText = res?.recommendedSize?.let { " (${formatRatingVal(it)} kVA)" } ?: ""
                     DsSelectableChip(
                         text = "${ups.upsName}$sizeText",
@@ -1292,7 +1292,7 @@ fun UpsSettingsPanel(
                 }
             }
         } else {
-            val result = upsResults[activeUps.upsId] ?: successState?.upsResult
+            val result = upsResults[activeUps.upsId]
 
             // Card 1: Hero Sizing & Telemetry Card
             item {

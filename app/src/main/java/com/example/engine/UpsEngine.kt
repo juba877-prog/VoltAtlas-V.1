@@ -28,12 +28,11 @@ object UpsEngine {
         circuits: List<CircuitEntity>
     ): UpsResult {
         val upsId = settings.upsId
+        // Attribution is by explicit assignment only (B1): a circuit that is flagged but
+        // unassigned is attributed to no UPS instance — there is no engineering basis for
+        // choosing one, and picking a literal default identifier is fabrication.
         val criticalCircuits = circuits.filter { circ ->
-            if (circ.assignedUpsId != null) {
-                circ.assignedUpsId == upsId
-            } else {
-                circ.upsBacked && upsId == "UPS-01"
-            }
+            circ.assignedUpsId != null && circ.assignedUpsId == upsId
         }
         val totalCriticalLoadKVA = criticalCircuits.sumOf { it.loadKVA }
 
