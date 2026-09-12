@@ -69,12 +69,17 @@ fun CircuitEditorShell(
 
     val scrollState = rememberScrollState()
 
-    Scaffold(
+    Surface(
         modifier = modifier
             .testTag("circuit_editor_root")
             .fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.surface,
-        topBar = {
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+        ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.surfaceContainerLow
@@ -134,9 +139,88 @@ fun CircuitEditorShell(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 }
             }
-        },
-        bottomBar = {
-            // Sticky Bottom Action Bar (Back / Next) with layout-owned measured region
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .widthIn(max = 640.dp)
+                        .verticalScroll(scrollState)
+                        .padding(horizontal = 16.dp, vertical = 16.dp)
+                ) {
+                    // Single Content Heading communicating position, full step title, and helper text
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("circuit_editor_step_header")
+                            .padding(bottom = 16.dp)
+                    ) {
+                        Text(
+                            text = state.currentStep.title,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = state.currentStep.subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    when (state.currentStep) {
+                        CircuitWorkflowStep.IDENTITY -> {
+                            IdentityStepContent(
+                                draft = state.draft,
+                                onDraftChange = events::onDraftChange,
+                                existingCircuits = state.existingCircuits,
+                                editingCircuitId = state.editingCircuitId,
+                                availableTransformers = state.availableTransformers,
+                                resolution = state.sourceResolution,
+                                identityError = state.identityError,
+                                onAddTransformer = events::onAddTransformer
+                            )
+                        }
+
+                        CircuitWorkflowStep.LOAD -> {
+                            LoadStepContent(
+                                draft = state.draft,
+                                onDraftChange = events::onDraftChange
+                            )
+                        }
+
+                        else -> {
+                            // Non-implemented workflow steps in Stage C2 render clean placeholder for navigation tests
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp)
+                                    .testTag("circuit_editor_step_placeholder"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Step '${state.currentStep.title}' is scheduled for subsequent stage.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // Bottom clearance element: guarantees performScrollTo() reaches bottom
+                    Spacer(
+                        modifier = Modifier
+                            .height(16.dp)
+                            .testTag("content_bottom_clearance_spacer")
+                    )
+                }
+            }
+
+            // Sticky Bottom Action Bar with layout-owned measured region
             val canGoBack = state.currentStep != state.applicableSteps.first()
             CircuitEditorActionBar(
                 canGoBack = canGoBack,
@@ -146,88 +230,6 @@ fun CircuitEditorShell(
                     .fillMaxWidth()
                     .navigationBarsPadding()
             )
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .imePadding(),
-            contentAlignment = Alignment.TopCenter
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .widthIn(max = 640.dp)
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
-            ) {
-                // Single Content Heading communicating position, full step title, and helper text
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("circuit_editor_step_header")
-                        .padding(bottom = 16.dp)
-                ) {
-                    Text(
-                        text = state.currentStep.title,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = state.currentStep.subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                when (state.currentStep) {
-                    CircuitWorkflowStep.IDENTITY -> {
-                        IdentityStepContent(
-                            draft = state.draft,
-                            onDraftChange = events::onDraftChange,
-                            existingCircuits = state.existingCircuits,
-                            editingCircuitId = state.editingCircuitId,
-                            availableTransformers = state.availableTransformers,
-                            resolution = state.sourceResolution,
-                            identityError = state.identityError,
-                            onAddTransformer = events::onAddTransformer
-                        )
-                    }
-
-                    CircuitWorkflowStep.LOAD -> {
-                        LoadStepContent(
-                            draft = state.draft,
-                            onDraftChange = events::onDraftChange
-                        )
-                    }
-
-                    else -> {
-                        // Non-implemented workflow steps in Stage C2 render clean placeholder for navigation tests
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp)
-                                .testTag("circuit_editor_step_placeholder"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Step '${state.currentStep.title}' is scheduled for subsequent stage.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                // Explicit content-bottom clearance: guarantees final scrollable content
-                // clears the sticky bottom action bar with ample margin
-                Spacer(
-                    modifier = Modifier
-                        .height(32.dp)
-                        .testTag("content_bottom_clearance_spacer")
-                )
-            }
         }
     }
 }

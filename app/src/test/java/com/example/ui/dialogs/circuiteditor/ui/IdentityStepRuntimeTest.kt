@@ -1,6 +1,7 @@
 package com.example.ui.dialogs.circuiteditor.ui
 
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -160,7 +161,7 @@ class IdentityStepRuntimeTest {
         }
 
         composeTestRule.onNodeWithTag("computed_hierarchy_card").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Derived Network Hierarchy").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Derived Hierarchy").assertIsDisplayed()
         composeTestRule.onNodeWithText("Supply Source").assertIsDisplayed()
         composeTestRule.onNodeWithText("0 (Root = 0)").assertIsDisplayed()
         composeTestRule.onNodeWithText("Resolved Transformer").assertIsDisplayed()
@@ -325,10 +326,28 @@ class IdentityStepRuntimeTest {
         composeTestRule.onNodeWithTag("add_transformer_btn").assertIsDisplayed()
 
         composeTestRule.onNodeWithTag("computed_hierarchy_card").performScrollTo()
-        composeTestRule.onNodeWithText("Derived Network Hierarchy").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Derived Hierarchy").assertIsDisplayed()
         composeTestRule.onNodeWithText("Supply Source").assertIsDisplayed()
         composeTestRule.onNodeWithText("Hierarchy Level").assertIsDisplayed()
         composeTestRule.onNodeWithText("Source Type").assertIsDisplayed()
         composeTestRule.onNodeWithText("Resolved Transformer").assertIsDisplayed()
+    }
+
+    @Test
+    fun test27_failFirst_addTransformerIsCompactIconButtonWithExactDescription() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB", panelType = "MDB", fedFrom = "Transformer"),
+            availableTransformers = listOf(TransformerSnapshot("TX-01"))
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        val addBtn = composeTestRule.onNodeWithTag("add_transformer_btn")
+        addBtn.assertIsDisplayed()
+        addBtn.assertContentDescriptionEquals("Add Transformer")
+        val bounds = addBtn.getBoundsInRoot()
+        val width = bounds.right - bounds.left
+        assertTrue("Add Transformer must be compact icon button (width 48dp), but was $width", kotlin.math.abs((width - 48.dp).value) <= 2f)
     }
 }

@@ -20,7 +20,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -127,36 +129,29 @@ fun IdentityStepContent(
                     )
                 }
 
-                FilledTonalButton(
+                FilledTonalIconButton(
                     onClick = onAddTransformer,
                     modifier = Modifier
                         .testTag("add_transformer_btn")
-                        .sizeIn(minHeight = 48.dp)
+                        .size(48.dp)
                         .semantics {
-                            contentDescription = "Add new transformer"
+                            contentDescription = "Add Transformer"
                         },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                    colors = ButtonDefaults.filledTonalButtonColors(
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                    ),
-                    shape = RoundedCornerShape(8.dp)
+                    )
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Add TX",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
         }
 
-        // Computed Hierarchy Information Card (Read-Only)
+        // Computed Hierarchy Information Card (Compact MD3 Tonal Card)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -164,71 +159,103 @@ fun IdentityStepContent(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerLow
             ),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
             shape = RoundedCornerShape(12.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "Derived Network Hierarchy",
+                    text = "Derived Hierarchy",
                     style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.SemiBold
                     ),
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.testTag("derived_hierarchy_title")
                 )
 
-                HierarchyField(
-                    label = "Supply Source",
-                    value = draft.fedFrom
-                )
-                HierarchyField(
-                    label = "Hierarchy Level",
-                    value = "${resolution.calculatedLevel} (Root = 0)"
-                )
-                HierarchyField(
-                    label = "Source Type",
-                    value = resolution.calculatedSourceType
-                )
-                HierarchyField(
-                    label = "Resolved Transformer",
-                    value = resolution.finalTxId.ifBlank { "None" },
-                    modifier = Modifier.testTag("hierarchy_field_resolved_transformer")
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("hierarchy_field_supply_source"),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Supply Source",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = draft.fedFrom,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.testTag("supply_source_value")
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("hierarchy_field_hierarchy_level"),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Hierarchy Level",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${resolution.calculatedLevel} (Root = 0)",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.testTag("hierarchy_level_value")
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("hierarchy_field_source_type"),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Source Type",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = resolution.calculatedSourceType,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.testTag("source_type_value")
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("hierarchy_field_resolved_transformer"),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Resolved Transformer",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = resolution.finalTxId.ifBlank { "None" },
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.testTag("resolved_transformer_value")
+                    )
+                }
             }
         }
-    }
-}
-
-/**
- * Responsive stacked label-value presentation for engineering hierarchy data.
- * Guarantees zero truncation at large accessibility font scales (1.3x - 1.5x)
- * and restrained emphasis using MD3 bodyMedium rather than display tokens.
- */
-@Composable
-private fun HierarchyField(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium.copy(
-                fontWeight = FontWeight.Medium
-            ),
-            color = MaterialTheme.colorScheme.onSurface
-        )
     }
 }

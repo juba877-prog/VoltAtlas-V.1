@@ -1,15 +1,14 @@
 package com.example.ui.dialogs.circuiteditor.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,16 +18,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.example.ui.components.ThemeBorderSubtle
-import com.example.ui.components.ThemePrimary
-import com.example.ui.components.ThemeSurface
-import com.example.ui.components.ThemeTextDisabled
-import com.example.ui.components.ThemeTextPrimary
 
 /**
  * Bottom action bar for the Circuit Editor.
  *
- * Provides accessible Back and Next controls. No Save action is present in Stage C2.
+ * Requirements:
+ * - surfaceContainerHigh background with tonal elevation and no heavy border.
+ * - FilledTonalButton for Back (secondary MD3 action).
+ * - Button for Next (primary MD3 action).
+ * - Minimum 48dp interactive height.
+ * - Standard 12dp action spacing gap.
+ * - Back absent on Step 1; Next end-aligned on Step 1.
+ * - Back and Next share equal width on later steps.
  */
 @Composable
 fun CircuitEditorActionBar(
@@ -39,49 +40,74 @@ fun CircuitEditorActionBar(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-        shadowElevation = 0.dp
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 2.dp
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = if (canGoBack) Arrangement.SpaceBetween else Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (canGoBack) {
-                OutlinedButton(
+        if (canGoBack) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilledTonalButton(
                     onClick = onBackClick,
                     modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
                         .testTag("circuit_editor_back_btn")
-                        .sizeIn(minWidth = 100.dp, minHeight = 48.dp)
                         .semantics {
                             contentDescription = "Back to previous step"
                         },
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
                 ) {
                     Text("Back")
                 }
-            }
 
-            Button(
-                onClick = onNextClick,
+                Button(
+                    onClick = onNextClick,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("circuit_editor_next_btn")
+                        .semantics {
+                            contentDescription = "Next step"
+                        },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text("Next")
+                }
+            }
+        } else {
+            Row(
                 modifier = Modifier
-                    .testTag("circuit_editor_next_btn")
-                    .sizeIn(minWidth = 120.dp, minHeight = 48.dp)
-                    .semantics {
-                        contentDescription = "Next step"
-                    },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Next")
+                Button(
+                    onClick = onNextClick,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("circuit_editor_next_btn")
+                        .semantics {
+                            contentDescription = "Next step"
+                        },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text("Next")
+                }
             }
         }
     }

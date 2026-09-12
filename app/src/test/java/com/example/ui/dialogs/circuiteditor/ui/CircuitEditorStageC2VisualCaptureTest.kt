@@ -909,11 +909,19 @@ class CircuitEditorStageC2VisualCaptureTest {
         composeTestRule.setContent {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
+        composeTestRule.waitForIdle()
+        val node7 = composeTestRule.onNodeWithTag("progress_step_node_7")
+        node7.assertIsDisplayed()
+        val bounds7 = node7.getBoundsInRoot()
+        val center7 = (bounds7.left + bounds7.right) / 2
+        val delta7 = kotlin.math.abs((center7 - 160.dp).value)
+        assertTrue("Step 7 center ($center7) must be within 2dp of 160dp, delta was $delta7", delta7 <= 2f)
+
         logFocusedRecaptureReport("C_panel_step7_320_font1_3", 320, 800, 1.3f, CircuitWorkflowStep.REVIEW, 7, 7)
         capture("C_panel_step7_320_font1_3.png")
     }
 
-    // D_panel_middle_320_font1_3.png
+    // D_panel_middle_320_font1_3.png / D_panel_step4_320_font1_3.png
     @Test
     @Config(sdk = [33], qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.3f)
     fun testD_panel_middle_320_font1_3() {
@@ -927,8 +935,17 @@ class CircuitEditorStageC2VisualCaptureTest {
         composeTestRule.setContent {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
+        composeTestRule.waitForIdle()
+        val node4 = composeTestRule.onNodeWithTag("progress_step_node_4")
+        node4.assertIsDisplayed()
+        val bounds4 = node4.getBoundsInRoot()
+        val center4 = (bounds4.left + bounds4.right) / 2
+        val delta4 = kotlin.math.abs((center4 - 160.dp).value)
+        assertTrue("Step 4 center ($center4) must be within 2dp of 160dp, delta was $delta4", delta4 <= 2f)
+
         logFocusedRecaptureReport("D_panel_middle_320_font1_3", 320, 800, 1.3f, CircuitWorkflowStep.FEEDER, 4, 7)
         capture("D_panel_middle_320_font1_3.png")
+        capture("D_panel_step4_320_font1_3.png")
     }
 
     // E_load_step2_360_font1_3.png
@@ -981,5 +998,65 @@ class CircuitEditorStageC2VisualCaptureTest {
         }
         logFocusedRecaptureReport("G_panel_step1_412_font1_3", 412, 892, 1.3f, CircuitWorkflowStep.IDENTITY, 1, 7)
         capture("G_panel_step1_412_font1_3.png")
+    }
+
+    // H_rtl_panel_step4_320_font1_3.png
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun testH_rtl_panel_step4_320_font1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB-Main", panelType = "MDB", fedFrom = "Transformer", transformerId = "TX-01"),
+            initialStep = CircuitWorkflowStep.FEEDER,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY, CircuitWorkflowStep.FEEDER),
+            availableTransformers = listOf(TransformerSnapshot("TX-01", 1000.0)),
+            projectSubtitle = "Substation Alpha"
+        )
+        composeTestRule.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl
+            ) {
+                CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+            }
+        }
+        composeTestRule.waitForIdle()
+        val node4 = composeTestRule.onNodeWithTag("progress_step_node_4")
+        node4.assertIsDisplayed()
+        val bounds4 = node4.getBoundsInRoot()
+        val center4 = (bounds4.left + bounds4.right) / 2
+        val delta4 = kotlin.math.abs((center4 - 160.dp).value)
+        assertTrue("Step 4 in RTL center ($center4) must be within 2dp of 160dp, delta was $delta4", delta4 <= 2f)
+
+        logFocusedRecaptureReport("H_rtl_panel_step4_320_font1_3", 320, 800, 1.3f, CircuitWorkflowStep.FEEDER, 4, 7)
+        capture("H_rtl_panel_step4_320_font1_3.png")
+    }
+
+    // I_rtl_panel_step7_320_font1_3.png
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun testI_rtl_panel_step7_320_font1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB-Main", panelType = "MDB", fedFrom = "Transformer", transformerId = "TX-01"),
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = CircuitWorkflowStep.values().toSet(),
+            availableTransformers = listOf(TransformerSnapshot("TX-01", 1000.0)),
+            projectSubtitle = "Substation Alpha"
+        )
+        composeTestRule.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl
+            ) {
+                CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+            }
+        }
+        composeTestRule.waitForIdle()
+        val node7 = composeTestRule.onNodeWithTag("progress_step_node_7")
+        node7.assertIsDisplayed()
+        val bounds7 = node7.getBoundsInRoot()
+        val center7 = (bounds7.left + bounds7.right) / 2
+        val delta7 = kotlin.math.abs((center7 - 160.dp).value)
+        assertTrue("Step 7 in RTL center ($center7) must be within 2dp of 160dp, delta was $delta7", delta7 <= 2f)
+
+        logFocusedRecaptureReport("I_rtl_panel_step7_320_font1_3", 320, 800, 1.3f, CircuitWorkflowStep.REVIEW, 7, 7)
+        capture("I_rtl_panel_step7_320_font1_3.png")
     }
 }

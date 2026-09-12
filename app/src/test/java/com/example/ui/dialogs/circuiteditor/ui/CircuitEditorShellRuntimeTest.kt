@@ -209,15 +209,31 @@ class CircuitEditorShellRuntimeTest {
     }
 
     @Test
-    @Config(qualifiers = "w600dp-h800dp-xhdpi")
-    fun test12b_expandedWidthDisplaysTitledActivePill() {
+    fun test12b_progressSizingTokensSeparation() {
+        // Contract requires separate documentation and verification of progress sizing tokens
+        assertEquals(24.dp, CircuitEditorProgressTokens.VisibleCircleDiameter)
+        assertEquals(48.dp, CircuitEditorProgressTokens.ActivePillWidth)
+        assertEquals(28.dp, CircuitEditorProgressTokens.ActivePillHeight)
+        assertEquals(48.dp, CircuitEditorProgressTokens.MinimumInteractiveSize)
+        assertEquals(48.dp, CircuitEditorProgressTokens.AllocatedItemWidth)
+        assertEquals(12.dp, CircuitEditorProgressTokens.ConnectorWidth)
+        assertEquals(4.dp, CircuitEditorProgressTokens.InterItemSpacing)
+        assertEquals(16.dp, CircuitEditorProgressTokens.RailDefaultHorizontalPadding)
+
         val holder = CircuitEditorTestStateHolder()
         composeTestRule.setContent {
             CircuitEditorTestHost(stateHolder = holder)
         }
 
-        composeTestRule.onNodeWithTag("progress_mode_TITLED_ACTIVE_PILL").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("active_progress_pill_title").assertIsDisplayed()
+        // Active node interactive bounds >= 48dp
+        val activeBounds = composeTestRule.onNodeWithTag("progress_step_node_1").getBoundsInRoot()
+        assertTrue("Active node touch target width >= 48dp", (activeBounds.right - activeBounds.left) >= 48.dp)
+        assertTrue("Active node touch target height >= 48dp", (activeBounds.bottom - activeBounds.top) >= 48.dp)
+
+        // Active visible pill is 48dp x 28dp
+        val pillBounds = composeTestRule.onNodeWithTag("active_progress_pill").getBoundsInRoot()
+        assertEquals(48.dp, pillBounds.right - pillBounds.left)
+        assertEquals(28.dp, pillBounds.bottom - pillBounds.top)
     }
 
     @Test
@@ -429,6 +445,10 @@ class CircuitEditorShellRuntimeTest {
         val node1Bounds = node1.getBoundsInRoot()
         assertTrue("Step 1 left (${node1Bounds.left}) must be >= 0dp", node1Bounds.left >= 0.dp)
         assertTrue("Step 1 right (${node1Bounds.right}) must be <= 320dp", node1Bounds.right <= 320.dp)
+
+        val center1 = (node1Bounds.left + node1Bounds.right) / 2
+        val delta1 = kotlin.math.abs((center1 - 160.dp).value)
+        assertTrue("Step 1 center ($center1) must be within 2dp tolerance of 160dp, delta was $delta1", delta1 <= 2f)
     }
 
     @Test
@@ -454,6 +474,10 @@ class CircuitEditorShellRuntimeTest {
         val node4Bounds = node4.getBoundsInRoot()
         assertTrue("Step 4 left (${node4Bounds.left}) must be >= 0dp", node4Bounds.left >= 0.dp)
         assertTrue("Step 4 right (${node4Bounds.right}) must be <= 320dp", node4Bounds.right <= 320.dp)
+
+        val center4 = (node4Bounds.left + node4Bounds.right) / 2
+        val delta4 = kotlin.math.abs((center4 - 160.dp).value)
+        assertTrue("Step 4 center ($center4) must be within 2dp tolerance of 160dp, delta was $delta4", delta4 <= 2f)
     }
 
     @Test
@@ -472,15 +496,12 @@ class CircuitEditorShellRuntimeTest {
         val node7 = composeTestRule.onNodeWithTag("progress_step_node_7")
         node7.assertIsDisplayed()
         val node7Bounds = node7.getBoundsInRoot()
-        // Must be fully visible within 320dp viewport with right edge clearance
-        assertTrue(
-            "Step 7 left (${node7Bounds.left}) must be >= 0dp",
-            node7Bounds.left >= 0.dp
-        )
-        assertTrue(
-            "Step 7 right (${node7Bounds.right}) must be <= 320dp inside the viewport",
-            node7Bounds.right <= 320.dp
-        )
+        assertTrue("Step 7 left (${node7Bounds.left}) must be >= 0dp", node7Bounds.left >= 0.dp)
+        assertTrue("Step 7 right (${node7Bounds.right}) must be <= 320dp inside the viewport", node7Bounds.right <= 320.dp)
+
+        val center7 = (node7Bounds.left + node7Bounds.right) / 2
+        val delta7 = kotlin.math.abs((center7 - 160.dp).value)
+        assertTrue("Step 7 center ($center7) must be within 2dp tolerance of 160dp, delta was $delta7", delta7 <= 2f)
     }
 
     @Test
@@ -503,14 +524,12 @@ class CircuitEditorShellRuntimeTest {
         val node7 = composeTestRule.onNodeWithTag("progress_step_node_7")
         node7.assertIsDisplayed()
         val node7Bounds = node7.getBoundsInRoot()
-        assertTrue(
-            "Step 7 in RTL left (${node7Bounds.left}) must be >= 0dp",
-            node7Bounds.left >= 0.dp
-        )
-        assertTrue(
-            "Step 7 in RTL right (${node7Bounds.right}) must be <= 320dp inside the viewport",
-            node7Bounds.right <= 320.dp
-        )
+        assertTrue("Step 7 in RTL left (${node7Bounds.left}) must be >= 0dp", node7Bounds.left >= 0.dp)
+        assertTrue("Step 7 in RTL right (${node7Bounds.right}) must be <= 320dp inside the viewport", node7Bounds.right <= 320.dp)
+
+        val center7 = (node7Bounds.left + node7Bounds.right) / 2
+        val delta7 = kotlin.math.abs((center7 - 160.dp).value)
+        assertTrue("Step 7 in RTL center ($center7) must be within 2dp tolerance of 160dp, delta was $delta7", delta7 <= 2f)
     }
 
     @Test
@@ -548,5 +567,119 @@ class CircuitEditorShellRuntimeTest {
         composeTestRule.onNodeWithTag("progress_step_node_2")
             .assert(hasStateDescription("Upcoming"))
             .assertIsNotEnabled()
+    }
+
+    @Test
+    fun test24_failFirst_activePillIsStadiumPillShapeWiderThanTall() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.IDENTITY
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        val pillBounds = composeTestRule.onNodeWithTag("active_progress_pill").getBoundsInRoot()
+        val pillWidth = pillBounds.right - pillBounds.left
+        val pillHeight = pillBounds.bottom - pillBounds.top
+
+        // Contract requires active node to use a stadium/pill visual shape distinct from inactive circles
+        // Visible pill width must be 48dp and height 28dp (width > height + 8dp)
+        assertTrue(
+            "Active pill must be wider than tall (pill shape): width $pillWidth vs height $pillHeight",
+            pillWidth >= pillHeight + 12.dp
+        )
+        assertTrue("Active pill width ($pillWidth) must be 48dp", kotlin.math.abs((pillWidth - 48.dp).value) <= 2f)
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun test25_failFirst_autoCenteringExactToleranceAt320dp() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.FEEDER, // Step 4 of 7
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+        composeTestRule.waitForIdle()
+
+        val node4 = composeTestRule.onNodeWithTag("progress_step_node_4")
+        node4.assertIsDisplayed()
+        val bounds4 = node4.getBoundsInRoot()
+        val center4 = (bounds4.left + bounds4.right) / 2
+        val viewportCenter = 160.dp
+        val delta4 = kotlin.math.abs((center4 - viewportCenter).value)
+
+        assertTrue(
+            "Step 4 center ($center4) must be within 2dp tolerance of viewport center ($viewportCenter), delta was $delta4",
+            delta4 <= 2f
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun test26_failFirst_autoCenteringInRtlAt320dp() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.FEEDER,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER
+            )
+        )
+        composeTestRule.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl
+            ) {
+                CircuitEditorTestHost(stateHolder = holder)
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        val node4 = composeTestRule.onNodeWithTag("progress_step_node_4")
+        node4.assertIsDisplayed()
+        val bounds4 = node4.getBoundsInRoot()
+        val center4 = (bounds4.left + bounds4.right) / 2
+        val viewportCenter = 160.dp
+        val delta4 = kotlin.math.abs((center4 - viewportCenter).value)
+
+        assertTrue(
+            "Step 4 in RTL center ($center4) must be within 2dp tolerance of viewport center ($viewportCenter), delta was $delta4",
+            delta4 <= 2f
+        )
+    }
+
+    @Test
+    fun test27_failFirst_actionBarEqualWidthButtonsOnStep2() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.LOAD,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD)
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        val backBounds = composeTestRule.onNodeWithTag("circuit_editor_back_btn").getBoundsInRoot()
+        val nextBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+
+        val backWidth = backBounds.right - backBounds.left
+        val nextWidth = nextBounds.right - nextBounds.left
+
+        assertTrue(
+            "Back and Next must share equal available width: back=$backWidth, next=$nextWidth",
+            kotlin.math.abs((backWidth - nextWidth).value) <= 4f
+        )
+        assertTrue("Back must have minimum 48dp height", (backBounds.bottom - backBounds.top) >= 48.dp)
+        assertTrue("Next must have minimum 48dp height", (nextBounds.bottom - nextBounds.top) >= 48.dp)
     }
 }
