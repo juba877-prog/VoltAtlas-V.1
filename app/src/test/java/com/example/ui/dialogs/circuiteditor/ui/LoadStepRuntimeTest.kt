@@ -1,6 +1,9 @@
 package com.example.ui.dialogs.circuiteditor.ui
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
@@ -327,6 +330,59 @@ class LoadStepRuntimeTest {
         assertTrue(
             "Final Load field must scroll completely above bottom action bar (harmonic bottom: ${harmonicBounds.bottom}, nextBtn top: ${nextBtn.top})",
             harmonicBounds.bottom <= nextBtn.top
+        )
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi")
+    fun test34_simulatedImeEntireHarmonicCardAndSupportingTextAboveActionBar() {
+        val holder = CircuitEditorTestStateHolder(
+            initialStep = CircuitWorkflowStep.LOAD,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD),
+            initialDraft = CircuitEditorDraft(loadNature = "Motor")
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(
+                stateHolder = holder,
+                modifier = Modifier.padding(bottom = 280.dp)
+            )
+        }
+
+        // Section 4 #2: In SIMULATED_IME_INSET, the complete harmonic card, including all supporting text, lies above the action-bar top
+        val nextBtn = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        val cardNode = composeTestRule.onNodeWithTag("card_harmonic_load")
+        cardNode.performScrollTo()
+        val cardBounds = cardNode.getBoundsInRoot()
+        val textNode = composeTestRule.onNodeWithTag("harmonic_supporting_text")
+        val textBounds = textNode.getBoundsInRoot()
+
+        assertTrue(
+            "Harmonic card bottom must lie above nextBtn top under simulated IME (card bottom: ${cardBounds.bottom}, nextBtn top: ${nextBtn.top})",
+            cardBounds.bottom <= nextBtn.top
+        )
+        assertTrue(
+            "Harmonic supporting text bottom must lie above nextBtn top under simulated IME (text bottom: ${textBounds.bottom}, nextBtn top: ${nextBtn.top})",
+            textBounds.bottom <= nextBtn.top
+        )
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w384dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun test35_adaptivePairStacksAtIntermediateWidthWithFont1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialStep = CircuitWorkflowStep.LOAD,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD)
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // Section 4 #5: Adaptive field pairs stack whenever measured child width would fall below the defined readable minimum, including intermediate widths
+        val demandBounds = composeTestRule.onNodeWithTag("input_demand_factor").getBoundsInRoot()
+        val safetyBounds = composeTestRule.onNodeWithTag("input_safety_factor").getBoundsInRoot()
+        assertTrue(
+            "Safety Factor must stack below Demand Factor at intermediate width 384dp with font 1.3 (demand bottom: ${demandBounds.bottom}, safety top: ${safetyBounds.top})",
+            safetyBounds.top >= demandBounds.bottom
         )
     }
 }

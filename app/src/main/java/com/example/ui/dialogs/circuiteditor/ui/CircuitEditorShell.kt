@@ -25,6 +25,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -68,145 +69,137 @@ fun CircuitEditorShell(
 
     val scrollState = rememberScrollState()
 
-    Surface(
+    Scaffold(
         modifier = modifier
             .testTag("circuit_editor_root")
             .fillMaxSize(),
-        color = MaterialTheme.colorScheme.surface
-    ) {
+        containerColor = MaterialTheme.colorScheme.surface,
+        topBar = {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surfaceContainerLow
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .testTag("circuit_editor_header"),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (state.isEditing) "Edit Circuit" else "New Circuit",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (!state.projectSubtitle.isNullOrBlank()) {
+                                Text(
+                                    text = state.projectSubtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = { events.onDismiss() },
+                            modifier = Modifier
+                                .testTag("circuit_editor_close_btn")
+                                .size(48.dp)
+                                .semantics {
+                                    contentDescription = "Close editor"
+                                }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close editor",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                    // Dynamic Workflow Stepper / Progress
+                    CircuitEditorProgress(
+                        currentStep = state.currentStep,
+                        applicableSteps = state.applicableSteps,
+                        visitedSteps = state.visitedSteps,
+                        onStepSelected = events::onStepChange
+                    )
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                }
+            }
+        },
+        bottomBar = {
+            // Sticky Bottom Action Bar (Back / Next) with layout-owned measured region
+            val canGoBack = state.currentStep != state.applicableSteps.first()
+            CircuitEditorActionBar(
+                canGoBack = canGoBack,
+                onBackClick = events::onBackClick,
+                onNextClick = events::onNextClick,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+            )
+        }
+    ) { innerPadding ->
         Box(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .imePadding(),
             contentAlignment = Alignment.TopCenter
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .widthIn(max = 640.dp)
+                    .verticalScroll(scrollState)
+                    .padding(16.dp)
             ) {
-                // Sticky Top Bar: Header with Title and Close button
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(
+                when (state.currentStep) {
+                    CircuitWorkflowStep.IDENTITY -> {
+                        IdentityStepContent(
+                            draft = state.draft,
+                            onDraftChange = events::onDraftChange,
+                            existingCircuits = state.existingCircuits,
+                            editingCircuitId = state.editingCircuitId,
+                            availableTransformers = state.availableTransformers,
+                            resolution = state.sourceResolution,
+                            identityError = state.identityError,
+                            onAddTransformer = events::onAddTransformer
+                        )
+                    }
+
+                    CircuitWorkflowStep.LOAD -> {
+                        LoadStepContent(
+                            draft = state.draft,
+                            onDraftChange = events::onDraftChange
+                        )
+                    }
+
+                    else -> {
+                        // Non-implemented workflow steps in Stage C2 render clean placeholder for navigation tests
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .statusBarsPadding()
-                                .padding(horizontal = 16.dp, vertical = 12.dp)
-                                .testTag("circuit_editor_header"),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(24.dp)
+                                .testTag("circuit_editor_step_placeholder"),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (state.isEditing) "Edit Circuit" else "New Circuit",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                if (!state.projectSubtitle.isNullOrBlank()) {
-                                    Text(
-                                        text = state.projectSubtitle,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-
-                            IconButton(
-                                onClick = { events.onDismiss() },
-                                modifier = Modifier
-                                    .testTag("circuit_editor_close_btn")
-                                    .size(48.dp)
-                                    .semantics {
-                                        contentDescription = "Close editor"
-                                    }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Close editor",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            Text(
+                                text = "Step '${state.currentStep.title}' is scheduled for subsequent stage.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                        // Dynamic Workflow Stepper / Progress
-                        CircuitEditorProgress(
-                            currentStep = state.currentStep,
-                            applicableSteps = state.applicableSteps,
-                            visitedSteps = state.visitedSteps,
-                            onStepSelected = events::onStepChange
-                        )
-
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
                 }
-
-                // Scrollable Step Content (with IME padding)
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .imePadding()
-                        .verticalScroll(scrollState)
-                        .padding(16.dp)
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        when (state.currentStep) {
-                            CircuitWorkflowStep.IDENTITY -> {
-                                IdentityStepContent(
-                                    draft = state.draft,
-                                    onDraftChange = events::onDraftChange,
-                                    existingCircuits = state.existingCircuits,
-                                    editingCircuitId = state.editingCircuitId,
-                                    availableTransformers = state.availableTransformers,
-                                    resolution = state.sourceResolution,
-                                    identityError = state.identityError,
-                                    onAddTransformer = events::onAddTransformer
-                                )
-                            }
-
-                            CircuitWorkflowStep.LOAD -> {
-                                LoadStepContent(
-                                    draft = state.draft,
-                                    onDraftChange = events::onDraftChange
-                                )
-                            }
-
-                            else -> {
-                                // Non-implemented workflow steps in Stage C2 render clean placeholder for navigation tests
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(24.dp)
-                                        .testTag("circuit_editor_step_placeholder"),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "Step '${state.currentStep.title}' is scheduled for subsequent stage.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-
-                        // Bottom clearance spacer ensuring the final card row or focusable field
-                        // can scroll completely clear of the sticky action bar and navigation bar insets
-                        Spacer(modifier = Modifier.height(88.dp))
-                    }
-                }
-
-                // Sticky Bottom Action Bar (Back / Next)
-                val canGoBack = state.currentStep != state.applicableSteps.first()
-                CircuitEditorActionBar(
-                    canGoBack = canGoBack,
-                    onBackClick = events::onBackClick,
-                    onNextClick = events::onNextClick,
-                    modifier = Modifier.navigationBarsPadding()
-                )
             }
         }
     }

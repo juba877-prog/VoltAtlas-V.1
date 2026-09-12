@@ -193,4 +193,30 @@ class IdentityStepRuntimeTest {
             cardBounds.bottom <= nextBtnBounds.top
         )
     }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi")
+    fun test21_validationErrorIdentityScrolledToLastHierarchyRowClearsActionBar() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "", fedFrom = "Transformer", transformerId = "TX-01"),
+            availableTransformers = listOf(TransformerSnapshot("TX-01"))
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // Trigger validation error
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // Scroll to last row of hierarchy card
+        val lastRow = composeTestRule.onNodeWithTag("hierarchy_field_resolved_transformer")
+        lastRow.performScrollTo()
+        val rowBounds = lastRow.getBoundsInRoot()
+        val nextBtnBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+
+        assertTrue(
+            "Resolved transformer row must lie completely above action-bar top after scrolling in validation error state (row bottom: ${rowBounds.bottom}, next top: ${nextBtnBounds.top})",
+            rowBounds.bottom <= nextBtnBounds.top
+        )
+    }
 }

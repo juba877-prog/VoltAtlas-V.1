@@ -186,7 +186,8 @@ fun IdentityStepContent(
                 )
                 HierarchyField(
                     label = "Resolved Transformer",
-                    value = resolution.finalTxId.ifBlank { "None" }
+                    value = resolution.finalTxId.ifBlank { "None" },
+                    modifier = Modifier.testTag("hierarchy_field_resolved_transformer")
                 )
             }
         }

@@ -77,7 +77,7 @@ fun CircuitEditorActionBar(
                         contentDescription = "Next step"
                     },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = ThemePrimary,
+                    containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 )
             ) {

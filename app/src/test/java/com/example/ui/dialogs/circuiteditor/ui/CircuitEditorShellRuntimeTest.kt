@@ -191,4 +191,16 @@ class CircuitEditorShellRuntimeTest {
         assertEquals(CircuitWorkflowStep.IDENTITY, holder.currentStep)
         composeTestRule.onNodeWithTag("circuit_editor_step_identity").assertIsDisplayed()
     }
+
+    @Test
+    fun test12_activeProgressPillDisplaysStepTitle() {
+        val holder = CircuitEditorTestStateHolder()
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // C2-FV04 / Section 4 #4: Active progress item exposes visible title in pill at 360dp
+        composeTestRule.onNodeWithTag("active_progress_pill").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("active_progress_pill_title").assertIsDisplayed()
+    }
 }

@@ -96,15 +96,26 @@ fun CircuitEditorProgress(
                     contentAlignment = Alignment.Center
                 ) {
                     if (isActive) {
-                        // DEFECT C2-V05: Approved MD3 active-pill container
-                        Box(
+                        val shortTitle = when (step) {
+                            CircuitWorkflowStep.IDENTITY -> "Identity"
+                            CircuitWorkflowStep.LOAD -> "Load"
+                            CircuitWorkflowStep.SUPPLY -> "Supply"
+                            CircuitWorkflowStep.FEEDER -> "Cable"
+                            CircuitWorkflowStep.INSTALLATION -> "Installation"
+                            CircuitWorkflowStep.PANEL_HEADER -> "Panel"
+                            CircuitWorkflowStep.REVIEW -> "Review"
+                        }
+
+                        // DEFECT C2-V05 / C2-FV04: MD3 active-pill container with visible short title
+                        Row(
                             modifier = Modifier
+                                .testTag("active_progress_pill")
                                 .height(28.dp)
-                                .widthIn(min = 38.dp)
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(ThemePrimary)
-                                .padding(horizontal = 8.dp),
-                            contentAlignment = Alignment.Center
+                                .background(MaterialTheme.colorScheme.primary)
+                                .padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
                                 text = stepNum.toString(),
@@ -113,6 +124,15 @@ fun CircuitEditorProgress(
                                     fontSize = 12.sp
                                 ),
                                 color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            Text(
+                                text = shortTitle,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 12.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.testTag("active_progress_pill_title")
                             )
                         }
                     } else {
@@ -149,7 +169,7 @@ fun CircuitEditorProgress(
                         modifier = Modifier
                             .weight(1f)
                             .height(2.dp)
-                            .background(if (isConnectorActive) ThemePrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            .background(if (isConnectorActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     )
                 }
             }

@@ -1,19 +1,36 @@
 package com.example.ui.dialogs.circuiteditor.ui
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.CircuitEntity
 import com.example.ui.dialogs.circuiteditor.model.CircuitEditorDraft
 import com.example.ui.dialogs.circuiteditor.model.CircuitWorkflowStep
 import com.example.ui.dialogs.circuiteditor.model.TransformerSnapshot
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -104,10 +121,10 @@ class CircuitEditorStageC2VisualCaptureTest {
         capture("02_identity_light_360x800_font1_0.png")
     }
 
-    // 3. Identity - dark - 360x800 - font 1.3
+    // 3. Identity - dark - 360x800 - font 1.3 - scrolled to last hierarchy row
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.3f)
-    fun test03_identity_dark_360x800_font1_3() {
+    fun test03_identity_dark_360x800_font1_3_scrolled_to_last_hierarchy_row() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(
                 name = "MDB-01",
@@ -123,14 +140,21 @@ class CircuitEditorStageC2VisualCaptureTest {
         composeTestRule.setContent {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
-        composeTestRule.onNodeWithTag("computed_hierarchy_card").performScrollTo()
-        capture("03_identity_dark_360x800_font1_3.png")
+        val lastRow = composeTestRule.onNodeWithTag("hierarchy_field_resolved_transformer")
+        lastRow.performScrollTo()
+        val rowBounds = lastRow.getBoundsInRoot()
+        val nextBtn = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        assertTrue(
+            "Resolved transformer row must clear next button (row bottom: ${rowBounds.bottom}, next top: ${nextBtn.top})",
+            rowBounds.bottom <= nextBtn.top
+        )
+        capture("03_identity_dark_360x800_font1_3_scrolled_to_last_hierarchy_row.png")
     }
 
-    // 4. Identity - dark - 360x800 - font 1.5
+    // 4. Identity - dark - 360x800 - font 1.5 - scrolled to last hierarchy row
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
-    fun test04_identity_dark_360x800_font1_5() {
+    fun test04_identity_dark_360x800_font1_5_scrolled_to_last_hierarchy_row() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(
                 name = "MDB-01",
@@ -146,8 +170,15 @@ class CircuitEditorStageC2VisualCaptureTest {
         composeTestRule.setContent {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
-        composeTestRule.onNodeWithTag("computed_hierarchy_card").performScrollTo()
-        capture("04_identity_dark_360x800_font1_5.png")
+        val lastRow = composeTestRule.onNodeWithTag("hierarchy_field_resolved_transformer")
+        lastRow.performScrollTo()
+        val rowBounds = lastRow.getBoundsInRoot()
+        val nextBtn = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        assertTrue(
+            "Resolved transformer row must clear next button (row bottom: ${rowBounds.bottom}, next top: ${nextBtn.top})",
+            rowBounds.bottom <= nextBtn.top
+        )
+        capture("04_identity_dark_360x800_font1_5_scrolled_to_last_hierarchy_row.png")
     }
 
     // 5. Identity - dark - larger phone width (w412dp-h892dp)
@@ -172,22 +203,34 @@ class CircuitEditorStageC2VisualCaptureTest {
         capture("05_identity_dark_412x892.png")
     }
 
-    // 6. Identity - validation error
+    // 6. Identity - validation error - scrolled to last hierarchy row
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi")
-    fun test06_identity_validation_error() {
+    fun test06_identity_validation_error_scrolled_to_last_hierarchy_row() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(
                 name = "",
                 panelType = "MDB",
-                fedFrom = "Transformer"
+                fedFrom = "Transformer",
+                transformerId = "TX-01"
+            ),
+            availableTransformers = listOf(
+                TransformerSnapshot("TX-01", 1000.0)
             )
         )
         composeTestRule.setContent {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
         composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
-        capture("06_identity_validation_error.png")
+        val lastRow = composeTestRule.onNodeWithTag("hierarchy_field_resolved_transformer")
+        lastRow.performScrollTo()
+        val rowBounds = lastRow.getBoundsInRoot()
+        val nextBtn = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        assertTrue(
+            "Resolved transformer row must clear next button in validation error state (row bottom: ${rowBounds.bottom}, next top: ${nextBtn.top})",
+            rowBounds.bottom <= nextBtn.top
+        )
+        capture("06_identity_validation_error_scrolled_to_last_hierarchy_row.png")
     }
 
     // 7. Identity - non-Transformer source
@@ -217,10 +260,10 @@ class CircuitEditorStageC2VisualCaptureTest {
         capture("07_identity_non_transformer_source.png")
     }
 
-    // 8. Load - dark - 360x800 - Static
+    // 8. Load - dark - 360x800 - Static - scrolled to harmonic card
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi")
-    fun test08_load_dark_360x800_static() {
+    fun test08_load_dark_360x800_static_scrolled_to_harmonic_card() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(
                 name = "L-01",
@@ -240,7 +283,15 @@ class CircuitEditorStageC2VisualCaptureTest {
         composeTestRule.setContent {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
-        capture("08_load_dark_360x800_static.png")
+        val cardNode = composeTestRule.onNodeWithTag("card_harmonic_load")
+        cardNode.performScrollTo()
+        val cardBounds = cardNode.getBoundsInRoot()
+        val nextBtn = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        assertTrue(
+            "Harmonic card must clear next button (card bottom: ${cardBounds.bottom}, next top: ${nextBtn.top})",
+            cardBounds.bottom <= nextBtn.top
+        )
+        capture("08_load_dark_360x800_static_scrolled_to_harmonic_card.png")
     }
 
     // 9. Load - light - 360x800 - Static
@@ -323,10 +374,10 @@ class CircuitEditorStageC2VisualCaptureTest {
         capture("11_load_dark_360x800_mtr_warning.png")
     }
 
-    // 12. Load - dark - 360x800 - font 1.5
+    // 12. Load - dark - 360x800 - font 1.5 - scrolled to last field
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
-    fun test12_load_dark_360x800_font1_5() {
+    fun test12_load_dark_360x800_font1_5_scrolled_to_last_field() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(
                 name = "L-01",
@@ -345,8 +396,15 @@ class CircuitEditorStageC2VisualCaptureTest {
         composeTestRule.setContent {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
-        composeTestRule.onNodeWithTag("checkbox_is_harmonic").performScrollTo()
-        capture("12_load_dark_360x800_font1_5.png")
+        val cardNode = composeTestRule.onNodeWithTag("card_harmonic_load")
+        cardNode.performScrollTo()
+        val cardBounds = cardNode.getBoundsInRoot()
+        val nextBtn = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        assertTrue(
+            "Harmonic card must clear next button at font 1.5 (card bottom: ${cardBounds.bottom}, next top: ${nextBtn.top})",
+            cardBounds.bottom <= nextBtn.top
+        )
+        capture("12_load_dark_360x800_font1_5_scrolled_to_last_field.png")
     }
 
     // 13. Panel workflow progress - 7 steps
@@ -392,7 +450,7 @@ class CircuitEditorStageC2VisualCaptureTest {
     // 15. SIMULATED_IME_INSET - focused lower Load field
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi")
-    fun test15_simulated_ime_inset_lower_load_field() {
+    fun test15_simulated_ime_inset_focused_lower_load_field() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(
                 name = "MOTOR-DEEP",
@@ -413,14 +471,54 @@ class CircuitEditorStageC2VisualCaptureTest {
             initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD)
         )
         composeTestRule.setContent {
-            CircuitEditorTestHost(
-                stateHolder = holder,
-                darkTheme = true,
-                modifier = Modifier.padding(bottom = 280.dp)
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF111318))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+                }
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(280.dp)
+                        .testTag("simulated_ime_keyboard_container"),
+                    color = Color(0xFF1E2025),
+                    border = BorderStroke(1.dp, Color(0xFF44474E))
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "SIMULATED IME KEYBOARD (280 dp Inset)",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color(0xFFC4C7C5)
+                        )
+                    }
+                }
+            }
         }
-        composeTestRule.onNodeWithTag("checkbox_is_harmonic").performScrollTo()
-        capture("15_simulated_ime_inset_lower_load_field.png")
+        val cardNode = composeTestRule.onNodeWithTag("card_harmonic_load")
+        cardNode.performScrollTo()
+        val cardBounds = cardNode.getBoundsInRoot()
+        val textNode = composeTestRule.onNodeWithTag("harmonic_supporting_text")
+        val textBounds = textNode.getBoundsInRoot()
+        val nextBtn = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        assertTrue(
+            "Harmonic card bottom must lie above nextBtn top under simulated IME (card bottom: ${cardBounds.bottom}, nextBtn top: ${nextBtn.top})",
+            cardBounds.bottom <= nextBtn.top
+        )
+        assertTrue(
+            "Harmonic supporting text bottom must lie above nextBtn top under simulated IME (text bottom: ${textBounds.bottom}, nextBtn top: ${nextBtn.top})",
+            textBounds.bottom <= nextBtn.top
+        )
+        capture("15_simulated_ime_inset_focused_lower_load_field.png")
     }
 
     // 16. Identity component-only - dark (without host decorView window bar)
@@ -465,5 +563,57 @@ class CircuitEditorStageC2VisualCaptureTest {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = false)
         }
         capture("17_identity_component_only_light.png")
+    }
+
+    // 18. Progress active Identity title pill (360dp)
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi")
+    fun test18_progress_active_identity_title_pill_360() {
+        val holder = CircuitEditorTestStateHolder(
+            initialStep = CircuitWorkflowStep.IDENTITY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY)
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        composeTestRule.onNodeWithTag("active_progress_pill").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("active_progress_pill_title").assertIsDisplayed()
+        capture("18_progress_active_identity_title_pill_360.png")
+    }
+
+    // 19. Progress active Load title pill (360dp)
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi")
+    fun test19_progress_active_load_title_pill_360() {
+        val holder = CircuitEditorTestStateHolder(
+            initialStep = CircuitWorkflowStep.LOAD,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD)
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        composeTestRule.onNodeWithTag("active_progress_pill").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("active_progress_pill_title").assertIsDisplayed()
+        capture("19_progress_active_load_title_pill_360.png")
+    }
+
+    // 20. Adaptive pair at intermediate width with font 1.3
+    @Test
+    @Config(sdk = [33], qualifiers = "w384dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun test20_adaptive_pair_intermediate_width_font1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialStep = CircuitWorkflowStep.LOAD,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD)
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        val demandBounds = composeTestRule.onNodeWithTag("input_demand_factor").getBoundsInRoot()
+        val safetyBounds = composeTestRule.onNodeWithTag("input_safety_factor").getBoundsInRoot()
+        assertTrue(
+            "Safety Factor must stack below Demand Factor at intermediate width 384dp with font 1.3 (demand bottom: ${demandBounds.bottom}, safety top: ${safetyBounds.top})",
+            safetyBounds.top >= demandBounds.bottom
+        )
+        capture("20_adaptive_pair_intermediate_width_font1_3.png")
     }
 }

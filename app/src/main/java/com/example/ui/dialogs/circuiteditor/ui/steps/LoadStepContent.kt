@@ -246,7 +246,9 @@ fun LoadStepContent(
 
         // Harmonic / Non-Linear Load Toggle
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("card_harmonic_load"),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainer
             ),
@@ -269,7 +271,8 @@ fun LoadStepContent(
                     Text(
                         text = "Marks circuit for neutral sizing and harmonic derating considerations",
                         style = MaterialTheme.typography.bodySmall,
-                        color = ThemeTextSecondary
+                        color = ThemeTextSecondary,
+                        modifier = Modifier.testTag("harmonic_supporting_text")
                     )
                 }
                 Switch(
@@ -278,7 +281,7 @@ fun LoadStepContent(
                     modifier = Modifier.testTag("checkbox_is_harmonic"),
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                        checkedTrackColor = ThemePrimary
+                        checkedTrackColor = MaterialTheme.colorScheme.primary
                     )
                 )
             }
@@ -288,8 +291,8 @@ fun LoadStepContent(
 
 /**
  * Adaptive layout for paired fields.
- * Stacks vertically when screen width is constrained or font scale is enlarged (accessibility scale >= 1.25x),
- * ensuring labels and inputs remain fully visible and readable without truncation or compression.
+ * Stacks vertically when available measured width cannot satisfy the minimum readable width
+ * for both fields (scaled by font scale), ensuring labels and inputs remain fully visible and readable.
  */
 @Composable
 private fun ResponsiveFieldPair(
@@ -299,7 +302,9 @@ private fun ResponsiveFieldPair(
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val fontScale = LocalDensity.current.fontScale
-        val isSingleColumn = (maxWidth < 320.dp) || (fontScale >= 1.25f) || (maxWidth < 420.dp && fontScale > 1.15f)
+        val minFieldWidth = 150.dp * maxOf(1f, fontScale)
+        val requiredRowWidth = (minFieldWidth * 2) + 8.dp
+        val isSingleColumn = maxWidth < requiredRowWidth
         if (isSingleColumn) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
