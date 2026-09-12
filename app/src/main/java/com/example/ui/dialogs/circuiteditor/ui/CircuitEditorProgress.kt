@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -57,12 +59,14 @@ fun CircuitEditorProgress(
     val activeStepNumber = if (currentIndex != -1) currentIndex + 1 else 1
     val totalSteps = applicableSteps.size
 
+    val cleanTitle = currentStep.title.replaceFirst(Regex("^\\d+\\.\\s*"), "")
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .testTag("circuit_editor_progress")
             .semantics {
-                stateDescription = "Step $activeStepNumber of $totalSteps"
+                stateDescription = "Step $activeStepNumber of $totalSteps: $cleanTitle"
             }
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
@@ -91,41 +95,50 @@ fun CircuitEditorProgress(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Visual step circle (28dp)
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(
-                                when {
-                                    isActive -> ThemePrimary
-                                    isVisited -> ThemeSurfaceSelected
-                                    else -> ThemeSurface
-                                }
+                    if (isActive) {
+                        // DEFECT C2-V05: Approved MD3 active-pill container
+                        Box(
+                            modifier = Modifier
+                                .height(28.dp)
+                                .widthIn(min = 38.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(ThemePrimary)
+                                .padding(horizontal = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = stepNum.toString(),
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
-                            .border(
-                                width = if (isActive) 2.dp else 1.dp,
-                                color = when {
-                                    isActive -> ThemePrimary
-                                    isVisited -> ThemeBorderStrong
-                                    else -> ThemeBorderSubtle
-                                },
-                                shape = CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = stepNum.toString(),
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 12.sp
-                            ),
-                            color = when {
-                                isActive -> MaterialTheme.colorScheme.onPrimary
-                                isVisited -> ThemeTextPrimary
-                                else -> ThemeTextDisabled
-                            }
-                        )
+                        }
+                    } else {
+                        // Compact inactive circle (24dp)
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isVisited) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isVisited) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                    shape = CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = stepNum.toString(),
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 11.sp
+                                ),
+                                color = if (isVisited) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                        }
                     }
                 }
 
@@ -136,7 +149,7 @@ fun CircuitEditorProgress(
                         modifier = Modifier
                             .weight(1f)
                             .height(2.dp)
-                            .background(if (isConnectorActive) ThemePrimary else ThemeBorderSubtle)
+                            .background(if (isConnectorActive) ThemePrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     )
                 }
             }
@@ -149,12 +162,12 @@ fun CircuitEditorProgress(
             Text(
                 text = currentStep.title,
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = ThemeTextPrimary
+                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = currentStep.subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = ThemeTextSecondary
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

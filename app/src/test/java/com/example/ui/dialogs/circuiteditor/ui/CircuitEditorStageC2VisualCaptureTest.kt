@@ -1,8 +1,10 @@
-﻿package com.example.ui.dialogs.circuiteditor.ui
+package com.example.ui.dialogs.circuiteditor.ui
 
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -36,13 +38,14 @@ class CircuitEditorStageC2VisualCaptureTest {
 
     private fun captureRootBitmap(): android.graphics.Bitmap {
         composeTestRule.waitForIdle()
-        val decorView = composeTestRule.activity.window.decorView
+        val contentView = composeTestRule.activity.findViewById<android.view.View>(android.R.id.content)
+            ?: composeTestRule.activity.window.decorView
         val bitmap = android.graphics.Bitmap.createBitmap(
-            maxOf(decorView.width, 1),
-            maxOf(decorView.height, 1),
+            maxOf(contentView.width, 1),
+            maxOf(contentView.height, 1),
             android.graphics.Bitmap.Config.ARGB_8888
         )
-        decorView.draw(android.graphics.Canvas(bitmap))
+        contentView.draw(android.graphics.Canvas(bitmap))
         return bitmap
     }
 
@@ -120,6 +123,7 @@ class CircuitEditorStageC2VisualCaptureTest {
         composeTestRule.setContent {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
+        composeTestRule.onNodeWithTag("computed_hierarchy_card").performScrollTo()
         capture("03_identity_dark_360x800_font1_3.png")
     }
 
@@ -142,6 +146,7 @@ class CircuitEditorStageC2VisualCaptureTest {
         composeTestRule.setContent {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
+        composeTestRule.onNodeWithTag("computed_hierarchy_card").performScrollTo()
         capture("04_identity_dark_360x800_font1_5.png")
     }
 
@@ -340,6 +345,7 @@ class CircuitEditorStageC2VisualCaptureTest {
         composeTestRule.setContent {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
+        composeTestRule.onNodeWithTag("checkbox_is_harmonic").performScrollTo()
         capture("12_load_dark_360x800_font1_5.png")
     }
 
@@ -415,5 +421,49 @@ class CircuitEditorStageC2VisualCaptureTest {
         }
         composeTestRule.onNodeWithTag("checkbox_is_harmonic").performScrollTo()
         capture("15_simulated_ime_inset_lower_load_field.png")
+    }
+
+    // 16. Identity component-only - dark (without host decorView window bar)
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi")
+    fun test16_identity_component_only_dark() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                name = "MDB-01",
+                panelType = "MDB",
+                fedFrom = "Transformer",
+                transformerId = "TX-01"
+            ),
+            availableTransformers = listOf(
+                TransformerSnapshot("TX-01", 1000.0)
+            ),
+            projectSubtitle = "Main Switchboard Project"
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        capture("16_identity_component_only_dark.png")
+    }
+
+    // 17. Identity component-only - light (without host decorView window bar)
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi")
+    fun test17_identity_component_only_light() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                name = "MDB-01",
+                panelType = "MDB",
+                fedFrom = "Transformer",
+                transformerId = "TX-01"
+            ),
+            availableTransformers = listOf(
+                TransformerSnapshot("TX-01", 1000.0)
+            ),
+            projectSubtitle = "Main Switchboard Project"
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = false)
+        }
+        capture("17_identity_component_only_light.png")
     }
 }

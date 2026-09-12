@@ -152,42 +152,73 @@ fun IdentityStepContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("computed_hierarchy_card"),
-            colors = CardDefaults.cardColors(containerColor = ThemeSurface),
-            border = BorderStroke(1.dp, ThemeBorderSubtle),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
             shape = RoundedCornerShape(10.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(14.dp)
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
                     text = "Derived Network Hierarchy",
                     style = MaterialTheme.typography.titleSmall.copy(
                         fontWeight = FontWeight.SemiBold,
-                        color = ThemePrimary,
-                        fontSize = 13.sp
+                        color = MaterialTheme.colorScheme.primary
                     )
                 )
-                Spacer(modifier = Modifier.height(8.dp))
 
-                VoltAtlasDataRow(
+                HierarchyField(
                     label = "Supply Source",
                     value = draft.fedFrom
                 )
-                VoltAtlasDataRow(
+                HierarchyField(
                     label = "Hierarchy Level",
                     value = "${resolution.calculatedLevel} (Root = 0)"
                 )
-                VoltAtlasDataRow(
+                HierarchyField(
                     label = "Source Type",
                     value = resolution.calculatedSourceType
                 )
-                VoltAtlasDataRow(
+                HierarchyField(
                     label = "Resolved Transformer",
                     value = resolution.finalTxId.ifBlank { "None" }
                 )
             }
         }
+    }
+}
+
+/**
+ * Responsive stacked label-value presentation for engineering hierarchy data.
+ * Guarantees zero truncation at large accessibility font scales (1.3x - 1.5x)
+ * and restrained emphasis using MD3 bodyLarge rather than display tokens.
+ */
+@Composable
+private fun HierarchyField(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge.copy(
+                fontWeight = FontWeight.Medium
+            ),
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }

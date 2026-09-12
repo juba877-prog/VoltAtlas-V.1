@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -71,7 +72,7 @@ fun CircuitEditorShell(
         modifier = modifier
             .testTag("circuit_editor_root")
             .fillMaxSize(),
-        color = ThemeBackgroundDeep
+        color = MaterialTheme.colorScheme.surface
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -85,7 +86,7 @@ fun CircuitEditorShell(
                 // Sticky Top Bar: Header with Title and Close button
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = ThemeBackgroundDeep
+                    color = MaterialTheme.colorScheme.surfaceContainerLow
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
@@ -101,13 +102,13 @@ fun CircuitEditorShell(
                                 Text(
                                     text = if (state.isEditing) "Edit Circuit" else "New Circuit",
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = ThemeTextPrimary
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                                 if (!state.projectSubtitle.isNullOrBlank()) {
                                     Text(
                                         text = state.projectSubtitle,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = ThemeTextSecondary
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -124,12 +125,12 @@ fun CircuitEditorShell(
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "Close editor",
-                                    tint = ThemeTextSecondary
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
 
-                        HorizontalDivider(color = ThemeBorderSubtle)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
                         // Dynamic Workflow Stepper / Progress
                         CircuitEditorProgress(
@@ -139,7 +140,7 @@ fun CircuitEditorShell(
                             onStepSelected = events::onStepChange
                         )
 
-                        HorizontalDivider(color = ThemeBorderSubtle)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
                 }
 
@@ -152,43 +153,49 @@ fun CircuitEditorShell(
                         .verticalScroll(scrollState)
                         .padding(16.dp)
                 ) {
-                    when (state.currentStep) {
-                        CircuitWorkflowStep.IDENTITY -> {
-                            IdentityStepContent(
-                                draft = state.draft,
-                                onDraftChange = events::onDraftChange,
-                                existingCircuits = state.existingCircuits,
-                                editingCircuitId = state.editingCircuitId,
-                                availableTransformers = state.availableTransformers,
-                                resolution = state.sourceResolution,
-                                identityError = state.identityError,
-                                onAddTransformer = events::onAddTransformer
-                            )
-                        }
-
-                        CircuitWorkflowStep.LOAD -> {
-                            LoadStepContent(
-                                draft = state.draft,
-                                onDraftChange = events::onDraftChange
-                            )
-                        }
-
-                        else -> {
-                            // Non-implemented workflow steps in Stage C2 render clean placeholder for navigation tests
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(24.dp)
-                                    .testTag("circuit_editor_step_placeholder"),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "Step '${state.currentStep.title}' is scheduled for subsequent stage.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = ThemeTextSecondary
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        when (state.currentStep) {
+                            CircuitWorkflowStep.IDENTITY -> {
+                                IdentityStepContent(
+                                    draft = state.draft,
+                                    onDraftChange = events::onDraftChange,
+                                    existingCircuits = state.existingCircuits,
+                                    editingCircuitId = state.editingCircuitId,
+                                    availableTransformers = state.availableTransformers,
+                                    resolution = state.sourceResolution,
+                                    identityError = state.identityError,
+                                    onAddTransformer = events::onAddTransformer
                                 )
                             }
+
+                            CircuitWorkflowStep.LOAD -> {
+                                LoadStepContent(
+                                    draft = state.draft,
+                                    onDraftChange = events::onDraftChange
+                                )
+                            }
+
+                            else -> {
+                                // Non-implemented workflow steps in Stage C2 render clean placeholder for navigation tests
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(24.dp)
+                                        .testTag("circuit_editor_step_placeholder"),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Step '${state.currentStep.title}' is scheduled for subsequent stage.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
+
+                        // Bottom clearance spacer ensuring the final card row or focusable field
+                        // can scroll completely clear of the sticky action bar and navigation bar insets
+                        Spacer(modifier = Modifier.height(88.dp))
                     }
                 }
 

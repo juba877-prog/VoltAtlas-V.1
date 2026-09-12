@@ -3,6 +3,7 @@ package com.example.ui.dialogs.circuiteditor.ui.steps
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -100,28 +102,27 @@ fun LoadStepContent(
                     .fillMaxWidth()
                     .testTag("motor_warning_card"),
                 colors = CardDefaults.cardColors(
-                    containerColor = ThemeStatusWarning.copy(alpha = 0.12f)
+                    containerColor = ThemeStatusWarning.copy(alpha = 0.08f)
                 ),
-                border = BorderStroke(1.dp, ThemeStatusWarning.copy(alpha = 0.4f)),
+                border = BorderStroke(1.dp, ThemeStatusWarning.copy(alpha = 0.35f)),
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
                     Icon(
                         imageVector = Icons.Default.Info,
                         contentDescription = null,
                         tint = ThemeStatusWarning,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = "Note: Motor category affects load reporting only. Manually verify breaker curve (C/D) and starting-current cable sizing per IEC 60947-4-1 — this is not yet automated.",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 11.5.sp,
-                            lineHeight = 16.sp
-                        ),
+                        style = MaterialTheme.typography.bodySmall,
                         color = ThemeStatusWarning
                     )
                 }
@@ -139,11 +140,8 @@ fun LoadStepContent(
 
         // Motor-specific inputs (visible only when loadNature == "Motor")
         if (draft.loadNature == "Motor") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Box(modifier = Modifier.weight(1f)) {
+            ResponsiveFieldPair(
+                firstField = {
                     VoltAtlasDropdown(
                         value = draft.startingMethod,
                         options = startingMethodOptions,
@@ -151,8 +149,8 @@ fun LoadStepContent(
                         label = "Starting Method",
                         modifier = Modifier.testTag("input_starting_method")
                     )
-                }
-                Box(modifier = Modifier.weight(1f)) {
+                },
+                secondField = {
                     VoltAtlasTextField(
                         value = draft.startingCurrentMultiplier,
                         onValueChange = { onDraftChange(draft.copy(startingCurrentMultiplier = it)) },
@@ -161,15 +159,12 @@ fun LoadStepContent(
                         modifier = Modifier.testTag("input_starting_current_multiplier")
                     )
                 }
-            }
+            )
         }
 
         // Electrical Load Inputs: Load (kVA) & Power Factor
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Box(modifier = Modifier.weight(1f)) {
+        ResponsiveFieldPair(
+            firstField = {
                 VoltAtlasTextField(
                     value = draft.loadKVA,
                     onValueChange = { onDraftChange(draft.copy(loadKVA = it)) },
@@ -185,8 +180,8 @@ fun LoadStepContent(
                     },
                     modifier = Modifier.testTag("input_load_kva")
                 )
-            }
-            Box(modifier = Modifier.weight(1f)) {
+            },
+            secondField = {
                 VoltAtlasTextField(
                     value = draft.pf,
                     onValueChange = { onDraftChange(draft.copy(pf = it)) },
@@ -195,14 +190,11 @@ fun LoadStepContent(
                     modifier = Modifier.testTag("input_pf")
                 )
             }
-        }
+        )
 
         // Electrical Load Inputs: Demand Factor & Safety Factor
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Box(modifier = Modifier.weight(1f)) {
+        ResponsiveFieldPair(
+            firstField = {
                 VoltAtlasTextField(
                     value = draft.demandFactor,
                     onValueChange = { onDraftChange(draft.copy(demandFactor = it)) },
@@ -210,8 +202,8 @@ fun LoadStepContent(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.testTag("input_demand_factor")
                 )
-            }
-            Box(modifier = Modifier.weight(1f)) {
+            },
+            secondField = {
                 VoltAtlasTextField(
                     value = draft.safetyFactor,
                     onValueChange = { onDraftChange(draft.copy(safetyFactor = it)) },
@@ -220,14 +212,11 @@ fun LoadStepContent(
                     modifier = Modifier.testTag("input_safety_factor")
                 )
             }
-        }
+        )
 
         // Voltage & Phase Configuration
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Box(modifier = Modifier.weight(1f)) {
+        ResponsiveFieldPair(
+            firstField = {
                 VoltAtlasTextField(
                     value = draft.voltageV,
                     onValueChange = { onDraftChange(draft.copy(voltageV = it)) },
@@ -243,8 +232,8 @@ fun LoadStepContent(
                     },
                     modifier = Modifier.testTag("input_voltage")
                 )
-            }
-            Box(modifier = Modifier.weight(1f)) {
+            },
+            secondField = {
                 VoltAtlasDropdown(
                     value = draft.phases,
                     options = phaseOptions,
@@ -253,13 +242,15 @@ fun LoadStepContent(
                     modifier = Modifier.testTag("input_phases")
                 )
             }
-        }
+        )
 
         // Harmonic / Non-Linear Load Toggle
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = ThemeSurface),
-            border = BorderStroke(1.dp, ThemeBorderSubtle),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
             shape = RoundedCornerShape(8.dp)
         ) {
             Row(
@@ -290,6 +281,40 @@ fun LoadStepContent(
                         checkedTrackColor = ThemePrimary
                     )
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Adaptive layout for paired fields.
+ * Stacks vertically when screen width is constrained or font scale is enlarged (accessibility scale >= 1.25x),
+ * ensuring labels and inputs remain fully visible and readable without truncation or compression.
+ */
+@Composable
+private fun ResponsiveFieldPair(
+    firstField: @Composable () -> Unit,
+    secondField: @Composable () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val fontScale = LocalDensity.current.fontScale
+        val isSingleColumn = (maxWidth < 320.dp) || (fontScale >= 1.25f) || (maxWidth < 420.dp && fontScale > 1.15f)
+        if (isSingleColumn) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                firstField()
+                secondField()
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(modifier = Modifier.weight(1f)) { firstField() }
+                Box(modifier = Modifier.weight(1f)) { secondField() }
             }
         }
     }

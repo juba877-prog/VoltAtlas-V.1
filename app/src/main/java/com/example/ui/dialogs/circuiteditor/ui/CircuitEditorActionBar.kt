@@ -39,36 +39,33 @@ fun CircuitEditorActionBar(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = ThemeSurface,
-        border = BorderStroke(1.dp, ThemeBorderSubtle),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
         shadowElevation = 0.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = if (canGoBack) Arrangement.SpaceBetween else Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedButton(
-                onClick = onBackClick,
-                enabled = canGoBack,
-                modifier = Modifier
-                    .testTag("circuit_editor_back_btn")
-                    .sizeIn(minWidth = 100.dp, minHeight = 48.dp)
-                    .semantics {
-                        contentDescription = "Back to previous step"
-                    },
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = ThemeTextPrimary,
-                    disabledContentColor = ThemeTextDisabled
-                ),
-                border = BorderStroke(
-                    1.dp,
-                    if (canGoBack) ThemeBorderSubtle else ThemeBorderSubtle.copy(alpha = 0.5f)
-                )
-            ) {
-                Text("Back")
+            if (canGoBack) {
+                OutlinedButton(
+                    onClick = onBackClick,
+                    modifier = Modifier
+                        .testTag("circuit_editor_back_btn")
+                        .sizeIn(minWidth = 100.dp, minHeight = 48.dp)
+                        .semantics {
+                            contentDescription = "Back to previous step"
+                        },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Text("Back")
+                }
             }
 
             Button(

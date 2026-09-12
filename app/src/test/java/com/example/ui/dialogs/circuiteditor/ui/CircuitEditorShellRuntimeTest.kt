@@ -124,16 +124,15 @@ class CircuitEditorShellRuntimeTest {
     }
 
     @Test
-    fun test07_stickyActionAreaRemainsVisible() {
+    fun test07_stepOneOmitsBottomBackButtonWhilePreservingNext() {
         val holder = CircuitEditorTestStateHolder()
         composeTestRule.setContent {
             CircuitEditorTestHost(stateHolder = holder)
         }
 
         composeTestRule.onNodeWithTag("circuit_editor_next_btn").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("circuit_editor_back_btn").assertIsDisplayed()
-        // Back is disabled on initial Identity step
-        composeTestRule.onNodeWithTag("circuit_editor_back_btn").assertIsNotEnabled()
+        // DEFECT C2-V08 / Section 5 #9: Back button is omitted on Step 1, not rendered as large disabled button
+        composeTestRule.onNodeWithTag("circuit_editor_back_btn").assertDoesNotExist()
     }
 
     @Test
@@ -158,7 +157,8 @@ class CircuitEditorShellRuntimeTest {
             CircuitEditorTestHost(stateHolder = holder)
         }
 
-        composeTestRule.onNode(hasStateDescription("Step 1 of 6")).assertIsDisplayed()
+        // DEFECT C2-V05 / Section 5 #8: Step X of Y: Title semantics
+        composeTestRule.onNode(hasStateDescription("Step 1 of 6: Identity & Source")).assertIsDisplayed()
     }
 
     @Test

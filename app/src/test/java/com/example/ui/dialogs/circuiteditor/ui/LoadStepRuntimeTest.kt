@@ -8,10 +8,12 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasParent
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import com.example.data.LoadCategories
 import com.example.ui.dialogs.circuiteditor.model.CircuitEditorDraft
@@ -262,5 +264,69 @@ class LoadStepRuntimeTest {
         composeTestRule.onNodeWithTag("input_panel_type").assertDoesNotExist()
         composeTestRule.onNodeWithTag("input_fed_from").assertDoesNotExist()
         composeTestRule.onNodeWithTag("computed_hierarchy_card").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun test31_motorControlsStackVerticallyAtLargeFontScale() {
+        val holder = CircuitEditorTestStateHolder(
+            initialStep = CircuitWorkflowStep.LOAD,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD),
+            initialDraft = CircuitEditorDraft(loadNature = "Motor")
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // Section 5 #4: Motor controls switch to one-column arrangement at 360dp / font 1.5
+        val methodBounds = composeTestRule.onNodeWithTag("input_starting_method").getBoundsInRoot()
+        val multiplierBounds = composeTestRule.onNodeWithTag("input_starting_current_multiplier").getBoundsInRoot()
+        assertTrue(
+            "Starting multiplier must be positioned below starting method in single column at font 1.5 (method bottom: ${methodBounds.bottom}, mult top: ${multiplierBounds.top})",
+            multiplierBounds.top >= methodBounds.bottom
+        )
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun test32_startingMultiplierRemainsVisibleAndEditableAtFont1_5() {
+        val holder = CircuitEditorTestStateHolder(
+            initialStep = CircuitWorkflowStep.LOAD,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD),
+            initialDraft = CircuitEditorDraft(loadNature = "Motor", startingCurrentMultiplier = "6.0")
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // Section 5 #5: Starting Multiplier content remains visible and editable at font 1.5
+        composeTestRule.onNodeWithTag("input_starting_current_multiplier").assertIsDisplayed()
+        composeTestRule.onNode(hasParent(hasTestTag("input_starting_current_multiplier")) and hasSetTextAction())
+            .performTextReplacement("7.5")
+        assertEquals("7.5", holder.draft.startingCurrentMultiplier)
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun test33_finalLoadFieldCanScrollFullyAboveBottomActionBar() {
+        val holder = CircuitEditorTestStateHolder(
+            initialStep = CircuitWorkflowStep.LOAD,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD),
+            initialDraft = CircuitEditorDraft(loadNature = "Motor")
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // Section 5 #6: Final Load field can scroll above the bottom action bar
+        val nextBtn = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        val harmonicNode = composeTestRule.onNodeWithTag("checkbox_is_harmonic")
+        harmonicNode.performScrollTo()
+        val harmonicBounds = harmonicNode.getBoundsInRoot()
+
+        assertTrue(
+            "Final Load field must scroll completely above bottom action bar (harmonic bottom: ${harmonicBounds.bottom}, nextBtn top: ${nextBtn.top})",
+            harmonicBounds.bottom <= nextBtn.top
+        )
     }
 }

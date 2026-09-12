@@ -4,10 +4,12 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import com.example.data.CircuitEntity
@@ -15,6 +17,7 @@ import com.example.ui.dialogs.circuiteditor.model.CircuitEditorDraft
 import com.example.ui.dialogs.circuiteditor.model.CircuitWorkflowStep
 import com.example.ui.dialogs.circuiteditor.model.TransformerSnapshot
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -155,12 +158,39 @@ class IdentityStepRuntimeTest {
             CircuitEditorTestHost(stateHolder = holder)
         }
 
-        composeTestRule.onNodeWithTag("computed_hierarchy_card").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("computed_hierarchy_card").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Derived Network Hierarchy").assertIsDisplayed()
         composeTestRule.onNodeWithText("Supply Source").assertIsDisplayed()
         composeTestRule.onNodeWithText("0 (Root = 0)").assertIsDisplayed()
         composeTestRule.onNodeWithText("Resolved Transformer").assertIsDisplayed()
         composeTestRule.onAllNodesWithText("TX-99")[0].assertIsDisplayed()
         composeTestRule.onAllNodesWithText("TX-99")[1].assertIsDisplayed()
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun test20_hierarchyCardAtFontScale1_5_allLabelsAndValuesDisplayedAndClearBottomBar() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(fedFrom = "Transformer", transformerId = "TX-99"),
+            availableTransformers = listOf(TransformerSnapshot("TX-99"))
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.onNodeWithTag("computed_hierarchy_card").performScrollTo()
+        // Section 5 #1: Labels must remain complete and not ellipsized
+        composeTestRule.onNodeWithText("Supply Source").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Hierarchy Level").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Source Type").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Resolved Transformer").assertIsDisplayed()
+
+        // Section 5 #3: Card bottom must scroll completely above the bottom action bar
+        val cardBounds = composeTestRule.onNodeWithTag("computed_hierarchy_card").getBoundsInRoot()
+        val nextBtnBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        assertTrue(
+            "Hierarchy card must be fully scrollable above sticky action bar (card bottom: ${cardBounds.bottom}, action bar top: ${nextBtnBounds.top})",
+            cardBounds.bottom <= nextBtnBounds.top
+        )
     }
 }
