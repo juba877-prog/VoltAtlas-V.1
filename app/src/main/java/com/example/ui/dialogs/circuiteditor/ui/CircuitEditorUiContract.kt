@@ -2,10 +2,14 @@ package com.example.ui.dialogs.circuiteditor.ui
 
 import com.example.data.CircuitEntity
 import com.example.ui.dialogs.circuiteditor.mapper.CircuitSourceResolution
+import com.example.ui.dialogs.circuiteditor.model.AtsSnapshot
+import com.example.ui.dialogs.circuiteditor.model.CableCatalogSnapshot
 import com.example.ui.dialogs.circuiteditor.model.CircuitEditorDraft
 import com.example.ui.dialogs.circuiteditor.model.CircuitWorkflow
 import com.example.ui.dialogs.circuiteditor.model.CircuitWorkflowStep
+import com.example.ui.dialogs.circuiteditor.model.GeneratorSnapshot
 import com.example.ui.dialogs.circuiteditor.model.TransformerSnapshot
+import com.example.ui.dialogs.circuiteditor.model.UpsSnapshot
 
 /**
  * Immutable state consumed by the Circuit Editor UI layer.
@@ -21,7 +25,11 @@ data class CircuitEditorUiState(
     val existingCircuits: List<CircuitEntity> = emptyList(),
     val availableTransformers: List<TransformerSnapshot> = emptyList(),
     val sourceResolution: CircuitSourceResolution,
-    val identityError: String? = null
+    val identityError: String? = null,
+    val availableGenerators: List<GeneratorSnapshot> = emptyList(),
+    val availableAts: List<AtsSnapshot> = emptyList(),
+    val availableUps: List<UpsSnapshot> = emptyList(),
+    val catalogSnapshot: CableCatalogSnapshot = CableCatalogSnapshot()
 )
 
 /**

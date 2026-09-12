@@ -682,4 +682,114 @@ class CircuitEditorShellRuntimeTest {
         assertTrue("Back must have minimum 48dp height", (backBounds.bottom - backBounds.top) >= 48.dp)
         assertTrue("Next must have minimum 48dp height", (nextBounds.bottom - nextBounds.top) >= 48.dp)
     }
+
+    @Test
+    fun test34_forwardNavigationThroughFeeder() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "Circuit 1", panelType = "LOAD")
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // 1. Identity
+        composeTestRule.onNodeWithTag("circuit_editor_step_identity").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // 2. Load
+        composeTestRule.onNodeWithTag("circuit_editor_step_load").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // 3. Supply
+        composeTestRule.onNodeWithTag("circuit_editor_step_supply").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // 4. Feeder
+        composeTestRule.onNodeWithTag("circuit_editor_step_feeder").assertIsDisplayed()
+        assertEquals(CircuitWorkflowStep.FEEDER, holder.currentStep)
+    }
+
+    @Test
+    fun test35_backNavigationFromFeederToIdentity() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "Circuit 1", panelType = "LOAD"),
+            initialStep = CircuitWorkflowStep.FEEDER,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // In Feeder, click Back -> Supply
+        composeTestRule.onNodeWithTag("circuit_editor_step_feeder").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_back_btn").performClick()
+        composeTestRule.onNodeWithTag("circuit_editor_step_supply").assertIsDisplayed()
+        assertEquals(CircuitWorkflowStep.SUPPLY, holder.currentStep)
+
+        // In Supply, click Back -> Load
+        composeTestRule.onNodeWithTag("circuit_editor_back_btn").performClick()
+        composeTestRule.onNodeWithTag("circuit_editor_step_load").assertIsDisplayed()
+        assertEquals(CircuitWorkflowStep.LOAD, holder.currentStep)
+
+        // In Load, click Back -> Identity
+        composeTestRule.onNodeWithTag("circuit_editor_back_btn").performClick()
+        composeTestRule.onNodeWithTag("circuit_editor_step_identity").assertIsDisplayed()
+        assertEquals(CircuitWorkflowStep.IDENTITY, holder.currentStep)
+    }
+
+    @Test
+    fun test36_progressCurrentStepTotalSemanticsAcrossSteps() {
+        val supplyHolder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "C1", panelType = "LOAD"),
+            initialStep = CircuitWorkflowStep.SUPPLY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY)
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = supplyHolder)
+        }
+
+        composeTestRule.onNode(hasStateDescription("Step 3 of 6: Supply & Backup")).assertIsDisplayed()
+    }
+
+    @Test
+    fun test37_noSaveActionExistsInAnyStep() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "C1", panelType = "LOAD"),
+            initialStep = CircuitWorkflowStep.FEEDER,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.onNodeWithTag("save_circuit_btn").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Save").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Save Circuit").assertDoesNotExist()
+    }
+
+    @Test
+    fun test38_c2IdentityAndLoadRuntimeContractsRemainGreen() {
+        val identityHolder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "", panelType = "LOAD")
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = identityHolder)
+        }
+
+        // Clicking Next with blank name produces validation error
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+        composeTestRule.onNodeWithText("Circuit/Panel name cannot be empty.").assertIsDisplayed()
+        assertEquals(CircuitWorkflowStep.IDENTITY, identityHolder.currentStep)
+    }
 }
+

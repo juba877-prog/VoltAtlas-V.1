@@ -8,10 +8,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.example.data.CircuitEntity
 import com.example.ui.dialogs.circuiteditor.mapper.CircuitSourceResolver
+import com.example.ui.dialogs.circuiteditor.model.AtsSnapshot
+import com.example.ui.dialogs.circuiteditor.model.CableCatalogSnapshot
 import com.example.ui.dialogs.circuiteditor.model.CircuitEditorDraft
 import com.example.ui.dialogs.circuiteditor.model.CircuitWorkflow
 import com.example.ui.dialogs.circuiteditor.model.CircuitWorkflowStep
+import com.example.ui.dialogs.circuiteditor.model.GeneratorSnapshot
 import com.example.ui.dialogs.circuiteditor.model.TransformerSnapshot
+import com.example.ui.dialogs.circuiteditor.model.UpsSnapshot
 import com.example.ui.dialogs.circuiteditor.validation.CircuitEditorValidator
 import com.example.ui.dialogs.circuiteditor.validation.ValidationResult
 import com.example.ui.theme.VoltAtlasTheme
@@ -25,6 +29,10 @@ class CircuitEditorTestStateHolder(
     initialVisited: Set<CircuitWorkflowStep> = setOf(CircuitWorkflowStep.IDENTITY),
     val existingCircuits: List<CircuitEntity> = emptyList(),
     val availableTransformers: List<TransformerSnapshot> = emptyList(),
+    val availableGenerators: List<GeneratorSnapshot> = emptyList(),
+    val availableAts: List<AtsSnapshot> = emptyList(),
+    val availableUps: List<UpsSnapshot> = emptyList(),
+    val catalogSnapshot: CableCatalogSnapshot = CableCatalogSnapshot(),
     projectSubtitle: String? = null,
     val editingCircuitId: Int = 0
 ) {
@@ -68,15 +76,6 @@ class CircuitEditorTestStateHolder(
                             currentStep = CircuitWorkflowStep.LOAD
                             visitedSteps = visitedSteps + CircuitWorkflowStep.LOAD
                         }
-                    }
-                }
-                CircuitWorkflowStep.LOAD -> {
-                    val applicable = applicableSteps
-                    val idx = applicable.indexOf(currentStep)
-                    if (idx != -1 && idx < applicable.size - 1) {
-                        val next = applicable[idx + 1]
-                        currentStep = next
-                        visitedSteps = visitedSteps + next
                     }
                 }
                 else -> {
@@ -145,11 +144,15 @@ fun CircuitEditorTestHost(
         existingCircuits = stateHolder.existingCircuits,
         availableTransformers = stateHolder.availableTransformers,
         sourceResolution = resolution,
-        identityError = stateHolder.identityError
+        identityError = stateHolder.identityError,
+        availableGenerators = stateHolder.availableGenerators,
+        availableAts = stateHolder.availableAts,
+        availableUps = stateHolder.availableUps,
+        catalogSnapshot = stateHolder.catalogSnapshot
     )
 
     VoltAtlasTheme(darkTheme = darkTheme) {
-        CircuitEditorShell(
+        CircuitEditorParallelHost(
             state = state,
             events = stateHolder.events,
             modifier = modifier
