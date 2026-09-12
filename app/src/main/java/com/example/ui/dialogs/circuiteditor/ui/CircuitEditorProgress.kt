@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -29,6 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -48,12 +49,17 @@ enum class ProgressLayoutMode {
 /**
  * Dynamic responsive progress component for the Circuit Editor.
  *
- * Implements a constraint-driven layout with fallback priority:
- * 1. TITLED_ACTIVE_PILL: Active pill with number and short title when the full row fits.
- * 2. COMPACT_ACTIVE_PILL: Compact active numbered pill with full title in separate area when titled cannot fit.
- * 3. HORIZONTAL_SCROLL_RAIL: Scrollable rail automatically bringing active step into view when even compact cannot fit.
+ * Implements a constraint-driven layout strategy:
+ * 1. Compact widths (< 600dp): Renders numbered nodes only (or scrollable rail on narrow viewports).
+ *    The single content heading in the content region communicates the active step title and helper text,
+ *    eliminating duplicate active title presentations.
+ * 2. Expanded widths (>= 600dp): Renders titled active pill with step number and title when ample width exists.
+ * 3. Horizontal scroll rail: Automatically brings the active step fully into view upon composition or navigation.
  *
- * Guarantees minimum 48dp interactive touch targets, unclipped nodes, and MD3 typography tokens.
+ * Guarantees:
+ * - Minimum 48dp interactive touch targets on all nodes.
+ * - Complete accessibility semantics (Current, Completed, Upcoming states + disabled forward state).
+ * - Zero character-count heuristic formulas.
  */
 @Composable
 fun CircuitEditorProgress(
@@ -90,45 +96,29 @@ fun CircuitEditorProgress(
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val availableWidth = maxWidth
             val density = LocalDensity.current
-            val fontScale = density.fontScale
             val inactiveCount = (totalSteps - 1).coerceAtLeast(1)
 
-            // Dynamic calculation of titled pill width:
-            // Base padding: 20dp (10dp on each side) + 4dp inner gap
-            // Number text: ~7dp * fontScale
-            // Title text: ~6.2dp per character * fontScale
-            val estimatedTitleWidth = (shortTitle.length * 6.2f * fontScale).dp
-            val estimatedTitledPillWidth = (24.dp + (7f * fontScale).dp + estimatedTitleWidth).coerceAtLeast(48.dp)
-
-            // Mode 1: TITLED_ACTIVE_PILL requires:
-            // - 1 active pill of estimatedTitledPillWidth
-            // - inactiveCount nodes of 48dp minimum touch target
-            // - inactiveCount connectors of at least 2dp each
-            // - outer padding of at least 4dp each side (8dp total)
-            val requiredTitledWidth = estimatedTitledPillWidth + (48.dp * inactiveCount) + (2.dp * inactiveCount) + 8.dp
-
-            // Mode 2: COMPACT_ACTIVE_PILL requires:
-            // - totalSteps nodes of 48dp minimum touch target
-            // - inactiveCount connectors of at least 2dp each
-            // - outer padding of at least 4dp each side (8dp total)
+            // Deterministic constraint calculation based on 48dp touch targets and connector spacing:
             val requiredCompactWidth = (48.dp * totalSteps) + (2.dp * inactiveCount) + 8.dp
 
+            // Deterministic width-class strategy:
+            // - On expanded widths (>= 600dp): Render titled pill.
+            // - On compact widths (< 600dp):
+            //     - If all numbered nodes fit: COMPACT_ACTIVE_PILL.
+            //     - Else: HORIZONTAL_SCROLL_RAIL.
             val layoutMode = when {
-                availableWidth >= requiredTitledWidth -> ProgressLayoutMode.TITLED_ACTIVE_PILL
+                availableWidth >= 600.dp -> ProgressLayoutMode.TITLED_ACTIVE_PILL
                 availableWidth >= requiredCompactWidth -> ProgressLayoutMode.COMPACT_ACTIVE_PILL
                 else -> ProgressLayoutMode.HORIZONTAL_SCROLL_RAIL
             }
 
             when (layoutMode) {
                 ProgressLayoutMode.TITLED_ACTIVE_PILL -> {
-                    val contentWidth = estimatedTitledPillWidth + (48.dp * inactiveCount) + (4.dp * inactiveCount)
-                    val horizontalPadding = ((availableWidth - contentWidth) / 2).coerceIn(8.dp, 16.dp)
-
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("progress_mode_TITLED_ACTIVE_PILL")
-                            .padding(horizontal = horizontalPadding),
+                            .padding(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -171,12 +161,28 @@ fun CircuitEditorProgress(
                 ProgressLayoutMode.HORIZONTAL_SCROLL_RAIL -> {
                     val scrollState = rememberScrollState()
 
-                    // Automatically bring active item fully into view
+                    // Automatically bring active item fully into view on composition or step change
                     LaunchedEffect(currentStep, currentIndex) {
                         if (currentIndex >= 0) {
-                            val itemTotalPx = with(density) { 60.dp.roundToPx() }
-                            val targetScrollPx = (currentIndex * itemTotalPx) - with(density) { 16.dp.roundToPx() }
-                            scrollState.animateScrollTo(targetScrollPx.coerceAtLeast(0))
+                            val itemPx = with(density) { 60.dp.roundToPx() }
+                            val paddingPx = with(density) { 16.dp.roundToPx() }
+                            val viewportPx = with(density) { availableWidth.roundToPx() }
+                            val nodeLeftPx = paddingPx + (currentIndex * itemPx)
+                            val nodeRightPx = nodeLeftPx + with(density) { 48.dp.roundToPx() }
+
+                            val currentScroll = scrollState.value
+                            val targetScroll = when {
+                                nodeLeftPx < currentScroll + paddingPx -> {
+                                    (nodeLeftPx - paddingPx).coerceAtLeast(0)
+                                }
+                                nodeRightPx > currentScroll + viewportPx - paddingPx -> {
+                                    (nodeRightPx - viewportPx + paddingPx).coerceAtMost(scrollState.maxValue)
+                                }
+                                else -> currentScroll
+                            }
+                            if (targetScroll != currentScroll) {
+                                scrollState.scrollTo(targetScroll)
+                            }
                         }
                     }
 
@@ -211,7 +217,7 @@ fun CircuitEditorProgress(
                                         .height(2.dp)
                                         .background(
                                             if (isConnectorActive) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                             else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                                         )
                                 )
                             }
@@ -219,26 +225,6 @@ fun CircuitEditorProgress(
                     }
                 }
             }
-        }
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        // Active step title and descriptive subtitle
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-        ) {
-            Text(
-                text = currentStep.title,
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = currentStep.subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
@@ -294,19 +280,37 @@ private fun StepNodeBox(
     onStepSelected: (CircuitWorkflowStep) -> Unit
 ) {
     val canClick = isVisited && !isActive
+    val cleanTitle = step.title.replaceFirst(Regex("^\\d+\\.\\s*"), "")
 
     Box(
         modifier = Modifier
             .testTag("progress_step_node_$stepNum")
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .semantics {
+                contentDescription = "Step $stepNum: $cleanTitle"
+                stateDescription = when {
+                    isActive -> "Current"
+                    isVisited -> "Completed"
+                    else -> "Upcoming"
+                }
+                if (!canClick && !isActive) {
+                    disabled()
+                }
+            }
             .then(
-                if (canClick) Modifier.clickable { onStepSelected(step) } else Modifier
+                if (canClick) {
+                    Modifier.clickable(
+                        onClickLabel = "Navigate to Step $stepNum"
+                    ) { onStepSelected(step) }
+                } else {
+                    Modifier
+                }
             ),
         contentAlignment = Alignment.Center
     ) {
         if (isActive) {
             if (isTitled) {
-                // Titled active pill (number + short title)
+                // Titled active pill (number + short title on expanded viewports)
                 Row(
                     modifier = Modifier
                         .testTag("active_progress_pill")
@@ -356,7 +360,7 @@ private fun StepNodeBox(
                 }
             }
         } else {
-            // Inactive node (24dp circle)
+            // Inactive node (24dp circle inside 48dp minimum touch container)
             Box(
                 modifier = Modifier
                     .size(24.dp)

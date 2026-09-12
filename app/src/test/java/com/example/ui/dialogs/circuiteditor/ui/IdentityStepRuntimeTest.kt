@@ -12,6 +12,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.unit.dp
 import com.example.data.CircuitEntity
 import com.example.ui.dialogs.circuiteditor.model.CircuitEditorDraft
 import com.example.ui.dialogs.circuiteditor.model.CircuitWorkflowStep
@@ -218,5 +219,116 @@ class IdentityStepRuntimeTest {
             "Resolved transformer row must lie completely above action-bar top after scrolling in validation error state (row bottom: ${rowBounds.bottom}, next top: ${nextBtnBounds.top})",
             rowBounds.bottom <= nextBtnBounds.top
         )
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.0f)
+    fun test22_bottomClearance_360dp_font1_0() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(fedFrom = "Transformer", transformerId = "TX-01"),
+            availableTransformers = listOf(TransformerSnapshot("TX-01"))
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        val cardBounds = composeTestRule.onNodeWithTag("computed_hierarchy_card").getBoundsInRoot()
+        val nextBtnBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        assertTrue(
+            "At 360dp font 1.0, card bottom (${cardBounds.bottom}) must clear action bar top (${nextBtnBounds.top}) with margin",
+            cardBounds.bottom + 16.dp <= nextBtnBounds.top
+        )
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun test23_bottomClearance_360dp_font1_5() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(fedFrom = "Transformer", transformerId = "TX-01"),
+            availableTransformers = listOf(TransformerSnapshot("TX-01"))
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        val cardBounds = composeTestRule.onNodeWithTag("computed_hierarchy_card").getBoundsInRoot()
+        val nextBtnBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        assertTrue(
+            "At 360dp font 1.5, card bottom (${cardBounds.bottom}) must clear action bar top (${nextBtnBounds.top}) with margin",
+            cardBounds.bottom + 16.dp <= nextBtnBounds.top
+        )
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun test24_bottomClearance_320dp_font1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(fedFrom = "Transformer", transformerId = "TX-01"),
+            availableTransformers = listOf(TransformerSnapshot("TX-01"))
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        val cardBounds = composeTestRule.onNodeWithTag("computed_hierarchy_card").getBoundsInRoot()
+        val nextBtnBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        assertTrue(
+            "At 320dp font 1.3, card bottom (${cardBounds.bottom}) must clear action bar top (${nextBtnBounds.top}) with margin",
+            cardBounds.bottom + 16.dp <= nextBtnBounds.top
+        )
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w412dp-h892dp-xhdpi", fontScale = 1.3f)
+    fun test25_bottomClearance_412dp_font1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(fedFrom = "Transformer", transformerId = "TX-01"),
+            availableTransformers = listOf(TransformerSnapshot("TX-01"))
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        val cardBounds = composeTestRule.onNodeWithTag("computed_hierarchy_card").getBoundsInRoot()
+        val nextBtnBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        assertTrue(
+            "At 412dp font 1.3, card bottom (${cardBounds.bottom}) must clear action bar top (${nextBtnBounds.top}) with margin",
+            cardBounds.bottom + 16.dp <= nextBtnBounds.top
+        )
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun test26_accessibility_fontScale1_5_noTruncationAcrossAllFields() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                name = "Distribution Board Alpha",
+                panelType = "MDB",
+                fedFrom = "Transformer",
+                transformerId = "TX-01"
+            ),
+            availableTransformers = listOf(TransformerSnapshot("TX-01"))
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // Verify fields, values, labels, buttons without truncation
+        composeTestRule.onNodeWithText("Circuit / Panel Name").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Board Classification").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Fed From").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Transformer")[0].assertIsDisplayed()
+        composeTestRule.onNodeWithTag("add_transformer_btn").assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag("computed_hierarchy_card").performScrollTo()
+        composeTestRule.onNodeWithText("Derived Network Hierarchy").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Supply Source").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Hierarchy Level").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Source Type").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Resolved Transformer").assertIsDisplayed()
     }
 }

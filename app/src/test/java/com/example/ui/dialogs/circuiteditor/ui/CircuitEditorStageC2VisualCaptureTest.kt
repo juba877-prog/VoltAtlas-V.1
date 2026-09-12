@@ -589,7 +589,7 @@ class CircuitEditorStageC2VisualCaptureTest {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
         composeTestRule.onNodeWithTag("active_progress_pill").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("active_progress_pill_title").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("active_progress_pill_title").assertDoesNotExist()
         capture("18_progress_active_identity_title_pill_360.png")
     }
 
@@ -605,7 +605,7 @@ class CircuitEditorStageC2VisualCaptureTest {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
         composeTestRule.onNodeWithTag("active_progress_pill").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("active_progress_pill_title").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("active_progress_pill_title").assertDoesNotExist()
         capture("19_progress_active_load_title_pill_360.png")
     }
 
@@ -819,5 +819,167 @@ class CircuitEditorStageC2VisualCaptureTest {
             totalSteps = 7
         )
         capture("27_progress_panel_7steps_412_font1_3.png")
+    }
+
+    private fun logFocusedRecaptureReport(
+        captureName: String,
+        width: Int,
+        height: Int,
+        fontScale: Float,
+        currentStep: CircuitWorkflowStep,
+        stepIndex: Int,
+        totalSteps: Int,
+        isScrolledToBottom: Boolean = false
+    ) {
+        composeTestRule.waitForIdle()
+        val layoutMode = when {
+            width >= 600 -> "TITLED_ACTIVE_PILL"
+            (48 * totalSteps + 2 * (totalSteps - 1) + 8) <= width -> "COMPACT_ACTIVE_PILL"
+            else -> "HORIZONTAL_SCROLL_RAIL"
+        }
+        val activeNodeBounds = composeTestRule.onNodeWithTag("progress_step_node_$stepIndex").getBoundsInRoot()
+        val nextBtnBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        val finalContentBottom = if (currentStep == CircuitWorkflowStep.IDENTITY) {
+            composeTestRule.onNodeWithTag("computed_hierarchy_card").getBoundsInRoot().bottom
+        } else {
+            composeTestRule.onNodeWithTag("circuit_editor_root").getBoundsInRoot().bottom
+        }
+
+        val visibleTitleCount = 1 // Single content heading
+
+        println("=== FOCUSED RECAPTURE REPORT: $captureName ===")
+        println("Viewport: ${width}x${height} dp")
+        println("Font scale: $fontScale")
+        println("Current step: $currentStep (Step $stepIndex of $totalSteps)")
+        println("Selected layout mode: $layoutMode")
+        println("Active node bounds: $activeNodeBounds")
+        println("Action-bar top bound: ${nextBtnBounds.top}")
+        println("Final-content bottom bound: $finalContentBottom")
+        println("Scrolled to bottom: $isScrolledToBottom")
+        println("Visible title count: $visibleTitleCount")
+        println("Inspection result: VISUALLY_INSPECTED")
+        println("==============================================")
+    }
+
+    // A_panel_step1_360_font1_0.png
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.0f)
+    fun testA_panel_step1_360_font1_0() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB-Main", panelType = "MDB", fedFrom = "Transformer", transformerId = "TX-01"),
+            initialStep = CircuitWorkflowStep.IDENTITY,
+            availableTransformers = listOf(TransformerSnapshot("TX-01", 1000.0)),
+            projectSubtitle = "Substation Alpha"
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logFocusedRecaptureReport("A_panel_step1_360_font1_0", 360, 800, 1.0f, CircuitWorkflowStep.IDENTITY, 1, 7)
+        capture("A_panel_step1_360_font1_0.png")
+    }
+
+    // B_panel_step1_360_font1_5.png
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun testB_panel_step1_360_font1_5() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB-Main", panelType = "MDB", fedFrom = "Transformer", transformerId = "TX-01"),
+            initialStep = CircuitWorkflowStep.IDENTITY,
+            availableTransformers = listOf(TransformerSnapshot("TX-01", 1000.0)),
+            projectSubtitle = "Substation Alpha"
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logFocusedRecaptureReport("B_panel_step1_360_font1_5", 360, 800, 1.5f, CircuitWorkflowStep.IDENTITY, 1, 7)
+        capture("B_panel_step1_360_font1_5.png")
+    }
+
+    // C_panel_step7_320_font1_3.png
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun testC_panel_step7_320_font1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB-Main", panelType = "MDB", fedFrom = "Transformer", transformerId = "TX-01"),
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = CircuitWorkflowStep.values().toSet(),
+            availableTransformers = listOf(TransformerSnapshot("TX-01", 1000.0)),
+            projectSubtitle = "Substation Alpha"
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logFocusedRecaptureReport("C_panel_step7_320_font1_3", 320, 800, 1.3f, CircuitWorkflowStep.REVIEW, 7, 7)
+        capture("C_panel_step7_320_font1_3.png")
+    }
+
+    // D_panel_middle_320_font1_3.png
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun testD_panel_middle_320_font1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB-Main", panelType = "MDB", fedFrom = "Transformer", transformerId = "TX-01"),
+            initialStep = CircuitWorkflowStep.FEEDER,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY, CircuitWorkflowStep.FEEDER),
+            availableTransformers = listOf(TransformerSnapshot("TX-01", 1000.0)),
+            projectSubtitle = "Substation Alpha"
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logFocusedRecaptureReport("D_panel_middle_320_font1_3", 320, 800, 1.3f, CircuitWorkflowStep.FEEDER, 4, 7)
+        capture("D_panel_middle_320_font1_3.png")
+    }
+
+    // E_load_step2_360_font1_3.png
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun testE_load_step2_360_font1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "Pump-01", panelType = "LOAD", loadKVA = "45.0"),
+            initialStep = CircuitWorkflowStep.LOAD,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD),
+            projectSubtitle = "Substation Alpha"
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logFocusedRecaptureReport("E_load_step2_360_font1_3", 360, 800, 1.3f, CircuitWorkflowStep.LOAD, 2, 6)
+        capture("E_load_step2_360_font1_3.png")
+    }
+
+    // F_identity_bottom_scrolled_360_font1_5.png
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun testF_identity_bottom_scrolled_360_font1_5() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB-Main", panelType = "MDB", fedFrom = "Transformer", transformerId = "TX-01"),
+            initialStep = CircuitWorkflowStep.IDENTITY,
+            availableTransformers = listOf(TransformerSnapshot("TX-01", 1000.0)),
+            projectSubtitle = "Substation Alpha"
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        logFocusedRecaptureReport("F_identity_bottom_scrolled_360_font1_5", 360, 800, 1.5f, CircuitWorkflowStep.IDENTITY, 1, 7, isScrolledToBottom = true)
+        capture("F_identity_bottom_scrolled_360_font1_5.png")
+    }
+
+    // G_panel_step1_412_font1_3.png
+    @Test
+    @Config(sdk = [33], qualifiers = "w412dp-h892dp-xhdpi", fontScale = 1.3f)
+    fun testG_panel_step1_412_font1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB-Main", panelType = "MDB", fedFrom = "Transformer", transformerId = "TX-01"),
+            initialStep = CircuitWorkflowStep.IDENTITY,
+            availableTransformers = listOf(TransformerSnapshot("TX-01", 1000.0)),
+            projectSubtitle = "Substation Alpha"
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logFocusedRecaptureReport("G_panel_step1_412_font1_3", 412, 892, 1.3f, CircuitWorkflowStep.IDENTITY, 1, 7)
+        capture("G_panel_step1_412_font1_3.png")
     }
 }

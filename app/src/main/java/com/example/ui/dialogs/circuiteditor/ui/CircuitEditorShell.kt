@@ -160,8 +160,27 @@ fun CircuitEditorShell(
                     .fillMaxSize()
                     .widthIn(max = 640.dp)
                     .verticalScroll(scrollState)
-                    .padding(16.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
+                // Single Content Heading communicating position, full step title, and helper text
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("circuit_editor_step_header")
+                        .padding(bottom = 16.dp)
+                ) {
+                    Text(
+                        text = state.currentStep.title,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = state.currentStep.subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 when (state.currentStep) {
                     CircuitWorkflowStep.IDENTITY -> {
                         IdentityStepContent(
@@ -200,6 +219,14 @@ fun CircuitEditorShell(
                         }
                     }
                 }
+
+                // Explicit content-bottom clearance: guarantees final scrollable content
+                // clears the sticky bottom action bar with ample margin
+                Spacer(
+                    modifier = Modifier
+                        .height(32.dp)
+                        .testTag("content_bottom_clearance_spacer")
+                )
             }
         }
     }

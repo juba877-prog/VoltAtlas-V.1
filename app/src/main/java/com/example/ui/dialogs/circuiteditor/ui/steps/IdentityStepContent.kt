@@ -4,17 +4,23 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,17 +28,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.data.CircuitEntity
-import com.example.ui.components.ThemeBorderSubtle
-import com.example.ui.components.ThemePrimary
-import com.example.ui.components.ThemeSurface
-import com.example.ui.components.ThemeSurfaceHigh
-import com.example.ui.components.ThemeTextPrimary
-import com.example.ui.components.ThemeTextSecondary
-import com.example.ui.components.VoltAtlasDataRow
 import com.example.ui.components.VoltAtlasDropdown
 import com.example.ui.components.VoltAtlasTextField
 import com.example.ui.dialogs.circuiteditor.mapper.CircuitSourceResolution
@@ -76,7 +76,7 @@ fun IdentityStepContent(
         modifier = modifier
             .fillMaxWidth()
             .testTag("circuit_editor_step_identity"),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Circuit / Panel Name
         VoltAtlasTextField(
@@ -132,15 +132,24 @@ fun IdentityStepContent(
                     modifier = Modifier
                         .testTag("add_transformer_btn")
                         .sizeIn(minHeight = 48.dp)
-                        .padding(top = 4.dp),
+                        .semantics {
+                            contentDescription = "Add new transformer"
+                        },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                     colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = ThemeSurfaceHigh,
-                        contentColor = ThemePrimary
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                     ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "➕ Add TX",
+                        text = "Add TX",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
                 }
@@ -153,10 +162,10 @@ fun IdentityStepContent(
                 .fillMaxWidth()
                 .testTag("computed_hierarchy_card"),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
             ),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-            shape = RoundedCornerShape(10.dp)
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(12.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -167,9 +176,9 @@ fun IdentityStepContent(
                 Text(
                     text = "Derived Network Hierarchy",
                     style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
                 HierarchyField(
@@ -197,7 +206,7 @@ fun IdentityStepContent(
 /**
  * Responsive stacked label-value presentation for engineering hierarchy data.
  * Guarantees zero truncation at large accessibility font scales (1.3x - 1.5x)
- * and restrained emphasis using MD3 bodyLarge rather than display tokens.
+ * and restrained emphasis using MD3 bodyMedium rather than display tokens.
  */
 @Composable
 private fun HierarchyField(
@@ -211,12 +220,12 @@ private fun HierarchyField(
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyLarge.copy(
+            style = MaterialTheme.typography.bodyMedium.copy(
                 fontWeight = FontWeight.Medium
             ),
             color = MaterialTheme.colorScheme.onSurface

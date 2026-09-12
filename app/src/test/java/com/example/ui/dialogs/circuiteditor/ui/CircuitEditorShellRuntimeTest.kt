@@ -1,6 +1,7 @@
 package com.example.ui.dialogs.circuiteditor.ui
 
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -195,14 +196,27 @@ class CircuitEditorShellRuntimeTest {
     }
 
     @Test
-    fun test12_activeProgressPillDisplaysStepTitle() {
+    fun test12_activeProgressPillDisplaysPositionAndHeaderDisplaysTitle() {
         val holder = CircuitEditorTestStateHolder()
         composeTestRule.setContent {
             CircuitEditorTestHost(stateHolder = holder)
         }
 
-        // C2-FV04 / Section 4 #4: Active progress item exposes visible title in pill at 360dp
+        // Active progress item exposes numbered pill and semantics on compact width
         composeTestRule.onNodeWithTag("active_progress_pill").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_step_header").assertIsDisplayed()
+        composeTestRule.onNodeWithText("1. Identity & Source").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "w600dp-h800dp-xhdpi")
+    fun test12b_expandedWidthDisplaysTitledActivePill() {
+        val holder = CircuitEditorTestStateHolder()
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.onNodeWithTag("progress_mode_TITLED_ACTIVE_PILL").assertIsDisplayed()
         composeTestRule.onNodeWithTag("active_progress_pill_title").assertIsDisplayed()
     }
 
@@ -284,7 +298,7 @@ class CircuitEditorShellRuntimeTest {
     }
 
     @Test
-    fun test16_case4_sixStepProgressAt360dpFont1_0TitledActivePillRemainsVisible() {
+    fun test16_case4_sixStepProgressAt360dpFont1_0CompactNumberedNodesFit() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(name = "L-01", panelType = "LOAD"),
             initialStep = CircuitWorkflowStep.IDENTITY
@@ -293,9 +307,8 @@ class CircuitEditorShellRuntimeTest {
             CircuitEditorTestHost(stateHolder = holder)
         }
 
-        composeTestRule.onNodeWithTag("progress_mode_TITLED_ACTIVE_PILL").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("progress_mode_COMPACT_ACTIVE_PILL").assertIsDisplayed()
         composeTestRule.onNodeWithTag("active_progress_pill").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("active_progress_pill_title").assertIsDisplayed()
 
         val progressBounds = composeTestRule.onNodeWithTag("circuit_editor_progress").getBoundsInRoot()
         for (i in 1..6) {
@@ -349,7 +362,7 @@ class CircuitEditorShellRuntimeTest {
 
     @Test
     @Config(qualifiers = "w412dp-h892dp-xhdpi", fontScale = 1.3f)
-    fun test18_case6_progressAt412dpFont1_3RetainsTitledWhenFits() {
+    fun test18_case6_progressAt412dpFont1_3SelectsCompactPillOnCompactWidth() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(name = "MDB", panelType = "MDB"),
             initialStep = CircuitWorkflowStep.LOAD,
@@ -359,9 +372,8 @@ class CircuitEditorShellRuntimeTest {
             CircuitEditorTestHost(stateHolder = holder)
         }
 
-        composeTestRule.onNodeWithTag("progress_mode_TITLED_ACTIVE_PILL").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("progress_mode_COMPACT_ACTIVE_PILL").assertIsDisplayed()
         composeTestRule.onNodeWithTag("active_progress_pill").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("active_progress_pill_title").assertIsDisplayed()
     }
 
     @Test
@@ -398,5 +410,143 @@ class CircuitEditorShellRuntimeTest {
         for (i in 1..7) {
             composeTestRule.onNodeWithTag("progress_step_node_$i").assertIsDisplayed()
         }
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun test21a_activeStep1FullyVisibleAt320dp() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.IDENTITY
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.waitForIdle()
+        val node1 = composeTestRule.onNodeWithTag("progress_step_node_1")
+        node1.assertIsDisplayed()
+        val node1Bounds = node1.getBoundsInRoot()
+        assertTrue("Step 1 left (${node1Bounds.left}) must be >= 0dp", node1Bounds.left >= 0.dp)
+        assertTrue("Step 1 right (${node1Bounds.right}) must be <= 320dp", node1Bounds.right <= 320.dp)
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun test21b_activeMiddleStepFullyVisibleAt320dp() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.FEEDER, // Step 4 of 7
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.waitForIdle()
+        val node4 = composeTestRule.onNodeWithTag("progress_step_node_4")
+        node4.assertIsDisplayed()
+        val node4Bounds = node4.getBoundsInRoot()
+        assertTrue("Step 4 left (${node4Bounds.left}) must be >= 0dp", node4Bounds.left >= 0.dp)
+        assertTrue("Step 4 right (${node4Bounds.right}) must be <= 320dp", node4Bounds.right <= 320.dp)
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun test21c_activeStep7FullyVisibleAt320dpAfterNavigation() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.REVIEW, // Step 7 of 7
+            initialVisited = CircuitWorkflowStep.values().toSet()
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.waitForIdle()
+        val node7 = composeTestRule.onNodeWithTag("progress_step_node_7")
+        node7.assertIsDisplayed()
+        val node7Bounds = node7.getBoundsInRoot()
+        // Must be fully visible within 320dp viewport with right edge clearance
+        assertTrue(
+            "Step 7 left (${node7Bounds.left}) must be >= 0dp",
+            node7Bounds.left >= 0.dp
+        )
+        assertTrue(
+            "Step 7 right (${node7Bounds.right}) must be <= 320dp inside the viewport",
+            node7Bounds.right <= 320.dp
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun test21d_activeStep7FullyVisibleAt320dpInRtlLayout() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = CircuitWorkflowStep.values().toSet()
+        )
+        composeTestRule.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl
+            ) {
+                CircuitEditorTestHost(stateHolder = holder)
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        val node7 = composeTestRule.onNodeWithTag("progress_step_node_7")
+        node7.assertIsDisplayed()
+        val node7Bounds = node7.getBoundsInRoot()
+        assertTrue(
+            "Step 7 in RTL left (${node7Bounds.left}) must be >= 0dp",
+            node7Bounds.left >= 0.dp
+        )
+        assertTrue(
+            "Step 7 in RTL right (${node7Bounds.right}) must be <= 320dp inside the viewport",
+            node7Bounds.right <= 320.dp
+        )
+    }
+
+    @Test
+    fun test22_failFirst_noDuplicateVisibleActiveStepTitleInCompactMode() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.IDENTITY
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // The progress rail itself must NOT contain a duplicate visible title block
+        composeTestRule.onNodeWithTag("progress_duplicate_title_bar").assertDoesNotExist()
+        // There must be exactly one content heading for the active step
+        composeTestRule.onNodeWithTag("circuit_editor_step_header").assertIsDisplayed()
+    }
+
+    @Test
+    fun test23_failFirst_progressNodeSemanticStateAndDisabledForwardSemantics() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.IDENTITY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY)
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // Active node 1 has Current state
+        composeTestRule.onNodeWithTag("progress_step_node_1")
+            .assert(hasStateDescription("Current"))
+
+        // Unvisited node 2 has Upcoming state and is disabled in accessibility semantics
+        composeTestRule.onNodeWithTag("progress_step_node_2")
+            .assert(hasStateDescription("Upcoming"))
+            .assertIsNotEnabled()
     }
 }
