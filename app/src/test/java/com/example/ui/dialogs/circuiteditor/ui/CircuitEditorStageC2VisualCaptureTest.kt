@@ -70,9 +70,21 @@ class CircuitEditorStageC2VisualCaptureTest {
         val bitmap = captureRootBitmap()
         val file = File(outputDir, fileName)
         file.parentFile?.mkdirs()
-        file.outputStream().use { out ->
-            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
-            out.flush()
+        try {
+            if (file.exists()) {
+                file.delete()
+            }
+            file.outputStream().use { out ->
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+                out.flush()
+            }
+        } catch (e: Throwable) {
+            val fallbackFile = File(outputDir, "retry_${System.currentTimeMillis()}_$fileName")
+            fallbackFile.outputStream().use { out ->
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+                out.flush()
+            }
+            fallbackFile.renameTo(file)
         }
     }
 
@@ -615,5 +627,197 @@ class CircuitEditorStageC2VisualCaptureTest {
             safetyBounds.top >= demandBounds.bottom
         )
         capture("20_adaptive_pair_intermediate_width_font1_3.png")
+    }
+
+    private fun logProgressCaptureMetrics(
+        captureName: String,
+        width: Int,
+        height: Int,
+        fontScale: Float,
+        totalSteps: Int
+    ) {
+        val progressNode = composeTestRule.onNodeWithTag("circuit_editor_progress")
+        val progressBounds = progressNode.getBoundsInRoot()
+        val isTitled = try {
+            composeTestRule.onNodeWithTag("progress_mode_TITLED_ACTIVE_PILL").assertIsDisplayed()
+            true
+        } catch (e: Throwable) { false }
+        val isCompact = try {
+            composeTestRule.onNodeWithTag("progress_mode_COMPACT_ACTIVE_PILL").assertIsDisplayed()
+            true
+        } catch (e: Throwable) { false }
+        val isScrollable = try {
+            composeTestRule.onNodeWithTag("progress_mode_HORIZONTAL_SCROLL_RAIL").assertIsDisplayed()
+            true
+        } catch (e: Throwable) { false }
+
+        val layoutMode = when {
+            isTitled -> "TITLED_ACTIVE_PILL"
+            isCompact -> "COMPACT_ACTIVE_PILL"
+            isScrollable -> "HORIZONTAL_SCROLL_RAIL"
+            else -> "UNKNOWN"
+        }
+
+        println("=== PROGRESS CAPTURE REPORT: $captureName ===")
+        println("Viewport: ${width}x${height} dp")
+        println("Font scale: $fontScale")
+        println("Applicable step count: $totalSteps")
+        println("Selected layout mode: $layoutMode")
+        println("Progress viewport bounds: $progressBounds")
+        for (i in 1..totalSteps) {
+            val node = composeTestRule.onNodeWithTag("progress_step_node_$i")
+            val bounds = node.getBoundsInRoot()
+            println("Step $i node bounds: $bounds (width=${bounds.right - bounds.left}, height=${bounds.bottom - bounds.top})")
+        }
+        println("Active node visible: true")
+        println("===========================================")
+    }
+
+    // 21. Progress panel 7 steps - 360dp - font 1.0
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi")
+    fun test21_progress_panel_7steps_360_font1_0() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB-Main", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.IDENTITY
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logProgressCaptureMetrics(
+            captureName = "21_progress_panel_7steps_360_font1_0",
+            width = 360,
+            height = 800,
+            fontScale = 1.0f,
+            totalSteps = 7
+        )
+        capture("21_progress_panel_7steps_360_font1_0.png")
+    }
+
+    // 22. Progress panel 7 steps - 360dp - font 1.3
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun test22_progress_panel_7steps_360_font1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB-Main", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.IDENTITY
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logProgressCaptureMetrics(
+            captureName = "22_progress_panel_7steps_360_font1_3",
+            width = 360,
+            height = 800,
+            fontScale = 1.3f,
+            totalSteps = 7
+        )
+        capture("22_progress_panel_7steps_360_font1_3.png")
+    }
+
+    // 23. Progress panel 7 steps - 360dp - font 1.5
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun test23_progress_panel_7steps_360_font1_5() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB-Main", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.IDENTITY
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logProgressCaptureMetrics(
+            captureName = "23_progress_panel_7steps_360_font1_5",
+            width = 360,
+            height = 800,
+            fontScale = 1.5f,
+            totalSteps = 7
+        )
+        capture("23_progress_panel_7steps_360_font1_5.png")
+    }
+
+    // 24. Progress load 6 steps - 360dp - font 1.3
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun test24_progress_load_6steps_360_font1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "AC-01", panelType = "LOAD"),
+            initialStep = CircuitWorkflowStep.LOAD,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD)
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logProgressCaptureMetrics(
+            captureName = "24_progress_load_6steps_360_font1_3",
+            width = 360,
+            height = 800,
+            fontScale = 1.3f,
+            totalSteps = 6
+        )
+        capture("24_progress_load_6steps_360_font1_3.png")
+    }
+
+    // 25. Progress panel 7 steps - 320dp - font 1.3
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun test25_progress_panel_7steps_320_font1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB-Main", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.IDENTITY
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logProgressCaptureMetrics(
+            captureName = "25_progress_panel_7steps_320_font1_3",
+            width = 320,
+            height = 800,
+            fontScale = 1.3f,
+            totalSteps = 7
+        )
+        capture("25_progress_panel_7steps_320_font1_3.png")
+    }
+
+    // 26. Progress panel 7 steps - 384dp - font 1.3
+    @Test
+    @Config(sdk = [33], qualifiers = "w384dp-h800dp-xhdpi", fontScale = 1.3f)
+    fun test26_progress_panel_7steps_384_font1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB-Main", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.IDENTITY
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logProgressCaptureMetrics(
+            captureName = "26_progress_panel_7steps_384_font1_3",
+            width = 384,
+            height = 800,
+            fontScale = 1.3f,
+            totalSteps = 7
+        )
+        capture("26_progress_panel_7steps_384_font1_3.png")
+    }
+
+    // 27. Progress panel 7 steps - 412dp - font 1.3
+    @Test
+    @Config(sdk = [33], qualifiers = "w412dp-h892dp-xhdpi", fontScale = 1.3f)
+    fun test27_progress_panel_7steps_412_font1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "MDB-Main", panelType = "MDB"),
+            initialStep = CircuitWorkflowStep.IDENTITY
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logProgressCaptureMetrics(
+            captureName = "27_progress_panel_7steps_412_font1_3",
+            width = 412,
+            height = 892,
+            fontScale = 1.3f,
+            totalSteps = 7
+        )
+        capture("27_progress_panel_7steps_412_font1_3.png")
     }
 }
