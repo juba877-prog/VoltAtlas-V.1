@@ -236,4 +236,103 @@ class PanelHeaderStepRuntimeTest {
         val waysBounds = composeTestRule.onNodeWithTag("input_edit_dialog_number_of_ways").getBoundsInRoot()
         assertTrue("Expected location to stack above numberOfWays", waysBounds.top >= locBounds.bottom)
     }
+
+    @Test
+    fun test22_scRatingIsReadOnlyTonalCard() {
+        var currentDraft by mutableStateOf(CircuitEditorDraft())
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                PanelHeaderStepContent(
+                    draft = currentDraft,
+                    onDraftChange = { currentDraft = it },
+                    scRatingText = "25.00 kA"
+                )
+            }
+        }
+
+        val scField = composeTestRule.onNodeWithTag("display_edit_dialog_sc_rating")
+        scField.assertIsDisplayed()
+        composeTestRule.onNodeWithText("Calculated Short-Circuit Rating").assertIsDisplayed()
+        composeTestRule.onNodeWithText("25.00 kA").assertIsDisplayed()
+        composeTestRule.onNode(hasTestTag("display_edit_dialog_sc_rating") and hasSetTextAction()).assertDoesNotExist()
+    }
+
+    @Test
+    fun test23_scRatingDisplaysProvidedValue() {
+        var currentDraft by mutableStateOf(CircuitEditorDraft())
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                PanelHeaderStepContent(
+                    draft = currentDraft,
+                    onDraftChange = { currentDraft = it },
+                    scRatingText = "35.20 kA"
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag("display_edit_dialog_sc_rating").assertIsDisplayed()
+        composeTestRule.onNodeWithText("35.20 kA").assertIsDisplayed()
+    }
+
+    @Test
+    fun test24_scRatingDisplaysUnavailableWhenNullOrEmpty() {
+        var currentDraft by mutableStateOf(CircuitEditorDraft())
+        var currentRating by mutableStateOf<String?>(null)
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                PanelHeaderStepContent(
+                    draft = currentDraft,
+                    onDraftChange = { currentDraft = it },
+                    scRatingText = currentRating
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag("display_edit_dialog_sc_rating").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Unavailable (Calculated after save)").assertIsDisplayed()
+
+        // Test with empty string
+        currentRating = ""
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Unavailable (Calculated after save)").assertIsDisplayed()
+    }
+
+    @Test
+    fun test25_scRatingHasNoEditableAction() {
+        var currentDraft by mutableStateOf(CircuitEditorDraft())
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                PanelHeaderStepContent(
+                    draft = currentDraft,
+                    onDraftChange = { currentDraft = it },
+                    scRatingText = "40.00 kA"
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag("display_edit_dialog_sc_rating").assertIsDisplayed()
+        composeTestRule.onNode(hasTestTag("display_edit_dialog_sc_rating") and hasSetTextAction()).assertDoesNotExist()
+        composeTestRule.onNode(hasParent(hasTestTag("display_edit_dialog_sc_rating")) and hasSetTextAction()).assertDoesNotExist()
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun test26_scRatingResponsiveAt320dpFont1_5() {
+        var currentDraft by mutableStateOf(CircuitEditorDraft())
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                PanelHeaderStepContent(
+                    draft = currentDraft,
+                    onDraftChange = { currentDraft = it },
+                    scRatingText = "50.00 kA Symmetrical Breaking Capacity"
+                )
+            }
+        }
+
+        val busbarBounds = composeTestRule.onNodeWithTag("input_edit_dialog_busbar_rating").getBoundsInRoot()
+        val scBounds = composeTestRule.onNodeWithTag("display_edit_dialog_sc_rating").getBoundsInRoot()
+        assertTrue("Expected busbarRating to stack above scRating at 320dp font 1.5", scBounds.top >= busbarBounds.bottom)
+        assertTrue("SC card right (${scBounds.right}) must fit inside 320dp width", scBounds.right <= 320.dp)
+        composeTestRule.onNodeWithText("50.00 kA Symmetrical Breaking Capacity").assertIsDisplayed()
+    }
 }

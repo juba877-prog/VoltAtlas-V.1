@@ -15,9 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -54,7 +51,7 @@ fun ReviewStepContent(
     draft: CircuitEditorDraft,
     resolution: CircuitSourceResolution,
     onEditSection: (CircuitWorkflowStep) -> Unit,
-    onSaveClick: () -> Unit,
+    onSaveClick: () -> Unit = {},
     saveError: String? = null,
     scRatingText: String = "N/A (Calculated after save)",
     modifier: Modifier = Modifier
@@ -164,70 +161,34 @@ fun ReviewStepContent(
                 editTag = "review_edit_panel_header",
                 onEdit = { onEditSection(CircuitWorkflowStep.PANEL_HEADER) }
             ) { isStacked ->
-                ReviewField(label = "Busbar Rating", value = if (draft.busbarRatingA.isNotBlank()) "${draft.busbarRatingA} A" else "N/A", isStacked = isStacked)
-                ReviewField(label = "Short Circuit", value = scRatingText, isStacked = isStacked)
-                ReviewField(label = "Main Incoming Type", value = draft.mainIncomingType.ifBlank { "N/A" }, isStacked = isStacked)
-                ReviewField(label = "Incoming Count", value = draft.mainIncomingCount.ifBlank { "N/A" }, isStacked = isStacked)
-                ReviewField(label = "IP Rating", value = draft.ipRating.ifBlank { "N/A" }, isStacked = isStacked)
-                ReviewField(label = "Cable Entry", value = draft.cableEntry.ifBlank { "N/A" }, isStacked = isStacked)
-                ReviewField(label = "Location", value = draft.panelLocation.ifBlank { "N/A" }, isStacked = isStacked)
-                ReviewField(label = "Number of Ways", value = draft.numberOfWays.ifBlank { "N/A" }, isStacked = isStacked)
-                ReviewField(label = "Feeder Description", value = draft.feederDescription.ifBlank { "N/A" }, isStacked = isStacked)
-            }
-        }
-
-        // Validation Error Banner (if validation failed upon save attempt)
-        if (saveError != null) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("review_validation_error"),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = saveError,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
+                ReviewField(
+                    label = "Busbar Rating",
+                    value = if (draft.busbarRatingA.isNotBlank()) "${draft.busbarRatingA} A" else "Not specified",
+                    isStacked = isStacked
+                )
+                ReviewField(label = "Calculated Short Circuit", value = scRatingText, isStacked = isStacked)
+                if (draft.mainIncomingType.isNotBlank()) {
+                    ReviewField(label = "Main Incoming Type", value = draft.mainIncomingType, isStacked = isStacked)
+                }
+                if (draft.mainIncomingCount.isNotBlank()) {
+                    ReviewField(label = "Incoming Count", value = draft.mainIncomingCount, isStacked = isStacked)
+                }
+                if (draft.ipRating.isNotBlank()) {
+                    ReviewField(label = "IP Rating", value = draft.ipRating, isStacked = isStacked)
+                }
+                if (draft.cableEntry.isNotBlank()) {
+                    ReviewField(label = "Cable Entry", value = draft.cableEntry, isStacked = isStacked)
+                }
+                if (draft.panelLocation.isNotBlank()) {
+                    ReviewField(label = "Location", value = draft.panelLocation, isStacked = isStacked)
+                }
+                if (draft.numberOfWays.isNotBlank()) {
+                    ReviewField(label = "Number of Ways", value = draft.numberOfWays, isStacked = isStacked)
+                }
+                if (draft.feederDescription.isNotBlank()) {
+                    ReviewField(label = "Feeder Description", value = draft.feederDescription, isStacked = isStacked)
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        // Save Circuit Button
-        Button(
-            onClick = onSaveClick,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .testTag("save_circuit_btn"),
-            shape = RoundedCornerShape(10.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            )
-        ) {
-            Text(
-                text = "Save Circuit",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-            )
         }
     }
 }

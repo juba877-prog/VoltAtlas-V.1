@@ -36,6 +36,8 @@ fun CircuitEditorActionBar(
     canGoBack: Boolean,
     onBackClick: () -> Unit,
     onNextClick: () -> Unit,
+    isLastStep: Boolean = false,
+    onSaveClick: () -> Unit = onNextClick,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -68,21 +70,40 @@ fun CircuitEditorActionBar(
                     Text("Back")
                 }
 
-                Button(
-                    onClick = onNextClick,
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .testTag("circuit_editor_next_btn")
-                        .semantics {
-                            contentDescription = "Next step"
-                        },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    )
-                ) {
-                    Text("Next")
+                if (isLastStep) {
+                    Button(
+                        onClick = onSaveClick,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("save_circuit_btn")
+                            .semantics {
+                                contentDescription = "Save circuit"
+                            },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text("Save Circuit")
+                    }
+                } else {
+                    Button(
+                        onClick = onNextClick,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("circuit_editor_next_btn")
+                            .semantics {
+                                contentDescription = "Next step"
+                            },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text("Next")
+                    }
                 }
             }
         } else {
@@ -93,20 +114,38 @@ fun CircuitEditorActionBar(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
-                    onClick = onNextClick,
-                    modifier = Modifier
-                        .heightIn(min = 48.dp)
-                        .testTag("circuit_editor_next_btn")
-                        .semantics {
-                            contentDescription = "Next step"
-                        },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    )
-                ) {
-                    Text("Next")
+                if (isLastStep) {
+                    Button(
+                        onClick = onSaveClick,
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("save_circuit_btn")
+                            .semantics {
+                                contentDescription = "Save circuit"
+                            },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text("Save Circuit")
+                    }
+                } else {
+                    Button(
+                        onClick = onNextClick,
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("circuit_editor_next_btn")
+                            .semantics {
+                                contentDescription = "Next step"
+                            },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text("Next")
+                    }
                 }
             }
         }

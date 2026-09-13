@@ -1,16 +1,26 @@
 package com.example.ui.dialogs.circuiteditor.ui.steps
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.ui.components.VoltAtlasDropdown
@@ -30,12 +40,14 @@ import com.example.ui.dialogs.circuiteditor.model.CircuitEditorDraft
 fun PanelHeaderStepContent(
     draft: CircuitEditorDraft,
     onDraftChange: (CircuitEditorDraft) -> Unit,
-    scRatingText: String = "N/A (Calculated after save)",
+    scRatingText: String? = "Unavailable (Calculated after save)",
     modifier: Modifier = Modifier
 ) {
     val incomingTypeOptions = listOf("", "MCCB", "ACB", "LBS", "Switch-Disconnector", "Fuse-Switch")
     val ipRatingOptions = listOf("", "IP20", "IP41", "IP54", "IP55", "IP65")
     val cableEntryOptions = listOf("", "Top", "Bottom", "Top/Bottom")
+
+    val displayScRating = if (scRatingText.isNullOrBlank()) "Unavailable (Calculated after save)" else scRatingText
 
     Column(
         modifier = modifier
@@ -55,13 +67,36 @@ fun PanelHeaderStepContent(
                 )
             },
             secondField = {
-                VoltAtlasTextField(
-                    value = scRatingText,
-                    onValueChange = {},
-                    label = "Short Circuit (kA) [Calculated]",
-                    readOnly = true,
-                    modifier = Modifier.testTag("display_edit_dialog_sc_rating")
-                )
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                        .testTag("display_edit_dialog_sc_rating")
+                        .semantics {
+                            contentDescription = "Calculated Short-Circuit Rating: $displayScRating"
+                        },
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "Calculated Short-Circuit Rating",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = displayScRating,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
             }
         )
 

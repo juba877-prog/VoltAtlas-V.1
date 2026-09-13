@@ -17,6 +17,7 @@ import com.example.ui.dialogs.circuiteditor.model.CircuitEditorDraft
 import com.example.ui.dialogs.circuiteditor.model.CircuitWorkflowStep
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -845,6 +846,8 @@ class CircuitEditorShellRuntimeTest {
         // 6. Review
         composeTestRule.onNodeWithTag("circuit_editor_step_review").assertIsDisplayed()
         composeTestRule.onNodeWithTag("circuit_editor_step_panel_header").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("save_circuit_btn").assertIsDisplayed()
         assertEquals(CircuitWorkflowStep.REVIEW, holder.currentStep)
     }
 
@@ -884,6 +887,8 @@ class CircuitEditorShellRuntimeTest {
         // 7. Review
         composeTestRule.onNodeWithTag("circuit_editor_step_review").assertIsDisplayed()
         composeTestRule.onNodeWithTag("review_panel_header_section").assertExists()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("save_circuit_btn").assertIsDisplayed()
         assertEquals(CircuitWorkflowStep.REVIEW, holder.currentStep)
     }
 
@@ -934,8 +939,10 @@ class CircuitEditorShellRuntimeTest {
             CircuitEditorTestHost(stateHolder = holder)
         }
 
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("save_circuit_btn").assertIsDisplayed()
         assertEquals(0, holder.saveRequestedCount)
-        composeTestRule.onNodeWithTag("save_circuit_btn").performScrollTo().performClick()
+        composeTestRule.onNodeWithTag("save_circuit_btn").performClick()
         assertEquals(1, holder.saveRequestedCount)
         assertEquals("Branch-01", holder.lastSavedDraft?.name)
     }
@@ -968,6 +975,56 @@ class CircuitEditorShellRuntimeTest {
         composeTestRule.waitForIdle()
         assertEquals(CircuitWorkflowStep.REVIEW, holder.currentStep)
         composeTestRule.onNodeWithTag("circuit_editor_step_review").assertIsDisplayed()
+    }
+
+    @Test
+    fun test45_reviewInvalidSaveShowsErrorBannerAndDoesNotSave() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "", panelType = "LOAD", length_m = "25"),
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.REVIEW
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.onNodeWithTag("save_circuit_btn").performClick()
+        assertEquals(0, holder.saveRequestedCount)
+        assertNull(holder.lastSavedDraft)
+        composeTestRule.onNodeWithTag("review_validation_error").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Circuit/Panel name cannot be empty.").assertIsDisplayed()
+    }
+
+    @Test
+    fun test46_reviewInvalidLengthShowsErrorBanner() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "Circuit 1", panelType = "LOAD", length_m = "0"),
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.REVIEW
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.onNodeWithTag("save_circuit_btn").performClick()
+        assertEquals(0, holder.saveRequestedCount)
+        assertNull(holder.lastSavedDraft)
+        composeTestRule.onNodeWithTag("review_validation_error").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Cable length must be greater than zero.").assertIsDisplayed()
     }
 }
 

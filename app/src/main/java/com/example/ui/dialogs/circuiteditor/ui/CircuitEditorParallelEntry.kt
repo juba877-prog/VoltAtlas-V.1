@@ -19,8 +19,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -130,6 +132,8 @@ fun CircuitEditorParallelEntry(
                 when (validation) {
                     is ValidationResult.Error -> {
                         reviewError = validation.message
+                        currentStep = validation.targetStep
+                        visitedSteps = visitedSteps + validation.targetStep
                     }
                     is ValidationResult.Success -> {
                         reviewError = null
@@ -434,8 +438,6 @@ fun CircuitEditorParallelHost(
                                     draft = state.draft,
                                     resolution = state.sourceResolution,
                                     onEditSection = events::onStepChange,
-                                    onSaveClick = events::onSaveClick,
-                                    saveError = state.reviewError,
                                     scRatingText = state.scRatingText
                                 )
                             }
@@ -450,12 +452,48 @@ fun CircuitEditorParallelHost(
                     }
                 }
 
+                // Dedicated non-overlapping error area immediately above the sticky action bar
+                state.reviewError?.let { errorMsg ->
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .testTag("review_validation_error"),
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = errorMsg,
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                    }
+                }
+
                 // Sticky Bottom Action Bar with layout-owned measured region
                 val canGoBack = state.currentStep != state.applicableSteps.first()
+                val isLastStep = state.currentStep == state.applicableSteps.last()
                 CircuitEditorActionBar(
                     canGoBack = canGoBack,
                     onBackClick = events::onBackClick,
                     onNextClick = events::onNextClick,
+                    isLastStep = isLastStep,
+                    onSaveClick = events::onSaveClick,
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
