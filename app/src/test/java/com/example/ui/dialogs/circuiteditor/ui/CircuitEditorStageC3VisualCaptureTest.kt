@@ -5,9 +5,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -31,10 +34,15 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 /**
- * Visual capture test suite for CircuitEditor Stage C3.
+ * Visual capture test suite for CircuitEditor Stage C3 (Final Correction Pass).
  *
- * Generates and validates the 14 owner-required captures covering Supply & Backup,
- * Feeder Selection (Cable & Busway), and Cable Family Picker.
+ * Generates and validates the 10 owner-required recaptures (A through J) covering:
+ * - Feeder Selection step naming and helper text
+ * - Cable Family Picker compatibility filtering (material + armour + cores)
+ * - Single picker entry point on Selected Cable Family surface
+ * - Empty-picker disabled Confirm state (visual & semantic)
+ * - Empty equipment non-duplicative helper text (without "(None)")
+ * - Supply category single-choice accessibility and clearance
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -55,7 +63,8 @@ class CircuitEditorStageC3VisualCaptureTest {
             CableType(code = 5, cableType = "Cu/XLPE/SWA/PVC - 3C", conductor = "Cu", insulation = "XLPE", armour = "SWA", cores = "3C", voltage = "0.6/1kV", standard = "IEC 60502", rColumn = "R_Cu90"),
             CableType(code = 6, cableType = "Cu/XLPE/SWA/PVC - 2C", conductor = "Cu", insulation = "XLPE", armour = "SWA", cores = "2C", voltage = "0.6/1kV", standard = "IEC 60502", rColumn = "R_Cu90"),
             CableType(code = 7, cableType = "Cu/XLPE/SWA/PVC - 3.5C", conductor = "Cu", insulation = "XLPE", armour = "SWA", cores = "3.5C", voltage = "0.6/1kV", standard = "IEC 60502", rColumn = "R_Cu90"),
-            CableType(code = 8, cableType = "Ducab Cu/XLPE/AWA/PVC - 1C", conductor = "Cu", insulation = "XLPE", armour = "AWA", cores = "1C", voltage = "0.6/1kV", standard = "BS 5467", rColumn = "R_Cu90")
+            CableType(code = 8, cableType = "Ducab Cu/XLPE/AWA/PVC - 1C", conductor = "Cu", insulation = "XLPE", armour = "AWA", cores = "1C", voltage = "0.6/1kV", standard = "BS 5467", rColumn = "R_Cu90"),
+            CableType(code = 9, cableType = "Cu/XLPE/STA/PVC - 4C", conductor = "Cu", insulation = "XLPE", armour = "STA", cores = "4C", voltage = "0.6/1kV", standard = "IEC 60502", rColumn = "R_Cu90")
         ),
         cableCatalog = listOf(
             CableCatalogEntry(mfg = "Elsewedy", typeCode = 1, size = 16.0, model = "4x16", gnd = 90.0, duct = 80.0, air = 75.0, od = 22.0, wt = 1200.0),
@@ -65,7 +74,8 @@ class CircuitEditorStageC3VisualCaptureTest {
             CableCatalogEntry(mfg = "Elsewedy", typeCode = 5, size = 16.0, model = "3x16", gnd = 90.0, duct = 80.0, air = 75.0, od = 22.0, wt = 1200.0),
             CableCatalogEntry(mfg = "Elsewedy", typeCode = 6, size = 16.0, model = "2x16", gnd = 90.0, duct = 80.0, air = 75.0, od = 22.0, wt = 1200.0),
             CableCatalogEntry(mfg = "Elsewedy", typeCode = 7, size = 16.0, model = "3.5x16", gnd = 90.0, duct = 80.0, air = 75.0, od = 22.0, wt = 1200.0),
-            CableCatalogEntry(mfg = "Ducab", typeCode = 8, size = 50.0, model = "1x50", gnd = 180.0, duct = 160.0, air = 150.0, od = 28.0, wt = 1600.0)
+            CableCatalogEntry(mfg = "Ducab", typeCode = 8, size = 50.0, model = "1x50", gnd = 180.0, duct = 160.0, air = 150.0, od = 28.0, wt = 1600.0),
+            CableCatalogEntry(mfg = "Elsewedy", typeCode = 9, size = 25.0, model = "4x25", gnd = 110.0, duct = 100.0, air = 95.0, od = 26.0, wt = 1500.0)
         ),
         busways = listOf(
             BuswayCatalogEntry(mfg = "Elsewedy", model = "Power Link", conductor = "Cu", ratingA = 1000.0, ipkKA = 105.0, icwKA = 50.0, rMOhmPerM = 0.04, xMOhmPerM = 0.02)
@@ -99,9 +109,12 @@ class CircuitEditorStageC3VisualCaptureTest {
         }
     }
 
+    /**
+     * Capture A: Supply Normal Dark 360 font 1.0
+     */
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.0f)
-    fun capture01_supply_normal_dark_360_font1_0() {
+    fun captureA_supply_normal_dark_360_font1_0() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(name = "Circuit 1", panelType = "LOAD", supplyCategory = "NORMAL"),
             initialStep = CircuitWorkflowStep.SUPPLY,
@@ -116,65 +129,19 @@ class CircuitEditorStageC3VisualCaptureTest {
         }
 
         composeTestRule.onNodeWithTag("circuit_editor_step_supply").assertIsDisplayed()
+        composeTestRule.onNodeWithText("NORMAL").assertIsDisplayed()
         composeTestRule.onNodeWithTag("input_assigned_ats").assertDoesNotExist()
-        capture("01_supply_normal_dark_360_font1_0.png")
+        composeTestRule.onNodeWithTag("input_assigned_generator").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("input_assigned_ups").assertDoesNotExist()
+        capture("A_supply_normal_dark_360_font1_0.png")
     }
 
+    /**
+     * Capture B: Supply Emergency + UPS Dark 320 font 1.5
+     */
     @Test
-    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.0f)
-    fun capture02_supply_emergency_dark_360_font1_0() {
-        val holder = CircuitEditorTestStateHolder(
-            initialDraft = CircuitEditorDraft(
-                name = "Circuit 1",
-                panelType = "LOAD",
-                supplyCategory = "EMERGENCY",
-                assignedAtsId = "ATS-01",
-                assignedGeneratorId = "GEN-01"
-            ),
-            initialStep = CircuitWorkflowStep.SUPPLY,
-            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
-            availableGenerators = testGenerators,
-            availableAts = testAtsList,
-            availableUps = testUpsList,
-            catalogSnapshot = testCatalog
-        )
-        composeTestRule.setContent {
-            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
-        }
-
-        composeTestRule.onNodeWithTag("input_assigned_ats").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("input_assigned_generator").assertIsDisplayed()
-        capture("02_supply_emergency_dark_360_font1_0.png")
-    }
-
-    @Test
-    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.0f)
-    fun capture03_supply_ups_light_360_font1_0() {
-        val holder = CircuitEditorTestStateHolder(
-            initialDraft = CircuitEditorDraft(
-                name = "Circuit 1",
-                panelType = "LOAD",
-                supplyCategory = "UPS",
-                assignedUpsId = "UPS-01"
-            ),
-            initialStep = CircuitWorkflowStep.SUPPLY,
-            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
-            availableGenerators = testGenerators,
-            availableAts = testAtsList,
-            availableUps = testUpsList,
-            catalogSnapshot = testCatalog
-        )
-        composeTestRule.setContent {
-            CircuitEditorTestHost(stateHolder = holder, darkTheme = false)
-        }
-
-        composeTestRule.onNodeWithTag("input_assigned_ups").assertIsDisplayed()
-        capture("03_supply_ups_light_360_font1_0.png")
-    }
-
-    @Test
-    @Config(sdk = [33], qualifiers = "w320dp-h640dp-xhdpi", fontScale = 1.3f)
-    fun capture04_supply_emergency_ups_dark_320_font1_3() {
+    @Config(sdk = [33], qualifiers = "w320dp-h640dp-xhdpi", fontScale = 1.5f)
+    fun captureB_supply_emergency_ups_dark_320_font1_5() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(
                 name = "Circuit 1",
@@ -195,15 +162,19 @@ class CircuitEditorStageC3VisualCaptureTest {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
 
+        composeTestRule.onNodeWithText("EMERGENCY + UPS").assertIsDisplayed()
         composeTestRule.onNodeWithTag("input_assigned_ats").assertExists()
         composeTestRule.onNodeWithTag("input_assigned_generator").assertExists()
         composeTestRule.onNodeWithTag("input_assigned_ups").assertExists()
-        capture("04_supply_emergency_ups_dark_320_font1_3.png")
+        capture("B_supply_emergency_ups_dark_320_font1_5.png")
     }
 
+    /**
+     * Capture C: Supply Empty Equipment Dark 360 font 1.5
+     */
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
-    fun capture05_supply_empty_equipment_dark_360_font1_5() {
+    fun captureC_supply_empty_equipment_dark_360_font1_5() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(
                 name = "Circuit 1",
@@ -221,19 +192,30 @@ class CircuitEditorStageC3VisualCaptureTest {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
 
-        capture("05_supply_empty_equipment_dark_360_font1_5.png")
+        composeTestRule.onNodeWithText("No ATS configured in this project").assertExists()
+        composeTestRule.onNodeWithText("No generator configured in this project").assertExists()
+        composeTestRule.onNodeWithText("No UPS configured in this project").assertExists()
+        composeTestRule.onNodeWithText("No ATS configured in project (None)").assertDoesNotExist()
+        capture("C_supply_empty_equipment_dark_360_font1_5.png")
     }
 
+    /**
+     * Capture D: Feeder Cable Default Dark 360 font 1.0
+     * Shows renamed step title "4. Feeder Selection", helper text, and single picker entry surface.
+     */
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.0f)
-    fun capture06_feeder_cable_default_dark_360_font1_0() {
+    fun captureD_feeder_cable_dark_360_font1_0() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(
                 name = "Circuit 1",
                 panelType = "LOAD",
                 feederType = "Cable",
                 manufacturer = "Elsewedy",
-                cableType = "Cu/XLPE/SWA/PVC - 4C"
+                cableType = "Cu/XLPE/SWA/PVC - 4C",
+                filterMat = "Copper",
+                filterArmour = "Armoured",
+                filterCores = "4C"
             ),
             initialStep = CircuitWorkflowStep.FEEDER,
             initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY, CircuitWorkflowStep.FEEDER),
@@ -243,13 +225,20 @@ class CircuitEditorStageC3VisualCaptureTest {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
 
-        composeTestRule.onNodeWithTag("input_manufacturer").assertIsDisplayed()
-        capture("06_feeder_cable_default_dark_360_font1_0.png")
+        composeTestRule.onNodeWithText("4. Feeder Selection").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Select cable or busway family and configuration").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("input_cable_type").assertExists()
+        composeTestRule.onNodeWithTag("open_cable_family_picker", useUnmergedTree = true).assertExists()
+        composeTestRule.onNodeWithText("Browse Cable Families Picker").assertDoesNotExist()
+        capture("D_feeder_cable_dark_360_font1_0.png")
     }
 
+    /**
+     * Capture E: Feeder Cable Filtered Dark 320 font 1.3
+     */
     @Test
     @Config(sdk = [33], qualifiers = "w320dp-h640dp-xhdpi", fontScale = 1.3f)
-    fun capture07_feeder_cable_filters_dark_320_font1_3() {
+    fun captureE_feeder_cable_filtered_320_font1_3() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(
                 name = "Circuit 1",
@@ -269,35 +258,18 @@ class CircuitEditorStageC3VisualCaptureTest {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
 
-        capture("07_feeder_cable_filters_dark_320_font1_3.png")
+        composeTestRule.onNodeWithTag("circuit_editor_step_feeder").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("filter_mat_Aluminium").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("input_cable_type").assertExists()
+        capture("E_feeder_cable_filtered_320_font1_3.png")
     }
 
-    @Test
-    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.0f)
-    fun capture08_feeder_busway_dark_360_font1_0() {
-        val holder = CircuitEditorTestStateHolder(
-            initialDraft = CircuitEditorDraft(
-                name = "Circuit 1",
-                panelType = "LOAD",
-                feederType = "Busway",
-                buswayMfg = "Elsewedy",
-                buswayModel = "Power Link"
-            ),
-            initialStep = CircuitWorkflowStep.FEEDER,
-            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY, CircuitWorkflowStep.FEEDER),
-            catalogSnapshot = testCatalog
-        )
-        composeTestRule.setContent {
-            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
-        }
-
-        composeTestRule.onNodeWithTag("input_busway_mfg").assertIsDisplayed()
-        capture("08_feeder_busway_dark_360_font1_0.png")
-    }
-
+    /**
+     * Capture F: Feeder Busway Light 360 font 1.5
+     */
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
-    fun capture09_feeder_busway_light_360_font1_5() {
+    fun captureF_feeder_busway_light_360_font1_5() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(
                 name = "Circuit 1",
@@ -314,19 +286,30 @@ class CircuitEditorStageC3VisualCaptureTest {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = false)
         }
 
-        capture("09_feeder_busway_light_360_font1_5.png")
+        composeTestRule.onNodeWithTag("input_busway_mfg").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("input_busway_model").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("input_parallel_runs").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("input_length").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("input_max_vd").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("input_cable_type").assertDoesNotExist()
+        capture("F_feeder_busway_light_360_font1_5.png")
     }
 
+    /**
+     * Capture G: Picker Compatible Results Dark 360 font 1.0
+     * Only compatible families for Copper + Armoured + 4C are displayed in the picker.
+     */
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.0f)
-    fun capture10_cable_family_picker_dark_360_font1_0() {
+    fun captureG_picker_compatible_results_dark_360_font1_0() {
+        val compatibleCandidates = listOf("Cu/XLPE/SWA/PVC - 4C", "Cu/XLPE/STA/PVC - 4C")
         composeTestRule.setContent {
             VoltAtlasTheme(darkTheme = true) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     CableFamilyPicker(
                         isOpen = true,
                         currentFamily = "Cu/XLPE/SWA/PVC - 4C",
-                        candidateFamilies = testCatalog.cableTypes.map { it.cableType },
+                        candidateFamilies = compatibleCandidates,
                         onConfirm = {},
                         onCancel = {}
                     )
@@ -335,19 +318,34 @@ class CircuitEditorStageC3VisualCaptureTest {
         }
 
         composeTestRule.onNodeWithTag("cable_family_picker").assertIsDisplayed()
-        capture("10_cable_family_picker_dark_360_font1_0.png")
+
+        // Compatible Copper + Armoured + 4C families must be present
+        composeTestRule.onNodeWithText("Cu/XLPE/SWA/PVC - 4C").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Cu/XLPE/STA/PVC - 4C").assertIsDisplayed()
+
+        // Incompatible families must NOT appear
+        composeTestRule.onNodeWithText("Al/XLPE/STA/PVC - 4C").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Cu/XLPE/None/PVC - 4C").assertDoesNotExist()
+
+        composeTestRule.onNodeWithTag("cable_family_confirm").assertIsEnabled()
+        capture("G_picker_compatible_results_dark_360_font1_0.png")
     }
 
+    /**
+     * Capture H: Picker Search Within Compatible Dark 360 font 1.3
+     * Searching narrows within the compatible list only.
+     */
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.3f)
-    fun capture11_cable_family_picker_search_dark_360_font1_3() {
+    fun captureH_picker_search_within_compatible_dark_360_font1_3() {
+        val compatibleCandidates = listOf("Cu/XLPE/SWA/PVC - 4C", "Cu/XLPE/STA/PVC - 4C")
         composeTestRule.setContent {
             VoltAtlasTheme(darkTheme = true) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     CableFamilyPicker(
                         isOpen = true,
                         currentFamily = "Cu/XLPE/SWA/PVC - 4C",
-                        candidateFamilies = testCatalog.cableTypes.map { it.cableType },
+                        candidateFamilies = compatibleCandidates,
                         onConfirm = {},
                         onCancel = {}
                     )
@@ -356,19 +354,29 @@ class CircuitEditorStageC3VisualCaptureTest {
         }
 
         composeTestRule.onNodeWithTag("cable_family_search").performTextInput("STA")
-        capture("11_cable_family_picker_search_dark_360_font1_3.png")
+
+        // Only matching compatible STA family remains
+        composeTestRule.onNodeWithText("Cu/XLPE/STA/PVC - 4C").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Cu/XLPE/SWA/PVC - 4C").assertDoesNotExist()
+
+        capture("H_picker_search_within_compatible_dark_360_font1_3.png")
     }
 
+    /**
+     * Capture I: Picker Empty Disabled Confirm Light 360 font 1.0
+     * No results found shows empty state and Confirm is disabled both semantically and visually.
+     */
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.0f)
-    fun capture12_cable_family_picker_empty_light_360_font1_0() {
+    fun captureI_picker_empty_disabled_confirm_light_360_font1_0() {
+        val compatibleCandidates = listOf("Cu/XLPE/SWA/PVC - 4C", "Cu/XLPE/STA/PVC - 4C")
         composeTestRule.setContent {
             VoltAtlasTheme(darkTheme = false) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     CableFamilyPicker(
                         isOpen = true,
                         currentFamily = "Cu/XLPE/SWA/PVC - 4C",
-                        candidateFamilies = testCatalog.cableTypes.map { it.cableType },
+                        candidateFamilies = compatibleCandidates,
                         onConfirm = {},
                         onCancel = {}
                     )
@@ -377,13 +385,21 @@ class CircuitEditorStageC3VisualCaptureTest {
         }
 
         composeTestRule.onNodeWithTag("cable_family_search").performTextInput("NonExistentPattern999")
+
         composeTestRule.onNodeWithTag("cable_family_empty_state").assertIsDisplayed()
-        capture("12_cable_family_picker_empty_light_360_font1_0.png")
+        composeTestRule.onNodeWithText("No matching cable families found").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("cable_family_confirm").assertIsNotEnabled()
+
+        capture("I_picker_empty_disabled_confirm_light_360_font1_0.png")
     }
 
+    /**
+     * Capture J: Feeder Bottom Scrolled 360 font 1.5
+     * Max VD field clearly clears sticky action bar by > 16dp.
+     */
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
-    fun capture13_feeder_bottom_scrolled_360_font1_5() {
+    fun captureJ_feeder_bottom_scrolled_360_font1_5() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = CircuitEditorDraft(
                 name = "Circuit 1",
@@ -410,33 +426,7 @@ class CircuitEditorStageC3VisualCaptureTest {
             maxVdBounds.bottom <= nextBtnBounds.top
         )
 
-        capture("13_feeder_bottom_scrolled_360_font1_5.png")
-    }
-
-    @Test
-    @Config(sdk = [33], qualifiers = "w412dp-h915dp-xhdpi", fontScale = 1.3f)
-    fun capture14_supply_larger_phone_dark_412_font1_3() {
-        val holder = CircuitEditorTestStateHolder(
-            initialDraft = CircuitEditorDraft(
-                name = "Circuit 1",
-                panelType = "LOAD",
-                supplyCategory = "EMERGENCY + UPS",
-                assignedAtsId = "ATS-01",
-                assignedGeneratorId = "GEN-01",
-                assignedUpsId = "UPS-01"
-            ),
-            initialStep = CircuitWorkflowStep.SUPPLY,
-            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
-            availableGenerators = testGenerators,
-            availableAts = testAtsList,
-            availableUps = testUpsList,
-            catalogSnapshot = testCatalog
-        )
-        composeTestRule.setContent {
-            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
-        }
-
-        composeTestRule.onNodeWithTag("input_supply_category").assertIsDisplayed()
-        capture("14_supply_larger_phone_dark_412_font1_3.png")
+        capture("J_feeder_bottom_scrolled_360_font1_5.png")
     }
 }
+

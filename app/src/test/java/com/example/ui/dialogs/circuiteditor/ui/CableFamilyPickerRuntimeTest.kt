@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -16,6 +17,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import com.example.ui.theme.VoltAtlasTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -240,4 +242,26 @@ class CableFamilyPickerRuntimeTest {
         composeTestRule.onNodeWithTag("cable_family_confirm").assertIsDisplayed()
         composeTestRule.onNodeWithTag("cable_family_cancel").assertIsDisplayed()
     }
+
+    @Test
+    fun test34_failFirst_emptyCandidatesConfirmButtonIsDisabled() {
+        var confirmed = false
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CableFamilyPicker(
+                    isOpen = true,
+                    currentFamily = "",
+                    candidateFamilies = emptyList(),
+                    onConfirm = { confirmed = true },
+                    onCancel = {}
+                )
+            }
+        }
+
+        // Empty candidates: Confirm button must be disabled semantically and behaviorally
+        composeTestRule.onNodeWithTag("cable_family_confirm").assertIsNotEnabled()
+        composeTestRule.onNodeWithTag("cable_family_confirm").performClick()
+        assertFalse("Confirm cannot be invoked when no selectable candidates exist", confirmed)
+    }
 }
+

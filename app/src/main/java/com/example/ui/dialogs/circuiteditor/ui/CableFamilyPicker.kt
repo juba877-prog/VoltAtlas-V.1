@@ -216,6 +216,10 @@ fun CableFamilyPicker(
                 }
 
                 // Modal Actions
+                val isConfirmEnabled = filteredFamilies.isNotEmpty() &&
+                    pendingSelection.isNotBlank() &&
+                    filteredFamilies.contains(pendingSelection)
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
@@ -230,10 +234,11 @@ fun CableFamilyPicker(
                     }
                     Button(
                         onClick = {
-                            if (pendingSelection.isNotBlank()) {
+                            if (isConfirmEnabled) {
                                 onConfirm(pendingSelection)
                             }
                         },
+                        enabled = isConfirmEnabled,
                         modifier = Modifier
                             .testTag("cable_family_confirm")
                             .heightIn(min = 48.dp)

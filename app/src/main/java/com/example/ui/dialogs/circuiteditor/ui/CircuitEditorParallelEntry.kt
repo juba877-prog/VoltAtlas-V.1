@@ -316,19 +316,25 @@ fun CircuitEditorParallelHost(
                             .padding(horizontal = 16.dp, vertical = 16.dp)
                     ) {
                         // Single Content Heading communicating position, full step title, and helper text
+                        val stepTitle = if (state.currentStep == CircuitWorkflowStep.FEEDER) "4. Feeder Selection" else state.currentStep.title
+                        val stepSubtitle = if (state.currentStep == CircuitWorkflowStep.FEEDER) "Select cable or busway family and configuration" else state.currentStep.subtitle
+
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("circuit_editor_step_header")
                                 .padding(bottom = 16.dp)
+                                .semantics(mergeDescendants = true) {
+                                    contentDescription = "$stepTitle, $stepSubtitle"
+                                }
                         ) {
                             Text(
-                                text = state.currentStep.title,
+                                text = stepTitle,
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = state.currentStep.subtitle,
+                                text = stepSubtitle,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -382,8 +388,9 @@ fun CircuitEditorParallelHost(
                                         .testTag("circuit_editor_step_placeholder"),
                                     contentAlignment = Alignment.Center
                                 ) {
+                                    val placeholderTitle = if (state.currentStep == CircuitWorkflowStep.FEEDER) "4. Feeder Selection" else state.currentStep.title
                                     Text(
-                                        text = "Step '${state.currentStep.title}' is scheduled for subsequent stage.",
+                                        text = "Step '$placeholderTitle' is scheduled for subsequent stage.",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

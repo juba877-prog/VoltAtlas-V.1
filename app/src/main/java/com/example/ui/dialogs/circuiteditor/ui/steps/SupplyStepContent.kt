@@ -9,7 +9,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -23,6 +28,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.ui.components.VoltAtlasDropdown
 import com.example.ui.dialogs.circuiteditor.mapper.CircuitSourceResolution
@@ -148,7 +154,7 @@ fun SupplyStepContent(
                 )
                 if (availableAts.isEmpty()) {
                     Text(
-                        text = "No ATS configured in project (None)",
+                        text = "No ATS configured in this project",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -163,7 +169,7 @@ fun SupplyStepContent(
                 )
                 if (availableGenerators.isEmpty()) {
                     Text(
-                        text = "No Generator configured in project (None)",
+                        text = "No generator configured in this project",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -195,7 +201,7 @@ fun SupplyStepContent(
                 )
                 if (availableUps.isEmpty()) {
                     Text(
-                        text = "No UPS configured in project (None)",
+                        text = "No UPS configured in this project",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -298,11 +304,11 @@ private fun CategoryChoiceButton(
     Surface(
         modifier = modifier
             .heightIn(min = 48.dp)
-            .semantics {
+            .selectable(
+                selected = isSelected,
+                onClick = onSelect,
                 role = Role.RadioButton
-                selected = isSelected
-            }
-            .clickable(onClick = onSelect),
+            ),
         shape = RoundedCornerShape(8.dp),
         color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
         border = BorderStroke(
@@ -310,17 +316,30 @@ private fun CategoryChoiceButton(
             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
         )
     ) {
-        Box(
+        Row(
             modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 12.dp),
-            contentAlignment = Alignment.Center
+                .padding(horizontal = 6.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            if (isSelected) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(16.dp)
+                        .padding(end = 4.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
             Text(
                 text = category,
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                 ),
-                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+                maxLines = 2
             )
         }
     }

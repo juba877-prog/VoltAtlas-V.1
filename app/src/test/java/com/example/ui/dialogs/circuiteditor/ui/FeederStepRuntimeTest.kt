@@ -108,7 +108,7 @@ class FeederStepRuntimeTest {
         composeTestRule.onNodeWithTag("filter_armour_Armoured").assertIsDisplayed()
         composeTestRule.onNodeWithTag("input_core_config").assertIsDisplayed()
         composeTestRule.onNodeWithTag("input_cable_type").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("open_cable_family_picker").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("open_cable_family_picker", useUnmergedTree = true).assertExists()
         composeTestRule.onNodeWithTag("input_parallel_runs").assertIsDisplayed()
         composeTestRule.onNodeWithTag("input_length").assertIsDisplayed()
         composeTestRule.onNodeWithTag("input_max_vd").assertIsDisplayed()
@@ -392,4 +392,49 @@ class FeederStepRuntimeTest {
         composeTestRule.onNodeWithTag("input_busway_mfg").assertDoesNotExist()
         composeTestRule.onNodeWithTag("input_busway_model").assertDoesNotExist()
     }
+
+    @Test
+    fun test25_failFirst_noDuplicateBrowseButton_singlePickerEntrySurface() {
+        val draft = CircuitEditorDraft(feederType = "Cable")
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                FeederStepContent(draft = draft, onDraftChange = {}, catalogSnapshot = testCatalog)
+            }
+        }
+
+        // Must NOT have the separate large Browse button
+        composeTestRule.onNodeWithText("Browse Cable Families Picker").assertDoesNotExist()
+    }
+
+    @Test
+    fun test26_failFirst_pickerCandidateListRestrictedToCompatibleOnly() {
+        val draft = CircuitEditorDraft(
+            feederType = "Cable",
+            manufacturer = "Elsewedy",
+            filterMat = "Copper",
+            filterArmour = "Armoured",
+            filterCores = "4C"
+        )
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                FeederStepContent(draft = draft, onDraftChange = {}, catalogSnapshot = testCatalog)
+            }
+        }
+
+        // Clicking the selected-family field opens picker
+        composeTestRule.onNodeWithTag("input_cable_type").performClick()
+        composeTestRule.onNodeWithTag("cable_family_picker").assertIsDisplayed()
+
+        // Compatible: Cu/XLPE/SWA/PVC - 4C
+        composeTestRule.onNodeWithText("Cu/XLPE/SWA/PVC - 4C").assertIsDisplayed()
+
+        // Incompatible candidates must NOT exist in the picker
+        composeTestRule.onNodeWithText("Al/XLPE/STA/PVC - 4C").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Cu/XLPE/None/PVC - 4C").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Cu/PVC/None/PVC - 1C").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Cu/XLPE/SWA/PVC - 3C").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Cu/XLPE/SWA/PVC - 2C").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Cu/XLPE/SWA/PVC - 3.5C").assertDoesNotExist()
+    }
 }
+

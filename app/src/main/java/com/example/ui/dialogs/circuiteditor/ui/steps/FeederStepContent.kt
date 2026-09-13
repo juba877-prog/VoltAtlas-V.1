@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -306,32 +307,52 @@ fun FeederStepContent(
                     )
                 }
 
-                // Selected Cable Family and Picker Trigger
+                // Selected Cable Family (Single unified picker entry surface)
                 val currentFamilyLabel = remember(draft.cableType) {
                     if (draft.cableType.isNotBlank()) draft.cableType else "Select Cable Family"
                 }
 
-                VoltAtlasDropdown(
-                    value = currentFamilyLabel,
-                    options = if (matchingFamilies.isNotEmpty()) matchingFamilies.map { it.originalType } else allCatalogFamilies,
-                    onSelect = { onDraftChange(draft.copy(cableType = it)) },
-                    label = "Selected Cable Family",
-                    modifier = Modifier.testTag("input_cable_type")
-                )
-
-                FilledTonalButton(
+                Surface(
                     onClick = { isPickerOpen = true },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .testTag("open_cable_family_picker")
+                        .heightIn(min = 56.dp)
+                        .testTag("input_cable_type"),
+                    shape = RoundedCornerShape(4.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    color = MaterialTheme.colorScheme.surface
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.List,
-                        contentDescription = "Browse Families",
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    Text("Browse Cable Families Picker")
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Selected Cable Family",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = currentFamilyLabel,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Tap to choose from compatible families",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Open cable family picker",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("open_cable_family_picker")
+                        )
+                    }
                 }
 
                 // Read-only Derived Insulation Information
@@ -427,11 +448,20 @@ fun FeederStepContent(
             )
         }
 
+        // Compatible Candidate Families for current filters only
+        val compatibleCandidateFamilies = remember(draft.filterMat, draft.filterArmour, draft.filterCores, allParsedFamilies) {
+            allParsedFamilies.filter {
+                it.material == draft.filterMat &&
+                it.armourGroup == draft.filterArmour &&
+                it.coresConfig == draft.filterCores
+            }.map { it.originalType }.distinct()
+        }
+
         // Cable Family Picker Modal
         CableFamilyPicker(
             isOpen = isPickerOpen,
             currentFamily = draft.cableType,
-            candidateFamilies = if (matchingFamilies.isNotEmpty()) matchingFamilies.map { it.originalType } else allCatalogFamilies,
+            candidateFamilies = compatibleCandidateFamilies,
             onConfirm = { confirmedFamily ->
                 onDraftChange(draft.copy(cableType = confirmedFamily))
                 isPickerOpen = false

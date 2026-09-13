@@ -791,5 +791,24 @@ class CircuitEditorShellRuntimeTest {
         composeTestRule.onNodeWithText("Circuit/Panel name cannot be empty.").assertIsDisplayed()
         assertEquals(CircuitWorkflowStep.IDENTITY, identityHolder.currentStep)
     }
-}
 
+    @Test
+    fun test39_failFirst_step4TitleIsFeederSelectionNotCableSelection() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "C1", panelType = "LOAD"),
+            initialStep = CircuitWorkflowStep.FEEDER,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.onNodeWithText("4. Feeder Selection").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Select cable or busway family and configuration").assertIsDisplayed()
+    }
+}

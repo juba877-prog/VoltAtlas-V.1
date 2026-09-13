@@ -199,9 +199,9 @@ class SupplyStepRuntimeTest {
             }
         }
 
-        composeTestRule.onNodeWithText("No ATS configured in project (None)").assertIsDisplayed()
-        composeTestRule.onNodeWithText("No Generator configured in project (None)").assertIsDisplayed()
-        composeTestRule.onNodeWithText("No UPS configured in project (None)").assertIsDisplayed()
+        composeTestRule.onNodeWithText("No ATS configured in this project").assertIsDisplayed()
+        composeTestRule.onNodeWithText("No generator configured in this project").assertIsDisplayed()
+        composeTestRule.onNodeWithText("No UPS configured in this project").assertIsDisplayed()
     }
 
     @Test
@@ -270,4 +270,45 @@ class SupplyStepRuntimeTest {
         composeTestRule.onNodeWithText("EMERGENCY + UPS").performClick()
         assertEquals("EMERGENCY + UPS", currentDraft.supplyCategory)
     }
+
+    @Test
+    fun test11_failFirst_emptyEquipmentSupportingTextMatchesExactSpecificationWithoutRedundantNone() {
+        val draft = CircuitEditorDraft(supplyCategory = "EMERGENCY + UPS")
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                SupplyStepContent(
+                    draft = draft,
+                    onDraftChange = {},
+                    availableAts = emptyList(),
+                    availableGenerators = emptyList(),
+                    availableUps = emptyList()
+                )
+            }
+        }
+
+        // Exact supporting text required by Section 5
+        composeTestRule.onNodeWithText("No ATS configured in this project").assertIsDisplayed()
+        composeTestRule.onNodeWithText("No generator configured in this project").assertIsDisplayed()
+        composeTestRule.onNodeWithText("No UPS configured in this project").assertIsDisplayed()
+    }
+
+    @Test
+    fun test12_failFirst_categoryCardsExposeSingleChoiceRadioButtonSemantics() {
+        val draft = CircuitEditorDraft(supplyCategory = "EMERGENCY")
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                SupplyStepContent(
+                    draft = draft,
+                    onDraftChange = {}
+                )
+            }
+        }
+
+        // EMERGENCY selected, others not selected
+        composeTestRule.onNodeWithText("EMERGENCY").assertIsSelected()
+        composeTestRule.onNodeWithText("NORMAL").assertIsNotSelected()
+        composeTestRule.onNodeWithText("UPS").assertIsNotSelected()
+        composeTestRule.onNodeWithText("EMERGENCY + UPS").assertIsNotSelected()
+    }
 }
+
