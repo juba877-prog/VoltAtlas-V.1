@@ -8,15 +8,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -62,6 +66,11 @@ import com.example.ui.dialogs.circuiteditor.model.GeneratorSnapshot
 import com.example.ui.dialogs.circuiteditor.model.TransformerSnapshot
 import com.example.ui.dialogs.circuiteditor.model.UpsSnapshot
 import com.example.ui.dialogs.circuiteditor.state.CircuitEditorInitializer
+import com.example.ui.dialogs.circuiteditor.state.CircuitEditorSaveableField
+import com.example.ui.dialogs.circuiteditor.state.CircuitEditorSaveableState
+import com.example.ui.dialogs.circuiteditor.state.CircuitEditorSessionIdentity
+import com.example.ui.dialogs.circuiteditor.state.toCircuitWorkflowStepOrDefault
+import com.example.ui.dialogs.circuiteditor.state.toCircuitWorkflowStepSet
 import com.example.ui.dialogs.circuiteditor.ui.steps.FeederStepContent
 import com.example.ui.dialogs.circuiteditor.ui.steps.IdentityStepContent
 import com.example.ui.dialogs.circuiteditor.ui.steps.InstallationStepContent
@@ -96,21 +105,51 @@ fun CircuitEditorParallelEntry(
     scRatingText: String = circuit?.scRatingKA?.let { String.format(java.util.Locale.US, "%.2f kA", it) } ?: "N/A (Calculated after save)",
     modifier: Modifier = Modifier
 ) {
-    var draft by remember {
-        mutableStateOf(
-            CircuitEditorInitializer.initialize(
-                original = circuit,
-                preferences = preferences,
-                availableTransformers = availableTransformers,
-                catalogSnapshot = catalogSnapshot
-            )
-        )
-    }
+    val sessionIdentity = CircuitEditorSessionIdentity.forCircuit(circuit)
 
-    var currentStep by remember { mutableStateOf(CircuitWorkflowStep.IDENTITY) }
-    var visitedSteps by remember { mutableStateOf(setOf(CircuitWorkflowStep.IDENTITY)) }
-    var identityError by remember { mutableStateOf<String?>(null) }
-    var reviewError by remember { mutableStateOf<String?>(null) }
+    key(sessionIdentity) {
+    val saveableState: androidx.compose.runtime.MutableState<CircuitEditorSaveableState> =
+        rememberSaveable(stateSaver = CircuitEditorSaveableState.Saver) {
+            mutableStateOf(
+                CircuitEditorSaveableState.initial(
+                    CircuitEditorInitializer.initialize(
+                        original = circuit,
+                        preferences = preferences,
+                        availableTransformers = availableTransformers,
+                        catalogSnapshot = catalogSnapshot
+                    )
+                )
+            )
+        }
+
+    // Single saveable source of truth. Each editor atom is a read/write view over the
+    // saveable payload, so ordinary assignments persist and survive recreation, while a
+    // true session-identity change disposes and reinitializes the whole state atomically.
+    var draft by CircuitEditorSaveableField(
+        holder = saveableState,
+        get = { it.draft },
+        set = { s, v -> s.copy(draft = v) }
+    )
+    var currentStep by CircuitEditorSaveableField(
+        holder = saveableState,
+        get = { it.currentStepName.toCircuitWorkflowStepOrDefault() },
+        set = { s, v -> s.copy(currentStepName = v.name) }
+    )
+    var visitedSteps by CircuitEditorSaveableField(
+        holder = saveableState,
+        get = { it.visitedStepNames.toCircuitWorkflowStepSet() },
+        set = { s, v -> s.copy(visitedStepNames = v.map { step -> step.name }) }
+    )
+    var identityError by CircuitEditorSaveableField(
+        holder = saveableState,
+        get = { it.identityError },
+        set = { s, v -> s.copy(identityError = v) }
+    )
+    var reviewError by CircuitEditorSaveableField(
+        holder = saveableState,
+        get = { it.reviewError },
+        set = { s, v -> s.copy(reviewError = v) }
+    )
 
     val applicableSteps = remember(draft.panelType) {
         CircuitWorkflow.getApplicableSteps(draft.panelType)
@@ -252,6 +291,7 @@ fun CircuitEditorParallelEntry(
         events = events,
         modifier = modifier
     )
+    }
 }
 
 /**
@@ -283,7 +323,6 @@ fun CircuitEditorParallelHost(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
-                    .imePadding()
             ) {
                 // Sticky Top Bar + Stepper Region
                 Surface(
@@ -520,7 +559,13 @@ fun CircuitEditorParallelHost(
                     modifier = Modifier
                         .fillMaxWidth()
                         .zIndex(2f)
-                        .navigationBarsPadding()
+                        // Consume navigation-bar and IME insets EXACTLY ONCE at the sticky bar.
+                        // union() takes the per-side max, so an open IME (whose inset already
+                        // covers the navigation-bar region on devices) never double-applies,
+                        // and a closed IME still respects the gesture/navigation inset. The bar
+                        // stays a layout child of the window-sized column, so its bottom is
+                        // provably inside the visible root bounds.
+                        .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
                 )
             }
         }
