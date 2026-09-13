@@ -44,6 +44,18 @@ import com.example.ui.parseCableSizeSafe
 import com.example.ui.parseFamilyInfo
 import com.example.ui.theme.*
 
+/**
+ * R0 containment gate for the circuit editor production route.
+ *
+ * false (default) -> [LegacyCircuitEditDialogInternal]: last known production-safe behavior.
+ * true            -> [MobileCircuitEditorRoute]: mobile-first step editor (remediation pending).
+ *
+ * Local compile-time containment constant only. No remote config, BuildConfig field,
+ * settings UI, analytics, logging, dependency change, or rollout infrastructure.
+ * Flipping to true requires explicit owner authorization (R6 controlled reactivation).
+ */
+private const val USE_MOBILE_CIRCUIT_EDITOR = false
+
 @Composable
 fun CircuitEditDialog(
     circuit: CircuitEntity?,
@@ -51,6 +63,37 @@ fun CircuitEditDialog(
     onDismiss: () -> Unit,
     onSave: (CircuitEntity) -> Unit,
     viewModel: EngineeringViewModel? = null
+) {
+    if (USE_MOBILE_CIRCUIT_EDITOR) {
+        MobileCircuitEditorRoute(
+            circuit = circuit,
+            existingCircuits = existingCircuits,
+            onDismiss = onDismiss,
+            onSave = onSave,
+            viewModel = viewModel
+        )
+    } else {
+        LegacyCircuitEditDialogInternal(
+            circuit = circuit,
+            existingCircuits = existingCircuits,
+            onDismiss = onDismiss,
+            onSave = onSave,
+            viewModel = viewModel
+        )
+    }
+}
+
+/**
+ * Mobile-only production route. All mobile-only Flow collection and snapshot preparation
+ * lives here so the default legacy route performs no unnecessary mobile-only collection.
+ */
+@Composable
+private fun MobileCircuitEditorRoute(
+    circuit: CircuitEntity?,
+    existingCircuits: List<CircuitEntity>,
+    onDismiss: () -> Unit,
+    onSave: (CircuitEntity) -> Unit,
+    viewModel: EngineeringViewModel?
 ) {
     val defaultV3P = viewModel?.preferences?.defaultVoltage3Phase?.collectAsState()?.value ?: 400
     val defaultMaxVdPower = viewModel?.preferences?.maxVdLimitPower?.collectAsState()?.value ?: 5.0
