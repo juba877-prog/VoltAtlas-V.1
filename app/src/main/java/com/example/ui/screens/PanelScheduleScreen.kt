@@ -590,17 +590,17 @@ fun PanelScheduleScreen(
                     circuitToEditInDialog = null
                 },
                 onSave = { savedCircuit ->
-                    if (isNewCircuitInDialog) {
-                        viewModel.addCircuit(savedCircuit)
-                        val savedPType = savedCircuit.panelType?.trim()?.uppercase() ?: ""
-                        if (savedPType in setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER")) {
-                            selectedOptionKey = if (savedCircuit.id != 0) "id_${savedCircuit.id}" else "name_${savedCircuit.circuitName}"
+                    PanelScheduleSaveCoordinator.handleSave(
+                        savedCircuit = savedCircuit,
+                        isNewCircuit = isNewCircuitInDialog,
+                        onAdd = { viewModel.addCircuit(it) },
+                        onUpdate = { viewModel.updateCircuit(it) },
+                        onUpdateSelectedOptionKey = { selectedOptionKey = it },
+                        onDismiss = {
+                            showCircuitEditDialog = false
+                            circuitToEditInDialog = null
                         }
-                    } else {
-                        viewModel.updateCircuit(savedCircuit)
-                    }
-                    showCircuitEditDialog = false
-                    circuitToEditInDialog = null
+                    )
                 }
             )
         }

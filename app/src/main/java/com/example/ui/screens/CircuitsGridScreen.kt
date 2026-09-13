@@ -52,6 +52,7 @@ import com.example.ui.screens.circuits.CircuitStatusFilter
 import com.example.ui.screens.circuits.CircuitUiModelMapper
 import com.example.ui.screens.circuits.CircuitUiStatus
 import com.example.ui.screens.circuits.CircuitsSummaryUiModel
+import com.example.ui.screens.circuits.CircuitsGridSaveCoordinator
 import com.example.ui.theme.*
 
 private val PANEL_TYPES = setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER")
@@ -393,22 +394,13 @@ fun CircuitsGridScreen(
             existingCircuits = state.circuits,
             onDismiss = { showDialog = false },
             onSave = { saved ->
-                val original = editingCircuit
-                val normalized = if (
-                    original != null &&
-                    (!original.manufacturer.equals(saved.manufacturer, ignoreCase = true) ||
-                        !original.cableType.equals(saved.cableType, ignoreCase = true))
-                ) {
-                    saved.copy(overrideCableSize = null)
-                } else {
-                    saved
-                }
-                if (normalized.id == 0) {
-                    viewModel.addCircuit(normalized)
-                } else {
-                    viewModel.updateCircuit(normalized)
-                }
-                showDialog = false
+                CircuitsGridSaveCoordinator.handleSave(
+                    original = editingCircuit,
+                    saved = saved,
+                    onAdd = { viewModel.addCircuit(it) },
+                    onUpdate = { viewModel.updateCircuit(it) },
+                    onDismiss = { showDialog = false }
+                )
             },
             viewModel = viewModel
         )
