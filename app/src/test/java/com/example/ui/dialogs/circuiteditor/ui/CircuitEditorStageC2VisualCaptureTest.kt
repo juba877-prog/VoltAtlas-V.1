@@ -838,7 +838,8 @@ class CircuitEditorStageC2VisualCaptureTest {
             else -> "HORIZONTAL_SCROLL_RAIL"
         }
         val activeNodeBounds = composeTestRule.onNodeWithTag("progress_step_node_$stepIndex").getBoundsInRoot()
-        val nextBtnBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        val actionBtnTag = if (currentStep == CircuitWorkflowStep.REVIEW || stepIndex == totalSteps) "save_circuit_btn" else "circuit_editor_next_btn"
+        val nextBtnBounds = composeTestRule.onNodeWithTag(actionBtnTag).getBoundsInRoot()
         val finalContentBottom = if (currentStep == CircuitWorkflowStep.IDENTITY) {
             composeTestRule.onNodeWithTag("computed_hierarchy_card").getBoundsInRoot().bottom
         } else {

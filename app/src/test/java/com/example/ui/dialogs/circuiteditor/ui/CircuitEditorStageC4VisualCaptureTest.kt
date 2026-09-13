@@ -439,4 +439,128 @@ class CircuitEditorStageC4VisualCaptureTest {
         }
         capture("10_review_ups_supply_360_font1_3_light.png")
     }
+
+    /**
+     * Final Recapture 01: Review, LOAD circuit bottom (360dp, font 1.5, dark)
+     */
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun captureFinal01_review_load_bottom_360_font1_5_dark() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                name = "Motor Feeder 1",
+                panelType = "LOAD",
+                loadKVA = "45.0",
+                pf = "0.88",
+                demandFactor = "1.0",
+                voltageV = "400",
+                phases = "3P+N",
+                loadNature = "Motor",
+                startingMethod = "Star-Delta",
+                supplyCategory = "NORMAL",
+                feederType = "Cable",
+                manufacturer = "Elsewedy",
+                cableType = "Cu/XLPE/SWA/PVC - 4C",
+                length_m = "60",
+                installation = "Laid in Ducts"
+            ),
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.REVIEW
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        capture("01_review_load_bottom_360_font1_5_dark.png")
+    }
+
+    /**
+     * Final Recapture 02: Review, DB circuit panel bottom (320dp, font 1.5, dark)
+     */
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun captureFinal02_review_panel_bottom_320_font1_5_dark() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                name = "Lighting DB",
+                panelType = "DB",
+                loadKVA = "30.0",
+                pf = "0.95",
+                demandFactor = "0.9",
+                supplyCategory = "EMERGENCY",
+                assignedAtsId = "ATS-01",
+                assignedGeneratorId = "GEN-01",
+                feederType = "Cable",
+                manufacturer = "Elsewedy",
+                cableType = "Cu/XLPE/SWA/PVC - 4C",
+                length_m = "40",
+                installation = "Laid in Ducts",
+                busbarRatingA = "250",
+                mainIncomingType = "MCCB",
+                mainIncomingCount = "1",
+                ipRating = "IP41",
+                panelLocation = "Floor 2 Electrical Closet",
+                numberOfWays = "18",
+                feederDescription = "Substation incoming feed"
+            ),
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.PANEL_HEADER,
+                CircuitWorkflowStep.REVIEW
+            ),
+            scRatingText = "18.50 kA"
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        capture("02_review_panel_bottom_320_font1_5_dark.png")
+    }
+
+    /**
+     * Final Recapture 03: Panel Header short-circuit rating unavailable (320dp, font 1.5, light)
+     */
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun captureFinal03_panel_sc_unavailable_320_font1_5_light() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                name = "Distribution Board 1",
+                panelType = "DB",
+                busbarRatingA = "400",
+                mainIncomingType = "MCCB",
+                mainIncomingCount = "1",
+                ipRating = "IP54",
+                panelLocation = "Substation 1",
+                numberOfWays = "12",
+                feederDescription = "Feeder from TX-01"
+            ),
+            initialStep = CircuitWorkflowStep.PANEL_HEADER,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.PANEL_HEADER
+            ),
+            scRatingText = "Unavailable (Calculated after save)"
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = false)
+        }
+        capture("03_panel_sc_unavailable_320_font1_5_light.png")
+    }
 }

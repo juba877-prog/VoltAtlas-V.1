@@ -38,16 +38,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.example.data.CircuitEntity
 import com.example.ui.components.ThemeBackgroundDeep
 import com.example.ui.components.ThemeBorderSubtle
 import com.example.ui.components.ThemeTextPrimary
 import com.example.ui.components.ThemeTextSecondary
+import com.example.ui.dialogs.circuiteditor.mapper.CircuitEntityMapper
 import com.example.ui.dialogs.circuiteditor.mapper.CircuitSourceResolver
 import com.example.ui.dialogs.circuiteditor.model.AtsSnapshot
 import com.example.ui.dialogs.circuiteditor.model.CableCatalogSnapshot
@@ -88,6 +91,7 @@ fun CircuitEditorParallelEntry(
     onDismiss: () -> Unit,
     onAddTransformer: () -> Unit = {},
     onValidSaveRequested: (CircuitEditorDraft) -> Unit = {},
+    onSave: ((CircuitEntity) -> Unit)? = null,
     projectSubtitle: String? = null,
     scRatingText: String = circuit?.scRatingKA?.let { String.format(java.util.Locale.US, "%.2f kA", it) } ?: "N/A (Calculated after save)",
     modifier: Modifier = Modifier
@@ -121,7 +125,7 @@ fun CircuitEditorParallelEntry(
         )
     }
 
-    val events = remember(draft, currentStep, visitedSteps, applicableSteps, circuit, existingCircuits) {
+    val events = remember(draft, currentStep, visitedSteps, applicableSteps, circuit, existingCircuits, sourceResolution) {
         object : CircuitEditorUiEvents {
             private fun performSave() {
                 val validation = CircuitEditorValidator.validateForSave(
@@ -137,7 +141,13 @@ fun CircuitEditorParallelEntry(
                     }
                     is ValidationResult.Success -> {
                         reviewError = null
+                        val entity = CircuitEntityMapper.mapToEntity(
+                            draft = draft,
+                            original = circuit,
+                            resolution = sourceResolution
+                        )
                         onValidSaveRequested(draft)
+                        onSave?.invoke(entity)
                     }
                 }
             }
@@ -271,7 +281,10 @@ fun CircuitEditorParallelHost(
             ) {
                 // Sticky Top Bar + Stepper Region
                 Surface(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .zIndex(2f)
+                        .testTag("circuit_editor_top_fixed_bar"),
                     color = MaterialTheme.colorScheme.surface,
                     tonalElevation = 2.dp,
                     border = BorderStroke(1.dp, ThemeBorderSubtle)
@@ -343,13 +356,17 @@ fun CircuitEditorParallelHost(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .weight(1f)
+                        .zIndex(0f)
+                        .clipToBounds()
+                        .testTag("circuit_editor_scroll_viewport"),
                     contentAlignment = Alignment.TopCenter
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .widthIn(max = 640.dp)
+                            .clipToBounds()
                             .verticalScroll(scrollState)
                             .padding(horizontal = 16.dp, vertical = 16.dp)
                     ) {
@@ -496,6 +513,7 @@ fun CircuitEditorParallelHost(
                     onSaveClick = events::onSaveClick,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .zIndex(2f)
                         .navigationBarsPadding()
                 )
             }

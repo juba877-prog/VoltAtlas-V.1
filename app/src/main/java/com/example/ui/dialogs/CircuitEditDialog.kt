@@ -27,8 +27,17 @@ import com.example.data.resolveCableType
 import com.example.ui.CableFamilyInfo
 import com.example.ui.EngineeringViewModel
 import com.example.ui.UiState
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.ui.catalogCableSizeOptions
 import com.example.ui.components.*
+import com.example.ui.dialogs.circuiteditor.model.AtsSnapshot
+import com.example.ui.dialogs.circuiteditor.model.CableCatalogSnapshot
+import com.example.ui.dialogs.circuiteditor.model.CircuitEditorPreferencesSnapshot
+import com.example.ui.dialogs.circuiteditor.model.GeneratorSnapshot
+import com.example.ui.dialogs.circuiteditor.model.TransformerSnapshot
+import com.example.ui.dialogs.circuiteditor.model.UpsSnapshot
+import com.example.ui.dialogs.circuiteditor.ui.CircuitEditorParallelEntry
 import com.example.ui.formatCatalogCableSizeSafe
 import com.example.ui.getDistinctCatalogManufacturers
 import com.example.ui.parseCableSizeSafe
@@ -37,6 +46,95 @@ import com.example.ui.theme.*
 
 @Composable
 fun CircuitEditDialog(
+    circuit: CircuitEntity?,
+    existingCircuits: List<CircuitEntity>,
+    onDismiss: () -> Unit,
+    onSave: (CircuitEntity) -> Unit,
+    viewModel: EngineeringViewModel? = null
+) {
+    val defaultV3P = viewModel?.preferences?.defaultVoltage3Phase?.collectAsState()?.value ?: 400
+    val defaultMaxVdPower = viewModel?.preferences?.maxVdLimitPower?.collectAsState()?.value ?: 5.0
+    val defaultConductor = viewModel?.preferences?.defaultConductorMaterial?.collectAsState()?.value ?: "Cu"
+    val defaultInsulation = viewModel?.preferences?.defaultInsulation?.collectAsState()?.value ?: "XLPE"
+    val defaultCoreConfig = viewModel?.preferences?.defaultCoreConfig?.collectAsState()?.value ?: "4C"
+
+    val preferences = remember(defaultV3P, defaultMaxVdPower, defaultConductor, defaultInsulation, defaultCoreConfig) {
+        CircuitEditorPreferencesSnapshot(
+            defaultVoltage3Phase = defaultV3P,
+            defaultMaxVdPower = defaultMaxVdPower,
+            defaultConductor = defaultConductor,
+            defaultInsulation = defaultInsulation,
+            defaultCoreConfig = defaultCoreConfig
+        )
+    }
+
+    val transformers = viewModel?.projectTransformersFlow?.collectAsState()?.value ?: emptyList()
+    val availableTransformers = remember(transformers) {
+        transformers.map { TransformerSnapshot(transformerId = it.transformerId, ratingKVA = it.kVA) }
+    }
+
+    val generators = viewModel?.generatorsList?.collectAsState()?.value ?: emptyList()
+    val availableGenerators = remember(generators) {
+        generators.map { GeneratorSnapshot(generatorId = it.generatorId) }
+    }
+
+    val atsList = viewModel?.atsList?.collectAsState()?.value ?: emptyList()
+    val availableAts = remember(atsList) {
+        atsList.map { AtsSnapshot(atsId = it.atsId) }
+    }
+
+    val upsList = viewModel?.upsList?.collectAsState()?.value ?: emptyList()
+    val availableUps = remember(upsList) {
+        upsList.map { UpsSnapshot(upsId = it.upsId) }
+    }
+
+    val catalogSnapshot = remember {
+        CableCatalogSnapshot(
+            manufacturers = getDistinctCatalogManufacturers(),
+            cableTypes = Catalog.cableTypes,
+            cableCatalog = Catalog.cableCatalog,
+            busways = Catalog.busways
+        )
+    }
+
+    val scRatingText = remember(circuit?.scRatingKA) {
+        circuit?.scRatingKA?.let { String.format(java.util.Locale.US, "%.2f kA", it) }
+            ?: "Unavailable (Calculated after save)"
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        VoltAtlasTheme {
+            CircuitEditorParallelEntry(
+                circuit = circuit,
+                existingCircuits = existingCircuits,
+                preferences = preferences,
+                availableTransformers = availableTransformers,
+                availableGenerators = availableGenerators,
+                availableAts = availableAts,
+                availableUps = availableUps,
+                catalogSnapshot = catalogSnapshot,
+                onDismiss = onDismiss,
+                onAddTransformer = { viewModel?.addNewTransformerInline() },
+                onSave = onSave,
+                scRatingText = scRatingText
+            )
+        }
+    }
+}
+
+/**
+ * Retained legacy implementation of CircuitEditDialog (private, unused).
+ * Preserves existing code integrity without deletion.
+ */
+@Composable
+@Suppress("UnusedPrivateMember", "UNUSED_PARAMETER")
+private fun LegacyCircuitEditDialogInternal(
     circuit: CircuitEntity?,
     existingCircuits: List<CircuitEntity>,
     onDismiss: () -> Unit,

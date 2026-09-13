@@ -655,4 +655,62 @@ class ReviewStepRuntimeTest {
         composeTestRule.onNodeWithTag("review_edit_panel_header").performScrollTo().performClick()
         assertEquals(CircuitWorkflowStep.PANEL_HEADER, navigatedStep)
     }
+
+    @Test
+    fun test22_scrolledReviewCardDoesNotIntrudeIntoFixedTopRegion() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "Main DB", panelType = "DB"),
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.PANEL_HEADER,
+                CircuitWorkflowStep.REVIEW
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        val topBar = composeTestRule.onNodeWithTag("circuit_editor_top_fixed_bar")
+        topBar.assertExists()
+        val topBarBounds = topBar.getBoundsInRoot()
+
+        val scrollViewport = composeTestRule.onNodeWithTag("circuit_editor_scroll_viewport")
+        scrollViewport.assertExists()
+        val viewportBounds = scrollViewport.getBoundsInRoot()
+
+        // 1. Fixed top bar must be above or at the top of the viewport
+        assertTrue(
+            "Viewport top (${viewportBounds.top}) must start at or below top bar bottom (${topBarBounds.bottom})",
+            viewportBounds.top >= topBarBounds.bottom
+        )
+
+        // 2. Scroll to bottom
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        composeTestRule.waitForIdle()
+
+        // 3. The top fixed bar must NOT contain any review card items as children/descendants
+        composeTestRule.onNode(
+            androidx.compose.ui.test.hasTestTag("circuit_editor_top_fixed_bar") and
+            androidx.compose.ui.test.hasAnyDescendant(androidx.compose.ui.test.hasTestTag("review_identity_section"))
+        ).assertDoesNotExist()
+
+        composeTestRule.onNode(
+            androidx.compose.ui.test.hasTestTag("circuit_editor_top_fixed_bar") and
+            androidx.compose.ui.test.hasAnyDescendant(androidx.compose.ui.test.hasTestTag("review_panel_header_section"))
+        ).assertDoesNotExist()
+
+        // 4. Assert that when scrolled to bottom, review card sections do not have visible bounds overlapping into topBar
+        val panelSection = composeTestRule.onNodeWithTag("review_panel_header_section")
+        panelSection.assertExists()
+        val panelSectionBounds = panelSection.getBoundsInRoot()
+        assertTrue(
+            "Panel section top (${panelSectionBounds.top}) must be >= topBarBounds.bottom (${topBarBounds.bottom})",
+            panelSectionBounds.top >= topBarBounds.bottom
+        )
+    }
 }
