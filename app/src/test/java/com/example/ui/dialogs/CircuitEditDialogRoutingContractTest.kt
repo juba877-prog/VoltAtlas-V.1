@@ -106,13 +106,13 @@ class CircuitEditDialogRoutingContractTest {
         return normalized(source.substring(paramOpen + 1, paramClose)).trimEnd(',')
     }
 
-    // 1. The containment constant exists as private const val with value false.
+    // 1. The containment constant exists as private const val with value true (mobile default).
     @Test
-    fun test01_containmentConstantIsPrivateConstFalse() {
+    fun test01_containmentConstantIsPrivateConstTrue() {
         val constLine = productionSource().lines()
             .firstOrNull { it.trim().startsWith("private const val USE_MOBILE_CIRCUIT_EDITOR") }
         assertTrue("containment constant declaration not found", constLine != null)
-        assertEquals("private const val USE_MOBILE_CIRCUIT_EDITOR = false", constLine!!.trim())
+        assertEquals("private const val USE_MOBILE_CIRCUIT_EDITOR = true", constLine!!.trim())
     }
 
     // 2. The public CircuitEditDialog signature preserves the exact API shape.
@@ -126,17 +126,18 @@ class CircuitEditDialogRoutingContractTest {
         )
     }
 
-    // 3. The false/default branch references the retained legacy implementation.
+    // 3. The active (true) branch routes to the mobile editor; the retained legacy
+    //    implementation remains as the fallback branch.
     @Test
-    fun test03_defaultBranchRoutesToLegacy() {
+    fun test03_activeBranchIsMobileAndLegacyRetainedAsFallback() {
         val body = functionBody(productionSource(), "fun CircuitEditDialog(")
         assertTrue("gate check missing from public routing body", body.contains("if (USE_MOBILE_CIRCUIT_EDITOR) {"))
         val elseIdx = body.indexOf("} else {")
         assertTrue("else branch missing from public routing body", elseIdx >= 0)
         val mobileIdx = body.indexOf("MobileCircuitEditorRoute(")
         val legacyIdx = body.indexOf("LegacyCircuitEditDialogInternal(")
-        assertTrue("mobile route call missing from true branch", mobileIdx in 0 until elseIdx)
-        assertTrue("legacy route call missing from default branch", legacyIdx > elseIdx)
+        assertTrue("mobile route call missing from the active branch", mobileIdx in 0 until elseIdx)
+        assertTrue("legacy route call missing from the fallback branch", legacyIdx > elseIdx)
     }
 
     // 4. The true branch references the retained mobile route and its editor entry path.

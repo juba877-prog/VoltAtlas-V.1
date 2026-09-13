@@ -54,7 +54,7 @@ import com.example.ui.theme.*
  * settings UI, analytics, logging, dependency change, or rollout infrastructure.
  * Flipping to true requires explicit owner authorization (R6 controlled reactivation).
  */
-private const val USE_MOBILE_CIRCUIT_EDITOR = false
+private const val USE_MOBILE_CIRCUIT_EDITOR = true
 
 @Composable
 fun CircuitEditDialog(
