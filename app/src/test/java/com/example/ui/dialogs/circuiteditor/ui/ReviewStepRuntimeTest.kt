@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -777,5 +778,174 @@ class ReviewStepRuntimeTest {
         composeTestRule.onNodeWithText("TX-01 (Auto-resolved)").assertDoesNotExist()
         composeTestRule.onNodeWithText("TX-01").assertDoesNotExist()
         composeTestRule.onAllNodesWithText("Auto-resolved").assertCountEquals(0)
+    }
+
+    // ==========================================
+    // R5: Review Header Remediation & Scroll Reachability
+    // ==========================================
+
+    // 25. All Review edit targets satisfy >= 48dp and stay within card bounds at 320dp / font 1.5
+    @Test
+    fun test25_r5_reviewEditActionBoundsAndTargetSize_compactWidthLargeFont() {
+        val panelDraft = CircuitEditorDraft(
+            name = "Main DB",
+            panelType = "DB",
+            loadKVA = "150.0",
+            supplyCategory = "EMERGENCY + UPS",
+            assignedGeneratorId = "GEN-01",
+            assignedAtsId = "ATS-01",
+            assignedUpsId = "UPS-01",
+            feederType = "Cable",
+            busbarRatingA = "630"
+        )
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = panelDraft,
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.PANEL_HEADER,
+                CircuitWorkflowStep.REVIEW
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        val editTags = listOf(
+            "review_edit_identity" to "review_identity_section",
+            "review_edit_load" to "review_load_section",
+            "review_edit_supply" to "review_supply_section",
+            "review_edit_feeder" to "review_feeder_section",
+            "review_edit_installation" to "review_installation_section",
+            "review_edit_panel_header" to "review_panel_header_section"
+        )
+
+        for ((editTag, sectionTag) in editTags) {
+            val sectionNode = composeTestRule.onNodeWithTag(sectionTag)
+            sectionNode.performScrollTo()
+            composeTestRule.waitForIdle()
+
+            val cardBounds = sectionNode.getBoundsInRoot()
+            val editBounds = composeTestRule.onNodeWithTag(editTag).getBoundsInRoot()
+
+            val editWidth = editBounds.right - editBounds.left
+            val editHeight = editBounds.bottom - editBounds.top
+            assertTrue("$editTag width ($editWidth) must be >= 48dp", editWidth >= 48.dp)
+            assertTrue("$editTag height ($editHeight) must be >= 48dp", editHeight >= 48.dp)
+            assertTrue("$editTag right (${editBounds.right}) must be <= card right (${cardBounds.right})", editBounds.right <= cardBounds.right)
+            assertTrue("$editTag top (${editBounds.top}) must be >= card top (${cardBounds.top})", editBounds.top >= cardBounds.top)
+        }
+    }
+
+    // 26. Programmatic scrolling to a section positions complete heading at or below scrollViewport.top
+    @Test
+    fun test26_r5_reviewSectionScrollReachability() {
+        val panelDraft = CircuitEditorDraft(
+            name = "Main DB",
+            panelType = "DB",
+            loadKVA = "150.0",
+            busbarRatingA = "630"
+        )
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = panelDraft,
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.PANEL_HEADER,
+                CircuitWorkflowStep.REVIEW
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        val viewportBounds = composeTestRule.onNodeWithTag("circuit_editor_scroll_viewport").getBoundsInRoot()
+        val panelSection = composeTestRule.onNodeWithTag("review_panel_header_section")
+        panelSection.performScrollTo()
+        composeTestRule.waitForIdle()
+
+        val panelBounds = panelSection.getBoundsInRoot()
+        assertTrue(
+            "Panel header section top (${panelBounds.top}) must be >= scrollViewport top (${viewportBounds.top})",
+            panelBounds.top >= viewportBounds.top
+        )
+        assertTrue(
+            "Panel header section top (${panelBounds.top}) must be < scrollViewport bottom (${viewportBounds.bottom})",
+            panelBounds.top < viewportBounds.bottom
+        )
+    }
+
+    // 27. Direct Review edit action navigates to target step without stale Review scroll offset
+    @Test
+    fun test27_r5_reviewScrollResetOnStepNavigation() {
+        var navigated = false
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "Main DB", panelType = "DB", busbarRatingA = "630"),
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.PANEL_HEADER,
+                CircuitWorkflowStep.REVIEW
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // Scroll to bottom of Review
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        composeTestRule.waitForIdle()
+
+        // Click Edit on Identity section
+        composeTestRule.onNodeWithTag("review_edit_identity").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+
+        // Now on Identity step
+        assertEquals(CircuitWorkflowStep.IDENTITY, holder.currentStep)
+        // Step header is displayed cleanly at top
+        composeTestRule.onNodeWithTag("circuit_editor_step_header").assertIsDisplayed()
+    }
+
+    // 28. Bottom scrolling reaches final content with at least 16dp clearance above sticky action bar
+    @Test
+    fun test28_r5_reviewBottomClearanceAboveStickyBar() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "Main DB", panelType = "DB", busbarRatingA = "630"),
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.PANEL_HEADER,
+                CircuitWorkflowStep.REVIEW
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        composeTestRule.waitForIdle()
+
+        val saveBtn = composeTestRule.onNodeWithTag("save_circuit_btn").getBoundsInRoot()
+        val panelSection = composeTestRule.onNodeWithTag("review_panel_header_section").getBoundsInRoot()
+        val root = composeTestRule.onNodeWithTag("circuit_editor_root").getBoundsInRoot()
+
+        assertTrue("Last content bottom must be <= saveBtn.top - 16dp", panelSection.bottom <= saveBtn.top - 16.dp)
+        assertTrue("Save button bottom must be inside visible root", saveBtn.bottom <= root.bottom)
     }
 }
