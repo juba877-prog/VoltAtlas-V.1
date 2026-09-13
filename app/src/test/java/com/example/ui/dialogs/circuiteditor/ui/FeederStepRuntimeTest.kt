@@ -436,5 +436,249 @@ class FeederStepRuntimeTest {
         composeTestRule.onNodeWithText("Cu/XLPE/SWA/PVC - 2C").assertDoesNotExist()
         composeTestRule.onNodeWithText("Cu/XLPE/SWA/PVC - 3.5C").assertDoesNotExist()
     }
+
+    @Test
+    fun test27_reconciliation_materialCopperToAluminiumReconcilesCableTypeAndFilters() {
+        var currentDraft = CircuitEditorDraft(
+            feederType = "Cable",
+            manufacturer = "Elsewedy",
+            cableType = "Cu/XLPE/SWA/PVC - 4C",
+            filterMat = "Copper",
+            filterArmour = "Armoured",
+            filterCores = "4C"
+        )
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                FeederStepContent(
+                    draft = currentDraft,
+                    onDraftChange = { currentDraft = it },
+                    catalogSnapshot = testCatalog
+                )
+            }
+        }
+
+        // Change material Copper -> Aluminium
+        composeTestRule.onNodeWithTag("filter_mat_Aluminium").performClick()
+
+        assertEquals("Aluminium", currentDraft.filterMat)
+        assertEquals("Armoured", currentDraft.filterArmour)
+        assertEquals("4C", currentDraft.filterCores)
+        assertEquals("Al/XLPE/STA/PVC - 4C", currentDraft.cableType)
+        assertFalse(currentDraft.cableType.contains("Cu/"))
+        assertTrue(currentDraft.cableType.startsWith("Al/"))
+    }
+
+    @Test
+    fun test28_reconciliation_materialAluminiumToCopperReconcilesCableTypeAndFilters() {
+        var currentDraft = CircuitEditorDraft(
+            feederType = "Cable",
+            manufacturer = "Elsewedy",
+            cableType = "Al/XLPE/STA/PVC - 4C",
+            filterMat = "Aluminium",
+            filterArmour = "Armoured",
+            filterCores = "4C"
+        )
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                FeederStepContent(
+                    draft = currentDraft,
+                    onDraftChange = { currentDraft = it },
+                    catalogSnapshot = testCatalog
+                )
+            }
+        }
+
+        // Change material Aluminium -> Copper
+        composeTestRule.onNodeWithTag("filter_mat_Copper").performClick()
+
+        assertEquals("Copper", currentDraft.filterMat)
+        assertEquals("Armoured", currentDraft.filterArmour)
+        assertEquals("4C", currentDraft.filterCores)
+        assertEquals("Cu/XLPE/SWA/PVC - 4C", currentDraft.cableType)
+        assertTrue(currentDraft.cableType.startsWith("Cu/"))
+    }
+
+    @Test
+    fun test29_reconciliation_armourArmouredToUnarmouredReconcilesCableTypeAndFilters() {
+        var currentDraft = CircuitEditorDraft(
+            feederType = "Cable",
+            manufacturer = "Elsewedy",
+            cableType = "Cu/XLPE/SWA/PVC - 4C",
+            filterMat = "Copper",
+            filterArmour = "Armoured",
+            filterCores = "4C"
+        )
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                FeederStepContent(
+                    draft = currentDraft,
+                    onDraftChange = { currentDraft = it },
+                    catalogSnapshot = testCatalog
+                )
+            }
+        }
+
+        // Change armour Armoured -> Unarmoured
+        composeTestRule.onNodeWithTag("filter_armour_Unarmoured").performClick()
+
+        assertEquals("Copper", currentDraft.filterMat)
+        assertEquals("Unarmoured", currentDraft.filterArmour)
+        assertEquals("4C", currentDraft.filterCores)
+        assertEquals("Cu/XLPE/None/PVC - 4C", currentDraft.cableType)
+    }
+
+    @Test
+    fun test30_reconciliation_armourUnarmouredToArmouredReconcilesCableTypeAndFilters() {
+        var currentDraft = CircuitEditorDraft(
+            feederType = "Cable",
+            manufacturer = "Elsewedy",
+            cableType = "Cu/XLPE/None/PVC - 4C",
+            filterMat = "Copper",
+            filterArmour = "Unarmoured",
+            filterCores = "4C"
+        )
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                FeederStepContent(
+                    draft = currentDraft,
+                    onDraftChange = { currentDraft = it },
+                    catalogSnapshot = testCatalog
+                )
+            }
+        }
+
+        // Change armour Unarmoured -> Armoured
+        composeTestRule.onNodeWithTag("filter_armour_Armoured").performClick()
+
+        assertEquals("Copper", currentDraft.filterMat)
+        assertEquals("Armoured", currentDraft.filterArmour)
+        assertEquals("4C", currentDraft.filterCores)
+        assertEquals("Cu/XLPE/SWA/PVC - 4C", currentDraft.cableType)
+    }
+
+    @Test
+    fun test31_reconciliation_cores4CTo1CReconcilesCableTypeAndFilters() {
+        var currentDraft = CircuitEditorDraft(
+            feederType = "Cable",
+            manufacturer = "Elsewedy",
+            cableType = "Cu/XLPE/None/PVC - 4C",
+            filterMat = "Copper",
+            filterArmour = "Unarmoured",
+            filterCores = "4C"
+        )
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                FeederStepContent(
+                    draft = currentDraft,
+                    onDraftChange = { currentDraft = it },
+                    catalogSnapshot = testCatalog
+                )
+            }
+        }
+
+        // Change cores 4C -> 1C
+        composeTestRule.onNodeWithTag("input_core_config").performClick()
+        composeTestRule.onNodeWithText("1C").performClick()
+
+        assertEquals("Copper", currentDraft.filterMat)
+        assertEquals("Unarmoured", currentDraft.filterArmour)
+        assertEquals("1C", currentDraft.filterCores)
+        assertEquals("Cu/PVC/None/PVC - 1C", currentDraft.cableType)
+    }
+
+    @Test
+    fun test32_reconciliation_cores1CTo4CReconcilesCableTypeAndFilters() {
+        var currentDraft = CircuitEditorDraft(
+            feederType = "Cable",
+            manufacturer = "Elsewedy",
+            cableType = "Cu/PVC/None/PVC - 1C",
+            filterMat = "Copper",
+            filterArmour = "Unarmoured",
+            filterCores = "1C"
+        )
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                FeederStepContent(
+                    draft = currentDraft,
+                    onDraftChange = { currentDraft = it },
+                    catalogSnapshot = testCatalog
+                )
+            }
+        }
+
+        // Change cores 1C -> 4C
+        composeTestRule.onNodeWithTag("input_core_config").performClick()
+        composeTestRule.onNodeWithText("4C").performClick()
+
+        assertEquals("Copper", currentDraft.filterMat)
+        assertEquals("Unarmoured", currentDraft.filterArmour)
+        assertEquals("4C", currentDraft.filterCores)
+        assertEquals("Cu/XLPE/None/PVC - 4C", currentDraft.cableType)
+    }
+
+    @Test
+    fun test33_reconciliation_manufacturerElsewedyToDucabReconcilesCableTypeAndFilters() {
+        var currentDraft = CircuitEditorDraft(
+            feederType = "Cable",
+            manufacturer = "Elsewedy",
+            cableType = "Cu/XLPE/SWA/PVC - 4C",
+            filterMat = "Copper",
+            filterArmour = "Armoured",
+            filterCores = "4C"
+        )
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                FeederStepContent(
+                    draft = currentDraft,
+                    onDraftChange = { currentDraft = it },
+                    catalogSnapshot = testCatalog
+                )
+            }
+        }
+
+        // Change manufacturer Elsewedy -> Ducab
+        composeTestRule.onNodeWithTag("input_manufacturer").performClick()
+        composeTestRule.onNodeWithText("Ducab").performClick()
+
+        assertEquals("Ducab", currentDraft.manufacturer)
+        assertEquals("Ducab Cu/XLPE/AWA/PVC - 1C", currentDraft.cableType)
+        assertEquals("Copper", currentDraft.filterMat)
+        assertEquals("Armoured", currentDraft.filterArmour)
+        assertEquals("1C", currentDraft.filterCores)
+        assertFalse(currentDraft.cableType.contains("Elsewedy"))
+    }
+
+    @Test
+    fun test34_reconciliation_manufacturerDucabToElsewedyReconcilesCableTypeAndFilters() {
+        var currentDraft = CircuitEditorDraft(
+            feederType = "Cable",
+            manufacturer = "Ducab",
+            cableType = "Ducab Cu/XLPE/AWA/PVC - 1C",
+            filterMat = "Copper",
+            filterArmour = "Armoured",
+            filterCores = "1C"
+        )
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                FeederStepContent(
+                    draft = currentDraft,
+                    onDraftChange = { currentDraft = it },
+                    catalogSnapshot = testCatalog
+                )
+            }
+        }
+
+        // Change manufacturer Ducab -> Elsewedy
+        composeTestRule.onNodeWithTag("input_manufacturer").performClick()
+        composeTestRule.onNodeWithText("Elsewedy").performClick()
+
+        assertEquals("Elsewedy", currentDraft.manufacturer)
+        assertFalse("Committed cable must not belong to Ducab", currentDraft.cableType.contains("Ducab"))
+        assertEquals("Copper", currentDraft.filterMat)
+        val elsewedyTypes = testCatalog.cableTypes.filter { type ->
+            testCatalog.cableCatalog.any { it.typeCode == type.code && it.mfg == "Elsewedy" }
+        }.map { it.cableType }
+        assertTrue(elsewedyTypes.contains(currentDraft.cableType))
+    }
 }
 

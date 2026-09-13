@@ -14,6 +14,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import com.example.ui.theme.VoltAtlasTheme
 import org.junit.Assert.assertEquals
@@ -262,6 +263,183 @@ class CableFamilyPickerRuntimeTest {
         composeTestRule.onNodeWithTag("cable_family_confirm").assertIsNotEnabled()
         composeTestRule.onNodeWithTag("cable_family_confirm").performClick()
         assertFalse("Confirm cannot be invoked when no selectable candidates exist", confirmed)
+    }
+
+    @Test
+    fun test35_openPickerDoesNotMutateCommittedCableType() {
+        var committedType = "Cu/XLPE/SWA/PVC - 4C"
+        var isOpen by mutableStateOf(false)
+
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CableFamilyPicker(
+                    isOpen = isOpen,
+                    currentFamily = committedType,
+                    candidateFamilies = sampleFamilies,
+                    onConfirm = { committedType = it },
+                    onCancel = { isOpen = false }
+                )
+            }
+        }
+
+        isOpen = true
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("cable_family_picker").assertIsDisplayed()
+        assertEquals("Opening picker must not mutate committed cable type", "Cu/XLPE/SWA/PVC - 4C", committedType)
+    }
+
+    @Test
+    fun test36_selectingCandidateRowMutatesOnlyPendingSelectionNotCommitted() {
+        var committedType = "Cu/XLPE/SWA/PVC - 4C"
+
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CableFamilyPicker(
+                    isOpen = true,
+                    currentFamily = committedType,
+                    candidateFamilies = sampleFamilies,
+                    onConfirm = { committedType = it },
+                    onCancel = {}
+                )
+            }
+        }
+
+        // Tap an unselected row
+        composeTestRule.onNodeWithText("Al/XLPE/STA/PVC - 4C").performClick()
+        composeTestRule.onNodeWithText("Al/XLPE/STA/PVC - 4C").assertIsSelected()
+
+        // Committed state remains unchanged
+        assertEquals("Selecting row mutates pending selection only, not committed state", "Cu/XLPE/SWA/PVC - 4C", committedType)
+    }
+
+    @Test
+    fun test37_cancelButtonKeepsPreviouslyCommittedCableType() {
+        var committedType = "Cu/XLPE/SWA/PVC - 4C"
+        var isOpen by mutableStateOf(true)
+
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CableFamilyPicker(
+                    isOpen = isOpen,
+                    currentFamily = committedType,
+                    candidateFamilies = sampleFamilies,
+                    onConfirm = { committedType = it },
+                    onCancel = { isOpen = false }
+                )
+            }
+        }
+
+        // Tap another row
+        composeTestRule.onNodeWithText("Al/XLPE/STA/PVC - 4C").performClick()
+        // Tap Cancel button
+        composeTestRule.onNodeWithText("Cancel").performClick()
+
+        assertFalse("Picker must be dismissed on Cancel", isOpen)
+        assertEquals("Cancel must preserve original committed cable type", "Cu/XLPE/SWA/PVC - 4C", committedType)
+    }
+
+    @Test
+    fun test38_closeIconKeepsPreviouslyCommittedCableType() {
+        var committedType = "Cu/XLPE/SWA/PVC - 4C"
+        var isOpen by mutableStateOf(true)
+
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CableFamilyPicker(
+                    isOpen = isOpen,
+                    currentFamily = committedType,
+                    candidateFamilies = sampleFamilies,
+                    onConfirm = { committedType = it },
+                    onCancel = { isOpen = false }
+                )
+            }
+        }
+
+        // Tap another row
+        composeTestRule.onNodeWithText("Cu/PVC/None/PVC - 1C").performClick()
+        // Tap Close icon
+        composeTestRule.onNodeWithTag("cable_family_cancel").performClick()
+
+        assertFalse("Picker must be dismissed on Close icon click", isOpen)
+        assertEquals("Close icon must preserve original committed cable type", "Cu/XLPE/SWA/PVC - 4C", committedType)
+    }
+
+    @Test
+    fun test39_confirmCommitsPendingCandidate() {
+        var committedType = "Cu/XLPE/SWA/PVC - 4C"
+
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CableFamilyPicker(
+                    isOpen = true,
+                    currentFamily = committedType,
+                    candidateFamilies = sampleFamilies,
+                    onConfirm = { committedType = it },
+                    onCancel = {}
+                )
+            }
+        }
+
+        // Select alternative row and confirm
+        composeTestRule.onNodeWithText("Al/XLPE/STA/PVC - 4C").performClick()
+        composeTestRule.onNodeWithTag("cable_family_confirm").performClick()
+
+        assertEquals("Confirm must commit the pending candidate", "Al/XLPE/STA/PVC - 4C", committedType)
+    }
+
+    @Test
+    fun test40_searchFilteringDoesNotSilentlyCommit() {
+        var committedType = "Cu/XLPE/SWA/PVC - 4C"
+
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CableFamilyPicker(
+                    isOpen = true,
+                    currentFamily = committedType,
+                    candidateFamilies = sampleFamilies,
+                    onConfirm = { committedType = it },
+                    onCancel = {}
+                )
+            }
+        }
+
+        // Search for a specific candidate
+        composeTestRule.onNodeWithTag("cable_family_search").performTextInput("None")
+
+        // Cu/XLPE/None/PVC - 4C and Cu/PVC/None/PVC - 1C appear
+        composeTestRule.onNodeWithText("Cu/XLPE/None/PVC - 4C").assertIsDisplayed()
+        assertEquals("Typing search query must never silently commit", "Cu/XLPE/SWA/PVC - 4C", committedType)
+    }
+
+    @Test
+    fun test41_clearingSearchRestoresCandidatesWithoutModifyingCommitted() {
+        var committedType = "Cu/XLPE/SWA/PVC - 4C"
+
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CableFamilyPicker(
+                    isOpen = true,
+                    currentFamily = committedType,
+                    candidateFamilies = sampleFamilies,
+                    onConfirm = { committedType = it },
+                    onCancel = {}
+                )
+            }
+        }
+
+        // Enter search
+        composeTestRule.onNodeWithTag("cable_family_search").performTextInput("STA")
+        composeTestRule.onNodeWithText("Cu/XLPE/SWA/PVC - 4C").assertDoesNotExist()
+
+        // Clear search
+        composeTestRule.onNodeWithTag("cable_family_search").performTextClearance()
+
+        // All candidates restored
+        sampleFamilies.forEach { family ->
+            composeTestRule.onNodeWithText(family).assertIsDisplayed()
+        }
+        assertEquals("Clearing search must not modify committed cable type", "Cu/XLPE/SWA/PVC - 4C", committedType)
     }
 }
 

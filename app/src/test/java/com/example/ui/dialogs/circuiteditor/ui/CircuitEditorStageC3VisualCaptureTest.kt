@@ -24,6 +24,10 @@ import com.example.ui.dialogs.circuiteditor.model.CircuitWorkflowStep
 import com.example.ui.dialogs.circuiteditor.model.GeneratorSnapshot
 import com.example.ui.dialogs.circuiteditor.model.UpsSnapshot
 import com.example.ui.theme.VoltAtlasTheme
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -106,6 +110,10 @@ class CircuitEditorStageC3VisualCaptureTest {
         file.outputStream().use { out ->
             bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
             out.flush()
+        }
+        val brainDir = File("C:/Users/mahmoud.mohamed/.gemini/antigravity/brain/1abfe00f-638e-4dd5-93ae-22beb68021fd")
+        if (brainDir.exists()) {
+            file.copyTo(File(brainDir, fileName), overwrite = true)
         }
     }
 
@@ -427,6 +435,178 @@ class CircuitEditorStageC3VisualCaptureTest {
         )
 
         capture("J_feeder_bottom_scrolled_360_font1_5.png")
+    }
+
+    /**
+     * Capture K: Supply Emergency + UPS Bottom Scrolled 320 font 1.5
+     */
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h640dp-xhdpi", fontScale = 1.5f)
+    fun captureK_supply_emergency_ups_320_font1_5_bottom() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                name = "Circuit 1",
+                panelType = "LOAD",
+                supplyCategory = "EMERGENCY + UPS",
+                assignedAtsId = "ATS-01",
+                assignedGeneratorId = "GEN-01",
+                assignedUpsId = "UPS-01"
+            ),
+            initialStep = CircuitWorkflowStep.SUPPLY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
+            availableGenerators = testGenerators,
+            availableAts = testAtsList,
+            availableUps = testUpsList,
+            catalogSnapshot = testCatalog
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        composeTestRule.waitForIdle()
+
+        val lastNodeBounds = composeTestRule.onNodeWithTag("input_assigned_ups").getBoundsInRoot()
+        val nextBtnBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        val actionBarTop = nextBtnBounds.top - 12.dp
+        val clearance = actionBarTop - lastNodeBounds.bottom
+
+        val scrollNode = composeTestRule.onNode(androidx.compose.ui.test.hasScrollAction()).fetchSemanticsNode()
+        val scrollRange = scrollNode.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)
+        val scrollValue = scrollRange?.value?.invoke() ?: 0f
+        val scrollMax = scrollRange?.maxValue?.invoke() ?: 0f
+
+        println("CAPTURE_K_METRICS: scrollValue=$scrollValue, scrollMax=$scrollMax, lastTag=input_assigned_ups, lastBottom=${lastNodeBounds.bottom}, actionBarTop=$actionBarTop, clearance=$clearance")
+        assertTrue("Clearance must be >= 16dp, measured: $clearance", clearance.value >= 16f)
+
+        capture("Supply_EMERGENCY_UPS_320_font1_5_bottom.png")
+    }
+
+    /**
+     * Capture L: Supply Empty Equipment Bottom Scrolled 320 font 1.5
+     */
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h640dp-xhdpi", fontScale = 1.5f)
+    fun captureL_supply_empty_equipment_320_font1_5_bottom() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                name = "Circuit 1",
+                panelType = "LOAD",
+                supplyCategory = "EMERGENCY + UPS",
+                assignedAtsId = "None",
+                assignedGeneratorId = "None",
+                assignedUpsId = "None"
+            ),
+            initialStep = CircuitWorkflowStep.SUPPLY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
+            availableGenerators = emptyList(),
+            availableAts = emptyList(),
+            availableUps = emptyList(),
+            catalogSnapshot = testCatalog
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = false)
+        }
+
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        composeTestRule.waitForIdle()
+
+        val lastNodeBounds = composeTestRule.onNodeWithText("No UPS configured in this project").getBoundsInRoot()
+        val nextBtnBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        val actionBarTop = nextBtnBounds.top - 12.dp
+        val clearance = actionBarTop - lastNodeBounds.bottom
+
+        val scrollNode = composeTestRule.onNode(androidx.compose.ui.test.hasScrollAction()).fetchSemanticsNode()
+        val scrollRange = scrollNode.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)
+        val scrollValue = scrollRange?.value?.invoke() ?: 0f
+        val scrollMax = scrollRange?.maxValue?.invoke() ?: 0f
+
+        println("CAPTURE_L_METRICS: scrollValue=$scrollValue, scrollMax=$scrollMax, lastTag=empty_ups_text, lastBottom=${lastNodeBounds.bottom}, actionBarTop=$actionBarTop, clearance=$clearance")
+        assertTrue("Clearance must be >= 16dp, measured: $clearance", clearance.value >= 16f)
+
+        capture("Supply_empty_equipment_320_font1_5_bottom.png")
+    }
+
+    /**
+     * Capture M: Feeder Cable Bottom Scrolled 320 font 1.3
+     */
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h640dp-xhdpi", fontScale = 1.3f)
+    fun captureM_feeder_cable_320_font1_3_bottom() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                name = "Circuit 1",
+                panelType = "LOAD",
+                feederType = "Cable",
+                manufacturer = "Elsewedy",
+                cableType = "Cu/XLPE/SWA/PVC - 4C"
+            ),
+            initialStep = CircuitWorkflowStep.FEEDER,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY, CircuitWorkflowStep.FEEDER),
+            catalogSnapshot = testCatalog
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        composeTestRule.waitForIdle()
+
+        val lastNodeBounds = composeTestRule.onNodeWithTag("input_max_vd").getBoundsInRoot()
+        val nextBtnBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        val actionBarTop = nextBtnBounds.top - 12.dp
+        val clearance = actionBarTop - lastNodeBounds.bottom
+
+        val scrollNode = composeTestRule.onNode(androidx.compose.ui.test.hasScrollAction()).fetchSemanticsNode()
+        val scrollRange = scrollNode.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)
+        val scrollValue = scrollRange?.value?.invoke() ?: 0f
+        val scrollMax = scrollRange?.maxValue?.invoke() ?: 0f
+
+        println("CAPTURE_M_METRICS: scrollValue=$scrollValue, scrollMax=$scrollMax, lastTag=input_max_vd, lastBottom=${lastNodeBounds.bottom}, actionBarTop=$actionBarTop, clearance=$clearance")
+        assertTrue("Clearance must be >= 16dp, measured: $clearance", clearance.value >= 16f)
+
+        capture("Feeder_cable_320_font1_3_bottom.png")
+    }
+
+    /**
+     * Capture N: Feeder Busway Bottom Scrolled 320 font 1.5
+     */
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h640dp-xhdpi", fontScale = 1.5f)
+    fun captureN_feeder_busway_320_font1_5_bottom() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                name = "Circuit 1",
+                panelType = "LOAD",
+                feederType = "Busway",
+                buswayMfg = "Elsewedy",
+                buswayModel = "Power Link"
+            ),
+            initialStep = CircuitWorkflowStep.FEEDER,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY, CircuitWorkflowStep.FEEDER),
+            catalogSnapshot = testCatalog
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        composeTestRule.waitForIdle()
+
+        val lastNodeBounds = composeTestRule.onNodeWithTag("input_max_vd").getBoundsInRoot()
+        val nextBtnBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        val actionBarTop = nextBtnBounds.top - 12.dp
+        val clearance = actionBarTop - lastNodeBounds.bottom
+
+        val scrollNode = composeTestRule.onNode(androidx.compose.ui.test.hasScrollAction()).fetchSemanticsNode()
+        val scrollRange = scrollNode.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)
+        val scrollValue = scrollRange?.value?.invoke() ?: 0f
+        val scrollMax = scrollRange?.maxValue?.invoke() ?: 0f
+
+        println("CAPTURE_N_METRICS: scrollValue=$scrollValue, scrollMax=$scrollMax, lastTag=input_max_vd, lastBottom=${lastNodeBounds.bottom}, actionBarTop=$actionBarTop, clearance=$clearance")
+        assertTrue("Clearance must be >= 16dp, measured: $clearance", clearance.value >= 16f)
+
+        capture("Feeder_busway_320_font1_5_bottom.png")
     }
 }
 

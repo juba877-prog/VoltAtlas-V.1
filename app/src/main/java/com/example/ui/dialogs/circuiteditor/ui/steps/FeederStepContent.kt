@@ -162,12 +162,37 @@ fun FeederStepContent(
                             }
                         }.map { it.cableType }.distinct().sorted()
 
-                        val newCableType = if (validTypes.isNotEmpty() && !validTypes.contains(draft.cableType)) {
-                            validTypes.firstOrNull() ?: ""
-                        } else {
-                            draft.cableType
-                        }
-                        onDraftChange(draft.copy(manufacturer = selectedMfg, cableType = newCableType))
+                        val parsedValid = validTypes.map { parseFamilyInfo(it) }
+                        val matchingExisting = if (validTypes.contains(draft.cableType)) {
+                            parsedValid.firstOrNull { it.originalType == draft.cableType }
+                        } else null
+
+                        val bestMatch = matchingExisting
+                            ?: parsedValid.firstOrNull {
+                                it.material == draft.filterMat && it.armourGroup == draft.filterArmour && it.coresConfig == draft.filterCores
+                            }
+                            ?: parsedValid.firstOrNull {
+                                it.material == draft.filterMat && it.armourGroup == draft.filterArmour
+                            }
+                            ?: parsedValid.firstOrNull {
+                                it.material == draft.filterMat
+                            }
+                            ?: parsedValid.firstOrNull()
+
+                        val newCableType = bestMatch?.originalType ?: (validTypes.firstOrNull() ?: "")
+                        val finalMat = bestMatch?.material ?: draft.filterMat
+                        val finalArmour = bestMatch?.armourGroup ?: draft.filterArmour
+                        val finalCores = bestMatch?.coresConfig ?: draft.filterCores
+
+                        onDraftChange(
+                            draft.copy(
+                                manufacturer = selectedMfg,
+                                cableType = newCableType,
+                                filterMat = finalMat,
+                                filterArmour = finalArmour,
+                                filterCores = finalCores
+                            )
+                        )
                     },
                     label = "Manufacturer / Cable Source",
                     modifier = Modifier.testTag("input_manufacturer")
