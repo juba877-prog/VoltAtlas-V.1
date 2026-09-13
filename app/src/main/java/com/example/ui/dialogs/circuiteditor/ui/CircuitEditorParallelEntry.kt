@@ -89,7 +89,7 @@ fun CircuitEditorParallelEntry(
     availableUps: List<UpsSnapshot> = emptyList(),
     catalogSnapshot: CableCatalogSnapshot = CableCatalogSnapshot(),
     onDismiss: () -> Unit,
-    onAddTransformer: () -> Unit = {},
+    onAddTransformer: () -> String? = { null },
     onValidSaveRequested: (CircuitEditorDraft) -> Unit = {},
     onSave: ((CircuitEntity) -> Unit)? = null,
     projectSubtitle: String? = null,
@@ -212,7 +212,13 @@ fun CircuitEditorParallelEntry(
             }
 
             override fun onAddTransformer() {
-                onAddTransformer()
+                // Invoke the injected callback exactly once per confirmed user action and apply
+                // the real returned ID. Null/blank results leave the current selection unchanged;
+                // exceptions are not swallowed here and propagate to the established app path.
+                val returnedId = onAddTransformer()
+                if (!returnedId.isNullOrBlank()) {
+                    draft = draft.copy(transformerId = returnedId)
+                }
             }
 
             override fun onSaveClick() {

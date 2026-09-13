@@ -42,7 +42,11 @@ object CircuitSourceResolver {
             if (availableTransformers.isNotEmpty()) {
                 availableTransformers.firstOrNull()?.transformerId ?: ""
             } else {
-                draftTransformerId.ifEmpty { "TX-01" }
+                // No real transformer exists and this pure resolver cannot create one: return the
+                // exact CircuitEntity.transformerId absent representation, which is the empty
+                // string (Entities.kt:23 `val transformerId: String = ""`).
+                // No fabricated fallback is permitted here.
+                ""
             }
         } else if (parentBoardObj != null && parentBoardObj.transformerId.isNotBlank()) {
             parentBoardObj.transformerId

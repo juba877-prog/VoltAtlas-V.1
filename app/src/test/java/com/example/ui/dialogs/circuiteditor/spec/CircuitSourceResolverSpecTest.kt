@@ -91,6 +91,103 @@ class CircuitSourceResolverSpecTest {
         assertEquals("TRANSFORMER", res.calculatedSourceType)
         assertEquals("TR-FALLBACK", res.finalTxId)
     }
+
+    // ==================== R1B: transformer resolution priorities ====================
+
+    // 10 (fail-first). Direct Transformer + empty draft + no transformers available must emit
+    // the exact CircuitEntity.transformerId absent representation (empty string, Entities.kt:23),
+    // never a fabricated ID. Current code emits "TX-01" -> this test fails before the fix.
+    @Test
+    fun test05_r1b_directTransformerEmptyDraftNoListEmitsEntityAbsentRepresentation() {
+        val res = CircuitSourceResolver.resolveSourceHierarchy(
+            fedFrom = "Transformer",
+            draftTransformerId = "",
+            existingCircuits = emptyList(),
+            availableTransformers = emptyList()
+        )
+        assertEquals("absent representation must be the entity default empty string", "", res.finalTxId)
+    }
+
+    @Test
+    fun test06_r1b_directTransformerPlaceholderDraftNoListEmitsAbsent() {
+        val res = CircuitSourceResolver.resolveSourceHierarchy(
+            fedFrom = "Transformer",
+            draftTransformerId = "Add Transformer",
+            existingCircuits = emptyList(),
+            availableTransformers = emptyList()
+        )
+        assertEquals("placeholder draft with no real transformer must resolve to absent", "", res.finalTxId)
+    }
+
+    // Existing passes recorded (no production edit required for these contracts):
+    @Test
+    fun test07_r1b_directTransformerEmptyDraftWithListEmitsFirstLegacyId() {
+        val res = CircuitSourceResolver.resolveSourceHierarchy(
+            fedFrom = "Transformer",
+            draftTransformerId = "",
+            existingCircuits = emptyList(),
+            availableTransformers = transformers
+        )
+        assertEquals("legacy auto-select of first list item (CircuitEditDialog.kt:1202)", "TR-01", res.finalTxId)
+    }
+
+    @Test
+    fun test08_r1b_directTransformerKeepsExplicitDraftId() {
+        val res = CircuitSourceResolver.resolveSourceHierarchy(
+            fedFrom = "Transformer",
+            draftTransformerId = "TR-99",
+            existingCircuits = emptyList(),
+            availableTransformers = transformers
+        )
+        assertEquals("explicit non-placeholder draft id passes through", "TR-99", res.finalTxId)
+    }
+
+    @Test
+    fun test09_r1b_parentBoardInheritanceOverridesEmptyDraft() {
+        val res = CircuitSourceResolver.resolveSourceHierarchy(
+            fedFrom = "MDB-1",
+            draftTransformerId = "",
+            existingCircuits = existingCircuits,
+            availableTransformers = transformers
+        )
+        assertEquals("parent board transformer inheritance is authoritative", "TR-01", res.finalTxId)
+    }
+
+    @Test
+    fun test10_r1b_parentBlankTxIdFallsBackToDraftId() {
+        val parentBlank = listOf(
+            CircuitEntity(id = 30, circuitName = "MDB-BlankTx", panelType = "MDB", transformerId = "")
+        )
+        val res = CircuitSourceResolver.resolveSourceHierarchy(
+            fedFrom = "MDB-BlankTx",
+            draftTransformerId = "TR-FB",
+            existingCircuits = parentBlank,
+            availableTransformers = emptyList()
+        )
+        assertEquals("blank parent txId falls through to the draft id", "TR-FB", res.finalTxId)
+    }
+
+    @Test
+    fun test11_r1b_specialNonTransformerSourceKeepsDraftId() {
+        val res = CircuitSourceResolver.resolveSourceHierarchy(
+            fedFrom = "Generator",
+            draftTransformerId = "TR-77",
+            existingCircuits = emptyList(),
+            availableTransformers = transformers
+        )
+        assertEquals("non-Transformer source keeps the draft id", "TR-77", res.finalTxId)
+    }
+
+    @Test
+    fun test12_r1b_literalAsExplicitInputPassesThrough() {
+        val res = CircuitSourceResolver.resolveSourceHierarchy(
+            fedFrom = "Transformer",
+            draftTransformerId = "TX-01",
+            existingCircuits = emptyList(),
+            availableTransformers = emptyList()
+        )
+        assertEquals("the prohibition targets fallback behavior, not honest explicit input", "TX-01", res.finalTxId)
+    }
 }
 
 // ============================================================================

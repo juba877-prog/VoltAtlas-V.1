@@ -4,6 +4,9 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasParent
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.onAllNodesWithText
@@ -18,6 +21,7 @@ import com.example.data.CircuitEntity
 import com.example.ui.dialogs.circuiteditor.model.CircuitEditorDraft
 import com.example.ui.dialogs.circuiteditor.model.CircuitWorkflowStep
 import com.example.ui.dialogs.circuiteditor.model.TransformerSnapshot
+import com.example.ui.theme.VoltAtlasTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -387,5 +391,128 @@ class IdentityStepRuntimeTest {
         // Valid options must be offered.
         composeTestRule.onNodeWithText("SMDB-LeftArm").assertIsDisplayed()
         composeTestRule.onNodeWithText("SMDB-SideX").assertIsDisplayed()
+    }
+
+    // ==================== R1B fail-first: inline transformer ID flow ====================
+
+    // Composes the real entry function so the production events object runs
+    // (the test host bypasses it by design).
+
+    // 29 (fail-first). A non-blank returned ID updates draft.transformerId exactly once and
+    // survives navigation to Review + save (single invocation, recomposition retention).
+    // Before the fix the callback result was discarded, so the saved transformerId resolved
+    // from the fabricated "TX-01" fallback instead of the returned ID -> this test failed.
+    @Test
+    fun test29_failFirst_entryReturnedIdUpdatesDraftAndIsSaved() {
+        var callbackCalls = 0
+        var saved: CircuitEntity? = null
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CircuitEditorParallelEntry(
+                    circuit = null,
+                    existingCircuits = emptyList(),
+                    onDismiss = {},
+                    onValidSaveRequested = {},
+                    onSave = { saved = it },
+                    onAddTransformer = { callbackCalls++; "TX-RET-01" }
+                )
+            }
+        }
+        composeTestRule.onNode(hasParent(hasTestTag("input_circuit_name")) and hasSetTextAction()).performTextInput("Entry-S")
+        composeTestRule.onNodeWithTag("add_transformer_btn").performClick()
+        repeat(5) { composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick() }
+        composeTestRule.onNodeWithTag("save_circuit_btn").performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals("callback must be invoked exactly once", 1, callbackCalls)
+        assertEquals("returned ID must reach the saved entity", "TX-RET-01", saved?.transformerId)
+        assertEquals("no other draft field may change (name preserved)", "Entry-S", saved?.circuitName)
+    }
+
+    // 30 (fail-first). Null result preserves prior selection: the draft stays at the entity
+    // absent representation; no fabricated fallback reaches the saved entity.
+    @Test
+    fun test30_failFirst_entryNullResultPreservesSelection() {
+        var callbackCalls = 0
+        var saved: CircuitEntity? = null
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CircuitEditorParallelEntry(
+                    circuit = null,
+                    existingCircuits = emptyList(),
+                    onDismiss = {},
+                    onValidSaveRequested = {},
+                    onSave = { saved = it },
+                    onAddTransformer = { callbackCalls++; null }
+                )
+            }
+        }
+        composeTestRule.onNode(hasParent(hasTestTag("input_circuit_name")) and hasSetTextAction()).performTextInput("Entry-N")
+        composeTestRule.onNodeWithTag("add_transformer_btn").performClick()
+        repeat(5) { composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick() }
+        composeTestRule.onNodeWithTag("save_circuit_btn").performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals("callback must be invoked exactly once", 1, callbackCalls)
+        assertEquals("null result must leave the draft at absent representation", "", saved?.transformerId)
+    }
+
+    // 31 (fail-first). Blank result preserves prior selection exactly like null.
+    @Test
+    fun test31_failFirst_entryBlankResultPreservesSelection() {
+        var saved: CircuitEntity? = null
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CircuitEditorParallelEntry(
+                    circuit = null,
+                    existingCircuits = emptyList(),
+                    onDismiss = {},
+                    onValidSaveRequested = {},
+                    onSave = { saved = it },
+                    onAddTransformer = { "   " }
+                )
+            }
+        }
+        composeTestRule.onNode(hasParent(hasTestTag("input_circuit_name")) and hasSetTextAction()).performTextInput("Entry-B")
+        composeTestRule.onNodeWithTag("add_transformer_btn").performClick()
+        repeat(5) { composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick() }
+        composeTestRule.onNodeWithTag("save_circuit_btn").performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals("blank result must leave the draft at absent representation", "", saved?.transformerId)
+    }
+
+    // 32 (fail-first). The returned ID remains honestly selected even when it is not present
+    // in the current snapshot list (no substitution with None or the first list item).
+    @Test
+    fun test32_failFirst_entryReturnedIdRetainedOverSnapshotList() {
+        var saved: CircuitEntity? = null
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CircuitEditorParallelEntry(
+                    circuit = null,
+                    existingCircuits = emptyList(),
+                    onDismiss = {},
+                    availableTransformers = listOf(
+                        TransformerSnapshot("TX-01"),
+                        TransformerSnapshot("TX-02")
+                    ),
+                    onValidSaveRequested = {},
+                    onSave = { saved = it },
+                    onAddTransformer = { "TX-RET-77" }
+                )
+            }
+        }
+        composeTestRule.onNode(hasParent(hasTestTag("input_circuit_name")) and hasSetTextAction()).performTextInput("Entry-R")
+        composeTestRule.onNodeWithTag("add_transformer_btn").performClick()
+        composeTestRule.waitForIdle()
+
+        // Selector must expose the returned ID, not None and not the first list item.
+        composeTestRule.onAllNodesWithText("TX-RET-77").fetchSemanticsNodes().isNotEmpty()
+        repeat(5) { composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick() }
+        composeTestRule.onNodeWithTag("save_circuit_btn").performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals("returned ID not in the list must still be saved", "TX-RET-77", saved?.transformerId)
     }
 }

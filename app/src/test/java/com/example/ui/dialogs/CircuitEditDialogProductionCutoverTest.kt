@@ -2,11 +2,15 @@ package com.example.ui.dialogs
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasParent
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import com.example.data.CircuitEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -491,5 +495,33 @@ class CircuitEditDialogProductionCutoverTest {
 
         assertNotNull(saved)
         assertEquals("NullVm Circuit", saved?.circuitName)
+    }
+
+    // 17 (fail-first, R1B). Production entry: with viewModel = null the Add Transformer action
+    // returns null, the draft must stay at the entity absent representation, and the saved
+    // entity must NOT carry the fabricated "TX-01" fallback.
+    // Before the fix the pure resolver emitted "TX-01" -> this test failed.
+    @Test
+    fun test17_failFirst_addModeSavedEntityCarriesNoFabricatedTx01() {
+        var saved: CircuitEntity? = null
+        composeTestRule.setContent {
+            CircuitEditDialog(
+                circuit = null,
+                existingCircuits = emptyList(),
+                onDismiss = {},
+                onSave = { saved = it },
+                viewModel = null
+            )
+        }
+        composeTestRule.onNode(hasParent(hasTestTag("input_circuit_name")) and hasSetTextAction()).performTextInput("NoFab-01")
+        composeTestRule.onNodeWithTag("add_transformer_btn").performClick()
+        repeat(5) {
+            composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+        }
+        composeTestRule.onNodeWithTag("save_circuit_btn").performClick()
+        composeTestRule.waitForIdle()
+
+        assertNotNull(saved)
+        assertEquals("absent transformer representation, never a fabricated fallback", "", saved?.transformerId)
     }
 }
