@@ -22,6 +22,7 @@ import com.example.ui.dialogs.circuiteditor.model.CableCatalogSnapshot
 import com.example.ui.dialogs.circuiteditor.model.CircuitEditorDraft
 import com.example.ui.dialogs.circuiteditor.model.CircuitWorkflowStep
 import com.example.ui.dialogs.circuiteditor.model.GeneratorSnapshot
+import com.example.ui.dialogs.circuiteditor.model.TransformerSnapshot
 import com.example.ui.dialogs.circuiteditor.model.UpsSnapshot
 import com.example.ui.theme.VoltAtlasTheme
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -607,6 +608,189 @@ class CircuitEditorStageC3VisualCaptureTest {
         assertTrue("Clearance must be >= 16dp, measured: $clearance", clearance.value >= 16f)
 
         capture("Feeder_busway_320_font1_5_bottom.png")
+    }
+
+    private fun logAndVerifyHierarchyMetrics(
+        captureName: String,
+        viewport: String,
+        fontScale: Float,
+        isBottomScrolled: Boolean
+    ): String {
+        composeTestRule.waitForIdle()
+        if (isBottomScrolled) {
+            composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+            composeTestRule.waitForIdle()
+        } else {
+            composeTestRule.onNodeWithTag("hierarchy_value_resolved_transformer").performScrollTo()
+            composeTestRule.waitForIdle()
+        }
+
+        val isStacked = try {
+            composeTestRule.onNodeWithTag("hierarchy_mode_stacked").assertExists()
+            true
+        } catch (e: Throwable) {
+            false
+        }
+        val layoutMode = if (isStacked) "STACKED" else "TWO_COLUMN"
+
+        val cardBounds = composeTestRule.onNodeWithTag("inherited_source_card").getBoundsInRoot()
+        val titleBounds = composeTestRule.onNodeWithTag("hierarchy_title").getBoundsInRoot()
+
+        val pairs = listOf(
+            "Level" to ("hierarchy_label_level" to "hierarchy_value_level"),
+            "Supply Source" to ("hierarchy_label_supply_source" to "hierarchy_value_supply_source"),
+            "Source Type" to ("hierarchy_label_source_type" to "hierarchy_value_source_type"),
+            "Resolved Transformer" to ("hierarchy_label_resolved_transformer" to "hierarchy_value_resolved_transformer")
+        )
+
+        val nodeBounds = mutableListOf<Pair<String, androidx.compose.ui.unit.DpRect>>()
+        nodeBounds.add("hierarchy_title" to titleBounds)
+
+        val pairMetrics = StringBuilder()
+        for ((name, tags) in pairs) {
+            val (lTag, vTag) = tags
+            val lBounds = composeTestRule.onNodeWithTag(lTag).getBoundsInRoot()
+            val vBounds = composeTestRule.onNodeWithTag(vTag).getBoundsInRoot()
+            nodeBounds.add(lTag to lBounds)
+            nodeBounds.add(vTag to vBounds)
+            val sep = if (isStacked) vBounds.top - lBounds.bottom else vBounds.left - lBounds.right
+            pairMetrics.append("    $name -> Label: $lBounds, Value: $vBounds, sep=${sep}\n")
+        }
+
+        var anyOverlap = false
+        for (i in 0 until nodeBounds.size) {
+            for (j in i + 1 until nodeBounds.size) {
+                val (t1, r1) = nodeBounds[i]
+                val (t2, r2) = nodeBounds[j]
+                val overlaps = !(r1.right.value <= r2.left.value ||
+                                 r2.right.value <= r1.left.value ||
+                                 r1.bottom.value <= r2.top.value ||
+                                 r2.bottom.value <= r1.top.value)
+                if (overlaps) {
+                    anyOverlap = true
+                    System.err.println("OVERLAP between $t1 ($r1) and $t2 ($r2)")
+                }
+            }
+        }
+
+        val nextBtnBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        val actionBarTop = nextBtnBounds.top - 12.dp
+        val clearance = actionBarTop - cardBounds.bottom
+
+        val report = """
+=== RECAPTURE METRICS: $captureName ===
+  Viewport: $viewport, FontScale: $fontScale
+  Layout Mode: $layoutMode
+  Card Bounds: $cardBounds
+  Title Bounds: $titleBounds
+$pairMetrics  Text Intersection: ${if (anyOverlap) "FAIL (OVERLAPPING)" else "NONE (0 intersections)"}
+  Card Bottom: ${cardBounds.bottom}, Action Bar Top: $actionBarTop
+  Clearance: $clearance
+========================================
+""".trimIndent()
+        println(report)
+        return report
+    }
+
+    /**
+     * Recapture 01: Hierarchy 320 font 1.5 dark bottom
+     */
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h640dp-xhdpi", fontScale = 1.5f)
+    fun recapture01_hierarchy_320_font1_5_dark_bottom() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(supplyCategory = "NORMAL", fedFrom = "Transformer", transformerId = "TX-01"),
+            initialStep = CircuitWorkflowStep.SUPPLY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
+            availableTransformers = listOf(TransformerSnapshot("TX-01")),
+            catalogSnapshot = testCatalog
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logAndVerifyHierarchyMetrics("01_hierarchy_320_font1_5_dark_bottom.png", "320x640", 1.5f, isBottomScrolled = true)
+        capture("01_hierarchy_320_font1_5_dark_bottom.png")
+    }
+
+    /**
+     * Recapture 02: Hierarchy 360 font 1.0 dark
+     */
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.0f)
+    fun recapture02_hierarchy_360_font1_0_dark() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(supplyCategory = "NORMAL", fedFrom = "Transformer", transformerId = "TX-01"),
+            initialStep = CircuitWorkflowStep.SUPPLY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
+            availableTransformers = listOf(TransformerSnapshot("TX-01")),
+            catalogSnapshot = testCatalog
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logAndVerifyHierarchyMetrics("02_hierarchy_360_font1_0_dark.png", "360x800", 1.0f, isBottomScrolled = false)
+        capture("02_hierarchy_360_font1_0_dark.png")
+    }
+
+    /**
+     * Recapture 03: Hierarchy 360 font 1.5 light bottom
+     */
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun recapture03_hierarchy_360_font1_5_light_bottom() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(supplyCategory = "NORMAL", fedFrom = "Transformer", transformerId = "TX-01"),
+            initialStep = CircuitWorkflowStep.SUPPLY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
+            availableTransformers = listOf(TransformerSnapshot("TX-01")),
+            catalogSnapshot = testCatalog
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = false)
+        }
+        logAndVerifyHierarchyMetrics("03_hierarchy_360_font1_5_light_bottom.png", "360x800", 1.5f, isBottomScrolled = true)
+        capture("03_hierarchy_360_font1_5_light_bottom.png")
+    }
+
+    /**
+     * Recapture 04: Hierarchy 412 font 1.3 dark
+     */
+    @Test
+    @Config(sdk = [33], qualifiers = "w412dp-h915dp-xhdpi", fontScale = 1.3f)
+    fun recapture04_hierarchy_412_font1_3_dark() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(supplyCategory = "NORMAL", fedFrom = "Transformer", transformerId = "TX-01"),
+            initialStep = CircuitWorkflowStep.SUPPLY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
+            availableTransformers = listOf(TransformerSnapshot("TX-01")),
+            catalogSnapshot = testCatalog
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logAndVerifyHierarchyMetrics("04_hierarchy_412_font1_3_dark.png", "412x915", 1.3f, isBottomScrolled = false)
+        capture("04_hierarchy_412_font1_3_dark.png")
+    }
+
+    /**
+     * Recapture 05: Hierarchy Long Values 320 font 1.5 dark bottom
+     */
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h640dp-xhdpi", fontScale = 1.5f)
+    fun recapture05_hierarchy_long_values_320_font1_5_dark_bottom() {
+        val longSource = "Main Substation Medium Voltage Switchgear 11kV Section A Busbar"
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(supplyCategory = "NORMAL", fedFrom = longSource, transformerId = "TX-01"),
+            initialStep = CircuitWorkflowStep.SUPPLY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
+            availableTransformers = listOf(TransformerSnapshot("TX-01")),
+            catalogSnapshot = testCatalog
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+        logAndVerifyHierarchyMetrics("05_hierarchy_long_values_320_font1_5_dark_bottom.png", "320x640", 1.5f, isBottomScrolled = true)
+        capture("05_hierarchy_long_values_320_font1_5_dark_bottom.png")
     }
 }
 

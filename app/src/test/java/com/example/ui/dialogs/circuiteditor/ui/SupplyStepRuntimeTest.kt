@@ -19,7 +19,15 @@ import com.example.ui.dialogs.circuiteditor.model.GeneratorSnapshot
 import com.example.ui.dialogs.circuiteditor.model.UpsSnapshot
 import com.example.ui.dialogs.circuiteditor.ui.steps.SupplyStepContent
 import com.example.ui.theme.VoltAtlasTheme
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.unit.DpRect
+import androidx.compose.ui.unit.dp
+import com.example.ui.dialogs.circuiteditor.model.TransformerSnapshot
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -516,6 +524,210 @@ class SupplyStepRuntimeTest {
         assertEquals("UPS", currentDraft.supplyCategory)
         assertEquals("UPS-01", currentDraft.assignedUpsId)
         composeTestRule.onNodeWithTag("input_assigned_ups").assertIsDisplayed()
+    }
+
+    private fun assertHierarchyResponsiveness(
+        expectedLevel: String,
+        expectedSource: String,
+        expectedSourceType: String,
+        expectedTxId: String
+    ) {
+        composeTestRule.waitForIdle()
+
+        // Ensure hierarchy card is scrolled into view in compact viewports
+        composeTestRule.onNodeWithTag("hierarchy_value_resolved_transformer").performScrollTo()
+        composeTestRule.waitForIdle()
+
+        // 1. Verify semantic values are complete and match expected
+        composeTestRule.onNodeWithTag("hierarchy_value_level").assertIsDisplayed().assertTextEquals(expectedLevel)
+        composeTestRule.onNodeWithTag("hierarchy_value_supply_source").assertIsDisplayed().assertTextEquals(expectedSource)
+        composeTestRule.onNodeWithTag("hierarchy_value_source_type").assertIsDisplayed().assertTextEquals(expectedSourceType)
+        composeTestRule.onNodeWithTag("hierarchy_value_resolved_transformer").assertIsDisplayed().assertTextEquals(expectedTxId)
+
+        // 2. Collect all hierarchy text node bounds
+        val titleBounds = composeTestRule.onNodeWithTag("hierarchy_title").getBoundsInRoot()
+        val pairs = listOf(
+            "hierarchy_label_level" to "hierarchy_value_level",
+            "hierarchy_label_supply_source" to "hierarchy_value_supply_source",
+            "hierarchy_label_source_type" to "hierarchy_value_source_type",
+            "hierarchy_label_resolved_transformer" to "hierarchy_value_resolved_transformer"
+        )
+
+        val allNodes = mutableListOf<Pair<String, DpRect>>()
+        allNodes.add("hierarchy_title" to titleBounds)
+
+        for ((labelTag, valTag) in pairs) {
+            val labelBounds = composeTestRule.onNodeWithTag(labelTag).getBoundsInRoot()
+            val valBounds = composeTestRule.onNodeWithTag(valTag).getBoundsInRoot()
+            allNodes.add(labelTag to labelBounds)
+            allNodes.add(valTag to valBounds)
+
+            // Positive vertical or horizontal separation
+            val isVerticallySeparated = valBounds.top.value >= labelBounds.bottom.value
+            val isHorizontallySeparated = valBounds.left.value >= labelBounds.right.value
+            assertTrue(
+                "Pair ($labelTag, $valTag) must have positive separation! Label: $labelBounds, Value: $valBounds",
+                isVerticallySeparated || isHorizontallySeparated
+            )
+        }
+
+        // 3. No hierarchy text node intersects another hierarchy text node
+        for (i in 0 until allNodes.size) {
+            for (j in i + 1 until allNodes.size) {
+                val (tag1, r1) = allNodes[i]
+                val (tag2, r2) = allNodes[j]
+                val overlaps = !(r1.right.value <= r2.left.value ||
+                                 r2.right.value <= r1.left.value ||
+                                 r1.bottom.value <= r2.top.value ||
+                                 r2.bottom.value <= r1.top.value)
+                assertFalse(
+                    "Nodes $tag1 and $tag2 must not overlap! Bounds1=$r1, Bounds2=$r2",
+                    overlaps
+                )
+            }
+        }
+    }
+
+    private fun assertCardBottomClearance() {
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        composeTestRule.waitForIdle()
+
+        val cardBounds = composeTestRule.onNodeWithTag("inherited_source_card").getBoundsInRoot()
+        val nextBtnBounds = composeTestRule.onNodeWithTag("circuit_editor_next_btn").getBoundsInRoot()
+        val actionBarTop = nextBtnBounds.top - 12.dp
+        val clearance = actionBarTop - cardBounds.bottom
+
+        println("HIERARCHY_CLEARANCE: cardBottom=${cardBounds.bottom}, actionBarTop=$actionBarTop, clearance=$clearance")
+        assertTrue("Card clearance must be >= 16dp, measured: $clearance", clearance.value >= 16f)
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h640dp-xhdpi", fontScale = 1.5f)
+    fun test17_failFirst_hierarchyCardResponsivenessAt320dpFont1_5() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                supplyCategory = "NORMAL",
+                fedFrom = "Transformer",
+                transformerId = "TX-01"
+            ),
+            initialStep = CircuitWorkflowStep.SUPPLY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
+            availableTransformers = listOf(TransformerSnapshot("TX-01"))
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+
+        assertHierarchyResponsiveness(
+            expectedLevel = "0 (Root = 0)",
+            expectedSource = "Transformer",
+            expectedSourceType = "TRANSFORMER",
+            expectedTxId = "TX-01"
+        )
+        assertCardBottomClearance()
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.0f)
+    fun test18_hierarchyCardResponsivenessAt360dpFont1_0() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                supplyCategory = "NORMAL",
+                fedFrom = "Transformer",
+                transformerId = "TX-01"
+            ),
+            initialStep = CircuitWorkflowStep.SUPPLY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
+            availableTransformers = listOf(TransformerSnapshot("TX-01"))
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+
+        assertHierarchyResponsiveness(
+            expectedLevel = "0 (Root = 0)",
+            expectedSource = "Transformer",
+            expectedSourceType = "TRANSFORMER",
+            expectedTxId = "TX-01"
+        )
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
+    fun test19_hierarchyCardResponsivenessAt360dpFont1_5() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                supplyCategory = "NORMAL",
+                fedFrom = "Transformer",
+                transformerId = "TX-01"
+            ),
+            initialStep = CircuitWorkflowStep.SUPPLY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
+            availableTransformers = listOf(TransformerSnapshot("TX-01"))
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = false)
+        }
+
+        assertHierarchyResponsiveness(
+            expectedLevel = "0 (Root = 0)",
+            expectedSource = "Transformer",
+            expectedSourceType = "TRANSFORMER",
+            expectedTxId = "TX-01"
+        )
+        assertCardBottomClearance()
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w412dp-h915dp-xhdpi", fontScale = 1.3f)
+    fun test20_hierarchyCardResponsivenessAt412dpFont1_3() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                supplyCategory = "NORMAL",
+                fedFrom = "Transformer",
+                transformerId = "TX-01"
+            ),
+            initialStep = CircuitWorkflowStep.SUPPLY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
+            availableTransformers = listOf(TransformerSnapshot("TX-01"))
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+
+        assertHierarchyResponsiveness(
+            expectedLevel = "0 (Root = 0)",
+            expectedSource = "Transformer",
+            expectedSourceType = "TRANSFORMER",
+            expectedTxId = "TX-01"
+        )
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "w320dp-h640dp-xhdpi", fontScale = 1.5f)
+    fun test21_hierarchyCardWithLongSourceLabelAt320dpFont1_5() {
+        val longSource = "Main Substation Medium Voltage Switchgear 11kV Section A Busbar"
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(
+                supplyCategory = "NORMAL",
+                fedFrom = longSource,
+                transformerId = "TX-01"
+            ),
+            initialStep = CircuitWorkflowStep.SUPPLY,
+            initialVisited = setOf(CircuitWorkflowStep.IDENTITY, CircuitWorkflowStep.LOAD, CircuitWorkflowStep.SUPPLY),
+            availableTransformers = listOf(TransformerSnapshot("TX-01"))
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
+        }
+
+        assertHierarchyResponsiveness(
+            expectedLevel = "0 (Root = 0)",
+            expectedSource = longSource,
+            expectedSourceType = "TRANSFORMER",
+            expectedTxId = "TX-01"
+        )
+        assertCardBottomClearance()
     }
 }
 
