@@ -227,6 +227,13 @@ tasks.withType<Test>().configureEach {
         excludeTestsMatching("com.example.StressTestSuite")
         excludeTestsMatching("com.example.stress.*")
         excludeTestsMatching("com.example.ViewModelAndStateStressTest")
+        // STAGE B0 diagnostic-only suites: the retained legacy Material-3 AlertDialog with
+        // OutlinedTextField does not reach Compose idle under the current Robolectric harness.
+        // Accepted as diagnostic evidence only; must not participate in default (fast/dev) runs.
+        // They remain runnable under the "full" profile for intentional diagnostic use.
+        excludeTestsMatching("com.example.ui.dialogs.circuiteditor.LegacyCircuitEditDialogSaveMappingCharacterizationTest")
+        excludeTestsMatching("com.example.ui.dialogs.circuiteditor.LegacyCircuitEditDialogVisibilityCharacterizationTest")
+        excludeTestsMatching("com.example.ui.dialogs.circuiteditor.diagnostics.CircuitEditDialogDiagnosticIsolationTest")
       }
     }
     "ai" -> {
