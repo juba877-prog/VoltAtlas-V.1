@@ -1,6 +1,9 @@
 package com.example.ui.dialogs.circuiteditor.ui
 
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
@@ -514,5 +517,139 @@ class IdentityStepRuntimeTest {
         composeTestRule.waitForIdle()
 
         assertEquals("returned ID not in the list must still be saved", "TX-RET-77", saved?.transformerId)
+    }
+
+    // ==================== R1B closure: retention + isolation ====================
+
+    // 33. Null result preserves a NON-EMPTY prior selection (not merely empty-means-empty).
+    @Test
+    fun test33_r1b_nullCallbackPreservesNonEmptyPriorSelection() {
+        var saved: CircuitEntity? = null
+        val existing = CircuitEntity(
+            id = 5, circuitName = "Edit-Null", panelType = "LOAD",
+            fedFrom = "Transformer", transformerId = "TR-EXISTING", loadKVA = 25.0
+        )
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CircuitEditorParallelEntry(
+                    circuit = existing,
+                    existingCircuits = emptyList(),
+                    onDismiss = {},
+                    onValidSaveRequested = {},
+                    onSave = { saved = it },
+                    onAddTransformer = { null }
+                )
+            }
+        }
+        composeTestRule.onNodeWithTag("add_transformer_btn").performClick()
+        repeat(5) { composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick() }
+        composeTestRule.onNodeWithTag("save_circuit_btn").performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals("null must preserve the prior non-empty selection", "TR-EXISTING", saved?.transformerId)
+        assertEquals("no other draft field may change (name)", "Edit-Null", saved?.circuitName)
+        assertEquals("no other draft field may change (load)", 25.0, saved?.loadKVA ?: 0.0, 0.0)
+    }
+
+    // 34. Blank result preserves a NON-EMPTY prior selection.
+    @Test
+    fun test34_r1b_blankCallbackPreservesNonEmptyPriorSelection() {
+        var saved: CircuitEntity? = null
+        val existing = CircuitEntity(
+            id = 6, circuitName = "Edit-Blank", panelType = "LOAD",
+            fedFrom = "Transformer", transformerId = "TR-EXISTING", loadKVA = 31.0
+        )
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CircuitEditorParallelEntry(
+                    circuit = existing,
+                    existingCircuits = emptyList(),
+                    onDismiss = {},
+                    onValidSaveRequested = {},
+                    onSave = { saved = it },
+                    onAddTransformer = { "   " }
+                )
+            }
+        }
+        composeTestRule.onNodeWithTag("add_transformer_btn").performClick()
+        repeat(5) { composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick() }
+        composeTestRule.onNodeWithTag("save_circuit_btn").performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals("blank must preserve the prior non-empty selection", "TR-EXISTING", saved?.transformerId)
+        assertEquals("no other draft field may change (name)", "Edit-Blank", saved?.circuitName)
+        assertEquals("no other draft field may change (load)", 31.0, saved?.loadKVA ?: 0.0, 0.0)
+    }
+
+    // 35. A non-blank result changes ONLY the transformer id.
+    @Test
+    fun test35_r1b_nonBlankCallbackChangesOnlyTransformerId() {
+        var saved: CircuitEntity? = null
+        val existing = CircuitEntity(
+            id = 7, circuitName = "Edit-Only", panelType = "LOAD",
+            fedFrom = "Transformer", transformerId = "TR-EXISTING", loadKVA = 12.5
+        )
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CircuitEditorParallelEntry(
+                    circuit = existing,
+                    existingCircuits = emptyList(),
+                    onDismiss = {},
+                    onValidSaveRequested = {},
+                    onSave = { saved = it },
+                    onAddTransformer = { "TX-RET-01" }
+                )
+            }
+        }
+        composeTestRule.onNodeWithTag("add_transformer_btn").performClick()
+        repeat(5) { composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick() }
+        composeTestRule.onNodeWithTag("save_circuit_btn").performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals("returned id must replace the prior selection", "TX-RET-01", saved?.transformerId)
+        assertEquals("name untouched", "Edit-Only", saved?.circuitName)
+        assertEquals("load untouched", 12.5, saved?.loadKVA ?: 0.0, 0.0)
+        assertEquals("fedFrom untouched", "Transformer", saved?.fedFrom)
+        assertEquals("panelType untouched", "LOAD", saved?.panelType)
+    }
+
+    // 36. A genuine post-selection snapshot-list emission must not overwrite the returned ID.
+    // The supplied transformer list is driven through observable mutable state, so the
+    // composable really receives a new list AFTER the selection was made.
+    @Test
+    fun test36_r1b_returnedIdSurvivesRealSnapshotListUpdate() {
+        var transformerList by mutableStateOf(listOf(TransformerSnapshot("TX-01")))
+        var saved: CircuitEntity? = null
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                CircuitEditorParallelEntry(
+                    circuit = null,
+                    existingCircuits = emptyList(),
+                    onDismiss = {},
+                    availableTransformers = transformerList,
+                    onValidSaveRequested = {},
+                    onSave = { saved = it },
+                    onAddTransformer = { "TX-RET-77" }
+                )
+            }
+        }
+        composeTestRule.onNode(hasParent(hasTestTag("input_circuit_name")) and hasSetTextAction()).performTextInput("Emit-R")
+        composeTestRule.onNodeWithTag("add_transformer_btn").performClick()
+        composeTestRule.waitForIdle()
+
+        // Genuine snapshot emission: the supplied list is replaced AFTER the selection exists.
+        transformerList = listOf(TransformerSnapshot("TX-09"), TransformerSnapshot("TX-10"))
+        composeTestRule.waitForIdle()
+
+        assertTrue(
+            "selected id must remain displayed after the list emission",
+            composeTestRule.onAllNodesWithText("TX-RET-77").fetchSemanticsNodes().isNotEmpty()
+        )
+
+        repeat(5) { composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick() }
+        composeTestRule.onNodeWithTag("save_circuit_btn").performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals("snapshot emission must not overwrite the returned id", "TX-RET-77", saved?.transformerId)
     }
 }

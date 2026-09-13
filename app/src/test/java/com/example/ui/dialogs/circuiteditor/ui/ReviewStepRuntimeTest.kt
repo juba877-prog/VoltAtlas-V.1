@@ -9,10 +9,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -712,5 +714,68 @@ class ReviewStepRuntimeTest {
             "Panel section top (${panelSectionBounds.top}) must be >= topBarBounds.bottom (${topBarBounds.bottom})",
             panelSectionBounds.top >= topBarBounds.bottom
         )
+    }
+
+    // ==========================================
+    // R1B closure: Review transformer display honesty
+    // ==========================================
+
+    // 23. A supplied real transformer ID is displayed exactly as supplied.
+    @Test
+    fun test23_reviewDisplaysSuppliedRealTransformerIdExactly() {
+        val realResolution = CircuitSourceResolution(
+            finalTxId = "TR-REAL-42",
+            parentBoardObj = null,
+            calculatedParentId = null,
+            calculatedLevel = 0,
+            calculatedSourceType = "TRANSFORMER"
+        )
+        val draft = CircuitEditorDraft(name = "Real Tx Feeder", panelType = "LOAD", fedFrom = "Transformer")
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    ReviewStepContent(
+                        draft = draft,
+                        resolution = realResolution,
+                        onEditSection = {}
+                    )
+                }
+            }
+        }
+
+        composeTestRule.onNodeWithText("TR-REAL-42").assertIsDisplayed()
+        composeTestRule.onNodeWithText("TX-01 (Auto-resolved)").assertDoesNotExist()
+    }
+
+    // 24. A blank resolution must render the neutral unavailable label and must never fabricate
+    // a transformer ID or imply that one was auto-resolved.
+    @Test
+    fun test24_reviewBlankResolutionShowsNeutralLabelWithoutFabrication() {
+        val blankResolution = CircuitSourceResolution(
+            finalTxId = "",
+            parentBoardObj = null,
+            calculatedParentId = null,
+            calculatedLevel = 0,
+            calculatedSourceType = "TRANSFORMER"
+        )
+        val draft = CircuitEditorDraft(name = "No Tx Feeder", panelType = "LOAD", fedFrom = "Transformer")
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    ReviewStepContent(
+                        draft = draft,
+                        resolution = blankResolution,
+                        onEditSection = {}
+                    )
+                }
+            }
+        }
+
+        // Neutral unavailable label, consistent with the Identity/Supply steps.
+        composeTestRule.onNodeWithText("None").assertExists()
+        // No fabricated identifier and no fabricated "auto-resolved" claim.
+        composeTestRule.onNodeWithText("TX-01 (Auto-resolved)").assertDoesNotExist()
+        composeTestRule.onNodeWithText("TX-01").assertDoesNotExist()
+        composeTestRule.onAllNodesWithText("Auto-resolved").assertCountEquals(0)
     }
 }

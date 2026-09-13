@@ -64,7 +64,7 @@ fun ReviewStepContent(
     ) {
         // Section 1: Identity & Source
         val resolvedSourceDisplay = when {
-            draft.fedFrom == "Transformer" -> resolution.finalTxId.ifBlank { "TX-01 (Auto-resolved)" }
+            draft.fedFrom == "Transformer" -> resolution.finalTxId.ifBlank { "None" }
             resolution.parentBoardObj != null -> resolution.parentBoardObj.circuitName
             else -> draft.fedFrom
         }
