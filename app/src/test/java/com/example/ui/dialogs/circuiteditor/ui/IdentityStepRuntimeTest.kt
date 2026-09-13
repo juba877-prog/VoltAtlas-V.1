@@ -350,4 +350,42 @@ class IdentityStepRuntimeTest {
         val width = bounds.right - bounds.left
         assertTrue("Add Transformer must be compact icon button (width 48dp), but was $width", kotlin.math.abs((width - 48.dp).value) <= 2f)
     }
+
+    // R1A fail-first #10: the Identity step must render the resolver's option output
+    // (CircuitSourceCandidates) without reimplementing filtering in the composable.
+    // Hierarchy: T(1) -> S(2) -> A(3, edited); A -> D(4) -> DD(5); T -> X(6).
+    @Test
+    fun test28_failFirst_fedFromOptionsRenderResolverOutputNotInlineFilter() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "DB-CenterA", panelType = "DB", fedFrom = "Transformer"),
+            existingCircuits = listOf(
+                CircuitEntity(id = 1, circuitName = "MDB-RootHub", panelType = "MDB"),
+                CircuitEntity(id = 2, circuitName = "SMDB-LeftArm", panelType = "SMDB", parentId = 1),
+                CircuitEntity(id = 3, circuitName = "DB-CenterA", panelType = "DB", parentId = 2),
+                CircuitEntity(id = 4, circuitName = "DB-ChildAY", panelType = "DB", parentId = 3),
+                CircuitEntity(id = 5, circuitName = "MDB-DeepZ", panelType = "MDB", parentId = 4),
+                CircuitEntity(id = 6, circuitName = "SMDB-SideX", panelType = "SMDB", parentId = 1)
+            ),
+            editingCircuitId = 3
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.onNodeWithTag("input_fed_from").performClick()
+        composeTestRule.waitForIdle()
+
+        // The four legacy special sources must be rendered by resolver output.
+        composeTestRule.onNodeWithText("Generator").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Grid").assertIsDisplayed()
+        composeTestRule.onNodeWithText("ATS").assertIsDisplayed()
+
+        // Cycle-unsafe boards (descendants of the edited circuit) must not be offered.
+        composeTestRule.onNodeWithText("DB-ChildAY").assertDoesNotExist()
+        composeTestRule.onNodeWithText("MDB-DeepZ").assertDoesNotExist()
+
+        // Valid options must be offered.
+        composeTestRule.onNodeWithText("SMDB-LeftArm").assertIsDisplayed()
+        composeTestRule.onNodeWithText("SMDB-SideX").assertIsDisplayed()
+    }
 }

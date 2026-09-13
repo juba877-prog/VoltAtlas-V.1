@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.example.data.CircuitEntity
 import com.example.ui.components.VoltAtlasDropdown
 import com.example.ui.components.VoltAtlasTextField
+import com.example.ui.dialogs.circuiteditor.mapper.CircuitSourceCandidates
 import com.example.ui.dialogs.circuiteditor.mapper.CircuitSourceResolution
 import com.example.ui.dialogs.circuiteditor.model.CircuitEditorDraft
 import com.example.ui.dialogs.circuiteditor.model.TransformerSnapshot
@@ -60,14 +61,10 @@ fun IdentityStepContent(
         listOf("LOAD", "MDB", "SMDB", "DB", "MCC", "PANEL")
     }
 
+    // Fed From options come from the pure legacy reconstruction
+    // (CircuitEditDialog.kt:265-284) — the composable only renders resolver output.
     val fedFromOptions = remember(existingCircuits, editingCircuitId) {
-        val validBoards = existingCircuits.filter { candidate ->
-            candidate.id != editingCircuitId &&
-                candidate.circuitName.isNotBlank() &&
-                candidate.panelType != null &&
-                candidate.panelType != "LOAD"
-        }.map { it.circuitName }
-        listOf("Transformer") + validBoards
+        CircuitSourceCandidates.resolveCandidates(existingCircuits, editingCircuitId)
     }
 
     val transformerOptions = remember(availableTransformers) {
