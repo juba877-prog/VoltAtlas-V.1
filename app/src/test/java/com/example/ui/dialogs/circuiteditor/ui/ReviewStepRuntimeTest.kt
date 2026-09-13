@@ -948,4 +948,126 @@ class ReviewStepRuntimeTest {
         assertTrue("Last content bottom must be <= saveBtn.top - 16dp", panelSection.bottom <= saveBtn.top - 16.dp)
         assertTrue("Save button bottom must be inside visible root", saveBtn.bottom <= root.bottom)
     }
+
+    // ==========================================
+    // R6: Review Target Contract & Return Scroll Verification
+    // ==========================================
+
+    // 29. Initial entry into Review starts at scroll offset 0
+    @Test
+    fun test29_r6_initialReviewEntryStartsAtScrollZero() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "Pump 1", panelType = "LOAD"),
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.REVIEW
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.onNodeWithTag("circuit_editor_step_header").assertIsDisplayed()
+        val identityCard = composeTestRule.onNodeWithTag("review_identity_section").getBoundsInRoot()
+        val viewport = composeTestRule.onNodeWithTag("circuit_editor_scroll_viewport").getBoundsInRoot()
+        assertTrue("Identity card top is at or below viewport top", identityCard.top >= viewport.top)
+    }
+
+    // 30. Explicitly targeted Panel Header section satisfies all viewport containment bounds
+    @Test
+    fun test30_r6_panelHeaderTargetSatisfiesAllViewportBounds() {
+        val panelDraft = CircuitEditorDraft(
+            name = "Main DB",
+            panelType = "DB",
+            loadKVA = "150.0",
+            busbarRatingA = "630"
+        )
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = panelDraft,
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.PANEL_HEADER,
+                CircuitWorkflowStep.REVIEW
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        val headerNode = composeTestRule.onNodeWithTag("review_panel_header_section_header")
+        headerNode.performScrollTo()
+        composeTestRule.waitForIdle()
+
+        val viewport = composeTestRule.onNodeWithTag("circuit_editor_scroll_viewport").getBoundsInRoot()
+        val sectionHeader = headerNode.getBoundsInRoot()
+        val editAction = composeTestRule.onNodeWithTag("review_edit_panel_header").getBoundsInRoot()
+        val titleNode = composeTestRule.onNodeWithTag("review_panel_header_section_title").getBoundsInRoot()
+
+        assertTrue("sectionHeader.top >= scrollViewport.top", sectionHeader.top >= viewport.top)
+        assertTrue("sectionHeader.bottom <= scrollViewport.bottom", sectionHeader.bottom <= viewport.bottom)
+        assertTrue("editAction.top >= scrollViewport.top", editAction.top >= viewport.top)
+        assertTrue("editAction.bottom <= scrollViewport.bottom", editAction.bottom <= viewport.bottom)
+        assertTrue("titleNode.top >= scrollViewport.top", titleNode.top >= viewport.top)
+        assertTrue("titleNode.bottom <= scrollViewport.bottom", titleNode.bottom <= viewport.bottom)
+
+        // Complete text present in semantics
+        composeTestRule.onNodeWithText("6. Panel Header Equipment").assertExists()
+
+        // Minimum 48dp touch target
+        val editWidth = editAction.right - editAction.left
+        val editHeight = editAction.bottom - editAction.top
+        assertTrue("editAction width >= 48dp", editWidth >= 48.dp)
+        assertTrue("editAction height >= 48dp", editHeight >= 48.dp)
+    }
+
+    // 31. Returning to Review from an edited step resets scroll position to top (offset 0)
+    @Test
+    fun test31_r6_returnToReviewFromEditedStepResetsScrollToTop() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "Main DB", panelType = "DB", busbarRatingA = "630"),
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.PANEL_HEADER,
+                CircuitWorkflowStep.REVIEW
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // Scroll to bottom of Review
+        composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
+        composeTestRule.waitForIdle()
+
+        // Click Edit on Identity section
+        composeTestRule.onNodeWithTag("review_edit_identity").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(CircuitWorkflowStep.IDENTITY, holder.currentStep)
+
+        // Return to Review
+        holder.events.onStepChange(CircuitWorkflowStep.REVIEW)
+        composeTestRule.waitForIdle()
+
+        assertEquals(CircuitWorkflowStep.REVIEW, holder.currentStep)
+        // Review starts at scroll offset 0: top header is displayed
+        composeTestRule.onNodeWithTag("circuit_editor_step_header").assertIsDisplayed()
+        val identitySection = composeTestRule.onNodeWithTag("review_identity_section").getBoundsInRoot()
+        val viewport = composeTestRule.onNodeWithTag("circuit_editor_scroll_viewport").getBoundsInRoot()
+        assertTrue("Identity section top at top of viewport", identitySection.top >= viewport.top)
+    }
 }

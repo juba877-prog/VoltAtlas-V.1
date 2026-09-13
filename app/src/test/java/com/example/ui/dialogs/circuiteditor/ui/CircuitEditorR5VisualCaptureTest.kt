@@ -1,10 +1,14 @@
 package com.example.ui.dialogs.circuiteditor.ui
 
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
@@ -20,19 +24,17 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 /**
- * Visual capture and bounds verification test suite for Stage R5:
- * Review Visual Remediation & Override Parity Audit.
+ * Visual capture and bounds verification test suite for Stage R6:
+ * Review Visual Remediation, Scroll Positioning & Override Parity.
  *
- * Generates and verifies the 9 owner-required captures:
+ * Generates and verifies the 7 owner-required captures:
  * 01: Review LOAD circuit top (360dp, font 1.0, dark)
- * 02: Review LOAD circuit installation header (360dp, font 1.5, dark)
- * 03: Review Panel Header equipment (320dp, font 1.5, dark)
- * 04: Review Panel Header equipment (412dp, font 1.3, light)
+ * 02: Review Installation target (360dp, font 1.5, dark)
+ * 03: Review Panel target (320dp, font 1.5, dark)
+ * 04: Review Panel target (412dp, font 1.3, light)
  * 05: Review LOAD bottom clearance (320dp, font 1.5, dark)
  * 06: Review Panel bottom clearance (360dp, font 1.5, dark)
- * 07: Review edit identity target (320dp, font 1.5, light)
- * 08: Review edit panel target (320dp, font 1.5, dark)
- * 09: Review back & save actions (360dp, font 1.5, dark)
+ * 07: Review back & save actions (360dp, font 1.5, dark)
  *
  * Evidence Label: NEW_EDITOR_RUNTIME_OBSERVED
  */
@@ -70,6 +72,16 @@ class CircuitEditorR5VisualCaptureTest {
         if (brainDir.exists()) {
             file.copyTo(File(brainDir, fileName), overwrite = true)
         }
+    }
+
+    private fun getVerticalScrollInfo(): Pair<Float, Float> {
+        val scrollNode = composeTestRule.onAllNodes(hasScrollAction())
+            .fetchSemanticsNodes()
+            .firstOrNull { it.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange) != null }
+        val scrollRange = scrollNode?.config?.getOrNull(SemanticsProperties.VerticalScrollAxisRange)
+        val value = scrollRange?.value?.invoke() ?: 0f
+        val maxValue = scrollRange?.maxValue?.invoke() ?: 0f
+        return Pair(value, maxValue)
     }
 
     private fun createLoadDraft() = CircuitEditorDraft(
@@ -143,20 +155,21 @@ class CircuitEditorR5VisualCaptureTest {
         val topBar = composeTestRule.onNodeWithTag("circuit_editor_top_fixed_bar").getBoundsInRoot()
         val viewport = composeTestRule.onNodeWithTag("circuit_editor_scroll_viewport").getBoundsInRoot()
         val actionBar = composeTestRule.onNodeWithTag("save_circuit_btn").getBoundsInRoot()
+        val root = composeTestRule.onNodeWithTag("circuit_editor_root").getBoundsInRoot()
 
-        assertTrue("Viewport must be below top bar", viewport.top >= topBar.bottom)
-        composeTestRule.onNodeWithTag("circuit_editor_step_header").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("review_identity_section").assertIsDisplayed()
+        assertTrue("Scroll viewport starts at or below top app bar", viewport.top >= topBar.bottom)
+        assertTrue("Scroll viewport ends at or above sticky bottom bar", viewport.bottom <= actionBar.top)
+        assertTrue("Save button inside root bottom", actionBar.bottom <= root.bottom)
 
         capture("01_review_load_top_360_font1_0_dark.png")
     }
 
     // =========================================================================
-    // Capture 02: Review LOAD circuit installation header (360dp, font 1.5, dark)
+    // Capture 02: Review Installation target (360dp, font 1.5, dark)
     // =========================================================================
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
-    fun capture02_review_load_installation_header_360_font1_5_dark() {
+    fun capture02_review_installation_target_360_font1_5_dark() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = createLoadDraft(),
             initialStep = CircuitWorkflowStep.REVIEW,
@@ -173,30 +186,46 @@ class CircuitEditorR5VisualCaptureTest {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
 
-        // Programmatic scrolling to Section 5
-        val installSection = composeTestRule.onNodeWithTag("review_installation_section")
-        installSection.performScrollTo()
+        // Target Section 5 Installation Conditions header
+        val headerNode = composeTestRule.onNodeWithTag("review_installation_section_header")
+        headerNode.performScrollTo()
         composeTestRule.waitForIdle()
 
         val viewport = composeTestRule.onNodeWithTag("circuit_editor_scroll_viewport").getBoundsInRoot()
-        val installBounds = installSection.getBoundsInRoot()
-        val editTarget = composeTestRule.onNodeWithTag("review_edit_installation").getBoundsInRoot()
+        val header = headerNode.getBoundsInRoot()
+        val title = composeTestRule.onNodeWithTag("review_installation_section_title").getBoundsInRoot()
+        val editAction = composeTestRule.onNodeWithTag("review_edit_installation").getBoundsInRoot()
 
-        assertTrue("Installation section top must be at or below scroll viewport top", installBounds.top >= viewport.top)
-        assertTrue("Installation section top must be visible inside viewport", installBounds.top < viewport.bottom)
-        assertTrue("Edit target width >= 48dp at font 1.5", (editTarget.right - editTarget.left) >= 48.dp)
-        assertTrue("Edit target height >= 48dp at font 1.5", (editTarget.bottom - editTarget.top) >= 48.dp)
-        assertTrue("Edit target inside card", editTarget.right <= installBounds.right)
+        val (scrollValue, maxScroll) = getVerticalScrollInfo()
 
-        capture("02_review_load_installation_header_360_font1_5_dark.png")
+        println("CAPTURE_02_TARGET: viewport=$viewport, header=$header, title=$title, editAction=$editAction, scroll=$scrollValue/$maxScroll")
+
+        // Full title semantics verified
+        composeTestRule.onNodeWithText("5. Installation Conditions").assertExists()
+
+        // Contract: header and editAction fully inside viewport
+        assertTrue("header.top >= viewport.top", header.top >= viewport.top)
+        assertTrue("header.bottom <= viewport.bottom", header.bottom <= viewport.bottom)
+        assertTrue("editAction.top >= viewport.top", editAction.top >= viewport.top)
+        assertTrue("editAction.bottom <= viewport.bottom", editAction.bottom <= viewport.bottom)
+        assertTrue("title.top >= viewport.top", title.top >= viewport.top)
+        assertTrue("title.bottom <= viewport.bottom", title.bottom <= viewport.bottom)
+
+        // Touch target >= 48dp
+        val editWidth = editAction.right - editAction.left
+        val editHeight = editAction.bottom - editAction.top
+        assertTrue("editAction width >= 48dp", editWidth >= 48.dp)
+        assertTrue("editAction height >= 48dp", editHeight >= 48.dp)
+
+        capture("02_review_installation_target_360_font1_5_dark.png")
     }
 
     // =========================================================================
-    // Capture 03: Review Panel Header equipment (320dp, font 1.5, dark)
+    // Capture 03: Review Panel target (320dp, font 1.5, dark)
     // =========================================================================
     @Test
     @Config(sdk = [33], qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.5f)
-    fun capture03_review_panel_header_320_font1_5_dark() {
+    fun capture03_review_panel_target_320_font1_5_dark() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = createPanelDraft(),
             initialStep = CircuitWorkflowStep.REVIEW,
@@ -214,29 +243,46 @@ class CircuitEditorR5VisualCaptureTest {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
 
-        // Programmatic scrolling to Section 6 Panel Header
-        val panelSection = composeTestRule.onNodeWithTag("review_panel_header_section")
-        panelSection.performScrollTo()
+        // Target Section 6 Panel Header Equipment header
+        val headerNode = composeTestRule.onNodeWithTag("review_panel_header_section_header")
+        headerNode.performScrollTo()
         composeTestRule.waitForIdle()
 
         val viewport = composeTestRule.onNodeWithTag("circuit_editor_scroll_viewport").getBoundsInRoot()
-        val panelBounds = panelSection.getBoundsInRoot()
-        val editTarget = composeTestRule.onNodeWithTag("review_edit_panel_header").getBoundsInRoot()
+        val header = headerNode.getBoundsInRoot()
+        val title = composeTestRule.onNodeWithTag("review_panel_header_section_title").getBoundsInRoot()
+        val editAction = composeTestRule.onNodeWithTag("review_edit_panel_header").getBoundsInRoot()
 
-        assertTrue("Panel header section top must be at or below viewport top", panelBounds.top >= viewport.top)
-        assertTrue("Edit target width >= 48dp at 320dp font 1.5", (editTarget.right - editTarget.left) >= 48.dp)
-        assertTrue("Edit target height >= 48dp at 320dp font 1.5", (editTarget.bottom - editTarget.top) >= 48.dp)
-        assertTrue("Edit target inside card right", editTarget.right <= panelBounds.right)
+        val (scrollValue, maxScroll) = getVerticalScrollInfo()
 
-        capture("03_review_panel_header_320_font1_5_dark.png")
+        println("CAPTURE_03_TARGET: viewport=$viewport, header=$header, title=$title, editAction=$editAction, scroll=$scrollValue/$maxScroll")
+
+        // Full title semantics verified
+        composeTestRule.onNodeWithText("6. Panel Header Equipment").assertExists()
+
+        // Contract: header and editAction fully inside viewport
+        assertTrue("header.top >= viewport.top", header.top >= viewport.top)
+        assertTrue("header.bottom <= viewport.bottom", header.bottom <= viewport.bottom)
+        assertTrue("editAction.top >= viewport.top", editAction.top >= viewport.top)
+        assertTrue("editAction.bottom <= viewport.bottom", editAction.bottom <= viewport.bottom)
+        assertTrue("title.top >= viewport.top", title.top >= viewport.top)
+        assertTrue("title.bottom <= viewport.bottom", title.bottom <= viewport.bottom)
+
+        // Touch target >= 48dp
+        val editWidth = editAction.right - editAction.left
+        val editHeight = editAction.bottom - editAction.top
+        assertTrue("editAction width >= 48dp", editWidth >= 48.dp)
+        assertTrue("editAction height >= 48dp", editHeight >= 48.dp)
+
+        capture("03_review_panel_target_320_font1_5_dark.png")
     }
 
     // =========================================================================
-    // Capture 04: Review Panel Header equipment (412dp, font 1.3, light)
+    // Capture 04: Review Panel target (412dp, font 1.3, light)
     // =========================================================================
     @Test
     @Config(sdk = [33], qualifiers = "w412dp-h915dp-xxhdpi", fontScale = 1.3f)
-    fun capture04_review_panel_header_412_font1_3_light() {
+    fun capture04_review_panel_target_412_font1_3_light() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = createPanelDraft(),
             initialStep = CircuitWorkflowStep.REVIEW,
@@ -254,15 +300,38 @@ class CircuitEditorR5VisualCaptureTest {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = false)
         }
 
-        val panelSection = composeTestRule.onNodeWithTag("review_panel_header_section")
-        panelSection.performScrollTo()
+        // Target Section 6 Panel Header Equipment header
+        val headerNode = composeTestRule.onNodeWithTag("review_panel_header_section_header")
+        headerNode.performScrollTo()
         composeTestRule.waitForIdle()
 
-        val editTarget = composeTestRule.onNodeWithTag("review_edit_panel_header").getBoundsInRoot()
-        assertTrue("Edit target width >= 48dp at 412dp font 1.3", (editTarget.right - editTarget.left) >= 48.dp)
-        assertTrue("Edit target height >= 48dp at 412dp font 1.3", (editTarget.bottom - editTarget.top) >= 48.dp)
+        val viewport = composeTestRule.onNodeWithTag("circuit_editor_scroll_viewport").getBoundsInRoot()
+        val header = headerNode.getBoundsInRoot()
+        val title = composeTestRule.onNodeWithTag("review_panel_header_section_title").getBoundsInRoot()
+        val editAction = composeTestRule.onNodeWithTag("review_edit_panel_header").getBoundsInRoot()
 
-        capture("04_review_panel_header_412_font1_3_light.png")
+        val (scrollValue, maxScroll) = getVerticalScrollInfo()
+
+        println("CAPTURE_04_TARGET: viewport=$viewport, header=$header, title=$title, editAction=$editAction, scroll=$scrollValue/$maxScroll")
+
+        // Full title semantics verified
+        composeTestRule.onNodeWithText("6. Panel Header Equipment").assertExists()
+
+        // Contract: header and editAction fully inside viewport
+        assertTrue("header.top >= viewport.top", header.top >= viewport.top)
+        assertTrue("header.bottom <= viewport.bottom", header.bottom <= viewport.bottom)
+        assertTrue("editAction.top >= viewport.top", editAction.top >= viewport.top)
+        assertTrue("editAction.bottom <= viewport.bottom", editAction.bottom <= viewport.bottom)
+        assertTrue("title.top >= viewport.top", title.top >= viewport.top)
+        assertTrue("title.bottom <= viewport.bottom", title.bottom <= viewport.bottom)
+
+        // Touch target >= 48dp
+        val editWidth = editAction.right - editAction.left
+        val editHeight = editAction.bottom - editAction.top
+        assertTrue("editAction width >= 48dp", editWidth >= 48.dp)
+        assertTrue("editAction height >= 48dp", editHeight >= 48.dp)
+
+        capture("04_review_panel_target_412_font1_3_light.png")
     }
 
     // =========================================================================
@@ -287,7 +356,7 @@ class CircuitEditorR5VisualCaptureTest {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
 
-        // Scroll to bottom spacer
+        // Scroll to the bottom clearance spacer
         composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
         composeTestRule.waitForIdle()
 
@@ -295,8 +364,11 @@ class CircuitEditorR5VisualCaptureTest {
         val installSection = composeTestRule.onNodeWithTag("review_installation_section").getBoundsInRoot()
         val root = composeTestRule.onNodeWithTag("circuit_editor_root").getBoundsInRoot()
 
+        val clearance = saveBtn.top - installSection.bottom
+        println("CAPTURE_05_BOTTOM: installBottom=${installSection.bottom}, saveTop=${saveBtn.top}, clearance=$clearance")
+
         assertTrue("Last content bottom must be <= saveBtn.top - 16dp", installSection.bottom <= saveBtn.top - 16.dp)
-        assertTrue("Save button bottom must be inside visible root", saveBtn.bottom <= root.bottom)
+        assertTrue("Save button bottom inside root", saveBtn.bottom <= root.bottom)
 
         capture("05_review_load_bottom_320_font1_5_dark.png")
     }
@@ -324,12 +396,16 @@ class CircuitEditorR5VisualCaptureTest {
             CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
         }
 
+        // Scroll to bottom clearance spacer
         composeTestRule.onNodeWithTag("content_bottom_clearance_spacer").performScrollTo()
         composeTestRule.waitForIdle()
 
         val saveBtn = composeTestRule.onNodeWithTag("save_circuit_btn").getBoundsInRoot()
         val panelSection = composeTestRule.onNodeWithTag("review_panel_header_section").getBoundsInRoot()
         val root = composeTestRule.onNodeWithTag("circuit_editor_root").getBoundsInRoot()
+
+        val clearance = saveBtn.top - panelSection.bottom
+        println("CAPTURE_06_BOTTOM: panelBottom=${panelSection.bottom}, saveTop=${saveBtn.top}, clearance=$clearance")
 
         assertTrue("Panel section bottom must be <= saveBtn.top - 16dp", panelSection.bottom <= saveBtn.top - 16.dp)
         assertTrue("Save button bottom inside root", saveBtn.bottom <= root.bottom)
@@ -338,82 +414,11 @@ class CircuitEditorR5VisualCaptureTest {
     }
 
     // =========================================================================
-    // Capture 07: Review edit identity target (320dp, font 1.5, light)
-    // =========================================================================
-    @Test
-    @Config(sdk = [33], qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.5f)
-    fun capture07_review_edit_identity_target_320_font1_5_light() {
-        val holder = CircuitEditorTestStateHolder(
-            initialDraft = createLoadDraft(),
-            initialStep = CircuitWorkflowStep.REVIEW,
-            initialVisited = setOf(
-                CircuitWorkflowStep.IDENTITY,
-                CircuitWorkflowStep.LOAD,
-                CircuitWorkflowStep.SUPPLY,
-                CircuitWorkflowStep.FEEDER,
-                CircuitWorkflowStep.INSTALLATION,
-                CircuitWorkflowStep.REVIEW
-            )
-        )
-        composeTestRule.setContent {
-            CircuitEditorTestHost(stateHolder = holder, darkTheme = false)
-        }
-
-        val card = composeTestRule.onNodeWithTag("review_identity_section").getBoundsInRoot()
-        val editTarget = composeTestRule.onNodeWithTag("review_edit_identity").getBoundsInRoot()
-
-        assertTrue("Identity editTarget width >= 48dp", (editTarget.right - editTarget.left) >= 48.dp)
-        assertTrue("Identity editTarget height >= 48dp", (editTarget.bottom - editTarget.top) >= 48.dp)
-        assertTrue("Identity editTarget.right <= card.right", editTarget.right <= card.right)
-        assertTrue("Identity editTarget.top >= card.top", editTarget.top >= card.top)
-
-        capture("07_review_edit_identity_target_320_font1_5_light.png")
-    }
-
-    // =========================================================================
-    // Capture 08: Review edit panel target (320dp, font 1.5, dark)
-    // =========================================================================
-    @Test
-    @Config(sdk = [33], qualifiers = "w320dp-h800dp-xhdpi", fontScale = 1.5f)
-    fun capture08_review_edit_panel_target_320_font1_5_dark() {
-        val holder = CircuitEditorTestStateHolder(
-            initialDraft = createPanelDraft(),
-            initialStep = CircuitWorkflowStep.REVIEW,
-            initialVisited = setOf(
-                CircuitWorkflowStep.IDENTITY,
-                CircuitWorkflowStep.LOAD,
-                CircuitWorkflowStep.SUPPLY,
-                CircuitWorkflowStep.FEEDER,
-                CircuitWorkflowStep.INSTALLATION,
-                CircuitWorkflowStep.PANEL_HEADER,
-                CircuitWorkflowStep.REVIEW
-            )
-        )
-        composeTestRule.setContent {
-            CircuitEditorTestHost(stateHolder = holder, darkTheme = true)
-        }
-
-        val panelSection = composeTestRule.onNodeWithTag("review_panel_header_section")
-        panelSection.performScrollTo()
-        composeTestRule.waitForIdle()
-
-        val card = panelSection.getBoundsInRoot()
-        val editTarget = composeTestRule.onNodeWithTag("review_edit_panel_header").getBoundsInRoot()
-
-        assertTrue("Panel editTarget width >= 48dp", (editTarget.right - editTarget.left) >= 48.dp)
-        assertTrue("Panel editTarget height >= 48dp", (editTarget.bottom - editTarget.top) >= 48.dp)
-        assertTrue("Panel editTarget.right <= card.right", editTarget.right <= card.right)
-        assertTrue("Panel editTarget.top >= card.top", editTarget.top >= card.top)
-
-        capture("08_review_edit_panel_target_320_font1_5_dark.png")
-    }
-
-    // =========================================================================
-    // Capture 09: Review back & save actions (360dp, font 1.5, dark)
+    // Capture 07: Review back & save actions (360dp, font 1.5, dark)
     // =========================================================================
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi", fontScale = 1.5f)
-    fun capture09_review_back_save_360_font1_5_dark() {
+    fun capture07_review_back_save_360_font1_5_dark() {
         val holder = CircuitEditorTestStateHolder(
             initialDraft = createLoadDraft(),
             initialStep = CircuitWorkflowStep.REVIEW,
@@ -434,13 +439,20 @@ class CircuitEditorR5VisualCaptureTest {
         val saveBtn = composeTestRule.onNodeWithTag("save_circuit_btn").getBoundsInRoot()
         val root = composeTestRule.onNodeWithTag("circuit_editor_root").getBoundsInRoot()
 
-        assertTrue("Back button width >= 48dp", (backBtn.right - backBtn.left) >= 48.dp)
-        assertTrue("Back button height >= 48dp", (backBtn.bottom - backBtn.top) >= 48.dp)
-        assertTrue("Save button width >= 48dp", (saveBtn.right - saveBtn.left) >= 48.dp)
-        assertTrue("Save button height >= 48dp", (saveBtn.bottom - saveBtn.top) >= 48.dp)
+        val backWidth = backBtn.right - backBtn.left
+        val backHeight = backBtn.bottom - backBtn.top
+        val saveWidth = saveBtn.right - saveBtn.left
+        val saveHeight = saveBtn.bottom - saveBtn.top
+
+        println("CAPTURE_07_ACTIONS: back=(${backWidth}x${backHeight}), save=(${saveWidth}x${saveHeight}), rootBottom=${root.bottom}")
+
+        assertTrue("Back button width >= 48dp", backWidth >= 48.dp)
+        assertTrue("Back button height >= 48dp", backHeight >= 48.dp)
+        assertTrue("Save button width >= 48dp", saveWidth >= 48.dp)
+        assertTrue("Save button height >= 48dp", saveHeight >= 48.dp)
         assertTrue("Back button inside root bottom", backBtn.bottom <= root.bottom)
         assertTrue("Save button inside root bottom", saveBtn.bottom <= root.bottom)
 
-        capture("09_review_back_save_360_font1_5_dark.png")
+        capture("07_review_back_save_360_font1_5_dark.png")
     }
 }

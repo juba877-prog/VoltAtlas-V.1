@@ -225,7 +225,9 @@ private fun ReviewSectionCard(
                 val isCompactOrLargeFont = maxWidth < 340.dp || fontScale > 1.2f
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("${sectionTag}_header"),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -234,6 +236,7 @@ private fun ReviewSectionCard(
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
+                            .testTag("${sectionTag}_title")
                             .weight(1f, fill = false)
                             .padding(end = 8.dp)
                     )
