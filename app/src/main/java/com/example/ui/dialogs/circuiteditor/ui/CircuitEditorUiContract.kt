@@ -29,7 +29,9 @@ data class CircuitEditorUiState(
     val availableGenerators: List<GeneratorSnapshot> = emptyList(),
     val availableAts: List<AtsSnapshot> = emptyList(),
     val availableUps: List<UpsSnapshot> = emptyList(),
-    val catalogSnapshot: CableCatalogSnapshot = CableCatalogSnapshot()
+    val catalogSnapshot: CableCatalogSnapshot = CableCatalogSnapshot(),
+    val scRatingText: String = "N/A (Calculated after save)",
+    val reviewError: String? = null
 )
 
 /**
@@ -42,4 +44,5 @@ interface CircuitEditorUiEvents {
     fun onBackClick()
     fun onDismiss()
     fun onAddTransformer()
+    fun onSaveClick() {}
 }

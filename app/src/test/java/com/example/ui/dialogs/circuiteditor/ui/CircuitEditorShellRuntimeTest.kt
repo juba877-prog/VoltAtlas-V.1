@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.example.ui.dialogs.circuiteditor.model.CircuitEditorDraft
 import com.example.ui.dialogs.circuiteditor.model.CircuitWorkflowStep
 import androidx.compose.ui.unit.dp
@@ -811,4 +812,162 @@ class CircuitEditorShellRuntimeTest {
         composeTestRule.onNodeWithText("4. Feeder Selection").assertIsDisplayed()
         composeTestRule.onNodeWithText("Select cable or busway family and configuration").assertIsDisplayed()
     }
+
+    @Test
+    fun test40_completeSixStepTraversalForLoadCircuit() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "Circuit 1", panelType = "LOAD")
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // 1. Identity -> 2. Load
+        composeTestRule.onNodeWithTag("circuit_editor_step_identity").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // 2. Load -> 3. Supply
+        composeTestRule.onNodeWithTag("circuit_editor_step_load").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // 3. Supply -> 4. Feeder
+        composeTestRule.onNodeWithTag("circuit_editor_step_supply").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // 4. Feeder -> 5. Installation
+        composeTestRule.onNodeWithTag("circuit_editor_step_feeder").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // 5. Installation -> 6. Review
+        composeTestRule.onNodeWithTag("circuit_editor_step_installation").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // 6. Review
+        composeTestRule.onNodeWithTag("circuit_editor_step_review").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_step_panel_header").assertDoesNotExist()
+        assertEquals(CircuitWorkflowStep.REVIEW, holder.currentStep)
+    }
+
+    @Test
+    fun test41_completeSevenStepTraversalForDistributionBoard() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "Main DB", panelType = "DB")
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // 1. Identity -> 2. Load
+        composeTestRule.onNodeWithTag("circuit_editor_step_identity").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // 2. Load -> 3. Supply
+        composeTestRule.onNodeWithTag("circuit_editor_step_load").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // 3. Supply -> 4. Feeder
+        composeTestRule.onNodeWithTag("circuit_editor_step_supply").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // 4. Feeder -> 5. Installation
+        composeTestRule.onNodeWithTag("circuit_editor_step_feeder").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // 5. Installation -> 6. Panel Header
+        composeTestRule.onNodeWithTag("circuit_editor_step_installation").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // 6. Panel Header -> 7. Review
+        composeTestRule.onNodeWithTag("circuit_editor_step_panel_header").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_editor_next_btn").performClick()
+
+        // 7. Review
+        composeTestRule.onNodeWithTag("circuit_editor_step_review").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("review_panel_header_section").assertExists()
+        assertEquals(CircuitWorkflowStep.REVIEW, holder.currentStep)
+    }
+
+    @Test
+    fun test42_dynamicRemovalOfPanelHeaderCoercesToInstallation() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "DB-1", panelType = "DB"),
+            initialStep = CircuitWorkflowStep.PANEL_HEADER,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.PANEL_HEADER
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        composeTestRule.onNodeWithTag("circuit_editor_step_panel_header").assertIsDisplayed()
+
+        // Change panelType from "DB" to "LOAD"
+        holder.events.onDraftChange(holder.draft.copy(panelType = "LOAD"))
+        composeTestRule.waitForIdle()
+
+        // Should coerce to INSTALLATION
+        assertEquals(CircuitWorkflowStep.INSTALLATION, holder.currentStep)
+        composeTestRule.onNodeWithTag("circuit_editor_step_installation").assertIsDisplayed()
+    }
+
+    @Test
+    fun test43_reviewSaveButtonTriggersSaveCallback() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "Branch-01", panelType = "LOAD", length_m = "25"),
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.REVIEW
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        assertEquals(0, holder.saveRequestedCount)
+        composeTestRule.onNodeWithTag("save_circuit_btn").performScrollTo().performClick()
+        assertEquals(1, holder.saveRequestedCount)
+        assertEquals("Branch-01", holder.lastSavedDraft?.name)
+    }
+
+    @Test
+    fun test44_reviewSectionEditJumpsToTargetStepAndCanNavigateBackToReview() {
+        val holder = CircuitEditorTestStateHolder(
+            initialDraft = CircuitEditorDraft(name = "Branch-01", panelType = "LOAD"),
+            initialStep = CircuitWorkflowStep.REVIEW,
+            initialVisited = setOf(
+                CircuitWorkflowStep.IDENTITY,
+                CircuitWorkflowStep.LOAD,
+                CircuitWorkflowStep.SUPPLY,
+                CircuitWorkflowStep.FEEDER,
+                CircuitWorkflowStep.INSTALLATION,
+                CircuitWorkflowStep.REVIEW
+            )
+        )
+        composeTestRule.setContent {
+            CircuitEditorTestHost(stateHolder = holder)
+        }
+
+        // Jump to LOAD via Edit button
+        composeTestRule.onNodeWithTag("review_edit_load").performClick()
+        assertEquals(CircuitWorkflowStep.LOAD, holder.currentStep)
+        composeTestRule.onNodeWithTag("circuit_editor_step_load").assertIsDisplayed()
+
+        // Return to Review via stepper jump
+        holder.events.onStepChange(CircuitWorkflowStep.REVIEW)
+        composeTestRule.waitForIdle()
+        assertEquals(CircuitWorkflowStep.REVIEW, holder.currentStep)
+        composeTestRule.onNodeWithTag("circuit_editor_step_review").assertIsDisplayed()
+    }
 }
+

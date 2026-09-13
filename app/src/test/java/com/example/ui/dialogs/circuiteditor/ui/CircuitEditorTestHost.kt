@@ -34,28 +34,54 @@ class CircuitEditorTestStateHolder(
     val availableUps: List<UpsSnapshot> = emptyList(),
     val catalogSnapshot: CableCatalogSnapshot = CableCatalogSnapshot(),
     projectSubtitle: String? = null,
-    val editingCircuitId: Int = 0
+    val editingCircuitId: Int = 0,
+    val scRatingText: String = "N/A (Calculated after save)",
+    val onValidSaveRequested: (CircuitEditorDraft) -> Unit = {}
 ) {
     var draft by mutableStateOf(initialDraft)
     var currentStep by mutableStateOf(initialStep)
     var visitedSteps by mutableStateOf(initialVisited)
     var identityError by mutableStateOf<String?>(null)
+    var reviewError by mutableStateOf<String?>(null)
     var projectSubtitle by mutableStateOf(projectSubtitle)
     var dismissCount by mutableStateOf(0)
     var addTransformerCount by mutableStateOf(0)
+    var saveRequestedCount by mutableStateOf(0)
+    var lastSavedDraft by mutableStateOf<CircuitEditorDraft?>(null)
 
     val applicableSteps: List<CircuitWorkflowStep>
         get() = CircuitWorkflow.getApplicableSteps(draft.panelType)
 
     val events = object : CircuitEditorUiEvents {
+        private fun performSave() {
+            val validation = CircuitEditorValidator.validateForSave(
+                draft = draft,
+                existingCircuits = existingCircuits,
+                editingCircuitId = editingCircuitId
+            )
+            when (validation) {
+                is ValidationResult.Error -> {
+                    reviewError = validation.message
+                }
+                is ValidationResult.Success -> {
+                    reviewError = null
+                    saveRequestedCount++
+                    lastSavedDraft = draft
+                    onValidSaveRequested(draft)
+                }
+            }
+        }
+
         override fun onDraftChange(newDraft: CircuitEditorDraft) {
             draft = newDraft
             currentStep = CircuitWorkflow.coerceStepOnApplicabilityChange(currentStep, newDraft.panelType)
+            reviewError = null
         }
 
         override fun onStepChange(targetStep: CircuitWorkflowStep) {
             if (targetStep in visitedSteps) {
                 currentStep = targetStep
+                reviewError = null
             }
         }
 
@@ -77,6 +103,9 @@ class CircuitEditorTestStateHolder(
                             visitedSteps = visitedSteps + CircuitWorkflowStep.LOAD
                         }
                     }
+                }
+                CircuitWorkflowStep.REVIEW -> {
+                    performSave()
                 }
                 else -> {
                     val applicable = applicableSteps
@@ -106,6 +135,10 @@ class CircuitEditorTestStateHolder(
 
         override fun onAddTransformer() {
             addTransformerCount++
+        }
+
+        override fun onSaveClick() {
+            performSave()
         }
     }
 }
@@ -148,7 +181,9 @@ fun CircuitEditorTestHost(
         availableGenerators = stateHolder.availableGenerators,
         availableAts = stateHolder.availableAts,
         availableUps = stateHolder.availableUps,
-        catalogSnapshot = stateHolder.catalogSnapshot
+        catalogSnapshot = stateHolder.catalogSnapshot,
+        scRatingText = stateHolder.scRatingText,
+        reviewError = stateHolder.reviewError
     )
 
     VoltAtlasTheme(darkTheme = darkTheme) {

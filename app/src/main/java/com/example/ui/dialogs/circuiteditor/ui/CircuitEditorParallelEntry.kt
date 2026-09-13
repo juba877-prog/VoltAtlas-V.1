@@ -59,7 +59,10 @@ import com.example.ui.dialogs.circuiteditor.model.UpsSnapshot
 import com.example.ui.dialogs.circuiteditor.state.CircuitEditorInitializer
 import com.example.ui.dialogs.circuiteditor.ui.steps.FeederStepContent
 import com.example.ui.dialogs.circuiteditor.ui.steps.IdentityStepContent
+import com.example.ui.dialogs.circuiteditor.ui.steps.InstallationStepContent
 import com.example.ui.dialogs.circuiteditor.ui.steps.LoadStepContent
+import com.example.ui.dialogs.circuiteditor.ui.steps.PanelHeaderStepContent
+import com.example.ui.dialogs.circuiteditor.ui.steps.ReviewStepContent
 import com.example.ui.dialogs.circuiteditor.ui.steps.SupplyStepContent
 import com.example.ui.dialogs.circuiteditor.validation.CircuitEditorValidator
 import com.example.ui.dialogs.circuiteditor.validation.ValidationResult
@@ -82,7 +85,9 @@ fun CircuitEditorParallelEntry(
     catalogSnapshot: CableCatalogSnapshot = CableCatalogSnapshot(),
     onDismiss: () -> Unit,
     onAddTransformer: () -> Unit = {},
+    onValidSaveRequested: (CircuitEditorDraft) -> Unit = {},
     projectSubtitle: String? = null,
+    scRatingText: String = circuit?.scRatingKA?.let { String.format(java.util.Locale.US, "%.2f kA", it) } ?: "N/A (Calculated after save)",
     modifier: Modifier = Modifier
 ) {
     var draft by remember {
@@ -99,6 +104,7 @@ fun CircuitEditorParallelEntry(
     var currentStep by remember { mutableStateOf(CircuitWorkflowStep.IDENTITY) }
     var visitedSteps by remember { mutableStateOf(setOf(CircuitWorkflowStep.IDENTITY)) }
     var identityError by remember { mutableStateOf<String?>(null) }
+    var reviewError by remember { mutableStateOf<String?>(null) }
 
     val applicableSteps = remember(draft.panelType) {
         CircuitWorkflow.getApplicableSteps(draft.panelType)
@@ -115,14 +121,33 @@ fun CircuitEditorParallelEntry(
 
     val events = remember(draft, currentStep, visitedSteps, applicableSteps, circuit, existingCircuits) {
         object : CircuitEditorUiEvents {
+            private fun performSave() {
+                val validation = CircuitEditorValidator.validateForSave(
+                    draft = draft,
+                    existingCircuits = existingCircuits,
+                    editingCircuitId = circuit?.id ?: 0
+                )
+                when (validation) {
+                    is ValidationResult.Error -> {
+                        reviewError = validation.message
+                    }
+                    is ValidationResult.Success -> {
+                        reviewError = null
+                        onValidSaveRequested(draft)
+                    }
+                }
+            }
+
             override fun onDraftChange(newDraft: CircuitEditorDraft) {
                 draft = newDraft
                 currentStep = CircuitWorkflow.coerceStepOnApplicabilityChange(currentStep, newDraft.panelType)
+                reviewError = null
             }
 
             override fun onStepChange(targetStep: CircuitWorkflowStep) {
                 if (targetStep in visitedSteps) {
                     currentStep = targetStep
+                    reviewError = null
                 }
             }
 
@@ -144,6 +169,9 @@ fun CircuitEditorParallelEntry(
                                 visitedSteps = visitedSteps + CircuitWorkflowStep.LOAD
                             }
                         }
+                    }
+                    CircuitWorkflowStep.REVIEW -> {
+                        performSave()
                     }
                     else -> {
                         val idx = applicableSteps.indexOf(currentStep)
@@ -172,6 +200,10 @@ fun CircuitEditorParallelEntry(
             override fun onAddTransformer() {
                 onAddTransformer()
             }
+
+            override fun onSaveClick() {
+                performSave()
+            }
         }
     }
 
@@ -190,7 +222,9 @@ fun CircuitEditorParallelEntry(
         availableGenerators = availableGenerators,
         availableAts = availableAts,
         availableUps = availableUps,
-        catalogSnapshot = catalogSnapshot
+        catalogSnapshot = catalogSnapshot,
+        scRatingText = scRatingText,
+        reviewError = reviewError
     )
 
     CircuitEditorParallelHost(
@@ -380,21 +414,30 @@ fun CircuitEditorParallelHost(
                                 )
                             }
 
-                            else -> {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(24.dp)
-                                        .testTag("circuit_editor_step_placeholder"),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    val placeholderTitle = if (state.currentStep == CircuitWorkflowStep.FEEDER) "4. Feeder Selection" else state.currentStep.title
-                                    Text(
-                                        text = "Step '$placeholderTitle' is scheduled for subsequent stage.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
+                            CircuitWorkflowStep.INSTALLATION -> {
+                                InstallationStepContent(
+                                    draft = state.draft,
+                                    onDraftChange = events::onDraftChange
+                                )
+                            }
+
+                            CircuitWorkflowStep.PANEL_HEADER -> {
+                                PanelHeaderStepContent(
+                                    draft = state.draft,
+                                    onDraftChange = events::onDraftChange,
+                                    scRatingText = state.scRatingText
+                                )
+                            }
+
+                            CircuitWorkflowStep.REVIEW -> {
+                                ReviewStepContent(
+                                    draft = state.draft,
+                                    resolution = state.sourceResolution,
+                                    onEditSection = events::onStepChange,
+                                    onSaveClick = events::onSaveClick,
+                                    saveError = state.reviewError,
+                                    scRatingText = state.scRatingText
+                                )
                             }
                         }
 
