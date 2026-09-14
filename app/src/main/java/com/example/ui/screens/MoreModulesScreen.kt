@@ -35,13 +35,21 @@ import com.example.ui.theme.*
 import com.example.ui.designsystem.icons.ElectricalIcons
 
 /**
- * Component-local content minimum for one module card:
- * 48dp icon tile + 16dp gap + ~200dp minimum readable title/description
- * column + 12dp gap + 20dp trailing affordance + card padding.
+ * Component-local content minimum for one module card, derived from the
+ * card's actual horizontal composition (icon tile + gaps + trailing
+ * affordance + padding), NOT from another screen's value:
+ *
+ * at a 320dp grid cell:
+ *   320 − 32 (VoltAtlasCard lg padding, 16dp/side) − 8 (row 4dp/side)
+ *   − 48 (icon tile) − 16 (gap) − 12 (gap) − 20 (trailing arrow)
+ *   = ~184dp for the title/description column.
  *
  * This is a *content breakpoint*, not a device breakpoint: below this width
  * the row no longer reads comfortably, so the grid must not narrow it
  * further (Compact windows therefore keep the plain single-column flow).
+ * Because ~184dp cannot hold long module titles on one line, the grid
+ * branch allows the title to wrap to two lines (`titleMaxLines = 2`);
+ * Compact keeps the approved single-line behavior.
  */
 private val ModuleCardMinWidth: Dp = 320.dp
 
@@ -154,6 +162,9 @@ fun MoreModulesGrid(onNavigate: (Int) -> Unit) {
                     description = module.description,
                     icon = module.icon,
                     iconTint = module.iconTint,
+                    // A ~184dp grid-cell text column cannot hold long module
+                    // titles on one line; wrap instead of truncating meaning.
+                    titleMaxLines = 2,
                     onClick = { onNavigate(module.targetTab) }
                 )
             }
@@ -185,6 +196,7 @@ fun VoltAtlasFullWidthModuleRow(
     description: String,
     icon: ImageVector,
     iconTint: Color = Color.Unspecified,
+    titleMaxLines: Int = 1,
     onClick: () -> Unit
 ) {
     VoltAtlasCard(
@@ -218,7 +230,7 @@ fun VoltAtlasFullWidthModuleRow(
                     text = title,
                     style = CardTitle.copy(fontSize = 15.sp),
                     color = ThemeTextPrimary,
-                    maxLines = 1,
+                    maxLines = titleMaxLines,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(2.dp))

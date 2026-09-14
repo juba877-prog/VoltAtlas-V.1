@@ -21,6 +21,17 @@ import androidx.compose.ui.unit.Dp
  *     }
  * }
  * ```
+ *
+ * ## Horizontal-scroll policy (project rule)
+ *
+ * Horizontal scrolling IS acceptable for genuinely wide/tabular data
+ * (e.g. schedules, SLD/diagram surfaces) and intentional horizontal
+ * selectors/chip rows where browsing off-screen content is the natural
+ * interaction. Horizontal scrolling must NOT be added as a repair for a
+ * normal form or a broken Row when a Row -> Column / stacked reflow would
+ * solve it, and must never make engineering values inaccessible without
+ * scrolling. Existing `horizontalScroll` usages must be inspected against
+ * this rule during future screen audits — legitimate ones are kept.
  */
 fun BoxWithConstraintsScope.isTooNarrowForInline(requiredInlineWidth: Dp): Boolean =
     maxWidth < requiredInlineWidth

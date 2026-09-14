@@ -41,8 +41,13 @@ enum class VoltAtlasWindowWidth {
  * Implementation deliberately uses [LocalConfiguration] so it stays
  * compatible with the repository's current Compose BOM (2024.09.00) without
  * adding a new adaptive/window-size-class dependency. The value is keyed on
- * the configuration so it updates on rotation, split-window resize, and
- * foldable posture changes.
+ * the configuration, so it follows whatever the currently available
+ * window/configuration width is: rotation, split-window resize, and foldable
+ * states are all reflected through a changed window width. The helper does
+ * NOT observe foldable posture/folding features directly (no hinge/posture
+ * API is used), and for window-level composition decisions it does not
+ * need to — this is "respond to the current available window width", not
+ * "be posture aware".
  */
 @Composable
 fun rememberVoltAtlasWindowWidth(): VoltAtlasWindowWidth {
