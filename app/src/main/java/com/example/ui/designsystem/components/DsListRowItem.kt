@@ -97,7 +97,10 @@ fun DsListRowItem(
                     style = DsType.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1
+                    maxLines = 1,
+                    // Graceful truncation instead of a hard mid-glyph clip
+                    // when a long engineering value meets a narrow row.
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             if (status != null) {

@@ -16,10 +16,17 @@ import com.example.ui.designsystem.theme.DsType
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 
 /**
  * KPI / summary-strip tile: label + large value + optional unit + optional
  * status badge. Stateless — values are rendered exactly as provided.
+ *
+ * Responsive contract: the value is width-allocated (`weight(1f, fill=false)`)
+ * so the unit is always measured first and keeps its intrinsic width — an
+ * engineering unit can never be pushed out of the tile by a long value. The
+ * value ellipsizes only when it alone cannot fit the tile width (extreme
+ * case). Rendering is pixel-identical when value + unit fit on one line.
  */
 @Composable
 fun DsMetricTile(
@@ -37,7 +44,8 @@ fun DsMetricTile(
                 text = label,
                 style = DsType.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(DsSpacing.xs))
             Row(verticalAlignment = Alignment.Bottom) {
@@ -46,7 +54,13 @@ fun DsMetricTile(
                     style = DsType.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    // Width allocation, not shrink-to-fit: the unweighted unit
+                    // is measured first and can never be clipped away; the
+                    // value takes the remaining width and only ellipsizes
+                    // when it alone cannot fit.
+                    modifier = Modifier.weight(1f, fill = false)
                 )
                 if (unit != null) {
                     Spacer(modifier = Modifier.width(DsSpacing.xs))

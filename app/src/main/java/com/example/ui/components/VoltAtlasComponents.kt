@@ -196,7 +196,12 @@ fun VoltAtlasMetricCard(
                 style = EngineeringValue,
                 color = ThemeTextPrimary,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                // Width allocation: the unit below is measured first and can
+                // never be pushed out of the card by a long value (engineering
+                // units are meaning-bearing). Identical rendering when the
+                // value fits.
+                modifier = Modifier.weight(1f, fill = false)
             )
             Text(
                 text = unit,
