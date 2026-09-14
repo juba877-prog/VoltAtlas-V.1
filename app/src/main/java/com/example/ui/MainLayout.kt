@@ -381,9 +381,12 @@ fun MainLayout(
         }
     }
 
-    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-    val useNavRail = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE ||
-            configuration.screenWidthDp >= 600
+    // Window-level navigation decision: centralized width policy, NOT
+    // orientation. A landscape phone window is still too narrow for a
+    // rail-plus-content composition, while a portrait tablet window is wide
+    // enough. Destination ordering, selection state, predictive-back
+    // behavior, and test tags are unchanged.
+    val useNavRail = com.example.ui.adaptive.rememberVoltAtlasWindowWidth().supportsNavRail
 
     // Short labels for bottom nav (phone); NavigationRail uses full labels
     val navItems = listOf(
