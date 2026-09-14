@@ -94,7 +94,14 @@ private fun CompactKpiTile(
                     style = DsType.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    // Width allocation (same contract as DsMetricTile, Phase 2):
+                    // the unweighted unit is measured first and can never be
+                    // pushed out of the tile by a long value; the value
+                    // ellipsizes only when it alone cannot fit. Pixel-identical
+                    // when value + unit fit on one line.
+                    modifier = Modifier.weight(1f, fill = false)
                 )
                 if (unit != null) {
                     Spacer(modifier = Modifier.width(3.dp))
