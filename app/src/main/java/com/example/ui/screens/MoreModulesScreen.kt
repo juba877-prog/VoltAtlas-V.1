@@ -2,6 +2,10 @@
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -17,8 +21,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.adaptive.VoltAtlasWindowWidth
+import com.example.ui.adaptive.rememberVoltAtlasWindowWidth
 import com.example.ui.components.VoltAtlasCard
 import com.example.ui.components.VoltAtlasSectionHeader
 import com.example.ui.conversions.ConversionDetailScreen
@@ -27,75 +34,130 @@ import com.example.ui.conversions.ConversionsScreen
 import com.example.ui.theme.*
 import com.example.ui.designsystem.icons.ElectricalIcons
 
+/**
+ * Component-local content minimum for one module card:
+ * 48dp icon tile + 16dp gap + ~200dp minimum readable title/description
+ * column + 12dp gap + 20dp trailing affordance + card padding.
+ *
+ * This is a *content breakpoint*, not a device breakpoint: below this width
+ * the row no longer reads comfortably, so the grid must not narrow it
+ * further (Compact windows therefore keep the plain single-column flow).
+ */
+private val ModuleCardMinWidth: Dp = 320.dp
+
+private data class ModuleEntry(
+    val title: String,
+    val description: String,
+    val icon: ImageVector,
+    val iconTint: Color = Color.Unspecified,
+    val targetTab: Int
+)
+
 @Composable
 fun MoreModulesGrid(onNavigate: (Int) -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        VoltAtlasSectionHeader(title = "Secondary Engineering Modules")
-
-        VoltAtlasFullWidthModuleRow(
+    val modules = listOf(
+        ModuleEntry(
             title = "Panel Schedule & Load Aggregation",
             description = "Bottom-up recursive feeder load aggregation, phase balancing & feeder schedules",
             icon = Icons.Default.TableChart,
             iconTint = Color(0xFF10B981),
-            onClick = { onNavigate(12) }
-        )
-
-        VoltAtlasFullWidthModuleRow(
+            targetTab = 12
+        ),
+        ModuleEntry(
             title = "Single-Line Diagram (SLD)",
             description = "Interactive single-line network diagram & validation view",
             icon = ElectricalIcons.Sld,
-            onClick = { onNavigate(5) }
-        )
-
-        VoltAtlasFullWidthModuleRow(
+            targetTab = 5
+        ),
+        ModuleEntry(
             title = "Protection & Coordination",
             description = "Breaker coordination, tripping curves & fault currents",
             icon = ElectricalIcons.Protection,
-            onClick = { onNavigate(4) }
-        )
-
-        VoltAtlasFullWidthModuleRow(
+            targetTab = 4
+        ),
+        ModuleEntry(
             title = "Conduits & Cable Fill",
             description = "Conduit sizing, NEC fill ratios & cable bundling",
             icon = ElectricalIcons.Conduit,
-            onClick = { onNavigate(6) }
-        )
-
-        VoltAtlasFullWidthModuleRow(
+            targetTab = 6
+        ),
+        ModuleEntry(
             title = "BOQ & Procurement",
             description = "Bill of quantities, cable drum allocation & procurement schedules",
             icon = ElectricalIcons.Boq,
-            onClick = { onNavigate(7) }
-        )
-
-        VoltAtlasFullWidthModuleRow(
+            targetTab = 7
+        ),
+        ModuleEntry(
             title = "Electrical & Cable Conversions",
             description = "AWG/SWG/kcmil to mm² (True, Nearest, Safe Up-Size), µF ↔ kVAR, HP ↔ kW, Freq ↔ RPM",
             icon = Icons.Default.SwapHoriz,
             iconTint = Color(0xFF38BDF8),
-            onClick = { onNavigate(10) }
-        )
-
-        VoltAtlasFullWidthModuleRow(
+            targetTab = 10
+        ),
+        ModuleEntry(
             title = "Engineering Methodology & Formulas",
             description = "Complete reference guide for IEC & BS formulas, variables, and worked examples",
             icon = Icons.Default.Functions,
             iconTint = Color(0xFFA855F7),
-            onClick = { onNavigate(11) }
-        )
-
-        VoltAtlasFullWidthModuleRow(
+            targetTab = 11
+        ),
+        ModuleEntry(
             title = "Global Settings",
             description = "Design preferences, system frequency, nominal voltage & calculation defaults",
             icon = ElectricalIcons.Settings,
-            onClick = { onNavigate(8) }
+            targetTab = 8
         )
+    )
+
+    val windowWidth = rememberVoltAtlasWindowWidth()
+
+    if (windowWidth == VoltAtlasWindowWidth.Compact) {
+        // Compact: keep the approved single-column scroll flow (identical
+        // order and content as before).
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            VoltAtlasSectionHeader(title = "Secondary Engineering Modules")
+
+            modules.forEach { module ->
+                VoltAtlasFullWidthModuleRow(
+                    title = module.title,
+                    description = module.description,
+                    icon = module.icon,
+                    iconTint = module.iconTint,
+                    onClick = { onNavigate(module.targetTab) }
+                )
+            }
+        }
+    } else {
+        // Medium/Expanded: use the extra width with an adaptive card grid so
+        // cards never shrink below their measured readable minimum.
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = ModuleCardMinWidth),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                VoltAtlasSectionHeader(title = "Secondary Engineering Modules")
+            }
+
+            items(modules) { module ->
+                VoltAtlasFullWidthModuleRow(
+                    title = module.title,
+                    description = module.description,
+                    icon = module.icon,
+                    iconTint = module.iconTint,
+                    onClick = { onNavigate(module.targetTab) }
+                )
+            }
+        }
     }
 }
 
