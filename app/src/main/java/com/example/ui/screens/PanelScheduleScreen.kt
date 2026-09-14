@@ -7,6 +7,7 @@ import com.example.ui.theme.LocalReduceMotion
 import com.example.ui.theme.VoltAtlasMotion
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.CircuitEntity
@@ -1142,9 +1144,11 @@ fun LoadMismatchConflictCard(
                     text = "Update Load to ${scheduleResult.aggregatedChildrenLoadKVA} kVA",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    softWrap = false
+                    fontWeight = FontWeight.Bold
+                    // No maxLines/softWrap=false here: this label carries a
+                    // dynamic engineering value; at narrow widths or large
+                    // font scales it must wrap instead of clipping the kVA
+                    // target out of view.
                 )
             }
         }
@@ -1556,6 +1560,29 @@ fun LoadTypeBreakdownCard(breakdown: com.example.data.LoadTypeBreakdown) {
                     fontSize = 12.sp
                 )
             } else {
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    // LEVEL B screen-local decision, content-derived (not a
+                    // device breakpoint): this is a genuine 6-column
+                    // engineering table. At ~370dp of content width every
+                    // numeric cell ("1250.0", "12500.0") and the longest
+                    // category label still fit their weighted share on one
+                    // line. Below that, weighted columns would force numbers
+                    // to wrap mid-digit — a numeric-integrity ambiguity — so
+                    // the table scrolls horizontally instead, preserving
+                    // column association (genuine-table rule).
+                    val tableContentMinWidth = 370.dp
+                    val isTableNarrow = maxWidth < tableContentMinWidth
+                    val tableScroll = rememberScrollState()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if (isTableNarrow) Modifier.horizontalScroll(tableScroll) else Modifier)
+                    ) {
+                        Column(
+                            modifier = Modifier.widthIn(
+                                min = if (isTableNarrow) tableContentMinWidth else Dp.Unspecified
+                            )
+                        ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1605,6 +1632,9 @@ fun LoadTypeBreakdownCard(breakdown: com.example.data.LoadTypeBreakdown) {
                     Text("—", color = ThemeTextSecondary, fontSize = 11.sp, modifier = Modifier.weight(1.0f))
                     Text(String.format(java.util.Locale.US, "%.2f", breakdown.overallDemandFactor), color = ThemeTextPrimary, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.weight(1.0f))
                     Text(String.format(java.util.Locale.US, "%.1f", breakdown.totalDemandKva), color = SleekPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.weight(1.4f))
+                }
+                        }
+                    }
                 }
             }
         }
