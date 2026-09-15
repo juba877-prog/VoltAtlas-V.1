@@ -957,7 +957,12 @@ fun ShortCircuitCard(
                         text = "Margin",
                         style = DsType.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(48.dp)
+                        // widthIn(min) instead of fixed width: at fontScale
+                        // 1.3+ the label grows instead of clipping, and the
+                        // weighted margin bar absorbs the difference. Keeps the
+                        // 48dp aligned label column at fontScale 1.0
+                        // (pixel-identical rendering there).
+                        modifier = Modifier.widthIn(min = 48.dp)
                     )
 
                     val marginPct = calculateCircuitMarginPct(res)
@@ -1014,7 +1019,11 @@ fun ShortCircuitCard(
                         fontWeight = FontWeight.Bold,
                         color = marginTextColor,
                         textAlign = TextAlign.End,
-                        modifier = Modifier.width(68.dp)
+                        // widthIn(min) instead of fixed width: at fontScale 1.3+
+                        // a large percentage (e.g. 125.0%) grows instead of
+                        // clipping its leading digits (right-aligned clip would
+                        // make an ambiguous value). Bar absorbs the difference.
+                        modifier = Modifier.widthIn(min = 68.dp)
                     )
                 }
 
@@ -1150,7 +1159,13 @@ private fun MetricItemTile(
                     style = DsType.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    // Width allocation (same contract as DsMetricTile, Phase 2):
+                    // the unit is measured first and can never be pushed out of
+                    // the tile; the value ellipsizes only when it alone cannot
+                    // fit. Pixel-identical when value + unit fit on one line.
+                    modifier = Modifier.weight(1f, fill = false)
                 )
                 Spacer(modifier = Modifier.width(2.dp))
                 Text(
