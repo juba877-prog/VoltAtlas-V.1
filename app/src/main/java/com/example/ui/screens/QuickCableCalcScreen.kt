@@ -25,9 +25,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.Catalog
@@ -58,6 +61,47 @@ import java.util.Locale
  * - Coordinator freshness registry and sizingCache
  * - Project revision tracking
  */
+private val CableFieldMinWidth: Dp = 130.dp
+
+/**
+ * Two-field input row for the Quick Cable scratchpad.
+ *
+ * LEVEL B screen-local reflow: the per-field content minimum is derived from
+ * the longest engineering field labels in this screen ("Ground Temp (°C)",
+ * "Override Breaker Type") plus M3 text-field horizontal padding (~130dp),
+ * scaled by the current font scale. When the two fields can no longer each
+ * hold their label + value inline, the pair stacks vertically — the field
+ * ORDER and therefore the value/label association is preserved. No device
+ * breakpoints are used.
+ */
+@Composable
+private fun CableInputFieldRow(
+    first: @Composable (Modifier) -> Unit,
+    second: @Composable (Modifier) -> Unit
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val requiredPerField = CableFieldMinWidth * LocalDensity.current.fontScale
+        val stackVertically = maxWidth / 2 < requiredPerField
+        if (stackVertically) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                first(Modifier.fillMaxWidth())
+                second(Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                first(Modifier.weight(1f))
+                second(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickCableCalcScreen(
@@ -382,73 +426,89 @@ fun QuickCableCalcScreen(
                             Text("1. Electrical & Load Inputs", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
                         }
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedTextField(
-                                value = loadKvaText,
-                                onValueChange = { loadKvaText = it },
-                                label = { Text("Load (kVA)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                modifier = Modifier.weight(1f).testTag("input_load_kva")
-                            )
-                            OutlinedTextField(
-                                value = voltageText,
-                                onValueChange = { voltageText = it },
-                                label = { Text("Voltage (V)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f).testTag("input_voltage")
-                            )
-                        }
+                        CableInputFieldRow(
+                            first = { fieldModifier ->
+                                OutlinedTextField(
+                                    value = loadKvaText,
+                                    onValueChange = { loadKvaText = it },
+                                    label = { Text("Load (kVA)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    modifier = fieldModifier.testTag("input_load_kva")
+                                )
+                            },
+                            second = { fieldModifier ->
+                                OutlinedTextField(
+                                    value = voltageText,
+                                    onValueChange = { voltageText = it },
+                                    label = { Text("Voltage (V)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = fieldModifier.testTag("input_voltage")
+                                )
+                            }
+                        )
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            DropdownSelector(
-                                label = "Phases",
-                                selected = phases,
-                                options = availablePhases,
-                                onSelect = { phases = it },
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = pfText,
-                                onValueChange = { pfText = it },
-                                label = { Text("Power Factor (pf)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                modifier = Modifier.weight(1f).testTag("input_pf")
-                            )
-                        }
+                        CableInputFieldRow(
+                            first = { fieldModifier ->
+                                DropdownSelector(
+                                    label = "Phases",
+                                    selected = phases,
+                                    options = availablePhases,
+                                    onSelect = { phases = it },
+                                    modifier = fieldModifier
+                                )
+                            },
+                            second = { fieldModifier ->
+                                OutlinedTextField(
+                                    value = pfText,
+                                    onValueChange = { pfText = it },
+                                    label = { Text("Power Factor (pf)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    modifier = fieldModifier.testTag("input_pf")
+                                )
+                            }
+                        )
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedTextField(
-                                value = lengthText,
-                                onValueChange = { lengthText = it },
-                                label = { Text("Length (m)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                modifier = Modifier.weight(1f).testTag("input_length")
-                            )
-                            OutlinedTextField(
-                                value = maxVdPctText,
-                                onValueChange = { maxVdPctText = it },
-                                label = { Text("Max VD Limit (%)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                modifier = Modifier.weight(1f).testTag("input_max_vd")
-                            )
-                        }
+                        CableInputFieldRow(
+                            first = { fieldModifier ->
+                                OutlinedTextField(
+                                    value = lengthText,
+                                    onValueChange = { lengthText = it },
+                                    label = { Text("Length (m)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    modifier = fieldModifier.testTag("input_length")
+                                )
+                            },
+                            second = { fieldModifier ->
+                                OutlinedTextField(
+                                    value = maxVdPctText,
+                                    onValueChange = { maxVdPctText = it },
+                                    label = { Text("Max VD Limit (%)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    modifier = fieldModifier.testTag("input_max_vd")
+                                )
+                            }
+                        )
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedTextField(
-                                value = safetyFactorText,
-                                onValueChange = { safetyFactorText = it },
-                                label = { Text("Safety Factor") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = parallelRunsText,
-                                onValueChange = { parallelRunsText = it },
-                                label = { Text("Parallel Runs") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
+                        CableInputFieldRow(
+                            first = { fieldModifier ->
+                                OutlinedTextField(
+                                    value = safetyFactorText,
+                                    onValueChange = { safetyFactorText = it },
+                                    label = { Text("Safety Factor") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    modifier = fieldModifier
+                                )
+                            },
+                            second = { fieldModifier ->
+                                OutlinedTextField(
+                                    value = parallelRunsText,
+                                    onValueChange = { parallelRunsText = it },
+                                    label = { Text("Parallel Runs") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = fieldModifier
+                                )
+                            }
+                        )
                     }
                 }
             }
@@ -617,56 +677,68 @@ fun QuickCableCalcScreen(
                             Text("3. Environmental Derating", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
                         }
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedTextField(
-                                value = airTempText,
-                                onValueChange = { airTempText = it },
-                                label = { Text("Air Temp (°C)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = gndTempText,
-                                onValueChange = { gndTempText = it },
-                                label = { Text("Ground Temp (°C)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
+                        CableInputFieldRow(
+                            first = { fieldModifier ->
+                                OutlinedTextField(
+                                    value = airTempText,
+                                    onValueChange = { airTempText = it },
+                                    label = { Text("Air Temp (°C)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = fieldModifier
+                                )
+                            },
+                            second = { fieldModifier ->
+                                OutlinedTextField(
+                                    value = gndTempText,
+                                    onValueChange = { gndTempText = it },
+                                    label = { Text("Ground Temp (°C)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = fieldModifier
+                                )
+                            }
+                        )
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedTextField(
-                                value = burialDepthText,
-                                onValueChange = { burialDepthText = it },
-                                label = { Text("Burial Depth (m)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = soilResText,
-                                onValueChange = { soilResText = it },
-                                label = { Text("Soil Res (K·m/W)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
+                        CableInputFieldRow(
+                            first = { fieldModifier ->
+                                OutlinedTextField(
+                                    value = burialDepthText,
+                                    onValueChange = { burialDepthText = it },
+                                    label = { Text("Burial Depth (m)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    modifier = fieldModifier
+                                )
+                            },
+                            second = { fieldModifier ->
+                                OutlinedTextField(
+                                    value = soilResText,
+                                    onValueChange = { soilResText = it },
+                                    label = { Text("Soil Res (K·m/W)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = fieldModifier
+                                )
+                            }
+                        )
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedTextField(
-                                value = noCircuitsText,
-                                onValueChange = { noCircuitsText = it },
-                                label = { Text("Grouped Circuits") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f)
-                            )
-                            DropdownSelector(
-                                label = "Formation",
-                                selected = formation,
-                                options = availableFormations,
-                                onSelect = { formation = it },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
+                        CableInputFieldRow(
+                            first = { fieldModifier ->
+                                OutlinedTextField(
+                                    value = noCircuitsText,
+                                    onValueChange = { noCircuitsText = it },
+                                    label = { Text("Grouped Circuits") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = fieldModifier
+                                )
+                            },
+                            second = { fieldModifier ->
+                                DropdownSelector(
+                                    label = "Formation",
+                                    selected = formation,
+                                    options = availableFormations,
+                                    onSelect = { formation = it },
+                                    modifier = fieldModifier
+                                )
+                            }
+                        )
                     }
                 }
             }
@@ -701,22 +773,26 @@ fun QuickCableCalcScreen(
 
                         AnimatedVisibility(visible = showOverrides) {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    DropdownSelector(
-                                        label = "Override Breaker Type",
-                                        selected = overrideDeviceType,
-                                        options = availableBreakerTypes,
-                                        onSelect = { overrideDeviceType = it },
-                                        modifier = Modifier.weight(1f).testTag("override_breaker_type_dropdown")
-                                    )
-                                    DropdownSelector(
-                                        label = "Override Rating (A)",
-                                        selected = overrideDeviceRating,
-                                        options = availableRatings,
-                                        onSelect = { overrideDeviceRating = it },
-                                        modifier = Modifier.weight(1f).testTag("override_breaker_rating_dropdown")
-                                    )
-                                }
+                                CableInputFieldRow(
+                                    first = { fieldModifier ->
+                                        DropdownSelector(
+                                            label = "Override Breaker Type",
+                                            selected = overrideDeviceType,
+                                            options = availableBreakerTypes,
+                                            onSelect = { overrideDeviceType = it },
+                                            modifier = fieldModifier.testTag("override_breaker_type_dropdown")
+                                        )
+                                    },
+                                    second = { fieldModifier ->
+                                        DropdownSelector(
+                                            label = "Override Rating (A)",
+                                            selected = overrideDeviceRating,
+                                            options = availableRatings,
+                                            onSelect = { overrideDeviceRating = it },
+                                            modifier = fieldModifier.testTag("override_breaker_rating_dropdown")
+                                        )
+                                    }
+                                )
 
                                 DropdownSelector(
                                     label = "Override Cable Size (Cross-Section)",
@@ -726,22 +802,26 @@ fun QuickCableCalcScreen(
                                     modifier = Modifier.fillMaxWidth().testTag("override_cable_size_dropdown")
                                 )
 
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    DropdownSelector(
-                                        label = "Override Neutral",
-                                        selected = overrideNeutralSize,
-                                        options = availableConductorSizes,
-                                        onSelect = { overrideNeutralSize = it },
-                                        modifier = Modifier.weight(1f).testTag("override_neutral_dropdown")
-                                    )
-                                    DropdownSelector(
-                                        label = "Override Earth/CPC",
-                                        selected = overrideEarthSize,
-                                        options = availableConductorSizes,
-                                        onSelect = { overrideEarthSize = it },
-                                        modifier = Modifier.weight(1f).testTag("override_earth_dropdown")
-                                    )
-                                }
+                                CableInputFieldRow(
+                                    first = { fieldModifier ->
+                                        DropdownSelector(
+                                            label = "Override Neutral",
+                                            selected = overrideNeutralSize,
+                                            options = availableConductorSizes,
+                                            onSelect = { overrideNeutralSize = it },
+                                            modifier = fieldModifier.testTag("override_neutral_dropdown")
+                                        )
+                                    },
+                                    second = { fieldModifier ->
+                                        DropdownSelector(
+                                            label = "Override Earth/CPC",
+                                            selected = overrideEarthSize,
+                                            options = availableConductorSizes,
+                                            onSelect = { overrideEarthSize = it },
+                                            modifier = fieldModifier.testTag("override_earth_dropdown")
+                                        )
+                                    }
+                                )
                             }
                         }
                     }
@@ -1014,7 +1094,16 @@ private fun SmallMetricBox(
         modifier = modifier
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
-            Text(title, color = SlateTextSecondary, fontSize = 10.sp, maxLines = 1)
+            Text(
+                title,
+                color = SlateTextSecondary,
+                fontSize = 10.sp,
+                // Up to four of these boxes share one row; the title must wrap
+                // (and only then ellipsize) instead of hard-clipping mid-word
+                // on narrow phones or at enlarged font scale.
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
             Spacer(modifier = Modifier.height(2.dp))
             Text(value, color = ThemeTextColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
