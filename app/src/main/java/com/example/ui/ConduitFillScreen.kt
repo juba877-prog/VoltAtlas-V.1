@@ -24,6 +24,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,12 +39,15 @@ import com.example.ui.components.StatusBadge
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConduitFillScreen(viewModel: EngineeringViewModel) {
+fun ConduitFillScreen(
+    viewModel: EngineeringViewModel,
+    state: UiState.Success? = null
+) {
     val stateVal by viewModel.uiState.collectAsState()
-    val state = stateVal as? UiState.Success ?: return
+    val resolvedState = state ?: (stateVal as? UiState.Success) ?: return
 
-    val circuits = state.circuits
-    val results = state.conduitResults
+    val circuits = resolvedState.circuits
+    val results = resolvedState.conduitResults
 
     var selectedFilter by rememberSaveable { mutableStateOf("ALL") }
     var expandedDetailId by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -92,21 +96,21 @@ fun ConduitFillScreen(viewModel: EngineeringViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                         Text("$passCount", color = SleekPass, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        Text("PASS", color = SleekPass, fontSize = 9.sp)
+                        Text("PASS", color = SleekPass, fontSize = 9.sp, maxLines = 1)
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                         Text("$failCount", color = SleekFail, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        Text("FAIL", color = SleekFail, fontSize = 9.sp)
+                        Text("FAIL", color = SleekFail, fontSize = 9.sp, maxLines = 1)
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                         Text("$reviewCount", color = SleekWarning, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        Text("REVIEW", color = SleekWarning, fontSize = 9.sp)
+                        Text("REVIEW", color = SleekWarning, fontSize = 9.sp, maxLines = 1)
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                         Text("$missingCount", color = SlateTextSecondary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        Text("MISSING", color = SlateTextSecondary, fontSize = 9.sp)
+                        Text("MISSING", color = SlateTextSecondary, fontSize = 9.sp, maxLines = 1)
                     }
                 }
             }
@@ -155,7 +159,7 @@ fun ConduitFillScreen(viewModel: EngineeringViewModel) {
             items(filteredResults, key = { it.id }) { circ ->
                 val res = results[circ.id]
                 val isExpanded = expandedDetailId == circ.id
-                val sizingRes = state.sizingResults[circ.id]
+                val sizingRes = resolvedState.sizingResults[circ.id]
 
                 Card(
                     modifier = Modifier
@@ -190,54 +194,113 @@ fun ConduitFillScreen(viewModel: EngineeringViewModel) {
                         Spacer(modifier = Modifier.height(8.dp))
 
                         if (res != null && res.status != "NOT APPLICABLE") {
-                            // Section 7 Fixed Labels
-                            // 3-column grid with proper weight distribution
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Main Cable OD", color = SlateTextSecondary, fontSize = 9.sp, maxLines = 1)
-                                    Text("${String.format("%.1f", res.mainCableOD_mm)} mm", color = ThemeTextColor, fontSize = 11.sp, maxLines = 1)
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text("Main Cable Area", color = SlateTextSecondary, fontSize = 9.sp, maxLines = 1)
-                                    Text("${String.format("%.1f", res.mainCableAreaMm2)} mm²", color = ThemeTextColor, fontSize = 11.sp, maxLines = 1)
+                            // Section 7 Fixed Labels with responsive Level B reflow
+                            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                                val isNarrow = maxWidth < 340.dp || LocalDensity.current.fontScale >= 1.3f
+
+                                val mainCableBlock: @Composable (Modifier) -> Unit = { mod ->
+                                    Column(modifier = mod) {
+                                        Text("Main Cable OD", color = SlateTextSecondary, fontSize = 9.sp, maxLines = 1)
+                                        Text(
+                                            "${String.format("%.1f", res.mainCableOD_mm)} mm",
+                                            color = ThemeTextColor,
+                                            fontSize = 11.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text("Main Cable Area", color = SlateTextSecondary, fontSize = 9.sp, maxLines = 1)
+                                        Text(
+                                            "${String.format("%.1f", res.mainCableAreaMm2)} mm²",
+                                            color = ThemeTextColor,
+                                            fontSize = 11.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("CPC Cable OD", color = SlateTextSecondary, fontSize = 9.sp, maxLines = 1)
-                                    Text(
-                                        text = if (res.cpcOD_mm > 0.0) "${String.format("%.1f", res.cpcOD_mm)} mm" else if (res.isProvisionalWithoutCPC) "REQUIRED" else "N/A",
-                                        color = if (res.isProvisionalWithoutCPC) SleekWarning else ThemeTextColor,
-                                        fontSize = 11.sp,
-                                        maxLines = 1
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text("CPC Cable Area", color = SlateTextSecondary, fontSize = 9.sp, maxLines = 1)
-                                    Text(
-                                        text = if (res.cpcCableAreaMm2 > 0.0) "${String.format("%.1f", res.cpcCableAreaMm2)} mm²" else if (res.isProvisionalWithoutCPC) "REQUIRED" else "N/A",
-                                        color = if (res.isProvisionalWithoutCPC) SleekWarning else ThemeTextColor,
-                                        fontSize = 11.sp,
-                                        maxLines = 1
-                                    )
+
+                                val cpcCableBlock: @Composable (Modifier) -> Unit = { mod ->
+                                    Column(modifier = mod) {
+                                        Text("CPC Cable OD", color = SlateTextSecondary, fontSize = 9.sp, maxLines = 1)
+                                        Text(
+                                            text = if (res.cpcOD_mm > 0.0) "${String.format("%.1f", res.cpcOD_mm)} mm" else if (res.isProvisionalWithoutCPC) "REQUIRED" else "N/A",
+                                            color = if (res.isProvisionalWithoutCPC) SleekWarning else ThemeTextColor,
+                                            fontSize = 11.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text("CPC Cable Area", color = SlateTextSecondary, fontSize = 9.sp, maxLines = 1)
+                                        Text(
+                                            text = if (res.cpcCableAreaMm2 > 0.0) "${String.format("%.1f", res.cpcCableAreaMm2)} mm²" else if (res.isProvisionalWithoutCPC) "REQUIRED" else "N/A",
+                                            color = if (res.isProvisionalWithoutCPC) SleekWarning else ThemeTextColor,
+                                            fontSize = 11.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Conduit", color = SlateTextSecondary, fontSize = 9.sp, maxLines = 1)
-                                    Text(
-                                        text = if (res.recommendedTradeSize != "N/A") "${res.recommendedTradeSize} (${res.conduitsRequired}x)" else "N/A",
-                                        color = SleekPrimary,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text("Fill / Limit", color = SlateTextSecondary, fontSize = 9.sp, maxLines = 1)
-                                    Text(
-                                        text = "${String.format("%.1f", res.fillRatioPercent)}% / ${res.allowedFillPercent.toInt()}%",
-                                        color = if (res.fillRatioPercent > res.allowedFillPercent) SleekFail else ThemeTextColor,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1
-                                    )
+
+                                val conduitBlock: @Composable (Modifier) -> Unit = { mod ->
+                                    Column(modifier = mod) {
+                                        Text("Conduit", color = SlateTextSecondary, fontSize = 9.sp, maxLines = 1)
+                                        Text(
+                                            text = if (res.recommendedTradeSize != "N/A") "${res.recommendedTradeSize} (${res.conduitsRequired}x)" else "N/A",
+                                            color = SleekPrimary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+
+                                val fillLimitBlock: @Composable (Modifier) -> Unit = { mod ->
+                                    Column(modifier = mod) {
+                                        Text("Fill / Limit", color = SlateTextSecondary, fontSize = 9.sp, maxLines = 1)
+                                        Text(
+                                            text = "${String.format("%.1f", res.fillRatioPercent)}% / ${res.allowedFillPercent.toInt()}%",
+                                            color = if (res.fillRatioPercent > res.allowedFillPercent) SleekFail else ThemeTextColor,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+
+                                if (isNarrow) {
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            mainCableBlock(Modifier.weight(1f))
+                                            cpcCableBlock(Modifier.weight(1f))
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            conduitBlock(Modifier.weight(1f))
+                                            fillLimitBlock(Modifier.weight(1f))
+                                        }
+                                    }
+                                } else {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        mainCableBlock(Modifier.weight(1f))
+                                        cpcCableBlock(Modifier.weight(1f))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            conduitBlock(Modifier)
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            fillLimitBlock(Modifier)
+                                        }
+                                    }
                                 }
                             }
 
@@ -263,34 +326,83 @@ fun ConduitFillScreen(viewModel: EngineeringViewModel) {
                         Spacer(modifier = Modifier.height(8.dp))
 
                         // Action row: Edit Override & Show Calculation Details
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            TextButton(
-                                onClick = { expandedDetailId = if (isExpanded) null else circ.id },
-                                contentPadding = PaddingValues(0.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(if (isExpanded) "Hide Calculation" else "View Calculation", fontSize = 11.sp, color = SleekPrimary)
-                                    Icon(
-                                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                        contentDescription = null,
-                                        tint = SleekPrimary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
+                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                            val stackActions = maxWidth < 320.dp || LocalDensity.current.fontScale >= 1.3f
+                            if (stackActions) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    FilledTonalButton(
+                                        onClick = { selectedCircuitForEdit = circ },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(min = 40.dp)
+                                            .testTag("configure_conduit_${circ.id}"),
+                                        border = BorderStroke(1.dp, BorderColor),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                    ) {
+                                        Icon(Icons.Default.Tune, contentDescription = "Edit", modifier = Modifier.size(14.dp), tint = ThemeTextColor)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Configure Conduit", fontSize = 11.sp, color = ThemeTextColor)
+                                    }
 
-                            FilledTonalButton(
-                                onClick = { selectedCircuitForEdit = circ },
-                                border = BorderStroke(1.dp, BorderColor),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.Tune, contentDescription = "Edit", modifier = Modifier.size(14.dp), tint = ThemeTextColor)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Configure Conduit", fontSize = 10.sp, color = ThemeTextColor)
+                                    TextButton(
+                                        onClick = { expandedDetailId = if (isExpanded) null else circ.id },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(min = 36.dp)
+                                            .testTag("view_calc_${circ.id}"),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.Center,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(if (isExpanded) "Hide Calculation" else "View Calculation", fontSize = 11.sp, color = SleekPrimary)
+                                            Icon(
+                                                imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                                contentDescription = null,
+                                                tint = SleekPrimary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    TextButton(
+                                        onClick = { expandedDetailId = if (isExpanded) null else circ.id },
+                                        modifier = Modifier.testTag("view_calc_${circ.id}"),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(if (isExpanded) "Hide Calculation" else "View Calculation", fontSize = 11.sp, color = SleekPrimary)
+                                            Icon(
+                                                imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                                contentDescription = null,
+                                                tint = SleekPrimary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+
+                                    FilledTonalButton(
+                                        onClick = { selectedCircuitForEdit = circ },
+                                        modifier = Modifier.testTag("configure_conduit_${circ.id}"),
+                                        border = BorderStroke(1.dp, BorderColor),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                    ) {
+                                        Icon(Icons.Default.Tune, contentDescription = "Edit", modifier = Modifier.size(14.dp), tint = ThemeTextColor)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Configure Conduit", fontSize = 10.sp, color = ThemeTextColor)
+                                    }
+                                }
                             }
                         }
 
@@ -374,7 +486,10 @@ fun ConduitFillScreen(viewModel: EngineeringViewModel) {
                     if (!isDirectBuried) {
                         // Routing Mode
                         Text("Routing Mode", color = SleekPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             FilterChip(
                                 selected = routingMode == "ONE_PER_CONDUIT",
                                 onClick = { routingMode = "ONE_PER_CONDUIT" },
@@ -389,7 +504,10 @@ fun ConduitFillScreen(viewModel: EngineeringViewModel) {
 
                         // Design Profile
                         Text("Design Profile & Fill Limit", color = SleekPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             FilterChip(
                                 selected = designProfile == "PROJECT_DESIGN",
                                 onClick = { designProfile = "PROJECT_DESIGN" },
