@@ -43,7 +43,9 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.testTag
@@ -336,47 +338,97 @@ fun ProjectPickerScreen(
             ) {
                 item {
                     // Action Buttons Row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Button(
-                            onClick = { 
-                                newProjectName = ""
-                                showCreateDialog = true 
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
-                            contentPadding = PaddingValues()
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Brush.horizontalGradient(colors = listOf(BrandCyan, SleekPrimary))),
-                                contentAlignment = Alignment.Center
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        val stackButtons = maxWidth < 300.dp || LocalDensity.current.fontScale >= 1.3f
+                        if (stackButtons) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Text("+ New Project", color = ThemeTextColor, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, softWrap = false)
-                            }
-                        }
+                                Button(
+                                    onClick = { 
+                                        newProjectName = ""
+                                        showCreateDialog = true 
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                                    contentPadding = PaddingValues()
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(min = 48.dp)
+                                            .background(Brush.horizontalGradient(colors = listOf(BrandCyan, SleekPrimary))),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("+ New Project", color = ThemeTextColor, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                }
 
-                        OutlinedButton(
-                            onClick = {
-                                importJsonText = ""
-                                importErrorMsg = null
-                                showImportDialog = true
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, BrandCyan),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandCyan),
-                            contentPadding = PaddingValues(horizontal = 8.dp)
-                        ) {
-                            Text("📥 Import Project", color = brandCyan, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, softWrap = false)
+                                OutlinedButton(
+                                    onClick = {
+                                        importJsonText = ""
+                                        importErrorMsg = null
+                                        showImportDialog = true
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, BrandCyan),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandCyan),
+                                    contentPadding = PaddingValues(horizontal = 8.dp)
+                                ) {
+                                    Text("📥 Import Project", color = brandCyan, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Button(
+                                    onClick = { 
+                                        newProjectName = ""
+                                        showCreateDialog = true 
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                                    contentPadding = PaddingValues()
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Brush.horizontalGradient(colors = listOf(BrandCyan, SleekPrimary))),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("+ New Project", color = ThemeTextColor, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                                    }
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        importJsonText = ""
+                                        importErrorMsg = null
+                                        showImportDialog = true
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, BrandCyan),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandCyan),
+                                    contentPadding = PaddingValues(horizontal = 8.dp)
+                                ) {
+                                    Text("📥 Import Project", color = brandCyan, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                                }
+                            }
                         }
                     }
 
@@ -387,7 +439,7 @@ fun ProjectPickerScreen(
                         onClick = onOpenQuickCalc,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp)
+                            .heightIn(min = 48.dp)
                             .testTag("quick_calc_btn"),
                         shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(1.dp, BrandGreen),
@@ -855,62 +907,108 @@ private fun ProjectCard(
         colors = CardDefaults.cardColors(containerColor = DarkCardBg),
         border = BorderStroke(1.dp, BorderColor)
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Icon Tile
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(if (LocalThemeIsDark.current) SlateBorderDark else SlateBorderLight, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = project.projectName.take(1).uppercase(),
-                    color = brandCyan,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
-                )
-            }
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            Column(modifier = Modifier.weight(1f)) {
-                Text(project.projectName, color = ThemeTextColor, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                Spacer(modifier = Modifier.height(4.dp))
-                
-                val subtitle = buildString {
-                    if (!project.clientName.isNullOrBlank()) {
-                        append(project.clientName)
-                        append(" • ")
-                    }
-                    append(dateFormat.format(Date(project.updatedAt)))
-                }
-                
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Status dot
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .background(StatusNeutral, CircleShape)
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val isNarrowCard = maxWidth < 340.dp
+            val avatarBlock: @Composable () -> Unit = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(if (LocalThemeIsDark.current) SlateBorderDark else SlateBorderLight, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = project.projectName.take(1).uppercase(),
+                        color = brandCyan,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Active", color = StatusNeutral, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(subtitle, color = SlateTextSecondary, fontSize = 11.sp, maxLines = 1, softWrap = false)
                 }
             }
 
-            
-            IconButton(onClick = onExport, modifier = Modifier.testTag("export_project_${project.projectId}")) {
-                Icon(Icons.Default.Share, contentDescription = "Export Project", tint = BrandCyan)
+            val titleBlock: @Composable (Modifier) -> Unit = { mod ->
+                Column(modifier = mod) {
+                    Text(
+                        project.projectName,
+                        color = ThemeTextColor,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    val subtitle = buildString {
+                        if (!project.clientName.isNullOrBlank()) {
+                            append(project.clientName)
+                            append(" • ")
+                        }
+                        append(dateFormat.format(Date(project.updatedAt)))
+                    }
+                    
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(StatusNeutral, CircleShape)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Active", color = StatusNeutral, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            subtitle,
+                            color = SlateTextSecondary,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                    }
+                }
             }
-            IconButton(onClick = onRename) {
-                Icon(Icons.Default.Edit, contentDescription = "Rename", tint = BrandCyan)
+
+            val actionsBlock: @Composable () -> Unit = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onExport, modifier = Modifier.testTag("export_project_${project.projectId}")) {
+                        Icon(Icons.Default.Share, contentDescription = "Export Project", tint = BrandCyan)
+                    }
+                    IconButton(onClick = onRename) {
+                        Icon(Icons.Default.Edit, contentDescription = "Rename", tint = BrandCyan)
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = SleekFail)
+                    }
+                }
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = SleekFail)
+
+            if (isNarrowCard) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        avatarBlock()
+                        Spacer(modifier = Modifier.width(12.dp))
+                        titleBlock(Modifier.weight(1f))
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        actionsBlock()
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    avatarBlock()
+                    Spacer(modifier = Modifier.width(16.dp))
+                    titleBlock(Modifier.weight(1f))
+                    actionsBlock()
+                }
             }
         }
     }
