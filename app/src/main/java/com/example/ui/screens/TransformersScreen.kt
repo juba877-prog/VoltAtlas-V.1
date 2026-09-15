@@ -209,7 +209,8 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                                 text = activeTx.transformerId,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = DsType.labelSmall,
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Row(
@@ -223,7 +224,9 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                                 Text(
                                     "Insulation: ${activeTx.txType}",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = DsType.labelSmall
+                                    style = DsType.labelSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -366,7 +369,13 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Auto-recommend capacity", color = MaterialTheme.colorScheme.onSurface, style = DsType.bodyMedium)
+                            Text(
+                                "Auto-recommend capacity",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                style = DsType.bodyMedium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Switch(
                                 checked = activeTx.sizeMode == "Auto",
                                 onCheckedChange = { isChecked ->
@@ -622,7 +631,9 @@ private fun CompactKpiTile(
                     style = DsType.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
                 if (unit != null) {
                     Spacer(modifier = Modifier.width(3.dp))
