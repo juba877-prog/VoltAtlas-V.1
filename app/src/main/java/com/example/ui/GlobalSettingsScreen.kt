@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -422,16 +423,20 @@ fun GlobalSettingsScreen(
                             Text("Voltage Drop Limit Thresholds", color = ThemeTextColor, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                             Text("Maximum allowable voltage drop percentage limits per IEC 60364-5-52.", color = SlateTextSecondary, fontSize = 12.sp)
                             Spacer(modifier = Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text("Lighting Circuits Limit", color = ThemeTextColor, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                    Text("Standard limit is 3.0%", color = SlateTextSecondary, fontSize = 11.sp)
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                                // LEVEL B screen-local decision (same content +
+                                // fontScale pattern as the Circuits baseline):
+                                // inline label|chips only when the row can
+                                // physically fit; stack below 320dp of local
+                                // width or at enlarged font scale so every chip
+                                // keeps a usable touch target.
+                                val stackSettingChips =
+                                    maxWidth < 320.dp || LocalDensity.current.fontScale >= 1.3f
+                                SettingLabelChipsRow(
+                                    label = "Lighting Circuits Limit",
+                                    helperText = "Standard limit is 3.0%",
+                                    stackVertically = stackSettingChips
+                                ) {
                                     listOf(3.0, 4.0, 5.0).forEach { limit ->
                                         FilterChip(
                                             selected = maxVdLighting == limit,
@@ -446,18 +451,12 @@ fun GlobalSettingsScreen(
                                         )
                                     }
                                 }
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text("Power & Feeder Limit", color = ThemeTextColor, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                    Text("Standard limit is 5.0%", color = SlateTextSecondary, fontSize = 11.sp)
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                SettingLabelChipsRow(
+                                    label = "Power & Feeder Limit",
+                                    helperText = "Standard limit is 5.0%",
+                                    stackVertically = stackSettingChips
+                                ) {
                                     listOf(5.0, 6.0, 7.0).forEach { limit ->
                                         FilterChip(
                                             selected = maxVdPower == limit,
@@ -488,13 +487,14 @@ fun GlobalSettingsScreen(
                                 Text("Phase Imbalance Limit Threshold (Active Project)", color = ThemeTextColor, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                                 Text("Project default maximum allowable phase unbalance percentage for panel schedules (Default 20.0%).", color = SlateTextSecondary, fontSize = 12.sp)
                                 Spacer(modifier = Modifier.height(10.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("Project Default Limit", color = ThemeTextColor, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                                    val stackImbalanceChips =
+                                        maxWidth < 320.dp || LocalDensity.current.fontScale >= 1.3f
+                                    SettingLabelChipsRow(
+                                        label = "Project Default Limit",
+                                        helperText = null,
+                                        stackVertically = stackImbalanceChips
+                                    ) {
                                         listOf(10.0, 15.0, 20.0).forEach { limit ->
                                             FilterChip(
                                                 selected = currentProjLimit == limit,
@@ -1144,6 +1144,64 @@ private fun DiagnosticRow(label: String, loaded: Boolean, count: Int? = null) {
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
             )
+        }
+    }
+}
+
+/**
+ * Setting row pairing: label (+ optional helper) on the left, chips on the
+ * right, exactly as the original inline `SpaceBetween` rows rendered.
+ *
+ * When [stackVertically] is true (decided per-row from the LOCAL measured
+ * width and the current font scale — content-driven, not a device
+ * breakpoint), the chips move to their own full-width row below the label
+ * so every chip keeps a usable touch target instead of being crushed into
+ * the remaining inline space.
+ *
+ * Used by the Voltage-Drop limit selectors and the project phase-imbalance
+ * selector — the three real repeated label|chips cases in this screen.
+ */
+@Composable
+private fun SettingLabelChipsRow(
+    label: String,
+    helperText: String?,
+    stackVertically: Boolean,
+    content: @Composable () -> Unit
+) {
+    val labelBlock: @Composable () -> Unit = {
+        Text(label, color = ThemeTextColor, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        if (helperText != null) {
+            Text(helperText, color = SlateTextSecondary, fontSize = 11.sp)
+        }
+    }
+
+    if (stackVertically) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            labelBlock()
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                content()
+            }
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                labelBlock()
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                content()
+            }
         }
     }
 }
