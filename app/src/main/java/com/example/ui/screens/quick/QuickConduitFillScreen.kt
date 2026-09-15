@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -29,6 +30,36 @@ import com.example.ui.components.quick.*
 import com.example.ui.theme.*
 import kotlinx.collections.immutable.persistentListOf
 import java.util.Locale
+
+private val ConduitFieldMinWidth = 140.dp
+
+@Composable
+private fun ConduitInputFieldRow(
+    first: @Composable (Modifier) -> Unit,
+    second: @Composable (Modifier) -> Unit
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val requiredPerField = ConduitFieldMinWidth * LocalDensity.current.fontScale
+        val stackVertically = maxWidth / 2 < requiredPerField
+        if (stackVertically) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                first(Modifier.fillMaxWidth())
+                second(Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                first(Modifier.weight(1f))
+                second(Modifier.weight(1f))
+            }
+        }
+    }
+}
 
 private val CONDUIT_MATERIAL_OPTIONS = persistentListOf("Rigid PVC", "EMT Steel", "GI Steel")
 private val FILL_LIMIT_OPTIONS = persistentListOf("NEC Std (53/31/40%)", "Custom Limit %")
@@ -189,43 +220,51 @@ fun QuickConduitFillScreen(
                 QuickCard {
                     QuickSectionTitle(title = "Cable Arrangement & Outside Diameters", accentColor = SleekPrimary)
 
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(
-                            value = mainCableCountText,
-                            onValueChange = { mainCableCountText = it },
-                            label = { Text("Main Cables (Qty)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
-                        )
-                        OutlinedTextField(
-                            value = mainCableODText,
-                            onValueChange = { mainCableODText = it },
-                            label = { Text("Main Cable OD (mm)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
-                        )
-                    }
+                    ConduitInputFieldRow(
+                        first = { fieldModifier ->
+                            OutlinedTextField(
+                                value = mainCableCountText,
+                                onValueChange = { mainCableCountText = it },
+                                label = { Text("Main Cables (Qty)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = fieldModifier.testTag("input_main_cable_count"),
+                                singleLine = true
+                            )
+                        },
+                        second = { fieldModifier ->
+                            OutlinedTextField(
+                                value = mainCableODText,
+                                onValueChange = { mainCableODText = it },
+                                label = { Text("Main Cable OD (mm)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = fieldModifier.testTag("input_main_cable_od"),
+                                singleLine = true
+                            )
+                        }
+                    )
 
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(
-                            value = cpcCableCountText,
-                            onValueChange = { cpcCableCountText = it },
-                            label = { Text("CPC Earth Cables (Qty)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
-                        )
-                        OutlinedTextField(
-                            value = cpcCableODText,
-                            onValueChange = { cpcCableODText = it },
-                            label = { Text("CPC Cable OD (mm)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
-                        )
-                    }
+                    ConduitInputFieldRow(
+                        first = { fieldModifier ->
+                            OutlinedTextField(
+                                value = cpcCableCountText,
+                                onValueChange = { cpcCableCountText = it },
+                                label = { Text("CPC Earth Cables (Qty)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = fieldModifier.testTag("input_cpc_cable_count"),
+                                singleLine = true
+                            )
+                        },
+                        second = { fieldModifier ->
+                            OutlinedTextField(
+                                value = cpcCableODText,
+                                onValueChange = { cpcCableODText = it },
+                                label = { Text("CPC Cable OD (mm)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = fieldModifier.testTag("input_cpc_cable_od"),
+                                singleLine = true
+                            )
+                        }
+                    )
                 }
             }
 
@@ -239,44 +278,86 @@ fun QuickConduitFillScreen(
 
             // ── 4. Metric Hero Grid ──
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        QuickMetricHero(
-                            title = "RECOMMENDED TRADE SIZE",
-                            value = result.recommendedTradeSize,
-                            subtitle = "Conduit ID: ${result.internalDiameterMm} mm",
-                            modifier = Modifier.weight(1f),
-                            accentColor = if (result.isCompliant) SleekPass else SleekFail
-                        )
-                        QuickMetricHero(
-                            title = "ACTUAL FILL RATIO",
-                            value = "${String.format(Locale.US, "%.1f", result.actualFillPercent)}%",
-                            subtitle = "Max Allowed: ${String.format(Locale.US, "%.0f", result.allowedFillPercent)}%",
-                            modifier = Modifier.weight(1f),
-                            accentColor = if (result.isCompliant) SleekPass else SleekFail
-                        )
-                    }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        QuickMetricHero(
-                            title = "TOTAL CABLE AREA",
-                            value = "${String.format(Locale.US, "%.1f", result.totalCableAreaMm2)} mm²",
-                            subtitle = "Conduit Area: ${String.format(Locale.US, "%.1f", result.totalInternalAreaMm2)} mm²",
-                            modifier = Modifier.weight(1f),
-                            accentColor = SleekPrimary
-                        )
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val stackMetricCards = maxWidth < 320.dp || LocalDensity.current.fontScale >= 1.3f
+                    if (stackMetricCards) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            QuickMetricHero(
+                                title = "RECOMMENDED TRADE SIZE",
+                                value = result.recommendedTradeSize,
+                                subtitle = "Conduit ID: ${result.internalDiameterMm} mm",
+                                modifier = Modifier.fillMaxWidth(),
+                                accentColor = if (result.isCompliant) SleekPass else SleekFail
+                            )
+                            QuickMetricHero(
+                                title = "ACTUAL FILL RATIO",
+                                value = "${String.format(Locale.US, "%.1f", result.actualFillPercent)}%",
+                                subtitle = "Max Allowed: ${String.format(Locale.US, "%.0f", result.allowedFillPercent)}%",
+                                modifier = Modifier.fillMaxWidth(),
+                                accentColor = if (result.isCompliant) SleekPass else SleekFail
+                            )
+                            QuickMetricHero(
+                                title = "TOTAL CABLE AREA",
+                                value = "${String.format(Locale.US, "%.1f", result.totalCableAreaMm2)} mm²",
+                                subtitle = "Conduit Area: ${String.format(Locale.US, "%.1f", result.totalInternalAreaMm2)} mm²",
+                                modifier = Modifier.fillMaxWidth(),
+                                accentColor = SleekPrimary
+                            )
 
-                        val spareColor = when {
-                            result.spareCapacityPercent >= 20.0 -> SleekPass
-                            result.spareCapacityPercent >= 0.0 -> SleekWarning
-                            else -> SleekFail
+                            val spareColor = when {
+                                result.spareCapacityPercent >= 20.0 -> SleekPass
+                                result.spareCapacityPercent >= 0.0 -> SleekWarning
+                                else -> SleekFail
+                            }
+                            QuickMetricHero(
+                                title = "SPARE CROSS-SECTION",
+                                value = "${String.format(Locale.US, "%.1f", result.remainingSpareAreaMm2)} mm²",
+                                subtitle = "${String.format(Locale.US, "%.1f", result.spareCapacityPercent)}% spare area",
+                                modifier = Modifier.fillMaxWidth(),
+                                accentColor = spareColor
+                            )
                         }
-                        QuickMetricHero(
-                            title = "SPARE CROSS-SECTION",
-                            value = "${String.format(Locale.US, "%.1f", result.remainingSpareAreaMm2)} mm²",
-                            subtitle = "${String.format(Locale.US, "%.1f", result.spareCapacityPercent)}% spare area",
-                            modifier = Modifier.weight(1f),
-                            accentColor = spareColor
-                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                QuickMetricHero(
+                                    title = "RECOMMENDED TRADE SIZE",
+                                    value = result.recommendedTradeSize,
+                                    subtitle = "Conduit ID: ${result.internalDiameterMm} mm",
+                                    modifier = Modifier.weight(1f),
+                                    accentColor = if (result.isCompliant) SleekPass else SleekFail
+                                )
+                                QuickMetricHero(
+                                    title = "ACTUAL FILL RATIO",
+                                    value = "${String.format(Locale.US, "%.1f", result.actualFillPercent)}%",
+                                    subtitle = "Max Allowed: ${String.format(Locale.US, "%.0f", result.allowedFillPercent)}%",
+                                    modifier = Modifier.weight(1f),
+                                    accentColor = if (result.isCompliant) SleekPass else SleekFail
+                                )
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                QuickMetricHero(
+                                    title = "TOTAL CABLE AREA",
+                                    value = "${String.format(Locale.US, "%.1f", result.totalCableAreaMm2)} mm²",
+                                    subtitle = "Conduit Area: ${String.format(Locale.US, "%.1f", result.totalInternalAreaMm2)} mm²",
+                                    modifier = Modifier.weight(1f),
+                                    accentColor = SleekPrimary
+                                )
+
+                                val spareColor = when {
+                                    result.spareCapacityPercent >= 20.0 -> SleekPass
+                                    result.spareCapacityPercent >= 0.0 -> SleekWarning
+                                    else -> SleekFail
+                                }
+                                QuickMetricHero(
+                                    title = "SPARE CROSS-SECTION",
+                                    value = "${String.format(Locale.US, "%.1f", result.remainingSpareAreaMm2)} mm²",
+                                    subtitle = "${String.format(Locale.US, "%.1f", result.spareCapacityPercent)}% spare area",
+                                    modifier = Modifier.weight(1f),
+                                    accentColor = spareColor
+                                )
+                            }
+                        }
                     }
                 }
             }
