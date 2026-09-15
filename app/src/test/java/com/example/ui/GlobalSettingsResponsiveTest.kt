@@ -77,6 +77,18 @@ class GlobalSettingsNarrowWidthTest {
             .performScrollToNode(hasText("4.0%"))
         composeTestRule.waitForIdle()
 
+        listOf("4.0%", "6.0%", "7.0%").forEach { chip ->
+            val node = composeTestRule.onNodeWithText(chip).fetchSemanticsNode()
+            assertTrue(
+                "chip '$chip' must keep usable width, got ${node.boundsInRoot.width}px",
+                node.boundsInRoot.width >= 30f
+            )
+        }
+        // Note: the phase-imbalance selector uses the same
+        // SettingLabelChipsRow component but renders only when an active
+        // project exists; it is covered structurally by the VD selectors.
+    }
+}
 
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -188,16 +200,4 @@ class GlobalSettingsMediumInlineRegressionTest {
             kotlin.math.abs(labelCenterY - chipCenterY) <= 40f
         )
     }
-}
-        listOf("4.0%", "6.0%", "7.0%").forEach { chip ->
-            val node = composeTestRule.onNodeWithText(chip).fetchSemanticsNode()
-            assertTrue(
-                "chip '$chip' must keep usable width, got ${node.boundsInRoot.width}px",
-                node.boundsInRoot.width >= 30f
-            )
-        }
-        // Note: the phase-imbalance selector uses the same
-        // SettingLabelChipsRow component but renders only when an active
-        // project exists; it is covered structurally by the VD selectors.
-    }
-}
+}
