@@ -136,6 +136,11 @@ binary compatibility with 2.x. It therefore pairs correctly with the mandated
 
 ## 3. Inert catalog entries neutralised (close-out defect §3)
 
+> **Supersedes commit 1567964**, whose commit message names CameraX 1.6.2 / credentials 1.6.0 /
+> play-services-location 21.4.0 / datastore 1.2.1 — these were reverted in `42dec21` and were
+> **never compiled or tested** (their dependencies are commented out in `app/build.gradle.kts`,
+> so they were also never verified against `compileSdk 37`).
+
 `app/build.gradle.kts` keeps CameraX (×4), credentials, play-services-location, Coil,
 Navigation and datastore **commented out** (lines 142–145, 154, 158, 161, 175–177, 186).
 Their catalog versions were raised in Stage 2 and described as "harmless". They are not
@@ -240,49 +245,64 @@ Bounded Track B procedure:
 
 ---
 
-## 5. Test isolation defect — TRACKED DEFECT (close-out defect §5)
+## 5. Test isolation defect — **RESOLVED** (was close-out defect §5)
 
 **ID:** `VOLT-TESTISO-001` — global `Catalog` state leaks across test classes sharing one JVM.
 
-**Symptom:** `CircuitEditorInitializerSpecTest.test01_addMode_initialization` fails only in a
-full-suite run:
+**Status: FIXED (test-only change; no production/engine code touched).**
 
-```
-org.junit.ComparisonFailure: expected:<[A]rmoured> but was:<[Un]armoured>
-```
+### 5.1 Fix applied
 
-**Reproducing command (full suite):**
+1. **New reusable rule** — `app/src/test/java/com/example/testing/CatalogStateResetRule.kt`:
+   `CatalogStateSnapshot` (immutable capture of every mutable `Catalog` field: `cableTypes`,
+   `dataSheet`, `cableCatalog`, `breakers`, `accessories`, `conduits`, `busways`,
+   `deratingData`, `lastError`), `captureCatalogState()` / `restoreCatalogState()` (restore also
+   calls `Catalog.invalidateIndexes()`), and `CatalogStateResetRule` (JUnit4 `ExternalResource`
+   usable as `@ClassRule` or `@Rule`). Restoring the entry state keeps classes that load the
+   catalogue in their own setup working unchanged, while guaranteeing that a class hands back
+   exactly the state it received on exit.
+2. **Class-level guard (`@JvmField @ClassRule`) added to the 13 `Catalog`-mutating test classes
+   that had no restoration hook** (CableSizingEngineTest, EngineFixesTest, Phase3RemediationTest,
+   QaTestSuite, QuickCableCalcTest, QuickEngineeringBatch1IntegrationTest,
+   QuickEngineeringDataBridgeTest, VoltageDropV2CalculationTest, VoltageDropV2ProvenanceTest,
+   OperationalFreshnessIntegrationTest, EngineeringCalculationCoordinatorTest, EngineStressTest,
+   FuzzStressTest — those without an existing `companion object` got one). The remaining
+   Catalog-mutating classes (CatalogLoaderTest — restores in `finally`; AllEngines/Master stress
+   tests, ProjectContextProviderTest, PostCommitRevalidationOrchestratorTest,
+   CableEngineeringToolsTest, CoordinatorNonBlockingExecutionTest, RevisionCorrectnessTest —
+   restore in `@After`) were left as-is: they already hand back their state, and widening the diff
+   further was out of scope.
+3. **Victim class made hermetic** — `CircuitEditorInitializerSpecTest` got the rule plus a
+   `@Before` that installs its own fixture into the global `Catalog.cableTypes` (the same types it
+   already passes as `catalogSnapshot`), so `resolveCableType()` sees deterministic input.
+4. **Hidden pollution dependency surfaced and fixed** — the guard exposed that
+   `EngineeringCalculationCoordinatorTest` had been *inheriting* the real catalogue (breakers,
+   derating data, full cable set) leaked from earlier classes: its `setUp()` installed only a
+   minimal fixture **conditionally** (`if (Catalog.cableTypes.isEmpty())`), and three of its tests
+   (`testCoordinatorTargetedCoordinationResolvesRealUpstreamRating`,
+   `testCoordinatorTargetedProtectionAssemblesDependencyBranch`,
+   `testCoordinatorCoordinationCacheReusesAndInvalidatesOnUpstreamChange`) failed once that
+   inheritance was cut off. Its `setUp()` now **unconditionally installs the real application
+   catalogue from `src/main/assets`** (cable_types, data_sheet, cable_catalog, breaker_catalog,
+   derating_data — mirroring the parsing used by `QaTestSuite` and the production loader), making
+   the class deterministic.
 
-```powershell
-.\gradlew.bat :app:testDebugUnitTest --console=plain --rerun-tasks
-```
+**Not done (explicitly forbidden):** no test reordering, no re-running-until-green, no `@Ignore`,
+no engine/production changes.
 
-**Isolation-passes command (class alone — passes on both toolchains):**
+### 5.2 Before/after evidence
 
-```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests "*CircuitEditorInitializerSpecTest" --rerun-tasks
-```
+| Command | Before fix (`42dec21`) | After fix |
+|---|---|---|
+| `.\gradlew.bat :app:testDebugUnitTest --rerun-tasks` (full suite) | **BUILD FAILED** — 1335 tests, **1 failed** (`CircuitEditorInitializerSpecTest.test01`), 1 skipped (7m12s) | **BUILD SUCCESSFUL** — 1335 tests, **0 failed**, 1 skipped (7m50s) |
+| `.\gradlew.bat :app:testDebugUnitTest --tests "*CircuitEditorInitializerSpecTest" --rerun-tasks` | PASS | PASS |
+| `.\gradlew.bat :app:testDebugUnitTest --tests "*EngineeringCalculationCoordinatorTest" --rerun-tasks` | PASS (via leaked state) | **PASS** (self-sufficient) |
 
-**Evidence it is pre-existing and not an upgrade artifact:** the full suite returns exactly
-`1335 tests, 1 failed, 1 skipped` on the **old** toolchain (Gradle 9.3.1 / AGP 9.1.1 / Kotlin
-2.2.10) and on the new one; the class passes in isolation on both.
+Engine numeric outputs: unchanged — the diff touches files under `app/src/test/**` only (one new
+test utility + 14 test files); no production or engine source file is modified, and every engine
+suite (`*Engine*`, `*Quick*`) passes in the green full-suite run.
 
-**Root cause:** other test classes mutate process-wide `com.example.data.Catalog` state
-(`Catalog.cableTypes` / `Catalog.cableCatalog` are reassigned, e.g. in `CatalogLoaderTest`), and
-`CircuitEditorInitializer`'s default-alignment resolution is sensitive to that shared state.
-Kotlin 2.2.10 → 2.4.20 changed class discovery/execution order, which changed which class runs
-first — the defect is order-dependent and was surfaced differently.
-
-**Required fix (not applied in this commit — outside the deliverable's file scope):** reset the
-shared `Catalog` state between test classes — proper `@Before`/`@After` isolation, or a JUnit
-`TestRule` that snapshots and restores `Catalog.cableTypes` / `Catalog.cableCatalog` and calls
-`Catalog.invalidateIndexes()`.
-**Explicitly forbidden:** "fixing" it by reordering tests or by re-running until green.
-
-**Hard prerequisite of Track B Stage 3:** this defect must be fixed and the **full suite green
-before** `.\gradlew.bat :app:recordRoborazziDebug` is ever run. If global `Catalog` state can leak
-across classes, a re-record run can capture polluted state into the new golden baselines, thereby
-permanently encoding a wrong value into the accepted visual truth.
+**Track B Stage 3 prerequisite P1 is now satisfied.**
 
 ---
 
@@ -292,7 +312,7 @@ permanently encoding a wrong value into the accepted visual truth.
 
 | # | Prerequisite | Detail |
 |---|---|---|
-| P1 | Fix `VOLT-TESTISO-001` and get the full suite green | §5 — prevents polluted state being recorded into golden baselines |
+| P1 | ~~Fix `VOLT-TESTISO-001` and get the full suite green~~ → **RESOLVED** | Fixed by the test-isolation commit following `42dec21` (see §5): full suite green at 1335/0/1. Prevents polluted state being recorded into golden baselines. Also note: the catalog entries raised by commit 1567964 (CameraX 1.6.2 / credentials 1.6.0 / play-services-location 21.4.0 / datastore 1.2.1) were reverted in `42dec21` and were **never compiled or tested** — see §3. |
 | P2 | Complete the Roborazzi mechanism diagnosis (steps 1–3 of §4.3) | prevents a config-induced delta being silently accepted as new truth |
 | P3 | Owner approval for re-recording goldens | Gate 3 requires explicit acceptance |
 

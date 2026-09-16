@@ -34,6 +34,10 @@ import java.io.File
 class QuickEngineeringBatch1IntegrationTest {
 
     companion object {
+        @JvmField
+        @org.junit.ClassRule
+        val catalogStateReset = com.example.testing.CatalogStateResetRule()
+
         private fun findAssetFile(filename: String): File {
             val candidates = listOf(
                 File("app/src/main/assets/$filename"),

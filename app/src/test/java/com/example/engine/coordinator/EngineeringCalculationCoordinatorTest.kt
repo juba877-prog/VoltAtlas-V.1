@@ -1,5 +1,6 @@
 package com.example.engine.coordinator
 
+import com.example.data.BreakerEntry
 import com.example.data.CableCatalogEntry
 import com.example.data.CableType
 import com.example.data.Catalog
@@ -18,74 +19,103 @@ import com.example.engine.ShortCircuitResult
 import com.example.engine.SizingResult
 import com.example.engine.TransformerEngine
 import com.example.engine.TransformerResult
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 
 class EngineeringCalculationCoordinatorTest {
 
+    companion object {
+        @JvmField
+        @org.junit.ClassRule
+        val catalogStateReset = com.example.testing.CatalogStateResetRule()
+
+        private fun findAssetFile(filename: String): File {
+            val candidates = listOf(
+                File("app/src/main/assets/$filename"),
+                File("src/main/assets/$filename")
+            )
+            return candidates.firstOrNull { it.exists() }
+                ?: error("Asset not found: $filename (searched: ${candidates.joinToString(", ") { it.path }})")
+        }
+
+        private inline fun <reified T> loadCatalogArray(filename: String, map: (JSONObject) -> T): List<T> {
+            val arr = JSONArray(findAssetFile(filename).readText(Charsets.UTF_8))
+            return (0 until arr.length()).map { map(arr.getJSONObject(it)) }
+        }
+    }
+
     @Before
     fun setUp() {
         EngineeringCalculationCoordinator.clearCache()
-        if (Catalog.cableTypes.isEmpty()) {
-            Catalog.cableTypes = listOf(
-                CableType(1, "Cu/XLPE", "Cu", "XLPE", "None", "3C", "0.6/1kV", "IEC", "R_Cu90"),
-                CableType(2, "Cu/PVC", "Cu", "PVC", "None", "3C", "0.6/1kV", "IEC", "R_Cu70"),
-                CableType(3, "Cu/XLPE/PVC - 4C", "Cu", "XLPE", "None", "4C", "0.6/1kV", "IEC", "R_Cu90"),
-                CableType(4, "Cu/XLPE/SWA/PVC", "Cu", "XLPE", "SWA", "4C", "0.6/1kV", "IEC", "R_Cu90")
+        installRealCatalogFromAssets()
+    }
+
+    /**
+     * Defect VOLT-TESTISO-001: this class used to inherit whatever catalogue state the previously
+     * executed test class had leaked into the process-wide [Catalog] singleton (its own fixture
+     * installation was conditional on `Catalog.cableTypes.isEmpty()`). It now installs the real
+     * application catalogue from `src/main/assets` itself, so its assertions are deterministic and
+     * independent of test-class execution order; the class-level [CatalogStateResetRule] restores
+     * the previous state when the class finishes.
+     */
+    private fun installRealCatalogFromAssets() {
+        Catalog.cableTypes = loadCatalogArray("cable_types.json") { obj ->
+            CableType(
+                code = com.example.data.catalog.BreakerParser.parsePoles(obj.opt("typeCode") ?: obj.opt("code")),
+                cableType = obj.optString("cableType", "Standard"),
+                conductor = obj.optString("conductor", "Cu"),
+                insulation = obj.optString("insulation", "XLPE"),
+                armour = obj.optString("armour", "None"),
+                cores = obj.optString("cores", "4C"),
+                voltage = obj.optString("voltage", "0.6/1"),
+                standard = obj.optString("standard", "IEC 60502"),
+                rColumn = obj.optString("rColumn", "R_Cu90")
             )
         }
-        if (Catalog.dataSheet.isEmpty()) {
-            Catalog.dataSheet = listOf(
-                DataSheetEntry(1.5, 12.1, 0.118, 19.5, 14.52, 23.4),
-                DataSheetEntry(2.5, 7.41, 0.109, 12.1, 8.89, 14.52),
-                DataSheetEntry(4.0, 4.61, 0.101, 7.41, 5.53, 8.89),
-                DataSheetEntry(6.0, 3.08, 0.093, 4.61, 3.7, 5.53),
-                DataSheetEntry(10.0, 1.83, 0.086, 3.08, 2.2, 3.7),
-                DataSheetEntry(16.0, 1.15, 0.082, 1.91, 1.38, 2.29),
-                DataSheetEntry(25.0, 0.727, 0.080, 1.20, 0.872, 1.44),
-                DataSheetEntry(35.0, 0.524, 0.078, 0.868, 0.629, 1.04),
-                DataSheetEntry(50.0, 0.387, 0.078, 0.641, 0.464, 0.77),
-                DataSheetEntry(70.0, 0.268, 0.077, 0.443, 0.322, 0.532),
-                DataSheetEntry(95.0, 0.193, 0.076, 0.320, 0.232, 0.384),
-                DataSheetEntry(120.0, 0.153, 0.075, 0.253, 0.184, 0.304),
-                DataSheetEntry(150.0, 0.124, 0.075, 0.206, 0.149, 0.247),
-                DataSheetEntry(185.0, 0.0991, 0.074, 0.164, 0.119, 0.197),
-                DataSheetEntry(240.0, 0.0754, 0.074, 0.125, 0.0905, 0.15),
-                DataSheetEntry(300.0, 0.0601, 0.073, 0.100, 0.0721, 0.12),
-                DataSheetEntry(400.0, 0.0470, 0.073, 0.0778, 0.0564, 0.0934),
-                DataSheetEntry(500.0, 0.0366, 0.072, 0.0605, 0.0439, 0.0726),
-                DataSheetEntry(630.0, 0.0283, 0.072, 0.0469, 0.0340, 0.0563)
+        Catalog.dataSheet = loadCatalogArray("data_sheet.json") { obj ->
+            DataSheetEntry(
+                size = obj.getDouble("size"),
+                R_Cu20 = if (obj.has("R_Cu20")) obj.getDouble("R_Cu20") else obj.getDouble("R_Cu70"),
+                X = obj.getDouble("X"),
+                R_Al20 = if (obj.has("R_Al20")) obj.getDouble("R_Al20") else obj.getDouble("R_Al70"),
+                R_Cu_70_est = if (obj.has("R_Cu_70_est")) obj.getDouble("R_Cu_70_est") else obj.getDouble("R_Cu90"),
+                R_Al_70_est = if (obj.has("R_Al_70_est")) obj.getDouble("R_Al_70_est") else obj.getDouble("R_Al90")
             )
         }
-        if (Catalog.cableCatalog.isEmpty()) {
-            val sizes = listOf(
-                1.5 to 10.0, 2.5 to 11.0, 4.0 to 12.0, 6.0 to 13.0, 10.0 to 15.0,
-                16.0 to 16.0, 25.0 to 19.0, 35.0 to 21.0, 50.0 to 24.0, 70.0 to 27.0,
-                95.0 to 30.0, 120.0 to 33.0, 150.0 to 37.0, 185.0 to 41.0, 240.0 to 46.0,
-                300.0 to 51.0, 400.0 to 58.0, 500.0 to 64.0, 630.0 to 72.0
+        Catalog.cableCatalog = loadCatalogArray("cable_catalog.json") { obj ->
+            CableCatalogEntry(
+                mfg = obj.optString("mfg", obj.optString("Manufacturer", "Generic")),
+                typeCode = com.example.data.catalog.BreakerParser.parsePoles(obj.opt("typeCode") ?: obj.opt("TypeCode") ?: obj.opt("Code")),
+                size = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("size") ?: obj.opt("SZ (mm²)") ?: obj.opt("Size")),
+                model = obj.optString("model", obj.optString("Model", "")),
+                gnd = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("gnd") ?: obj.opt("GND")),
+                duct = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("duct") ?: obj.opt("DUCT")),
+                air = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("air") ?: obj.opt("AIR")),
+                od = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("od") ?: obj.opt("OD")),
+                wt = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("wt") ?: obj.opt("WT"))
             )
-            val entries = mutableListOf<CableCatalogEntry>()
-            for (tc in listOf(1, 2, 3, 4)) {
-                for ((sz, od) in sizes) {
-                    val current = sz * 3.0 + 10.0
-                    entries.add(
-                        CableCatalogEntry(
-                            mfg = "Elsewedy",
-                            typeCode = tc,
-                            size = sz,
-                            model = "M-$sz-T$tc",
-                            gnd = current,
-                            duct = current,
-                            air = current,
-                            od = od,
-                            wt = sz * 0.03 + 0.2
-                        )
-                    )
-                }
-            }
-            Catalog.cableCatalog = entries
         }
+        Catalog.breakers = loadCatalogArray("breaker_catalog.json") { obj ->
+            BreakerEntry(
+                mfg = obj.optString("mfg", obj.optString("Source", "Generic")),
+                type = obj.optString("type", "MCCB"),
+                series = obj.optString("series", obj.optString("Series", "")),
+                frame = if (obj.has("frameA")) obj.optString("frameA", "") else obj.optString("frame", obj.optString("Frame", "")),
+                version = obj.optString("version", obj.optString("Version", "")),
+                rating_A = com.example.data.catalog.BreakerParser.parseRating(obj.opt("ratingA") ?: obj.opt("rating_A") ?: obj.opt("In (A)")),
+                poles = com.example.data.catalog.BreakerParser.parsePoles(obj.opt("poles") ?: obj.opt("Poles")),
+                icu_kA = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("icuKa") ?: obj.opt("icu_kA") ?: obj.opt("Icu@415V (kA)")),
+                ics_kA = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("icsKa") ?: obj.opt("ics_kA") ?: obj.opt("Ics@415V (kA)")),
+                icm_kA = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("icmKa") ?: obj.opt("icm_kA") ?: obj.opt("Icm@415V (kA)")),
+                tripUnit = obj.optString("tripUnit", obj.optString("Trip Unit", "Thermal-Magnetic"))
+            )
+        }
+        Catalog.deratingData = JSONObject(findAssetFile("derating_data.json").readText(Charsets.UTF_8))
+        Catalog.invalidateIndexes()
     }
 
     @Test

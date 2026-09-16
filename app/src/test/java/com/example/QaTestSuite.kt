@@ -11,6 +11,10 @@ import java.io.File
 class QaTestSuite {
 
     companion object {
+        @JvmField
+        @org.junit.ClassRule
+        val catalogStateReset = com.example.testing.CatalogStateResetRule()
+
         private var jsonString: String = ""
 
         @BeforeClass

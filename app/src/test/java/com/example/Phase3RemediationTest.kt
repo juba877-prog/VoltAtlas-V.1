@@ -30,6 +30,10 @@ import java.io.File
 class Phase3RemediationTest {
 
     companion object {
+        @JvmField
+        @org.junit.ClassRule
+        val catalogStateReset = com.example.testing.CatalogStateResetRule()
+
         private val repository = CatalogRepository()
 
         private fun findAssetFile(filename: String): File {

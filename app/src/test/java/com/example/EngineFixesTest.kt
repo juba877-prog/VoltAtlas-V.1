@@ -10,6 +10,12 @@ import org.json.JSONObject
 
 class EngineFixesTest {
 
+    companion object {
+        @JvmField
+        @org.junit.ClassRule
+        val catalogStateReset = com.example.testing.CatalogStateResetRule()
+    }
+
     private var originalCableTypes: List<CableType> = emptyList()
     private var originalDataSheet: List<DataSheetEntry> = emptyList()
     private var originalCableCatalog: List<CableCatalogEntry> = emptyList()

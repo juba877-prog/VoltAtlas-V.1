@@ -17,6 +17,10 @@ import kotlin.math.sqrt
 class VoltageDropV2CalculationTest {
 
     companion object {
+        @JvmField
+        @org.junit.ClassRule
+        val catalogStateReset = com.example.testing.CatalogStateResetRule()
+
         @JvmStatic
         @BeforeClass
         fun setupCatalog() {

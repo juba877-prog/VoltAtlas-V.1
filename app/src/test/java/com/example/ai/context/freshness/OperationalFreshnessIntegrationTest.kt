@@ -22,6 +22,12 @@ import org.junit.Test
  */
 class OperationalFreshnessIntegrationTest {
 
+    companion object {
+        @JvmField
+        @org.junit.ClassRule
+        val catalogStateReset = com.example.testing.CatalogStateResetRule()
+    }
+
     private val coordinator = EngineeringCalculationCoordinator
 
     @Before

@@ -2,8 +2,10 @@ package com.example.ui.dialogs.circuiteditor.spec
 
 import com.example.data.CableCatalogEntry
 import com.example.data.CableType
+import com.example.data.Catalog
 import com.example.data.CircuitEntity
 import com.example.data.catalog.BuswayCatalogEntry
+import com.example.testing.CatalogStateResetRule
 import com.example.ui.dialogs.circuiteditor.model.CableCatalogSnapshot
 import com.example.ui.dialogs.circuiteditor.model.CircuitEditorPreferencesSnapshot
 import com.example.ui.dialogs.circuiteditor.model.TransformerSnapshot
@@ -11,6 +13,8 @@ import com.example.ui.dialogs.circuiteditor.state.CircuitEditorInitializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 
 /**
@@ -96,6 +100,22 @@ class CircuitEditorInitializerSpecTest {
             )
         )
     )
+
+    @get:Rule
+    val catalogStateReset = CatalogStateResetRule()
+
+    /**
+     * Defect VOLT-TESTISO-001: `CircuitEditorInitializer.initialize()` derives the default cable
+     * type through the global `resolveCableType()`, which reads the process-wide
+     * `Catalog.cableTypes`. Installing this test's own fixture (the same types it passes as
+     * `catalogSnapshot`) makes the expectation independent of any catalogue state another test
+     * class may have left behind; the rule restores the previous state afterwards.
+     */
+    @Before
+    fun installGlobalCatalogFixture() {
+        Catalog.cableTypes = catalog.cableTypes
+        Catalog.invalidateIndexes()
+    }
 
     @Test
     fun test01_addMode_initialization() {

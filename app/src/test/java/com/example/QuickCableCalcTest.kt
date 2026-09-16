@@ -39,6 +39,10 @@ import java.io.File
 class QuickCableCalcTest {
 
     companion object {
+        @JvmField
+        @org.junit.ClassRule
+        val catalogStateReset = com.example.testing.CatalogStateResetRule()
+
         private fun findAssetFile(filename: String): File {
             val candidates = listOf(
                 File("app/src/main/assets/$filename"),

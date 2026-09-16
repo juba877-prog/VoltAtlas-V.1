@@ -15,6 +15,10 @@ import java.io.File
 class VoltageDropV2ProvenanceTest {
 
     companion object {
+        @JvmField
+        @org.junit.ClassRule
+        val catalogStateReset = com.example.testing.CatalogStateResetRule()
+
         @JvmStatic
         @BeforeClass
         fun setupCatalog() {
