@@ -73,13 +73,34 @@ were scanned after `Expand-Archive`:
 - **Positive path:** with the official sum and the mirror URL, the wrapper downloaded, verified
   and started: `Welcome to Gradle 9.7.1!` / `Gradle 9.7.1`.
 
-### 1.5 Related finding (not changed here — out of scope)
+### 1.5 Wrapper JAR alignment (follow-up — RESOLVED)
 
-The repository's `gradle-wrapper.jar` matches the **wrapper JAR checksum published for
-Gradle 9.5.0 / 9.5.1 / 9.6.0 / 9.6.1** (`497C8C2A…94A9C7`), not 9.7.1's (`7a9ce74c…62c5d`).
-The property is fully supported by the current JAR (proven in §1.4), so enforcement is real
-today; aligning the JAR hash with the 9.7.1 distribution is recommended as a separate,
-reviewable follow-up (it is a wrapper-binary change, not a dependency bump).
+The repository's `gradle-wrapper.jar` initially matched the wrapper JAR checksum published for
+Gradle **9.5.0 / 9.5.1 / 9.6.0 / 9.6.1** (`497C8C2A7E5031F6AA847F88104AA80A93532EC32EE17BDB8D1D2F67A194A9C7`)
+rather than 9.7.1's (`7a9ce74cff467ca1bf60a4fcd9f05185acceda4d0f382434d393e17864262c5d`) — the
+*distribution* was 9.7.1 but the JAR was a generation older.
+
+**RESOLVED in the follow-up commit** by regenerating the wrapper with the official `wrapper` task
+of the 9.7.1 toolchain (`gradle wrapper --gradle-version 9.7.1 --distribution-type bin
+--gradle-distribution-sha256-sum …`):
+
+| Item | Value |
+|---|---|
+| Before | `497C8C2A7E5031F6AA847F88104AA80A93532EC32EE17BDB8D1D2F67A194A9C7` (9.5.0–9.6.1 wrapper) |
+| After | `7A9CE74CFF467CA1BF60A4FCD9F05185ACCEDA4D0F382434D393E17864262C5D` = published 9.7.1 wrapper JAR checksum |
+| `gradlew.bat` | regenerated with the 9.7.1 script template |
+| `gradlew` (bash) | byte-identical to the previous one — unchanged |
+| `distributionSha256Sum` | re-emitted by the task; official `distributionUrl` preserved |
+
+Generation note: the `wrapper` task validates the distribution URL with a network probe;
+`services.gradle.org` is blocked here (307 → github.com), so generation was run against the mirror
+URL as transport and the official `distributionUrl` was restored in the properties afterwards.
+The JAR is produced by the local 9.7.1 toolchain itself.
+
+**Enforcement re-verified with the new JAR:** offline `file://` negative test with a corrupted sum
+→ `Verification of Gradle distribution failed!` — `Expected checksum: '…4d20b'` /
+`Actual checksum: '…4d20a'` (= official). A repo-level sanity run (`gradlew --version`) works with
+the cached distribution.
 
 ---
 
