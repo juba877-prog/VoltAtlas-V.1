@@ -11,9 +11,11 @@ class Gate3DxfExportTest {
 
     @Test
     fun testGate3Export() {
-        val jsonFile = File("Gate_3_20260816_repaired.json").takeIf { it.exists() }
-            ?: File("../Gate_3_20260816_repaired.json")
-        val jsonStr = jsonFile.readText()
+        val jsonStream = checkNotNull(
+            javaClass.classLoader?.getResourceAsStream("fixtures/Gate_3_20260816_repaired.json")
+                ?: javaClass.getResourceAsStream("/fixtures/Gate_3_20260816_repaired.json")
+        ) { "Test fixture fixtures/Gate_3_20260816_repaired.json not found on classpath" }
+        val jsonStr = jsonStream.bufferedReader().use { it.readText() }
         val root = JSONObject(jsonStr)
 
         val projObj = root.getJSONObject("project")
