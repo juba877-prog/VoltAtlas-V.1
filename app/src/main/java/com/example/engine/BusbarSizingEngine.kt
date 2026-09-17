@@ -83,6 +83,13 @@ object BusbarSizingEngine {
     /**
      * Standard rated continuous currents (In) for low-voltage switchboards per IEC 61439-1.
      */
+    /**
+     * Continuous-ampacity acceptance tolerance (AUDIT-5 P0 item 2 / E-20).
+     * One named constant, deliberately NOT widened. The DERATED continuous ampacity is the sole
+     * acceptance condition for continuous current — never the nominal/rated rating.
+     */
+    private const val AMPACITY_TOLERANCE = 0.99
+
     val STANDARD_RATINGS_A = listOf(
         100.0, 125.0, 160.0, 200.0, 250.0, 315.0, 400.0, 630.0, 800.0,
         1000.0, 1250.0, 1600.0, 2000.0, 2500.0, 3200.0, 4000.0, 5000.0, 6300.0
@@ -218,7 +225,12 @@ object BusbarSizingEngine {
         // 5. Select Physical Busbar Profile
         val suitableProfile = STANDARD_PROFILES.firstOrNull { prof ->
             val deratedCap = prof.nominalAmpacityA * totalDerating
-            val hasAmpacity = deratedCap >= reqCurrentA || prof.nominalAmpacityA >= candidateRating
+            // E-20 (AUDIT-5 P0 item 2): the DERATED continuous ampacity is the SOLE acceptance
+            // condition. The removed `|| prof.nominalAmpacityA >= candidateRating` disjunct selected
+            // a profile on its nominal rating even when derating left it below the requirement
+            // (630 A nominal x 0.80 IP54 = 504 A derated against 600 A required, yet it was selected
+            // and reported PASS).
+            val hasAmpacity = deratedCap >= reqCurrentA * AMPACITY_TOLERANCE
             val hasThermalWithstand = prof.crossSectionPerPhaseMm2 >= minThermalCrossSectionMm2
             hasAmpacity && hasThermalWithstand
         } ?: STANDARD_PROFILES.last()
@@ -261,7 +273,8 @@ object BusbarSizingEngine {
         val peProfileStr = "${peSection.toInt()} mm² ${material.displayName}"
 
         // 9. Compliance Checks & Status
-        val isAmpOk = deratedAmpacityA >= (reqCurrentA * 0.99) || candidateRating >= (reqCurrentA * 0.99)
+        // E-20 (AUDIT-5 P0 item 2): derated ampacity only; the nominal-rating disjunct is removed.
+        val isAmpOk = deratedAmpacityA >= (reqCurrentA * AMPACITY_TOLERANCE)
         val isScOk = effectiveFaultKa <= 0.0 || finalIcwKa >= (effectiveFaultKa * 0.99)
         val status = if (isAmpOk && isScOk) "PASS" else "FAIL"
 

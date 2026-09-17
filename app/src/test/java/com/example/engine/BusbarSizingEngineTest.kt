@@ -1,6 +1,7 @@
 package com.example.engine
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -121,6 +122,62 @@ class BusbarSizingEngineTest {
         assertTrue("Tag must contain 36kA/1s", tag.contains("36kA/1s"))
         assertTrue("Tag must contain IP54", tag.contains("IP54"))
         assertTrue("Tag must contain bar profile", tag.contains("mm²"))
+    }
+
+    // =========================================================================
+    // AUDIT-5 P0 item 2 (E-20): continuous-current acceptance must rest on the
+    // DERATED ampacity alone. These two tests failed before the fix.
+    // =========================================================================
+
+    @Test
+    fun testIp54Derating_600ARequirement_mustSelectAdequateDeratedProfile() {
+        // Scenario from AUDIT-3 §8 item 1: 600 A required, IP54 (kIp = 0.80), 35 degC (kTemp = 1.0),
+        // bare copper. candidateRating = 630 A (first standard rating >= 600 A) and the 630 A nominal
+        // profile derates to 504 A - BELOW the requirement. Selecting on nominal rating alone yields an
+        // under-capacity busbar, so the selected profile's derated capacity is the acceptance condition.
+        val res = BusbarSizingEngine.sizeBusbar(
+            designCurrentA = 600.0,
+            ipRating = "IP54",
+            ambientTempC = 35.0,
+            material = BusbarMaterial.COPPER,
+            finish = BusbarFinish.BARE
+        )
+
+        assertEquals("Standard candidate rating for a 600 A requirement", 630.0, res.ratedCurrentA, 0.001)
+        assertTrue(
+            "Selected profile's DERATED ampacity (${res.deratedAmpacityA} A) must meet the 600 A " +
+                "requirement; the pre-fix code selected the 630 A nominal profile (504 A derated) and passed it",
+            res.deratedAmpacityA >= 600.0
+        )
+        assertTrue(
+            "Ampacity verdict must be consistent with an adequate derated capacity",
+            res.isAmpacitySufficient
+        )
+    }
+
+    @Test
+    fun testDeratedAmpacityInsufficientAtLargestProfile_mustFail() {
+        // 6300 A required at IP54: even the largest standard profile (6300 A nominal) derates to
+        // 5040 A, so NO profile satisfies. The pre-fix code passed this via the nominal-rating disjunct.
+        val res = BusbarSizingEngine.sizeBusbar(
+            designCurrentA = 6300.0,
+            ipRating = "IP54",
+            ambientTempC = 35.0
+        )
+
+        assertTrue(
+            "Fixture precondition: derated ampacity (${res.deratedAmpacityA} A) is below the 6300 A requirement",
+            res.deratedAmpacityA < 6300.0
+        )
+        assertFalse(
+            "Must not report sufficient ampacity when even the largest profile derates below the requirement",
+            res.isAmpacitySufficient
+        )
+        assertEquals(
+            "Status must be FAIL when derated continuous ampacity is below the required current",
+            "FAIL",
+            res.status
+        )
     }
 
     @Test
