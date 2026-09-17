@@ -1,5 +1,7 @@
 # VOLTATLAS V.1 — AUDIT-1: SECURITY, PRIVACY & DEFECT REPORT
 
+> **Partially superseded.** See [AUDIT-5_ERRATA_AND_CONSOLIDATED_P0.md](AUDIT-5_ERRATA_AND_CONSOLIDATED_P0.md) §2 for corrections to this document. AUDIT-4 adjudicates C-1…C-14; AUDIT-5 is the consolidated index and the single P0 source.
+
 | Field | Value |
 |---|---|
 | Artifact | `docs/audit_defect_report/AUDIT-1_SECURITY_AND_DEFECT_REPORT.md` |
@@ -11,7 +13,7 @@
 | Reviewer role | Android/Kotlin security reviewer + chief consulting electrical engineer |
 | Method | Line-level static review, evidence-anchored (every claim carries `file:line`); prior `docs/**` audit claims treated as **untrusted input** and re-verified against source |
 | Companion artifact | `AUDIT-2_ELECTRICAL_EQUATION_AND_MATRIX_REVIEW.md` (engineering equations & matrices) |
-| Source modifications | **None.** This audit changes no engine, data, UI or build file. Only these two report files and git-ignored `build/audit/*` evidence logs are created. |
+| Source modifications | **None.** This audit changes no engine, data, UI or build file. Only audit documentation and git-ignored evidence logs are created. |
 
 ---
 
@@ -206,6 +208,17 @@ Exploitability note: VoltAtlas is an offline, single-user, local-data engineerin
 - **Impact:** Latent, not active. Recorded so that enabling the cloud feature does not silently re-open a data-exposure channel.
 - **Recommendation:** Move the dependency to `debugImplementation`, and enforce interceptor level in code (never `Level.BODY` in a release build) if the cloud path is ever activated.
 
+### V-15 — Error-severity lint finding: `ContextCastToActivity` at `ProjectPickerScreen.kt:794`
+- **Severity:** Low · **Category:** Compose correctness / latent silent behaviour divergence
+- **Evidence:** `app/build/reports/lint-results-release.sarif` — rule `ContextCastToActivity`, **error** severity, at `app/src/main/java/com/example/ui/ProjectPickerScreen.kt:794`:
+  ```kotlin
+  LocalContext.current as? android.app.Activity
+  ```
+  Lint message: *"LocalContext should not be cast to Activity, use LocalActivity instead."* Found by the completed `lintRelease` run (§7 E-5).
+- **Mechanism:** Inside Compose, `LocalContext.current` is not guaranteed to be an `Activity` — in dialog/popup/local-activity-absent hosts it can be a `ContextThemeWrapper`. The `as?` form degrades **silently**: whatever the code does with the `Activity` reference (window flags, insets, finish()) is skipped on some hosts and executed on others, with no error surface.
+- **Impact:** Host-dependent behaviour divergence; no security impact.
+- **Recommendation:** Use `androidx.activity.compose.LocalActivity`, or unwrap the context with an explicit failure path so a missing `Activity` is logged/asserted rather than silently ignored.
+
 ---
 
 ## 4. Documentation-vs-code contradictions (audit-trail integrity)
@@ -262,10 +275,10 @@ Executed against HEAD `16cf38f` on Windows/PowerShell with the project's own wra
 | # | Command | Result | Interpretation |
 |---|---|---|---|
 | E-1 | `.\gradlew.bat :app:testDebugUnitTest -Pprofile=ai --console=plain` | **`819 tests completed, 2 failed`** — both in `Phase7E1DurableSchemaTest`: `noDestructiveMigrationFallback_isConfigured` (`:208`) and `no7DOrFormulaBehaviorChanged` (`:1133`), both `java.lang.AssertionError` | Confirms **V-06**. Both are the same stale magic-number assertion (`assertEquals(24, …version)` vs `@Database(version = 26)`). **Important negative result: no engineering/formula test in the AI profile failed** — the behaviour those tests guard is intact; only the version literal is stale. |
-| E-2 | `.\gradlew.bat :app:testDebugUnitTest -Pprofile=full --console=plain` | **`1882 tests completed, 51 failed, 14 skipped`**, BUILD FAILED in 11 m 7 s | Confirms **V-06** and yields new finding **V-19**. Failure distribution extracted from the log: <br>• `LegacyCircuitEditDialogSaveMappingCharacterizationTest` — **27** <br>• `LegacyCircuitEditDialogVisibilityCharacterizationTest` — **16** <br>• `CircuitEditDialogDiagnosticIsolationTest` — **5** <br>• `Phase7E1DurableSchemaTest` — **2** <br>• `CircuitEditorSessionRuntimeTest` — **1** <br>Total = 51 ✓ (all five classes accounted for) |
+| E-2 | `.\gradlew.bat :app:testDebugUnitTest -Pprofile=full --console=plain` | **`1882 tests completed, 51 failed, 14 skipped`**, BUILD FAILED in 11 m 7 s | Confirms **V-06** and yields new finding **V-13**. Failure distribution extracted from the log: <br>• `LegacyCircuitEditDialogSaveMappingCharacterizationTest` — **27** <br>• `LegacyCircuitEditDialogVisibilityCharacterizationTest` — **16** <br>• `CircuitEditDialogDiagnosticIsolationTest` — **5** <br>• `Phase7E1DurableSchemaTest` — **2** <br>• `CircuitEditorSessionRuntimeTest` — **1** <br>Total = 51 ✓ (all five classes accounted for) |
 | E-3 | `.\gradlew.bat :app:testDebugUnitTest --tests "*CircuitEditorSessionRuntimeTest*" --console=plain` | **BUILD SUCCESSFUL** (passes in isolation under the default profile) | Proves the E-2 failure of `CircuitEditorSessionRuntimeTest.test07_bounds_reviewSaveInsideRootAndNoNext` is **order/isolation-dependent, not a product regression** — the same family as the already-fixed `VOLT-TESTISO-001` (`648a628`). |
 | E-4 | `.\gradlew.bat :app:dependencies --configuration releaseRuntimeClasspath --console=plain` | 83 KB dependency graph captured | Confirms the shipped network surface that V-01 says is unreachable: `firebase-bom 34.19.0`, `firebase-ai → 17.17.0`, `firebase-appcheck-recaptcha → 19.2.1`, `okhttp 4.12.0` **and `logging-interceptor 4.12.0` on the release classpath** (declared as `implementation`, not `debugImplementation`), `retrofit converter-moshi 3.0.0`, `moshi-kotlin 1.15.2`; persistence `room-ktx`/`room-runtime 2.8.5`. |
-| E-5 | `.\gradlew.bat :app:lintRelease --console=plain` | **Started; `lintAnalyzeRelease` was still executing when this report was written** | Deliberately reported as **incomplete** rather than omitted. Nothing in Parts A/B depends on lint; its findings would be additional. |
+| E-5 | `.\gradlew.bat :app:lintRelease --console=plain` | **COMPLETED — BUILD SUCCESSFUL in 4 m 59 s.** SARIF + HTML reports written to `app/build/reports/lint-results-release.{sarif,html}`. **251 findings: 250 warnings, 1 error.** Distribution: `UseKtx` 117, `DefaultLocale` 78, `GradleDependency` 19, `UnusedResources` 16, `NewerVersionAvailable` 10, `UseTomlInstead` 5, `IconDipSize` 2, `OldTargetApi` 1, **`ContextCastToActivity` 1 (error → filed as V-15)**, `UnusedAttribute` 1, `ObsoleteSdkInt` 1. No rule tagged `security` fired. | Closes the evidence gap AUDIT-3/AUDIT-4 could not close (their Gradle invocations failed before task execution). The single error-severity finding is filed as **V-15**; the rest are hygiene/maintenance (KTX adoption, locale handling, API updates, unused resources) and do not alter any Part A verdict. |
 | E-6 | Programmatic JSON audits of `cable_catalog`, `breaker_catalog`, `busway_catalog`, `conduit_catalog`, `data_sheet`, `derating_data`, `transformers_seed`, `awg_swg_kcmil_table` | see AUDIT-2 §3 | Produced the element-level matrix verdicts, including **E-19** (air/gnd ratio 0.69–1.49) and **E-08** (seed R/X inconsistent by >10×). |
 | E-7 | Hand re-derivation of `qa_reference_cases.json` (TC-TX-01/02, TC-CABLE-008) | exact match on TC-TX-01 | Establishes engine↔oracle parity (AUDIT-2 §2.1). |
 | E-8 | Pattern sweeps (`Log`, `println`, `runBlocking`, `GlobalScope`, `allowMainThreadQueries`, `fallbackToDestructiveMigration`, `rawQuery`, `Intent`, `File(`, `WebView`, `INTERNET`/`uses-permission`, secret patterns, `AIza…`) | no cleartext/WebView/hardcoded-secret hits | Supports V-07/V-08/V-11/V-12 and the "no leaks" credit in §5. |
@@ -288,7 +301,8 @@ Executed against HEAD `16cf38f` on Windows/PowerShell with the project's own wra
 | **V-02** | Scope `file_paths.xml` to a dedicated `exports/` directory; route all DXF/PNG/PDF sharing through it | No `path="."` in any provider path definition; sharing verified from the new location |
 | **V-01** | Correct `docs/ai_audit/11_AI_SECURITY_PRIVACY_NETWORK_AUDIT.md:5`; decide and document the network-permission policy; align manifest, docs and SBOM | Doc statement == manifest reality; a CI assertion pins the expected permission set |
 | **V-05** | Make `useTestExecutors` `@VisibleForTesting` + `private set`; assert `false` in release | A release-build unit test proves the flag cannot be enabled |
-| **V-20 (new, from E-4)** | Move `okhttp3:logging-interceptor` (and the unreachable cloud stack) to `debugImplementation`, or delete it | Release classpath contains no logging interceptor |
+| **V-14** | Move `okhttp3:logging-interceptor` (and the unreachable cloud stack) to `debugImplementation`, or delete it | Release classpath contains no logging interceptor |
+| **V-15** | Replace the `LocalContext.current as? Activity` cast at `ProjectPickerScreen.kt:794` with `LocalActivity` (or an unwrapping helper with an explicit failure path) | No `ContextCastToActivity` lint error remains; picker behaviour verified in a dialog host |
 
 ### P1 — hardening & integrity (≈3–5 days)
 
@@ -307,7 +321,7 @@ Executed against HEAD `16cf38f` on Windows/PowerShell with the project's own wra
 |---|---|
 | **V-07, V-08** | Gate/remove the `Log.d` gesture tracing; route catalogue parse failures through the existing redacting logger |
 | **V-12** | Convert the coordinator's `runBlocking` revision lookups to the existing suspend path; pre-initialise the assistant gateway off the main thread |
-| **V-19 (follow-on)** | Add a test-isolation guard (snapshot/restore shared `Catalog` state, as done for `VOLT-TESTISO-001`) and run the gate with `--rerun` so an up-to-date cache can never produce a false green |
+| **V-13 (follow-on)** | Add a test-isolation guard (snapshot/restore shared `Catalog` state, as done for `VOLT-TESTISO-001`) and run the gate with `--rerun` so an up-to-date cache can never produce a false green |
 | **E-05 … E-17** | Per AUDIT-2 §5 |
 
 ---
@@ -316,13 +330,10 @@ Executed against HEAD `16cf38f` on Windows/PowerShell with the project's own wra
 
 1. This audit read **all** calculation engines, the persistence/migration layer, the security-relevant configuration and the AI approval/mutation chain at line level, and pattern-screened the remaining UI/SLD/PDF code. Files outside tiers T1–T2 (§6) were **not** line-reviewed — treat their security properties as unassessed.
 2. **No runtime instrumentation, no penetration test, no fuzzing, no device/emulator deployment and no external benchmark comparison** were performed. Findings derive from source, programmatic analysis of the data assets, and the project's own test runs executed here.
-3. **Lint did not complete** within this pass (E-5). Its output may add findings; it cannot invalidate the ones above.
+3. **Lint completed** within this pass (E-5): 251 findings, one error-severity (`ContextCastToActivity`, filed as **V-15**), none security-tagged. Lint output is additional to, and does not invalidate, the findings above.
 4. `CircuitEditorSessionRuntimeTest` failed only in the `full` run and passed in isolation; I classified it as an isolation artifact but did **not** bisect the offending precedent suite. If that classification matters for a release decision, bisect first.
 5. Severity ratings assume the threat model in §2 (local, single-user, offline engineering tool). Under a multi-user or regulated-QA threat model, **V-03 escalates to High**.
 6. This document is a **defect review, not an engineering sign-off**. No project deliverable should be issued on the strength of it alone.
 
 ---
 *End of AUDIT-1. Engineering equation and data-matrix findings are in `AUDIT-2_ELECTRICAL_EQUATION_AND_MATRIX_REVIEW.md`.*
-
----
-<!--APPEND-->

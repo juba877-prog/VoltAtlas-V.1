@@ -1,5 +1,7 @@
 # VOLTATLAS V.1 — AUDIT-2: ELECTRICAL EQUATION & MATRIX REVIEW
 
+> **Partially superseded.** See [AUDIT-5_ERRATA_AND_CONSOLIDATED_P0.md](AUDIT-5_ERRATA_AND_CONSOLIDATED_P0.md) §3 for corrections to this document. AUDIT-4 adjudicates C-1…C-14; AUDIT-5 is the consolidated index and the single P0 source.
+
 | Field | Value |
 |---|---|
 | Artifact | `docs/audit_defect_report/AUDIT-2_ELECTRICAL_EQUATION_AND_MATRIX_REVIEW.md` |
@@ -326,6 +328,8 @@ The single most actionable pattern in this codebase: **most of the engineering f
 | **E-19** | Med | Cable base ampacities not normalized to the declared reference conditions (air/gnd 0.69–1.49, mean 0.97) | Verify/record per-row reference conditions; validate `air >= gnd` at the declared reference | Validation passes or explicitly whitelists documented exceptions |
 
 **Sequencing (consulting-risk order).** `P0`: **E-01, E-02, E-03, E-04, E-10** — any of these can change a deliverable's verdict or a purchased quantity. `P1`: **E-19, E-05, E-06, E-07, E-08, E-09, E-11** — consistency and defensibility of the output set. `P2`: **E-12 … E-17** — assumption documentation and message precision.
+
+> **ID note:** `E-18` is unused — it was reserved during drafting and retired before publication, so the sequence jumps from E-17 to E-19. AUDIT-3/AUDIT-4 continue the numbering at E-20 and above for findings discovered at the current checkout; cross-report IDs are therefore unique.
 
 ---
 
