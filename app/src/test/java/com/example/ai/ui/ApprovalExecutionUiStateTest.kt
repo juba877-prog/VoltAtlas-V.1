@@ -21,6 +21,8 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -31,6 +33,18 @@ class ApprovalExecutionUiStateTest {
 
     private val testDispatcher = StandardTestDispatcher()
 
+    // AUDIT-5 P0-1 (§2.1, decision 2.1 option (a)): ViewModels created in this suite are cancelled
+    // before resetMain(). A viewModelScope coroutine (Dispatchers.Main.immediate) still queued on the
+    // Main test dispatcher would otherwise resume AFTER resetMain(), resolve Main to the absent
+    // platform dispatcher, and throw "Dispatchers.Main was accessed when the platform dispatcher was
+    // absent and the test dispatcher was unset" into an unrelated later test. Verified failure mode:
+    // ApprovalExecutionUiStateTest.approveAndApplyEvent_invokesGatewayExactlyOnce, 0.006 s, 2 of 4
+    // gate runs. Test-infrastructure only; no production source involved.
+    private val createdViewModels = mutableListOf<EngineeringAssistantViewModel>()
+
+    private fun newViewModel(): EngineeringAssistantViewModel =
+        EngineeringAssistantViewModel().also { createdViewModels += it }
+
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
@@ -38,6 +52,9 @@ class ApprovalExecutionUiStateTest {
 
     @After
     fun tearDown() {
+        // Cancel viewModelScope BEFORE unsetting Main, so no queued coroutine can outlive it.
+        createdViewModels.forEach { it.viewModelScope.cancel() }
+        createdViewModels.clear()
         Dispatchers.resetMain()
     }
 
@@ -125,7 +142,7 @@ class ApprovalExecutionUiStateTest {
             }
         }
 
-        val viewModel = EngineeringAssistantViewModel()
+        val viewModel = newViewModel()
         val proposal = createSampleProposal()
         val reviewModel = createSampleReviewModel()
 
@@ -145,7 +162,7 @@ class ApprovalExecutionUiStateTest {
     // 2. Double tap while submitting ignores second event
     @Test
     fun doubleTapWhileSubmitting_ignoresSecondEvent() = runTest(testDispatcher) {
-        val viewModel = EngineeringAssistantViewModel()
+        val viewModel = newViewModel()
         val proposal = createSampleProposal()
         val reviewModel = createSampleReviewModel()
 
@@ -164,7 +181,7 @@ class ApprovalExecutionUiStateTest {
     // 3. Cancel before submission produces zero approval writes
     @Test
     fun cancelBeforeSubmit_invokesNoGateway() {
-        val viewModel = EngineeringAssistantViewModel()
+        val viewModel = newViewModel()
         val proposal = createSampleProposal()
         val reviewModel = createSampleReviewModel()
 
