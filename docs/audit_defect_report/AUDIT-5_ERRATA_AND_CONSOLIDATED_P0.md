@@ -4,7 +4,7 @@
 |---|---|
 | Artifact | `docs/audit_defect_report/AUDIT-5_ERRATA_AND_CONSOLIDATED_P0.md` |
 | Date | 2026-09-17 |
-| Repository / HEAD at execution | `e:\voltatlas-v.1 (4)` @ `d4d0fd4` (branch `main`) |
+| Repository / HEAD at execution | `e:\voltatlas-v.1 (4)` @ `97b419c` (originally cited as `d4d0fd4`; branch `main`) |
 | Directive baseline | Issued against the `16cf38f` lineage (`integration/home-snapshot-2026-09-13`). The operative state is HEAD `d4d0fd4` plus the preserved working tree. |
 | Working tree | Carries pre-existing, uncommitted circuit-editor UI/test changes (documented in AUDIT-4 §0). They are preserved untouched and are **excluded from the AUDIT-5 commit**. |
 | Scope | Documentation only. No engine, data, build or UI file is modified by this pass. **Local commit only — no push.** |
@@ -14,7 +14,7 @@
 ## 1. Status & precedence
 
 1. **AUDIT-4 is the binding adjudication** for C-1…C-14 and is left completely untouched by this pass.
-2. **AUDIT-1, AUDIT-2 and AUDIT-3 are preserved verbatim as the historical record.** Each now carries exactly one banner line at the very top pointing to the relevant section here. **No audit body was edited in this pass.**
+2. **AUDIT-1, AUDIT-2 and AUDIT-3 are preserved verbatim as the historical record.** Each now carries exactly one banner line at the very top pointing to the relevant section here. **No audit body was edited by the AUDIT-5 pass.**
 3. AUDIT-2's prior top banner — the one asserting a zero-defect OD/weight catalog — is **deleted, not rewritten** (directive §1.1). The corrected statement lives in §3.2 below; a banner that overturned a correct finding must not survive in any form.
 4. After this pass the set contains **exactly one P0 list (§5)** and **exactly one severity vocabulary (§6)**.
 5. New numbered finding introduced here: **V-16** — release signing falls back to the Android debug keystore (§2.6; P0 item 5 in §5). Evidence includes an executed diagnostic from the 16cf38f `lintRelease` run.
@@ -183,6 +183,40 @@ The volume of documentation in this set must not be read as closure. Every limit
 7. **The Compose UI, SLD geometry and PDF renderer remain pattern-screened only**; no UI/accessibility review has been performed.
 8. **Disposition unchanged: NO-GO for engineering sign-off.** No remediation work begins until the consolidated P0 (§5) is approved.
 
+## 9. Register corrections & P0 remediation record (2026-09-17)
+
+### 9.1 — Pending register corrections (§5 handoff batch)
+
+1. **Test suite census (AUDIT-1 §7 E-2):** AUDIT-1 §7 E-2's cited count `1882` was stale. The true total test count across all suites at HEAD is **2260**. The designated green CI profile (`-Pprofile=gate`) runs **2209 tests** (0 failures, 13 skipped in ~4m10s).
+2. **New finding V-17 (High) — `-Pprofile=full` hang:** The `-Pprofile=full` profile wedges and hangs indefinitely; it is not merely failing assertions. At HEAD it wedged following the `CircuitEditDialogDiagnosticIsolationTest` `AppNotIdleException` cases — log output froze at 13,379 bytes, with the Gradle test worker process (PID 20916, 1356 MB) consuming 0% CPU across a 60-second window, requiring termination after ~14 minutes (`build/audit/full_at_head_HUNG_1202.log`). The CI gate (`-Pprofile=gate`) excludes those three legacy diagnostic suites and completes reliably in ~4 minutes. This upgrades **V-13** from "no green profile" to "one verified green CI gate profile, one unrunnable diagnostic profile."
+3. **AUDIT-5 metadata & phrasing errata:**
+   - AUDIT-5 header table line 7 originally cited `d4d0fd4`; the true delivery commit of that pass was `97b419c`.
+   - AUDIT-5 §1 point 2 phrasing corrected: "No audit body was edited by the AUDIT-5 pass."
+4. **Release signing debug key line citation:** In earlier registers, `keyAlias = "androiddebugkey"` was cited inconsistently as `:79` or `:89`. In `app/build.gradle.kts` prior to remediation, the line was `:77` (with `debugConfig` also declaring it at `:77`).
+5. **Deferred maintenance notice:** `AssistantLazyLifecycleTest.kt:152` creates a ViewModel without explicitly clearing `viewModelScope`. The pattern mirrors the Main-dispatcher leak resolved in `f4791ae`. Because 5/5 gate runs passed without flaking, this fix is deferred unless flake recurs.
+6. **Isolation artifact status:** `CircuitEditorSessionRuntimeTest` isolation artifact remains open and unbisected; it manifests only under the `-Pprofile=full` profile and passes deterministically under `-Pprofile=gate`.
+7. **Release lint status:** `lintRelease` was executed and completed at two commits with identical results (251 findings, 1 error = V-15 `ContextCastToActivity @ ProjectPickerScreen.kt:794`). Nothing additive.
+
+### 9.2 — P0 Remediation record (closed items 1–5)
+
+All five P0 items identified in AUDIT-5 §5 have been remediated, verified against the fail-first standard, and committed locally:
+
+| Item | Finding IDs | Primary Files | Commit | Gate Status |
+|---|---|---|---|---|
+| **P0-1** | V-06, V-13 | `Phase7E1DurableSchemaTest.kt`, `app/build.gradle.kts` | `1f54c9f` + `f4791ae` | 2202 passed, 0 failed |
+| **P0-2** | E-20 | `BusbarSizingEngine.kt`, `BusbarSizingEngineTest.kt` | `7d3d82b` | 2204 passed, 0 failed |
+| **P0-3a** | E-22 | `EarthingEngine.kt`, `EarthingEngineTest.kt` | `800b004` | 2205 passed, 0 failed |
+| **P0-3b** | C-1 | `ProtectionEngine.kt`, `ProtectionEngineTest.kt` | `57b5cb3` | 2206 passed, 0 failed |
+| **P0-3c** | C-2 | `ProtectionEngine.kt`, `ProtectionEngineTest.kt` | `e99f4a4` | 2207 passed, 0 failed |
+| **P0-4** | E-25, E-10 | `CableSizingEngine.kt`, `ProtectionEngine.kt`, `ShortCircuitEngine.kt`, `ProtectionEngineTest.kt`, `ShortCircuitEngineTest.kt` | `d4781b7` | 2209 passed, 0 failed |
+| **P0-5** | V-16 | `app/build.gradle.kts` | `6f61cef` | 2209 passed, 0 failed |
+
+### 9.3 — Product disposition
+
+**NO-GO for engineering sign-off.**
+Remediation of all 5 P0 release-blocking defects and achieving a 100% green CI gate profile (`-Pprofile=gate`, 2209 tests passed, 0 failures, 13 skipped) are mandatory prerequisites, but they **do not constitute engineering certification**.
+Seven P1 defects (E-02/C-5 XLPE 45 °C derating inversion & grouping; E-03/C-3 voltage-drop temperature basis; E-21 busway peak withstand; C-8 multi-ATS global sizing; C-11 ratio-only selectivity; E-23/E-24/E-09 conduit filter and override; C-7/E-26 UPS DoD omission and battery voltage) remain open. The software must not be signed off for safety-critical deliverables until P1 remediation is complete.
+
 ---
 
-*End of AUDIT-5. AUDIT-4 remains binding for C-1…C-14; this document is the single consolidated index and P0 source. Local commit only — no push.*
+*End of AUDIT-5. AUDIT-4 remains binding for C-1…C-14; this document is the single consolidated index and P0 source. Local commit only — no push.*
