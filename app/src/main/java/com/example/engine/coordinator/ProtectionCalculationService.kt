@@ -29,12 +29,14 @@ object ProtectionCalculationService {
     fun calculateAds(
         circuit: CircuitEntity,
         sizingResult: SizingResult,
-        ze_ohm: Double = 0.01
+        ze_ohm: Double = 0.01,
+        isZeResolved: Boolean = false
     ): AdsResult {
         return ProtectionEngine.calculateAds(
             circuit = circuit,
             sizingResult = sizingResult,
-            ze_ohm = ze_ohm
+            ze_ohm = ze_ohm,
+            isZeResolved = isZeResolved
         )
     }
 
@@ -111,9 +113,10 @@ object ProtectionCalculationService {
     suspend fun calculateAdsAsync(
         circuit: CircuitEntity,
         sizingResult: SizingResult,
-        ze_ohm: Double = 0.01
+        ze_ohm: Double = 0.01,
+        isZeResolved: Boolean = false
     ): AdsResult = withContext(Dispatchers.Default) {
-        calculateAds(circuit, sizingResult, ze_ohm)
+        calculateAds(circuit, sizingResult, ze_ohm, isZeResolved)
     }
 
     /**

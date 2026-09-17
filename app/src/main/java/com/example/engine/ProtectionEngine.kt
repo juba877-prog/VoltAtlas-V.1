@@ -150,7 +150,8 @@ object ProtectionEngine {
     fun calculateAds(
         circuit: CircuitEntity,
         sizingResult: SizingResult,
-        ze_ohm: Double = 0.01 // Assume a small source impedance if not provided
+        ze_ohm: Double = 0.01,
+        isZeResolved: Boolean = false
     ): AdsResult {
         val phaseSize = extractNumericSize(sizingResult.cableSize_mm2)
         val cpcSize = extractNumericSize(sizingResult.earthCPC_mm2)
@@ -173,7 +174,8 @@ object ProtectionEngine {
         // 20 °C values by workbook/QA-parity convention (see CableSizingEngine thermalFactor).
         val tempFactor = 1.20
         val l_m = circuit.length_m
-        val calculatedZs = ze_ohm + ((r1 + r2) * l_m * tempFactor) / 1000.0
+        val effectiveZe = if (ze_ohm > 0.0) ze_ohm else 0.0
+        val calculatedZs = effectiveZe + ((r1 + r2) * l_m * tempFactor) / 1000.0
         
         // IEC 60364-4-41 §411.4.4: Zs_max = (Cmin · U0) / Ia. The trip CURVE must be parsed
         // strictly from explicit curve tokens — NEVER by substring-matching the device
@@ -182,6 +184,12 @@ object ProtectionEngine {
         val u0Ads = 230.0
         val rating = sizingResult.deviceSize_A
         val warnings = mutableListOf<String>()
+        if (!isZeResolved) {
+            warnings.add(
+                "Source impedance Ze is unverified (no source transformer resolved) — " +
+                    "ADS loop verdict is UNVERIFIED (never assumed PASS without source impedance)."
+            )
+        }
         val parsedCurve = parseTripCurve(deviceFamily)
         val isMcb = isMcbFamily(deviceFamily)
 
@@ -215,14 +223,24 @@ object ProtectionEngine {
         }
 
         val isPass = calculatedZs <= maxZs
+        val status = when {
+            !isPass -> "✗ FAIL"
+            !isZeResolved -> "UNVERIFIED"
+            else -> "✓ PASS"
+        }
+        val disconnectionTime = when {
+            !isPass -> "> 0.4s"
+            !isZeResolved -> "UNVERIFIED"
+            else -> "< 0.4s"
+        }
         
         return AdsResult(
             circuitId = circuit.id,
             circuitName = circuit.circuitName,
             calculatedZs = (calculatedZs * 1000).roundToInt() / 1000.0,
             maxZsAllowed = (maxZs * 1000).roundToInt() / 1000.0,
-            status = if (isPass) "✓ PASS" else "✗ FAIL",
-            disconnectionTime = if (isPass) "< 0.4s" else "> 0.4s",
+            status = status,
+            disconnectionTime = disconnectionTime,
             r1_ohm_km = r1,
             r2_ohm_km = r2,
             length_m = l_m,

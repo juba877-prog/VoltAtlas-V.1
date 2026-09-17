@@ -1001,7 +1001,7 @@ object EngineeringCalculationCoordinator {
     private fun computeAdsSignature(
         circuit: CircuitEntity,
         sizingResult: SizingResult?,
-        ze_ohm: Double
+        ze_ohm: Double?
     ): Int {
         return Objects.hash(
             circuit.id,
@@ -1058,7 +1058,14 @@ object EngineeringCalculationCoordinator {
             )
 
         val sizingResult = calculateCableSizing(circuit, allCircuits, allTransformers)
-        val sig = computeAdsSignature(circuit, sizingResult, ze_ohm)
+        val txMap = calculateProjectTransformers(allCircuits, allTransformers)
+        val sourceTx = resolveSourceTransformer(circuit, allCircuits, txMap)
+        val derivedZe = if (sourceTx != null)
+            ProtectionEngine.deriveZeFromSource(sourceTx.isc3Phase, sourceTx.voltage)
+        else 0.0
+        val isResolved = derivedZe > 0.0
+        val effZe = if (isResolved) derivedZe else ze_ohm
+        val sig = computeAdsSignature(circuit, sizingResult, effZe)
         val adsPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
         val adsKey = ProjectCircuitKey(adsPid, circuit.id)
         val liveRev = getProjectRevision(adsPid)
@@ -1068,7 +1075,15 @@ object EngineeringCalculationCoordinator {
             return cached.result
         }
 
-        val fresh = ProtectionCalculationService.calculateAds(circuit, sizingResult, ze_ohm)
+        var fresh = ProtectionCalculationService.calculateAds(circuit, sizingResult, effZe)
+        if (!isResolved) {
+            fresh = fresh.copy(
+                status = if (fresh.calculatedZs > fresh.maxZsAllowed) "✗ FAIL" else "UNVERIFIED",
+                disconnectionTime = if (fresh.calculatedZs > fresh.maxZsAllowed) "> 0.4s" else "UNVERIFIED",
+                warnings = fresh.warnings +
+                    "Ze assumed $ze_ohm Ω (no transformer source data for this circuit) — verify"
+            )
+        }
         adsCache[adsKey] = VersionedCacheEntry(sig, fresh, liveRev)
         return fresh
     }
@@ -1168,14 +1183,15 @@ object EngineeringCalculationCoordinator {
         for (circuit in resolvedCircuits) {
             val sizing = sizingResults[circuit.id] ?: continue
 
-            // H6 — derive Ze from the feeding transformer (Ze = cmax·Un/(√3·I″k)) instead of
-            // assuming 0.01 Ω. The 0.01 Ω default remains ONLY as an explicit, labelled
-            // fallback when no transformer source data exists (warning emitted).
+            // AUDIT-5 P0 item 3b (C-1): derive Ze from the feeding transformer when available.
+            // When no source transformer resolves, effZe falls back to ze_ohm (0.01 ohm), but the
+            // verdict is UNVERIFIED — never an optimistic PASS.
             val sourceTx = resolveSourceTransformer(circuit, resolvedCircuits, transformerResults)
             val derivedZe = if (sourceTx != null)
                 ProtectionEngine.deriveZeFromSource(sourceTx.isc3Phase, sourceTx.voltage)
             else 0.0
-            val effZe = if (derivedZe > 0.0) derivedZe else ze_ohm
+            val isResolved = derivedZe > 0.0
+            val effZe = if (isResolved) derivedZe else ze_ohm
 
             val sig = computeAdsSignature(circuit, sizing, effZe)
             val adsPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
@@ -1186,8 +1202,10 @@ object EngineeringCalculationCoordinator {
                 results[circuit.id] = cached.result
             } else {
                 var fresh = ProtectionCalculationService.calculateAds(circuit, sizing, effZe)
-                if (derivedZe <= 0.0 && transformerResults.isNotEmpty()) {
+                if (!isResolved) {
                     fresh = fresh.copy(
+                        status = if (fresh.calculatedZs > fresh.maxZsAllowed) "✗ FAIL" else "UNVERIFIED",
+                        disconnectionTime = if (fresh.calculatedZs > fresh.maxZsAllowed) "> 0.4s" else "UNVERIFIED",
                         warnings = fresh.warnings +
                             "Ze assumed $ze_ohm Ω (no transformer source data for this circuit) — verify"
                     )
@@ -1727,8 +1745,24 @@ object EngineeringCalculationCoordinator {
             hasUpstreamDevice = false
         }
 
+        val txMap = calculateProjectTransformers(allCircuits, allTransformers)
+        val sourceTx = resolveSourceTransformer(circuit, allCircuits, txMap)
+        val derivedZe = if (sourceTx != null)
+            ProtectionEngine.deriveZeFromSource(sourceTx.isc3Phase, sourceTx.voltage)
+        else 0.0
+        val isResolved = derivedZe > 0.0
+        val effZe = if (isResolved) derivedZe else ze_ohm
+
         // Atomically compute both ADS and Protection outputs
-        val freshAds = ProtectionCalculationService.calculateAds(circuit, sizingResult, ze_ohm)
+        var freshAds = ProtectionCalculationService.calculateAds(circuit, sizingResult, effZe)
+        if (!isResolved) {
+            freshAds = freshAds.copy(
+                status = if (freshAds.calculatedZs > freshAds.maxZsAllowed) "✗ FAIL" else "UNVERIFIED",
+                disconnectionTime = if (freshAds.calculatedZs > freshAds.maxZsAllowed) "> 0.4s" else "UNVERIFIED",
+                warnings = freshAds.warnings +
+                    "Ze assumed $ze_ohm Ω (no transformer source data for this circuit) — verify"
+            )
+        }
         val freshProt = ProtectionCalculationService.evaluateProtection(
             circuit = circuit,
             sizingResult = sizingResult,
@@ -1738,7 +1772,7 @@ object EngineeringCalculationCoordinator {
             hasUpstreamDevice = hasUpstreamDevice
         )
 
-        val sigAds = computeAdsSignature(circuit, sizingResult, ze_ohm)
+        val sigAds = computeAdsSignature(circuit, sizingResult, effZe)
         val sigProt = computeProtectionSignature(circuit, sizingResult, scResult, upstreamIn, upstreamName)
         val protPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
         val protKey = ProjectCircuitKey(protPid, circuit.id)

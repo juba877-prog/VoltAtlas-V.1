@@ -153,7 +153,7 @@ class ProtectionEngineTest {
         val circuit = CircuitEntity(id = 6, circuitName = "MCCB-FEEDER", loadKVA = 100.0, overrideDeviceType = "MCCB")
         val sizing = createDummySizing(ib = 144.3, inRating = 160.0, iz = 246.0, icu = 36.0)
 
-        val ads = ProtectionEngine.calculateAds(circuit, sizing, ze_ohm = 0.01)
+        val ads = ProtectionEngine.calculateAds(circuit, sizing, ze_ohm = 0.01, isZeResolved = true)
 
         assertEquals(0.137, ads.maxZsAllowed, 0.0005)
         assertTrue(
@@ -170,7 +170,7 @@ class ProtectionEngineTest {
         val circuit = CircuitEntity(id = 7, circuitName = "D-CURVE-MCB", loadKVA = 100.0, overrideDeviceType = "MCB Curve D")
         val sizing = createDummySizing(ib = 25.0, inRating = 32.0, iz = 40.0, icu = 10.0)
 
-        val ads = ProtectionEngine.calculateAds(circuit, sizing, ze_ohm = 0.01)
+        val ads = ProtectionEngine.calculateAds(circuit, sizing, ze_ohm = 0.01, isZeResolved = true)
 
         assertEquals(0.34, ads.maxZsAllowed, 0.0005)
         assertEquals(ProtectionEngine.TripCurve.D, ProtectionEngine.parseTripCurve("MCB Curve D"))
@@ -185,7 +185,7 @@ class ProtectionEngineTest {
         val circuit = CircuitEntity(id = 8, circuitName = "B-CURVE-MCB", loadKVA = 100.0, overrideDeviceType = "MCB Curve B")
         val sizing = createDummySizing(ib = 25.0, inRating = 32.0, iz = 40.0, icu = 10.0)
 
-        val ads = ProtectionEngine.calculateAds(circuit, sizing, ze_ohm = 0.01)
+        val ads = ProtectionEngine.calculateAds(circuit, sizing, ze_ohm = 0.01, isZeResolved = true)
 
         assertEquals(1.37, ads.maxZsAllowed, 0.0005)
         assertTrue("Explicit curve should not trigger assumption warning", ads.warnings.isEmpty())
@@ -203,5 +203,27 @@ class ProtectionEngineTest {
         assertEquals(ProtectionEngine.TripCurve.D, ProtectionEngine.parseTripCurve("Type D"))
         assertNull(ProtectionEngine.parseTripCurve(null))
         assertNull(ProtectionEngine.parseTripCurve(""))
+    }
+
+    // =========================================================================
+    // AUDIT-5 P0 item 3b (C-1): Ze fallback. Where no source impedance resolves,
+    // the verdict must be UNVERIFIED — never PASS.
+    // =========================================================================
+
+    @Test
+    fun testAds_unresolvedZe_verdictMustBeUnverifiedNeverPass() {
+        val circuit = CircuitEntity(id = 10, circuitName = "UNRESOLVED-ZE", loadKVA = 10.0, length_m = 10.0, overrideDeviceType = "MCB Curve B")
+        val sizing = createDummySizing(ib = 10.0, inRating = 16.0, iz = 25.0, icu = 10.0)
+
+        // Pre-fix: calculateAds default parameter was ze_ohm = 0.01, giving "✓ PASS" optimistically.
+        // Post-fix: without resolved source impedance, the verdict MUST be UNVERIFIED, never PASS.
+        val ads = ProtectionEngine.calculateAds(circuit, sizing)
+
+        assertEquals("ADS verdict must be UNVERIFIED when source impedance is unresolved", "UNVERIFIED", ads.status)
+        assertEquals("Disconnection time must be UNVERIFIED when Ze is unresolved", "UNVERIFIED", ads.disconnectionTime)
+        assertTrue(
+            "Warning must flag unverified Ze",
+            ads.warnings.any { it.contains("unverified", ignoreCase = true) || it.contains("Ze", ignoreCase = true) }
+        )
     }
 }
