@@ -153,11 +153,11 @@ object ProtectionEngine {
         ze_ohm: Double = 0.01,
         isZeResolved: Boolean = false
     ): AdsResult {
-        val phaseSize = extractNumericSize(sizingResult.cableSize_mm2)
-        val cpcSize = extractNumericSize(sizingResult.earthCPC_mm2)
+        val phaseSize = resolveConductorArea(sizingResult)
+        val cpcSize = resolveCpcArea(sizingResult)
         
-        val phaseEntry = Catalog.dataSheet.firstOrNull { it.size == phaseSize }
-        val cpcEntry = Catalog.dataSheet.firstOrNull { it.size == cpcSize }
+        val phaseEntry = phaseSize?.let { sz -> Catalog.dataSheet.firstOrNull { it.size == sz } }
+        val cpcEntry = cpcSize?.let { sz -> Catalog.dataSheet.firstOrNull { it.size == sz } }
         
         val isAl = sizingResult.cableMaterial.equals("Al", ignoreCase = true)
         val r1 = if (isAl) (phaseEntry?.R_Al20 ?: 0.0) else (phaseEntry?.R_Cu20 ?: 0.0)
@@ -186,6 +186,12 @@ object ProtectionEngine {
         val u0Ads = 230.0
         val rating = sizingResult.deviceSize_A
         val warnings = mutableListOf<String>()
+        if (phaseSize == null || cpcSize == null) {
+            warnings.add(
+                "Conductor or CPC cross-section area is unverified or missing (phase: $phaseSize, cpc: $cpcSize) — " +
+                    "ADS loop verdict is UNVERIFIED (never assumed PASS without conductor data)."
+            )
+        }
         if (!isZeResolved) {
             warnings.add(
                 "Source impedance Ze is unverified (no source transformer resolved) — " +
@@ -224,15 +230,16 @@ object ProtectionEngine {
             }
         }
 
-        val isPass = calculatedZs <= maxZs
+        val hasConductorData = phaseSize != null && cpcSize != null
+        val isPass = calculatedZs <= maxZs && hasConductorData && isZeResolved
         val status = when {
-            !isPass -> "✗ FAIL"
-            !isZeResolved -> "UNVERIFIED"
+            calculatedZs > maxZs -> "✗ FAIL"
+            !isZeResolved || !hasConductorData -> "UNVERIFIED"
             else -> "✓ PASS"
         }
         val disconnectionTime = when {
-            !isPass -> "> 0.4s"
-            !isZeResolved -> "UNVERIFIED"
+            calculatedZs > maxZs -> "> 0.4s"
+            !isZeResolved || !hasConductorData -> "UNVERIFIED"
             else -> "< 0.4s"
         }
         
@@ -277,15 +284,20 @@ object ProtectionEngine {
         val shortCircuitStatus = if (scPass) "PASS" else "FAIL"
 
         // 3. Cable Thermal Withstand Check (k^2 * S^2 >= Isc^2 * t)
-        val s_mm2 = extractNumericSize(sizingResult.cableSize_mm2)
-        val k = if (sizingResult.kFactor > 0.0) sizingResult.kFactor
-        else insulationKFactor(sizingResult.cableMaterial, sizingResult.insulation)
-        val t = if (sizingResult.clearingTime_s > 0.0) sizingResult.clearingTime_s else 0.1
-        val k2S2 = (k * s_mm2) * (k * s_mm2)
-        val iscA = isc * 1000.0
-        val Isc2t = iscA * iscA * t
-        val cableWithstandPass = k2S2 >= Isc2t - 0.001
-        val cableWithstandStatus = if (cableWithstandPass) "PASS" else "FAIL"
+        val s_mm2 = resolveConductorArea(sizingResult)
+        val (cableWithstandPass, cableWithstandStatus) = when {
+            s_mm2 == null || s_mm2 <= 0.0 -> false to "DATA MISSING"
+            else -> {
+                val k = if (sizingResult.kFactor > 0.0) sizingResult.kFactor
+                else insulationKFactor(sizingResult.cableMaterial, sizingResult.insulation)
+                val t = if (sizingResult.clearingTime_s > 0.0) sizingResult.clearingTime_s else 0.1
+                val k2S2 = (k * s_mm2) * (k * s_mm2)
+                val iscA = isc * 1000.0
+                val Isc2t = iscA * iscA * t
+                val pass = k2S2 >= Isc2t - 0.001
+                pass to (if (pass) "PASS" else "FAIL")
+            }
+        }
 
         // 4. Selectivity / Discrimination Check via CoordinationEngine
         val selectivityStatus: String
@@ -308,12 +320,15 @@ object ProtectionEngine {
         if (!scPass) {
             messages.add("Short-Circuit Fail: Fault current Isc (%.2f kA) > Device breaking capacity Icu (%.2f kA)".format(isc, icu))
         }
-        if (!cableWithstandPass) {
+        if (cableWithstandStatus == "DATA MISSING") {
+            messages.add("Cable Withstand: Conductor size missing, unparseable, or non-cable equipment (DATA MISSING)")
+        } else if (!cableWithstandPass) {
             messages.add("Cable Withstand Fail: Short-circuit energy I²t exceeds cable thermal withstand k²S²")
         }
 
         // 5. Combined Final Status
         val finalStatus = when {
+            cableWithstandStatus == "DATA MISSING" -> "DATA MISSING"
             !overloadPass || !scPass || !cableWithstandPass -> "FAIL"
             selectivityStatus == "WARNING" -> "WARNING"
             else -> "PASS"
@@ -336,7 +351,30 @@ object ProtectionEngine {
         )
     }
 
-    private fun extractNumericSize(sizeStr: String): Double {
-        return Regex("""(\d+(\.\d+)?)""").find(sizeStr)?.value?.toDoubleOrNull() ?: 1.5
+    fun parseCableConductorArea(raw: String?): Double? {
+        if (raw.isNullOrBlank()) return null
+        val s = raw.trim()
+        if (s.contains("busway", ignoreCase = true) ||
+            s.contains("housing", ignoreCase = true) ||
+            s.contains("trunking", ignoreCase = true) ||
+            s.equals("N/A", ignoreCase = true) ||
+            s.equals("-")
+        ) {
+            return null
+        }
+        if (Regex("""\b\d+\s*A\b""").containsMatchIn(s)) {
+            return null
+        }
+        val match = Regex("""^(?:(?:\d+)\s*[xX*]\s*)?(\d+(?:\.\d+)?)\s*(?:mm[²2])?(?:\s*\(?[A-Za-z/]+\)?)?$""", RegexOption.IGNORE_CASE).find(s)
+            ?: return null
+        return match.groupValues[1].toDoubleOrNull()
     }
+
+    fun resolveConductorArea(sizingResult: SizingResult): Double? =
+        sizingResult.conductorAreaMm2 ?: parseCableConductorArea(sizingResult.cableSize_mm2)
+
+    fun resolveCpcArea(sizingResult: SizingResult): Double? =
+        sizingResult.cpcAreaMm2 ?: parseCableConductorArea(sizingResult.earthCPC_mm2)
+
+    private fun extractNumericSize(sizeStr: String): Double? = parseCableConductorArea(sizeStr)
 }

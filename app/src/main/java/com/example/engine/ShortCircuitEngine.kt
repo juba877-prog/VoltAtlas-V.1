@@ -44,12 +44,12 @@ object ShortCircuitEngine {
         for (circuit in resolvedCircuits) {
             val sizing = sizingResults[circuit.id] ?: continue
             
-            // Validate data integrity guards
+            // Validate data integrity guards: consume typed conductorAreaMm2 first, falling back to strict cable string parse
             val rawCableStr = sizing.cableSize_mm2
-            val cableMm2 = parseNumericSize(rawCableStr)
+            val cableMm2 = sizing.conductorAreaMm2 ?: parseCableConductorArea(rawCableStr)
             
-            if (sizing.cableOD_mm <= 0.0 || cableMm2 == null) {
-                results[circuit.id] = buildMissingResult(circuit, "DATA MISSING", "Missing OD or unable to parse cable size")
+            if (sizing.cableOD_mm <= 0.0 || cableMm2 == null || cableMm2 <= 0.0) {
+                results[circuit.id] = buildMissingResult(circuit, "DATA MISSING", "Missing OD or unable to resolve cable conductor area")
                 continue
             }
 
@@ -294,8 +294,24 @@ object ShortCircuitEngine {
         )
     }
 
-    private fun parseNumericSize(value: String): Double? {
-        val match = Regex("""^\s*([0-9]+(?:\.[0-9]+)?)""").find(value)
-        return match?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+    fun parseCableConductorArea(raw: String?): Double? {
+        if (raw.isNullOrBlank()) return null
+        val s = raw.trim()
+        if (s.contains("busway", ignoreCase = true) ||
+            s.contains("housing", ignoreCase = true) ||
+            s.contains("trunking", ignoreCase = true) ||
+            s.equals("N/A", ignoreCase = true) ||
+            s.equals("-")
+        ) {
+            return null
+        }
+        if (Regex("""\b\d+\s*A\b""").containsMatchIn(s)) {
+            return null
+        }
+        val match = Regex("""^(?:(?:\d+)\s*[xX*]\s*)?(\d+(?:\.\d+)?)\s*(?:mm[²2])?(?:\s*\(?[A-Za-z/]+\)?)?$""", RegexOption.IGNORE_CASE).find(s)
+            ?: return null
+        return match.groupValues[1].toDoubleOrNull()
     }
+
+    private fun parseNumericSize(value: String): Double? = parseCableConductorArea(value)
 }

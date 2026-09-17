@@ -266,4 +266,46 @@ class ProtectionEngineTest {
             com.example.data.Catalog.dataSheet = originalDataSheet
         }
     }
+
+    // =========================================================================
+    // AUDIT-5 P0 item 4 (E-25, E-10): Typed conductor data.
+    // Busway or unparseable text must NOT become 800 mm² or silently fallback to 1.5 mm².
+    // Fallback in ProtectionEngine must fail loudly with DATA MISSING.
+    // =========================================================================
+
+    @Test
+    fun testEvaluateProtection_buswayOrUnparseableText_failsLoudlyWithDataMissing() {
+        val circuit = CircuitEntity(id = 30, circuitName = "BUSWAY-FEEDER", loadKVA = 500.0)
+        // 800A Busway (Cu): pre-fix extractNumericSize extracts 800.0 -> k2S2 computed with 800 mm² -> PASS
+        val sizingBusway = createDummySizing(
+            ib = 721.7,
+            inRating = 800.0,
+            iz = 800.0,
+            icu = 50.0,
+            cableSize = "800A Busway (Cu)"
+        )
+        val sc = createDummyShortCircuit(circuitId = 30, iscKA = 25.0, status = "PASS")
+
+        val resultBusway = ProtectionEngine.evaluateProtection(circuit, sizingBusway, sc)
+
+        assertEquals("DATA MISSING", resultBusway.cableWithstandStatus)
+        assertEquals("DATA MISSING", resultBusway.finalStatus)
+        assertTrue(resultBusway.messages.any { it.contains("DATA MISSING", ignoreCase = true) })
+
+        // Unparseable text: pre-fix extractNumericSize fell back to ?: 1.5 mm² -> (143*1.5)^2 >= (500)^2*0.1 -> PASS
+        val sizingUnparseable = createDummySizing(
+            ib = 10.0,
+            inRating = 16.0,
+            iz = 25.0,
+            icu = 10.0,
+            cableSize = "UnparseableConductor"
+        )
+        val scLow = createDummyShortCircuit(circuitId = 30, iscKA = 0.5, status = "PASS")
+        val resultUnparseable = ProtectionEngine.evaluateProtection(circuit, sizingUnparseable, scLow)
+
+        assertEquals("DATA MISSING", resultUnparseable.cableWithstandStatus)
+        assertEquals("DATA MISSING", resultUnparseable.finalStatus)
+        assertTrue(resultUnparseable.messages.any { it.contains("DATA MISSING", ignoreCase = true) })
+    }
 }
+

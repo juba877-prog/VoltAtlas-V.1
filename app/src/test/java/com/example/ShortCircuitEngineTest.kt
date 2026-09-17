@@ -314,4 +314,91 @@ class ShortCircuitEngineTest {
             res!!.note.contains("Breaking capacity assumed (not from catalog) — verify")
         )
     }
+
+    // =========================================================================
+    // AUDIT-5 P0 item 4 (E-25, E-10): Typed conductor data.
+    // Busway display label must NOT be parsed as 800 mm² in ShortCircuitEngine.
+    // Must return DATA MISSING.
+    // =========================================================================
+
+    @Test
+    fun testShortCircuit_buswayCableSize_doesNotParse800mm2_failsWithDataMissing() {
+        val txResult = TransformerResult(
+            connectedLoad = 200.0,
+            circuitsAssigned = 1,
+            realPower = 160.0,
+            demandLoad = 160.0,
+            diversifiedLoad = 160.0,
+            futureLoad = 160.0,
+            designLoad = 160.0,
+            requiredKVA = 200.0,
+            recommendedSize = 200.0,
+            selectedSize = 200.0,
+            loadingPct = 80.0,
+            flc = 288.68,
+            zt = 32.0,
+            rt = 3.18,
+            xt = 31.84,
+            isc3Phase = 7.58,
+            isc1Phase = 6.56,
+            status = "VERIFIED",
+            z0 = 30.4,
+            vectorGroup = "Dyn11",
+            voltage = 400.0
+        )
+        val circuit = CircuitEntity(
+            id = 201,
+            circuitName = "BUSWAY-FEEDER",
+            loadKVA = 160.0,
+            fedFrom = "Transformer",
+            transformerId = "TX-01",
+            length_m = 10.0
+        )
+        val sizingResult = SizingResult(
+            Ib_A = 230.94,
+            deviceSize_A = 800.0,
+            deviceType = "MCCB",
+            cTotalDerating = 1.0,
+            iRequired_perCable_A = 230.94,
+            productCode = "Elsewedy Spine 800A Cu",
+            cableSize_mm2 = "800A Busway (Cu)",
+            ratedI_table_A = 800.0,
+            capacity_derated_Iz_A = 800.0,
+            utilizationPct = 28.8,
+            neutral_mm2 = "Full (Integral)",
+            earthCPC_mm2 = "Integral Housing",
+            voltDrop_V = 0.5,
+            vdPct = 0.12,
+            cumulativeVDpct = 0.12,
+            status = "✓ PASS",
+            failReason = "",
+            cableMaterial = "Cu",
+            insulation = "Air/Film Insulated",
+            kFactor = 143.0,
+            deviceBreakingKA = 50.0,
+            cableOD_mm = 100.0,
+            rUsed = 0.02,
+            xUsed = 0.02,
+            clearingTime_s = 0.1,
+            resultStatus = SizingResultStatus.PASS,
+            isAmpacityOk = true,
+            isVoltageDropOk = true,
+            primaryFailureCode = null
+        )
+
+        val scResults = ShortCircuitEngine.calculate(
+            resolvedCircuits = listOf(circuit),
+            circuitParents = mapOf(201 to 0),
+            sizingResults = mapOf(201 to sizingResult),
+            transformerResults = mapOf("TX-01" to txResult)
+        )
+
+        val res = scResults[201]
+        assertNotNull(res)
+        // Pre-fix: parseNumericSize("800A Busway (Cu)") -> 800.0 mm² -> iwKA = 114.4 kA -> PASS
+        // Post-fix: Busway or missing conductor area cannot be parsed as mm² -> DATA MISSING
+        assertEquals("DATA MISSING", res!!.status)
+        assertEquals("-", res.cableCheck)
+    }
 }
+

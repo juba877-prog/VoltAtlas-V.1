@@ -60,8 +60,12 @@ data class SizingResult(
     val isVoltageDropOk: Boolean,
     val primaryFailureCode: CableFailureCode?,
     val isDeviceFromCatalog: Boolean = false,
-    val breakerOrderingCode: String? = null
-)
+    val breakerOrderingCode: String? = null,
+    val conductorAreaMm2: Double? = null,
+    val cpcAreaMm2: Double? = null
+) {
+    val phaseConductorAreaMm2: Double? get() = conductorAreaMm2
+}
 
 object CableSizingEngine {
 
@@ -863,7 +867,9 @@ object CableSizingEngine {
             isVoltageDropOk = isVdPass,
             primaryFailureCode = failureCode,
             isDeviceFromCatalog = isDeviceFromCatalog,
-            breakerOrderingCode = breakerOrderingCode
+            breakerOrderingCode = breakerOrderingCode,
+            conductorAreaMm2 = selectedEntry.size,
+            cpcAreaMm2 = cpcSize
         )
     }
 
