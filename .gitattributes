@@ -1,0 +1,4 @@
+# Normalise all text files to LF inside the repository, independent of core.autocrlf.
+# Precondition C-4 for AUDIT-5 P0 item 1: without this, the mandated break/restore
+# cycles on test files re-introduce worktree EOL churn (see the G-3 stash incident).
+* text=auto eol=lf
