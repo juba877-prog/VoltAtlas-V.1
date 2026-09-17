@@ -252,13 +252,34 @@ tasks.withType<Test>().configureEach {
         includeTestsMatching("com.example.ViewModelAndStateStressTest")
       }
     }
+    "gate" -> {
+      // Release/CI GATE (AUDIT-5 P0 item 1). Runs every test EXCEPT the three STAGE B0
+      // diagnostic-only suites, which are documented as unable to reach Compose idle under the
+      // current Robolectric harness. Unlike 'fast', this profile INCLUDES com.example.ai.*, so the
+      // mutation-approval security tests and the schema-contract tests (AUDIT-1 V-06) are always
+      // exercised. A green dev-loop profile is not a release gate (AUDIT-1 V-13).
+      filter {
+        excludeTestsMatching("com.example.ui.dialogs.circuiteditor.LegacyCircuitEditDialogSaveMappingCharacterizationTest")
+        excludeTestsMatching("com.example.ui.dialogs.circuiteditor.LegacyCircuitEditDialogVisibilityCharacterizationTest")
+        excludeTestsMatching("com.example.ui.dialogs.circuiteditor.diagnostics.CircuitEditDialogDiagnosticIsolationTest")
+      }
+    }
+    "diagnostic" -> {
+      // Owns the quarantined STAGE B0 diagnostic-only suites explicitly, so that their exclusion
+      // from 'fast'/'gate' is a documented relocation rather than a silent hiding.
+      filter {
+        includeTestsMatching("com.example.ui.dialogs.circuiteditor.LegacyCircuitEditDialogSaveMappingCharacterizationTest")
+        includeTestsMatching("com.example.ui.dialogs.circuiteditor.LegacyCircuitEditDialogVisibilityCharacterizationTest")
+        includeTestsMatching("com.example.ui.dialogs.circuiteditor.diagnostics.CircuitEditDialogDiagnosticIsolationTest")
+      }
+    }
     "full", "all" -> {
       // Full Profile: Execute all tests across the repository without exclusions
     }
     else -> {
       throw GradleException(
         "Unknown test execution profile: '$rawProfile'. " +
-        "Supported profiles are: 'fast' (default), 'dev', 'ai', 'full', 'all', 'stress'."
+        "Supported profiles are: 'fast' (default), 'dev', 'ai', 'gate', 'diagnostic', 'full', 'all', 'stress'."
       )
     }
   }

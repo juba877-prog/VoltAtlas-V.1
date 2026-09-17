@@ -14,6 +14,7 @@ import com.example.data.ProjectEntity
 import com.example.data.ai.AiDatabaseConverters
 import com.example.data.ai.ApprovalGrantEntity
 import com.example.data.ai.MutationExecutionReceiptEntity
+import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
@@ -204,8 +205,28 @@ class Phase7E1DurableSchemaTest {
 
     @Test
     fun noDestructiveMigrationFallback_isConfigured() {
-        // AppDatabase specifies explicit migration chain without fallbackToDestructiveMigration
-        assertEquals(24, AppDatabase.getDatabase(context).openHelper.readableDatabase.version)
+        // AUDIT-5 P0 item 1 / AUDIT-1 V-06. Replaces the magic-number assertion
+        // `assertEquals(24, AppDatabase.getDatabase(context)...version)`, which went stale when the
+        // schema advanced to 26 (AUDIT-4 C-5 sibling defect class: restated constant).
+        // The guard's INTENT is preserved and strengthened: an explicit migration chain must be
+        // registered and no destructive fallback may be configured. Asserted against the shipped
+        // source so it cannot rot on the next version bump.
+        val appDatabaseSource = appDatabaseSourceText()
+        assertTrue(
+            "AppDatabase must register an explicit migration chain via .addMigrations(...)",
+            appDatabaseSource.contains(".addMigrations(")
+        )
+        assertFalse(
+            "AppDatabase must not configure fallbackToDestructiveMigration()",
+            appDatabaseSource.contains("fallbackToDestructiveMigration")
+        )
+
+        // Schema-version contract derived from the @Database annotation, so it survives the next bump.
+        assertEquals(
+            "An openable database must be created/migrated to the declared schema version",
+            declaredSchemaVersion(appDatabaseSource),
+            database.openHelper.readableDatabase.version
+        )
     }
 
     // =========================================================================
@@ -1129,7 +1150,45 @@ class Phase7E1DurableSchemaTest {
     }
 
     @Test
-    fun no7DOrFormulaBehaviorChanged() {
-        assertEquals(24, database.openHelper.readableDatabase.version)
+    fun databaseSchemaVersionMatchesDeclaredAnnotation() {
+        // AUDIT-5 P0 item 1 / AUDIT-1 V-06. Renamed from `no7DOrFormulaBehaviorChanged`, whose body
+        // asserted only the DB schema version (a magic 24) and never exercised any "7D" or formula
+        // behaviour. The version contract is kept, derived from @Database rather than restated.
+        assertEquals(
+            "The openable database must match the @Database-declared schema version",
+            declaredSchemaVersion(appDatabaseSourceText()),
+            database.openHelper.readableDatabase.version
+        )
+    }
+
+    /**
+     * Room schema version parsed from the @Database annotation in the AppDatabase source.
+     * Room's @Database is CLASS-retention, so runtime reflection cannot read it (proven:
+     * `getAnnotation` returned null at HEAD and both P0-1 assertions failed on it). The source is
+     * parsed instead, which keeps the contract version-bump-proof — no literal restated here.
+     */
+    private fun declaredSchemaVersion(appDatabaseSource: String): Int {
+        val match = Regex("""@Database\s*\([\s\S]*?version\s*=\s*(\d+)""").find(appDatabaseSource)
+            ?: throw AssertionError(
+                "Could not read the schema version from the @Database annotation in AppDatabase.kt"
+            )
+        return match.groupValues[1].toInt()
+    }
+
+    /**
+     * Reads the AppDatabase source so its migration/fallback configuration can be asserted.
+     * Both the module-relative and repo-root-relative locations are tried; if neither exists the
+     * test fails loudly rather than passing vacuously.
+     */
+    private fun appDatabaseSourceText(): String {
+        val candidates = listOf(
+            File("src/main/java/com/example/data/AppDatabase.kt"),
+            File("app/src/main/java/com/example/data/AppDatabase.kt")
+        )
+        val file = candidates.firstOrNull { it.exists() }
+            ?: throw AssertionError(
+                "AppDatabase.kt not found; looked in: " + candidates.joinToString { it.absolutePath }
+            )
+        return file.readText()
     }
 }
