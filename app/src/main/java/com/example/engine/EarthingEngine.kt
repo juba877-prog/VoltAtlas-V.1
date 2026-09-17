@@ -155,14 +155,14 @@ object EarthingEngine {
             Math.round((input.totalConnectedKVA * 1000.0 / (sqrt(3.0) * input.systemVoltage_V)) * 100.0) / 100.0
         } else 0.0
 
-        // 7. Prospective Earth-Fault Current (R40, R41)
+        // 7. Prospective Earth-Fault Current (R40, R41) (AUDIT-5 P0 item 3a / E-22)
         // IEC 60364-5-54 §54.2.2: the protective conductor is sized on the MAXIMUM
         // prospective earth-fault current (the line-to-earth fault). Use Ik1 (2·Z1 + Z0)
         // when provided; otherwise fall back to the supplied 3-phase Isc (conservative).
-        // No arbitrary reduction factors are applied.
+        // The displayed prospective loop impedance Zs uses the SAME Ik1 fault basis throughout.
         val designFaultKa = if (input.earthFaultCurrent_kA > 0.0) input.earthFaultCurrent_kA else faultKa
-        val prospectiveFaultA = Math.round(faultKa * 1000.0 * 100.0) / 100.0
-        val correctedFaultA = Math.round(designFaultKa * 1000.0 * 100.0) / 100.0
+        val prospectiveFaultA = Math.round(designFaultKa * 1000.0 * 100.0) / 100.0
+        val correctedFaultA = prospectiveFaultA
 
         // 8. Earth Conductor Thermal Sizing (R42, R43): S = (I_corr · √t) / k
         val k = if (input.kFactor > 0.0) input.kFactor else 159.0
@@ -174,11 +174,13 @@ object EarthingEngine {
 
         val equipotentialBondingMm2 = standardConductorMm2
 
-        // 9. Earth Fault Loop Impedance Zs & Zs_max (R46, R47)
+        // 9. Earth Fault Loop Impedance Zs & Zs_max (R46, R47) (AUDIT-5 P0 item 3a / E-22)
         // IEC 60364-4-41 §411.4.4: Zs_max = (Cmin · U0) / Ia, Cmin = 0.95, where Ia is the
         // current causing automatic disconnection within the stipulated time — the trip
         // MULTIPLIER (5×In B / 10×In C / 20×In D), NOT the breaker continuous rating.
         // Multiplier convention is the single source of truth in ProtectionEngine.
+        // Note: Zs here is an inverse prospective earth-fault current screen (Zs = U0 / Ik1),
+        // sharing the exact same Ik1 basis as protective conductor sizing.
         val u0 = if (input.u0_V > 0.0) input.u0_V else 230.0
         val zs = if (prospectiveFaultA > 0.0) u0 / prospectiveFaultA else 0.0
         val zsRounded = Math.round(zs * 10000.0) / 10000.0

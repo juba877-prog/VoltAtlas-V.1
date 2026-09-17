@@ -267,4 +267,37 @@ class EarthingEngineTest {
         assertNull(defaultEntity.siteWidth_m)
         assertNull(defaultEntity.autoDesignAppliedConfigId)
     }
+
+    // =========================================================================
+    // AUDIT-5 P0 item 3a (E-22): Earthing loop impedance Zs must use the SAME
+    // line-to-earth fault current basis (Ik1) as CPC sizing, not 3-phase Isc.
+    // =========================================================================
+
+    @Test
+    fun testEarthingLoopImpedance_usesLineToEarthFaultCurrentBasis() {
+        // Scenario: 3-phase prospective fault is 10.0 kA, but line-to-earth Ik1 is 3.0 kA.
+        // Main breaker: 400 A, C-curve (Ia = 10 * 400 = 4000 A).
+        // Zs_max = (0.95 * 230) / 4000 = 0.0546 ohm.
+        // Pre-fix: calculated prospectiveFaultA from 3-phase 10 kA -> Zs = 230 / 10000 = 0.023 ohm <= 0.0546 -> PASS (FALSE PASS!).
+        // Post-fix: must use Ik1 (3.0 kA = 3000 A) -> Zs = 230 / 3000 = 0.0767 ohm > 0.0546 -> FAIL.
+        val input = EarthingInput(
+            soilResistivity_ohmM = 50.0,
+            faultCurrent_kA = 10.0,
+            earthFaultCurrent_kA = 3.0,
+            systemVoltage_V = 400.0,
+            u0_V = 230.0,
+            mainBreakerRating_A = 400.0,
+            mainBreakerCurve = "C"
+        )
+
+        val result = EarthingEngine.calculate(input)
+
+        assertEquals("Prospective earth fault current must reflect line-to-earth basis Ik1", 3000.0, result.prospectiveFault_A, 0.1)
+        assertEquals("Corrected fault current must match Ik1", 3000.0, result.correctedFault_A, 0.1)
+        assertEquals("Earth loop impedance Zs = 230 / 3000 = 0.0767 ohm", 0.0767, result.zs_ohm, 0.001)
+        assertEquals("Zs_max = (0.95 * 230) / 4000 = 0.0546 ohm", 0.0546, result.zsMax_ohm, 0.001)
+        assertEquals("Loop check must FAIL because Zs (0.0767) > Zs_max (0.0546)", "FAIL", result.loopCheck)
+        assertFalse("Overall compliance must be false when loop check fails", result.overallCompliant)
+    }
 }
+
