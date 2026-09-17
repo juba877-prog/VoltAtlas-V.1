@@ -175,7 +175,9 @@ object ProtectionEngine {
         val tempFactor = 1.20
         val l_m = circuit.length_m
         val effectiveZe = if (ze_ohm > 0.0) ze_ohm else 0.0
-        val calculatedZs = effectiveZe + ((r1 + r2) * l_m * tempFactor) / 1000.0
+        val runs = kotlin.math.max(1, circuit.parallelRuns)
+        val r1Effective = r1 / runs
+        val calculatedZs = effectiveZe + ((r1Effective + r2) * l_m * tempFactor) / 1000.0
         
         // IEC 60364-4-41 §411.4.4: Zs_max = (Cmin · U0) / Ia. The trip CURVE must be parsed
         // strictly from explicit curve tokens — NEVER by substring-matching the device

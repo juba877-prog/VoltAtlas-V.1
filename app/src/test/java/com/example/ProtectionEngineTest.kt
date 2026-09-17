@@ -226,4 +226,44 @@ class ProtectionEngineTest {
             ads.warnings.any { it.contains("unverified", ignoreCase = true) || it.contains("Ze", ignoreCase = true) }
         )
     }
+
+    // =========================================================================
+    // AUDIT-5 P0 item 3c (C-2): ADS loop with parallel runs.
+    // Phase resistance r1 MUST be divided by circuit.parallelRuns.
+    // RED LINE: r2 MUST NOT be divided by parallelRuns (unmodelled CPC topology).
+    // =========================================================================
+
+    @Test
+    fun testParallelRuns_r1DividedByParallelRuns_r2NotDivided() {
+        // 4 parallel runs of 70 mm² Cu cable (r1 = 0.268 ohm/km per run -> r1_eff = 0.067 ohm/km).
+        // earthCPC = 35 mm² Cu (r2 = 0.524 ohm/km, NOT divided by parallelRuns).
+        // length = 370 m, tempFactor = 1.20, ze = 0.01 ohm.
+        // Pre-fix: (0.268 + 0.524) * 370 * 1.20 / 1000 + 0.01 = 0.3616 ohm -> rounds to 0.362 ohm > maxZs (0.35) -> false FAIL.
+        // Post-fix: (0.067 + 0.524) * 370 * 1.20 / 1000 + 0.01 = 0.2724 ohm -> rounds to 0.272 ohm <= maxZs (0.35) -> PASS.
+        val originalDataSheet = com.example.data.Catalog.dataSheet
+        try {
+            com.example.data.Catalog.dataSheet = listOf(
+                com.example.data.DataSheetEntry(size = 70.0, R_Cu20 = 0.268, X = 0.08, R_Al20 = 0.443, R_Cu_70_est = 0.322, R_Al_70_est = 0.532),
+                com.example.data.DataSheetEntry(size = 35.0, R_Cu20 = 0.524, X = 0.08, R_Al20 = 0.868, R_Cu_70_est = 0.629, R_Al_70_est = 1.042)
+            )
+            val circuit = CircuitEntity(
+                id = 20,
+                circuitName = "PARALLEL-FEEDER",
+                loadKVA = 50.0,
+                length_m = 370.0,
+                parallelRuns = 4,
+                overrideDeviceType = "MCB Curve C"
+            )
+            val sizing = createDummySizing(ib = 50.0, inRating = 63.0, iz = 246.0, icu = 10.0, cableSize = "70 mm²")
+
+            val ads = ProtectionEngine.calculateAds(circuit, sizing, ze_ohm = 0.01, isZeResolved = true)
+
+            assertEquals("Max Zs for 63 A Curve C from table is 0.35 ohm", 0.35, ads.maxZsAllowed, 0.001)
+            assertEquals("Calculated Zs must divide r1 by 4 but NOT r2: 0.272 ohm", 0.272, ads.calculatedZs, 0.001)
+            assertEquals("Verdict must PASS with parallel r1 reduction", "✓ PASS", ads.status)
+            assertEquals("Disconnection time must be < 0.4s", "< 0.4s", ads.disconnectionTime)
+        } finally {
+            com.example.data.Catalog.dataSheet = originalDataSheet
+        }
+    }
 }
