@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.VoltAtlasTopBar
@@ -48,7 +49,30 @@ private val PFC_PHASE_OPTIONS = persistentListOf("3P (400V)", "1P (230V)")
 private val PFC_FREQ_OPTIONS = persistentListOf("50 Hz", "60 Hz")
 private val PFC_CONN_OPTIONS = persistentListOf("Delta (Δ) Bank", "Star (Y) Bank")
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Immutable UI State for Power Factor Correction Screen.
+ */
+@Immutable
+data class PfcScreenUiState(
+    val inputState: PfcInputState,
+    val calculationResult: PfcDetailedResult?,
+    val inputModeIndex: Int = 0,
+    val phaseIndex: Int = 0,
+    val freqIndex: Int = 0,
+    val connectionIndex: Int = 0,
+    val voltageText: String = "400",
+    val powerKwText: String = "100.0",
+    val powerKvaText: String = "125.0",
+    val currentAText: String = "180.0",
+    val initialPfText: String = "0.80",
+    val targetPfText: String = "0.95"
+)
+
+/**
+ * Seam 1: Screen Wiring Composable.
+ * Owns app dependencies (Context, Toast, ClipboardManager), durable screen state,
+ * and calculation engine execution.
+ */
 @Composable
 fun QuickPfcScreenV2(
     onBack: () -> Unit
@@ -101,6 +125,21 @@ fun QuickPfcScreenV2(
         PfcCalculationEngine.calculate(inputState)
     }
 
+    val uiState = PfcScreenUiState(
+        inputState = inputState,
+        calculationResult = calculationResult,
+        inputModeIndex = inputModeIndex,
+        phaseIndex = phaseIndex,
+        freqIndex = freqIndex,
+        connectionIndex = connectionIndex,
+        voltageText = voltageText,
+        powerKwText = powerKwText,
+        powerKvaText = powerKvaText,
+        currentAText = currentAText,
+        initialPfText = initialPfText,
+        targetPfText = targetPfText
+    )
+
     // Copy Summary Action
     val copySummaryAction: () -> Unit = {
         val res = calculationResult
@@ -124,8 +163,52 @@ fun QuickPfcScreenV2(
         }
     }
 
-    // ── 4. Scaffold Layout ──
+    QuickPfcContent(
+        uiState = uiState,
+        onSelectInputMode = { inputModeIndex = it },
+        onSelectPhase = {
+            phaseIndex = it
+            voltageText = if (it == 0) "400" else "230"
+        },
+        onSelectFreq = { freqIndex = it },
+        onSelectConnection = { connectionIndex = it },
+        onVoltageChange = { voltageText = it },
+        onPowerKwChange = { powerKwText = it },
+        onPowerKvaChange = { powerKvaText = it },
+        onCurrentAChange = { currentAText = it },
+        onInitialPfChange = { initialPfText = it },
+        onTargetPfChange = { targetPfText = it },
+        onBack = onBack,
+        onCopySummary = copySummaryAction
+    )
+}
+
+/**
+ * Seam 3: Pure Previewable Content Composable for Power Factor Correction.
+ *
+ * Free of platform services (Context, Clipboard, Toast), receiving immutable
+ * UI state and plain lambda callbacks.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun QuickPfcContent(
+    uiState: PfcScreenUiState,
+    onSelectInputMode: (Int) -> Unit,
+    onSelectPhase: (Int) -> Unit,
+    onSelectFreq: (Int) -> Unit,
+    onSelectConnection: (Int) -> Unit,
+    onVoltageChange: (String) -> Unit,
+    onPowerKwChange: (String) -> Unit,
+    onPowerKvaChange: (String) -> Unit,
+    onCurrentAChange: (String) -> Unit,
+    onInitialPfChange: (String) -> Unit,
+    onTargetPfChange: (String) -> Unit,
+    onBack: () -> Unit,
+    onCopySummary: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Scaffold(
+        modifier = modifier,
         topBar = {
             VoltAtlasTopBar(
                 title = "Power Factor Correction",
@@ -134,7 +217,7 @@ fun QuickPfcScreenV2(
                 backDescription = "Back to Hub",
                 backButtonTestTag = "pfc_v2_back_btn",
                 actions = {
-                    IconButton(onClick = copySummaryAction, modifier = Modifier.testTag("copy_pfc_summary_btn")) {
+                    IconButton(onClick = onCopySummary, modifier = Modifier.testTag("copy_pfc_summary_btn")) {
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
                             contentDescription = "Copy Summary",
@@ -171,29 +254,26 @@ fun QuickPfcScreenV2(
                     ) {
                         item {
                             PfcInputsSection(
-                                inputModeIndex = inputModeIndex,
-                                onSelectInputMode = { inputModeIndex = it },
-                                phaseIndex = phaseIndex,
-                                onSelectPhase = {
-                                    phaseIndex = it
-                                    voltageText = if (it == 0) "400" else "230"
-                                },
-                                voltageText = voltageText,
-                                onVoltageChange = { voltageText = it },
-                                powerKwText = powerKwText,
-                                onPowerKwChange = { powerKwText = it },
-                                powerKvaText = powerKvaText,
-                                onPowerKvaChange = { powerKvaText = it },
-                                currentAText = currentAText,
-                                onCurrentAChange = { currentAText = it },
-                                initialPfText = initialPfText,
-                                onInitialPfChange = { initialPfText = it },
-                                targetPfText = targetPfText,
-                                onTargetPfChange = { targetPfText = it },
-                                freqIndex = freqIndex,
-                                onSelectFreq = { freqIndex = it },
-                                connectionIndex = connectionIndex,
-                                onSelectConnection = { connectionIndex = it }
+                                inputModeIndex = uiState.inputModeIndex,
+                                onSelectInputMode = onSelectInputMode,
+                                phaseIndex = uiState.phaseIndex,
+                                onSelectPhase = onSelectPhase,
+                                voltageText = uiState.voltageText,
+                                onVoltageChange = onVoltageChange,
+                                powerKwText = uiState.powerKwText,
+                                onPowerKwChange = onPowerKwChange,
+                                powerKvaText = uiState.powerKvaText,
+                                onPowerKvaChange = onPowerKvaChange,
+                                currentAText = uiState.currentAText,
+                                onCurrentAChange = onCurrentAChange,
+                                initialPfText = uiState.initialPfText,
+                                onInitialPfChange = onInitialPfChange,
+                                targetPfText = uiState.targetPfText,
+                                onTargetPfChange = onTargetPfChange,
+                                freqIndex = uiState.freqIndex,
+                                onSelectFreq = onSelectFreq,
+                                connectionIndex = uiState.connectionIndex,
+                                onSelectConnection = onSelectConnection
                             )
                         }
                     }
@@ -207,7 +287,7 @@ fun QuickPfcScreenV2(
                         contentPadding = PaddingValues(bottom = 32.dp)
                     ) {
                         item {
-                            PfcResultsSection(result = calculationResult, inputState = inputState)
+                            PfcResultsSection(result = uiState.calculationResult, inputState = uiState.inputState)
                         }
                     }
                 }
@@ -222,34 +302,31 @@ fun QuickPfcScreenV2(
                 ) {
                     item {
                         PfcInputsSection(
-                            inputModeIndex = inputModeIndex,
-                            onSelectInputMode = { inputModeIndex = it },
-                            phaseIndex = phaseIndex,
-                            onSelectPhase = {
-                                phaseIndex = it
-                                voltageText = if (it == 0) "400" else "230"
-                            },
-                            voltageText = voltageText,
-                            onVoltageChange = { voltageText = it },
-                            powerKwText = powerKwText,
-                            onPowerKwChange = { powerKwText = it },
-                            powerKvaText = powerKvaText,
-                            onPowerKvaChange = { powerKvaText = it },
-                            currentAText = currentAText,
-                            onCurrentAChange = { currentAText = it },
-                            initialPfText = initialPfText,
-                            onInitialPfChange = { initialPfText = it },
-                            targetPfText = targetPfText,
-                            onTargetPfChange = { targetPfText = it },
-                            freqIndex = freqIndex,
-                            onSelectFreq = { freqIndex = it },
-                            connectionIndex = connectionIndex,
-                            onSelectConnection = { connectionIndex = it }
+                            inputModeIndex = uiState.inputModeIndex,
+                            onSelectInputMode = onSelectInputMode,
+                            phaseIndex = uiState.phaseIndex,
+                            onSelectPhase = onSelectPhase,
+                            voltageText = uiState.voltageText,
+                            onVoltageChange = onVoltageChange,
+                            powerKwText = uiState.powerKwText,
+                            onPowerKwChange = onPowerKwChange,
+                            powerKvaText = uiState.powerKvaText,
+                            onPowerKvaChange = onPowerKvaChange,
+                            currentAText = uiState.currentAText,
+                            onCurrentAChange = onCurrentAChange,
+                            initialPfText = uiState.initialPfText,
+                            onInitialPfChange = onInitialPfChange,
+                            targetPfText = uiState.targetPfText,
+                            onTargetPfChange = onTargetPfChange,
+                            freqIndex = uiState.freqIndex,
+                            onSelectFreq = onSelectFreq,
+                            connectionIndex = uiState.connectionIndex,
+                            onSelectConnection = onSelectConnection
                         )
                     }
 
                     item {
-                        PfcResultsSection(result = calculationResult, inputState = inputState)
+                        PfcResultsSection(result = uiState.calculationResult, inputState = uiState.inputState)
                     }
                 }
             }
@@ -839,3 +916,46 @@ private fun PfcStepDetailsAccordion(
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PREVIEWS
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Preview(name = "Quick PFC Screen - Phone", showBackground = true)
+@Composable
+private fun PreviewQuickPfcContentPhone() {
+    VoltAtlasTheme(darkTheme = true) {
+        val dummyInput = PfcInputState(
+            inputMode = PfcInputMode.ACTIVE_POWER_KW,
+            phase = PfcSystemPhase.THREE_PHASE,
+            voltageV = 400.0,
+            powerKwText = "100.0",
+            powerKvaText = "125.0",
+            currentAText = "180.0",
+            initialPfText = "0.80",
+            targetPfText = "0.95",
+            frequency = PfcFrequency.FREQ_50HZ,
+            connection = PfcCapacitorConnection.DELTA
+        )
+        val dummyResult = PfcCalculationEngine.calculate(dummyInput)
+        QuickPfcContent(
+            uiState = PfcScreenUiState(
+                inputState = dummyInput,
+                calculationResult = dummyResult
+            ),
+            onSelectInputMode = {},
+            onSelectPhase = {},
+            onSelectFreq = {},
+            onSelectConnection = {},
+            onVoltageChange = {},
+            onPowerKwChange = {},
+            onPowerKvaChange = {},
+            onCurrentAChange = {},
+            onInitialPfChange = {},
+            onTargetPfChange = {},
+            onBack = {},
+            onCopySummary = {}
+        )
+    }
+}
+

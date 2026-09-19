@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -32,6 +33,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -108,13 +110,59 @@ private fun CableInputFieldRow(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Immutable UI State for Quick Cable Sizing Screen.
+ */
+@Immutable
+data class CableCalcScreenUiState(
+    val loadKvaText: String = "50.0",
+    val voltageText: String = "400",
+    val phases: String = "3P+N",
+    val pfText: String = "0.80",
+    val safetyFactorText: String = "1.00",
+    val lengthText: String = "50.0",
+    val maxVdPctText: String = "3.0",
+    val parallelRunsText: String = "1",
+    val feederType: String = "Cable",
+    val manufacturer: String = "Elsewedy",
+    val cableType: String = "",
+    val installation: String = "Laid in Free Air",
+    val airTempText: String = "40",
+    val gndTempText: String = "35",
+    val burialDepthText: String = "0.8",
+    val soilResText: String = "120",
+    val noCircuitsText: String = "1",
+    val formation: String = "Flat",
+    val spacing: String = "Touching",
+    val showOverrides: Boolean = false,
+    val overrideDeviceType: String = "Auto",
+    val overrideDeviceRating: String = "Auto",
+    val overrideCableSize: String = "Auto",
+    val overrideNeutralSize: String = "Auto",
+    val overrideEarthSize: String = "Auto",
+    val calculationResult: SizingResult? = null,
+    val calculatedCircuit: CircuitEntity? = null,
+    val errorMessage: String? = null,
+    val availableManufacturers: List<String> = emptyList(),
+    val availablePhases: List<String> = listOf("3P+N", "1P+N", "3P"),
+    val availableInstallations: List<String> = listOf("Laid in Free Air", "Laid in Ducts", "Laid Direct in Ground", "In Conduit", "Cable Tray"),
+    val availableFormations: List<String> = listOf("Flat", "Trefoil"),
+    val availableBreakerTypes: List<String> = listOf("Auto", "MCB", "MCCB", "ACB", "Switch-Disconnector"),
+    val availableRatings: List<String> = emptyList(),
+    val availableCableSizes: List<String> = emptyList(),
+    val availableConductorSizes: List<String> = emptyList()
+)
+
+/**
+ * Seam 1: Screen Wiring Composable.
+ * Owns app dependencies (Context, Toast, ClipboardManager), durable screen state,
+ * and calculation engine execution.
+ */
 @Composable
 fun QuickCableCalcScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -171,30 +219,6 @@ fun QuickCableCalcScreen(
     var calculationResult by remember { mutableStateOf<SizingResult?>(null) }
     var calculatedCircuit by remember { mutableStateOf<CircuitEntity?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    // Dynamic Catalog Family Resolver & Cascading Filters
-    val allCatalogFamilies = remember(manufacturer, Catalog.cableCatalog, Catalog.cableTypes) {
-        val matching = Catalog.cableTypes.filter { type ->
-            Catalog.cableCatalog.any { cat -> cat.typeCode == type.code && cat.mfg.trim().equals(manufacturer.trim(), ignoreCase = true) }
-        }.map { it.cableType }.distinct().sorted()
-        if (matching.isNotEmpty()) matching else listOf(cableType)
-    }
-
-    val allParsedFamilies = remember(allCatalogFamilies) {
-        allCatalogFamilies.map { parseFamilyInfo(it) }
-    }
-
-    val initialFamilyInfo = remember(cableType) { parseFamilyInfo(cableType) }
-    var filterMat by remember { mutableStateOf(initialFamilyInfo.material) }
-    var filterArmour by remember { mutableStateOf(initialFamilyInfo.armourGroup) }
-    var filterCores by remember { mutableStateOf(initialFamilyInfo.coresConfig) }
-    var filterQuery by remember { mutableStateOf("") }
-
-    val availableInstallations = listOf("Laid in Free Air", "Laid in Ducts", "Laid Direct in Ground", "In Conduit", "Cable Tray")
-    val availablePhases = listOf("3P+N", "1P+N", "3P")
-    val availableFormations = listOf("Flat", "Trefoil")
-    val availableSpacings = listOf("Touching", "0.15m", "0.30m")
-    val availableBreakerTypes = listOf("Auto", "MCB", "MCCB", "ACB", "Switch-Disconnector")
 
     val availableRatings = remember {
         listOf("Auto") + standardDeviceRatingOptions()
@@ -309,44 +333,184 @@ fun QuickCableCalcScreen(
         }
     }
 
-    fun copySummaryToClipboard() {
-        val res = calculationResult ?: return
-        val circ = calculatedCircuit ?: return
+    val copySummaryAction: () -> Unit = {
+        val res = calculationResult
+        val circ = calculatedCircuit
+        if (res != null && circ != null) {
+            val summary = buildString {
+                appendLine("=== VOLTATLAS QUICK CABLE SIZING SUMMARY ===")
+                appendLine("Status: ${res.status}")
+                if (res.failReason.isNotBlank()) {
+                    appendLine("Fail Reason: ${res.failReason}")
+                }
+                appendLine("--- Inputs ---")
+                appendLine("Load: ${circ.loadKVA} kVA @ ${circ.voltageV}V (${circ.phases}, PF ${circ.pf}, SF ${circ.safetyFactor})")
+                appendLine("Length: ${circ.length_m} m | Limit VD: ${String.format(Locale.US, "%.1f", circ.maxVDpct * 100.0)}%")
+                appendLine("Cable Spec: ${circ.cableType} (${circ.manufacturer})")
+                appendLine("Installation: ${circ.installation} | Parallel Runs: ${circ.parallelRuns}")
+                appendLine("Environmental: Air ${circ.airTempC}°C, Gnd ${circ.gndTempC}°C, Soil ${circ.soilRes}, Circuits ${circ.noCircuits}")
+                appendLine("--- Outputs ---")
+                appendLine("Operating Current (Ib): ${String.format(Locale.US, "%.2f", res.Ib_A)} A")
+                appendLine("Protective Device: ${res.deviceSize_A} A ${res.deviceType}")
+                appendLine("Selected Cable: ${circ.parallelRuns}x (${res.cableSize_mm2}) ${res.cableMaterial}/${res.insulation}")
+                appendLine("Tabulated Rating (Itab): ${String.format(Locale.US, "%.2f", res.ratedI_table_A)} A")
+                appendLine("Derated Ampacity (Iz): ${String.format(Locale.US, "%.2f", res.capacity_derated_Iz_A)} A (Derating: ${String.format(Locale.US, "%.3f", res.cTotalDerating)})")
+                appendLine("Thermal Utilization: ${String.format(Locale.US, "%.1f", res.utilizationPct)}%")
+                appendLine("Voltage Drop: ${String.format(Locale.US, "%.2f", res.voltDrop_V)} V (${String.format(Locale.US, "%.2f", res.vdPct)}%)")
+                appendLine("Conductors: Neutral ${res.neutral_mm2} mm² | Earth/CPC ${res.earthCPC_mm2} mm²")
+                if (res.cableOD_mm > 0.0) {
+                    appendLine("Outer Diameter: Phase ${String.format(Locale.US, "%.1f", res.cableOD_mm)} mm | Earth ${String.format(Locale.US, "%.1f", res.earthOD_mm)} mm")
+                }
+                appendLine("============================================")
+            }
 
-        val summary = buildString {
-            appendLine("=== VOLTATLAS QUICK CABLE SIZING SUMMARY ===")
-            appendLine("Status: ${res.status}")
-            if (res.failReason.isNotBlank()) {
-                appendLine("Fail Reason: ${res.failReason}")
-            }
-            appendLine("--- Inputs ---")
-            appendLine("Load: ${circ.loadKVA} kVA @ ${circ.voltageV}V (${circ.phases}, PF ${circ.pf}, SF ${circ.safetyFactor})")
-            appendLine("Length: ${circ.length_m} m | Limit VD: ${String.format(Locale.US, "%.1f", circ.maxVDpct * 100.0)}%")
-            appendLine("Cable Spec: ${circ.cableType} (${circ.manufacturer})")
-            appendLine("Installation: ${circ.installation} | Parallel Runs: ${circ.parallelRuns}")
-            appendLine("Environmental: Air ${circ.airTempC}°C, Gnd ${circ.gndTempC}°C, Soil ${circ.soilRes}, Circuits ${circ.noCircuits}")
-            appendLine("--- Outputs ---")
-            appendLine("Operating Current (Ib): ${String.format(Locale.US, "%.2f", res.Ib_A)} A")
-            appendLine("Protective Device: ${res.deviceSize_A} A ${res.deviceType}")
-            appendLine("Selected Cable: ${circ.parallelRuns}x (${res.cableSize_mm2}) ${res.cableMaterial}/${res.insulation}")
-            appendLine("Tabulated Rating (Itab): ${String.format(Locale.US, "%.2f", res.ratedI_table_A)} A")
-            appendLine("Derated Ampacity (Iz): ${String.format(Locale.US, "%.2f", res.capacity_derated_Iz_A)} A (Derating: ${String.format(Locale.US, "%.3f", res.cTotalDerating)})")
-            appendLine("Thermal Utilization: ${String.format(Locale.US, "%.1f", res.utilizationPct)}%")
-            appendLine("Voltage Drop: ${String.format(Locale.US, "%.2f", res.voltDrop_V)} V (${String.format(Locale.US, "%.2f", res.vdPct)}%)")
-            appendLine("Conductors: Neutral ${res.neutral_mm2} mm² | Earth/CPC ${res.earthCPC_mm2} mm²")
-            if (res.cableOD_mm > 0.0) {
-                appendLine("Outer Diameter: Phase ${String.format(Locale.US, "%.1f", res.cableOD_mm)} mm | Earth ${String.format(Locale.US, "%.1f", res.earthOD_mm)} mm")
-            }
-            appendLine("============================================")
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText("VoltAtlas Cable Calculation", summary)
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(context, "Calculation summary copied to clipboard", Toast.LENGTH_SHORT).show()
         }
-
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("VoltAtlas Cable Calculation", summary)
-        clipboard.setPrimaryClip(clip)
-        Toast.makeText(context, "Calculation summary copied to clipboard", Toast.LENGTH_SHORT).show()
     }
 
+    val uiState = CableCalcScreenUiState(
+        loadKvaText = loadKvaText,
+        voltageText = voltageText,
+        phases = phases,
+        pfText = pfText,
+        safetyFactorText = safetyFactorText,
+        lengthText = lengthText,
+        maxVdPctText = maxVdPctText,
+        parallelRunsText = parallelRunsText,
+        feederType = feederType,
+        manufacturer = manufacturer,
+        cableType = cableType,
+        installation = installation,
+        airTempText = airTempText,
+        gndTempText = gndTempText,
+        burialDepthText = burialDepthText,
+        soilResText = soilResText,
+        noCircuitsText = noCircuitsText,
+        formation = formation,
+        spacing = spacing,
+        showOverrides = showOverrides,
+        overrideDeviceType = overrideDeviceType,
+        overrideDeviceRating = overrideDeviceRating,
+        overrideCableSize = overrideCableSize,
+        overrideNeutralSize = overrideNeutralSize,
+        overrideEarthSize = overrideEarthSize,
+        calculationResult = calculationResult,
+        calculatedCircuit = calculatedCircuit,
+        errorMessage = errorMessage,
+        availableManufacturers = availableManufacturers,
+        availableRatings = availableRatings,
+        availableCableSizes = availableCableSizes,
+        availableConductorSizes = availableConductorSizes
+    )
+
+    QuickCableCalcContent(
+        uiState = uiState,
+        onLoadKvaChange = { loadKvaText = it },
+        onVoltageChange = { voltageText = it },
+        onPhasesChange = { phases = it },
+        onPfChange = { pfText = it },
+        onSafetyFactorChange = { safetyFactorText = it },
+        onLengthChange = { lengthText = it },
+        onMaxVdPctChange = { maxVdPctText = it },
+        onParallelRunsChange = { parallelRunsText = it },
+        onManufacturerChange = { selected ->
+            manufacturer = selected
+            val validTypes = Catalog.cableTypes.filter { type ->
+                Catalog.cableCatalog.any { cat ->
+                    cat.typeCode == type.code && cat.mfg.trim().equals(selected.trim(), ignoreCase = true)
+                }
+            }.map { it.cableType }.distinct().sorted()
+            if (validTypes.isNotEmpty() && !validTypes.contains(cableType)) {
+                cableType = validTypes.firstOrNull() ?: ""
+            }
+        },
+        onCableTypeChange = { cableType = it },
+        onInstallationChange = { installation = it },
+        onAirTempChange = { airTempText = it },
+        onGndTempChange = { gndTempText = it },
+        onBurialDepthChange = { burialDepthText = it },
+        onSoilResChange = { soilResText = it },
+        onNoCircuitsChange = { noCircuitsText = it },
+        onFormationChange = { formation = it },
+        onSpacingChange = { spacing = it },
+        onToggleOverrides = { showOverrides = !showOverrides },
+        onOverrideDeviceTypeChange = { overrideDeviceType = it },
+        onOverrideDeviceRatingChange = { overrideDeviceRating = it },
+        onOverrideCableSizeChange = { overrideCableSize = it },
+        onOverrideNeutralSizeChange = { overrideNeutralSize = it },
+        onOverrideEarthSizeChange = { overrideEarthSize = it },
+        onCalculate = { performCalculation() },
+        onBack = onBack,
+        onCopySummary = copySummaryAction,
+        listState = listState
+    )
+}
+
+/**
+ * Seam 3: Pure Previewable Content Composable for Quick Cable Sizing.
+ *
+ * Free of platform services (Context, Clipboard, Toast), receiving immutable
+ * UI state and plain lambda callbacks.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun QuickCableCalcContent(
+    uiState: CableCalcScreenUiState,
+    onLoadKvaChange: (String) -> Unit,
+    onVoltageChange: (String) -> Unit,
+    onPhasesChange: (String) -> Unit,
+    onPfChange: (String) -> Unit,
+    onSafetyFactorChange: (String) -> Unit,
+    onLengthChange: (String) -> Unit,
+    onMaxVdPctChange: (String) -> Unit,
+    onParallelRunsChange: (String) -> Unit,
+    onManufacturerChange: (String) -> Unit,
+    onCableTypeChange: (String) -> Unit,
+    onInstallationChange: (String) -> Unit,
+    onAirTempChange: (String) -> Unit,
+    onGndTempChange: (String) -> Unit,
+    onBurialDepthChange: (String) -> Unit,
+    onSoilResChange: (String) -> Unit,
+    onNoCircuitsChange: (String) -> Unit,
+    onFormationChange: (String) -> Unit,
+    onSpacingChange: (String) -> Unit,
+    onToggleOverrides: () -> Unit,
+    onOverrideDeviceTypeChange: (String) -> Unit,
+    onOverrideDeviceRatingChange: (String) -> Unit,
+    onOverrideCableSizeChange: (String) -> Unit,
+    onOverrideNeutralSizeChange: (String) -> Unit,
+    onOverrideEarthSizeChange: (String) -> Unit,
+    onCalculate: () -> Unit,
+    onBack: () -> Unit,
+    onCopySummary: () -> Unit,
+    modifier: Modifier = Modifier,
+    listState: LazyListState = rememberLazyListState()
+) {
+    val focusManager = LocalFocusManager.current
+
+    // Dynamic Catalog Family Resolver & Cascading Filters
+    val allCatalogFamilies = remember(uiState.manufacturer, uiState.cableType) {
+        val matching = Catalog.cableTypes.filter { type ->
+            Catalog.cableCatalog.any { cat -> cat.typeCode == type.code && cat.mfg.trim().equals(uiState.manufacturer.trim(), ignoreCase = true) }
+        }.map { it.cableType }.distinct().sorted()
+        if (matching.isNotEmpty()) matching else listOf(uiState.cableType)
+    }
+
+    val allParsedFamilies = remember(allCatalogFamilies) {
+        allCatalogFamilies.map { parseFamilyInfo(it) }
+    }
+
+    val initialFamilyInfo = remember(uiState.cableType) { parseFamilyInfo(uiState.cableType) }
+    var filterMat by remember(uiState.cableType) { mutableStateOf(initialFamilyInfo.material) }
+    var filterArmour by remember(uiState.cableType) { mutableStateOf(initialFamilyInfo.armourGroup) }
+    var filterCores by remember(uiState.cableType) { mutableStateOf(initialFamilyInfo.coresConfig) }
+    var filterQuery by remember { mutableStateOf("") }
+
     Scaffold(
+        modifier = modifier,
         topBar = {
             VoltAtlasTopBar(
                 title = "Quick Cable Sizing",
@@ -355,8 +519,8 @@ fun QuickCableCalcScreen(
                 backDescription = "Back",
                 backButtonTestTag = "quick_calc_back_btn",
                 actions = {
-                    if (calculationResult != null) {
-                        IconButton(onClick = { copySummaryToClipboard() }, modifier = Modifier.testTag("copy_summary_btn")) {
+                    if (uiState.calculationResult != null) {
+                        IconButton(onClick = onCopySummary, modifier = Modifier.testTag("copy_summary_btn")) {
                             Icon(
                                 imageVector = Icons.Default.ContentCopy,
                                 contentDescription = "Copy Summary",
@@ -378,7 +542,7 @@ fun QuickCableCalcScreen(
             contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (errorMessage != null) {
+            if (uiState.errorMessage != null) {
                 item {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = SleekFail.copy(alpha = 0.15f)),
@@ -392,7 +556,7 @@ fun QuickCableCalcScreen(
                         ) {
                             Icon(Icons.Default.ErrorOutline, contentDescription = "Error", tint = SleekFail)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = errorMessage!!, color = SleekFail, fontSize = 13.sp)
+                            Text(text = uiState.errorMessage, color = SleekFail, fontSize = 13.sp)
                         }
                     }
                 }
@@ -416,8 +580,8 @@ fun QuickCableCalcScreen(
                         CableInputFieldRow(
                             first = { fieldModifier ->
                                 OutlinedTextField(
-                                    value = loadKvaText,
-                                    onValueChange = { loadKvaText = it },
+                                    value = uiState.loadKvaText,
+                                    onValueChange = onLoadKvaChange,
                                     label = { Text("Load (kVA)") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
                                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
@@ -426,8 +590,8 @@ fun QuickCableCalcScreen(
                             },
                             second = { fieldModifier ->
                                 OutlinedTextField(
-                                    value = voltageText,
-                                    onValueChange = { voltageText = it },
+                                    value = uiState.voltageText,
+                                    onValueChange = onVoltageChange,
                                     label = { Text("Voltage (V)") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
@@ -440,16 +604,16 @@ fun QuickCableCalcScreen(
                             first = { fieldModifier ->
                                 DropdownSelector(
                                     label = "Phases",
-                                    selected = phases,
-                                    options = availablePhases,
-                                    onSelect = { phases = it },
+                                    selected = uiState.phases,
+                                    options = uiState.availablePhases,
+                                    onSelect = onPhasesChange,
                                     modifier = fieldModifier
                                 )
                             },
                             second = { fieldModifier ->
                                 OutlinedTextField(
-                                    value = pfText,
-                                    onValueChange = { pfText = it },
+                                    value = uiState.pfText,
+                                    onValueChange = onPfChange,
                                     label = { Text("Power Factor (pf)") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
                                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
@@ -461,8 +625,8 @@ fun QuickCableCalcScreen(
                         CableInputFieldRow(
                             first = { fieldModifier ->
                                 OutlinedTextField(
-                                    value = lengthText,
-                                    onValueChange = { lengthText = it },
+                                    value = uiState.lengthText,
+                                    onValueChange = onLengthChange,
                                     label = { Text("Length (m)") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
                                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
@@ -471,8 +635,8 @@ fun QuickCableCalcScreen(
                             },
                             second = { fieldModifier ->
                                 OutlinedTextField(
-                                    value = maxVdPctText,
-                                    onValueChange = { maxVdPctText = it },
+                                    value = uiState.maxVdPctText,
+                                    onValueChange = onMaxVdPctChange,
                                     label = { Text("Max VD Limit (%)") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
                                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
@@ -484,8 +648,8 @@ fun QuickCableCalcScreen(
                         CableInputFieldRow(
                             first = { fieldModifier ->
                                 OutlinedTextField(
-                                    value = safetyFactorText,
-                                    onValueChange = { safetyFactorText = it },
+                                    value = uiState.safetyFactorText,
+                                    onValueChange = onSafetyFactorChange,
                                     label = { Text("Safety Factor") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
                                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
@@ -494,8 +658,8 @@ fun QuickCableCalcScreen(
                             },
                             second = { fieldModifier ->
                                 OutlinedTextField(
-                                    value = parallelRunsText,
-                                    onValueChange = { parallelRunsText = it },
+                                    value = uiState.parallelRunsText,
+                                    onValueChange = onParallelRunsChange,
                                     label = { Text("Parallel Runs") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
@@ -524,19 +688,9 @@ fun QuickCableCalcScreen(
 
                         DropdownSelector(
                             label = "Manufacturer / Cable Source",
-                            selected = manufacturer,
-                            options = availableManufacturers,
-                            onSelect = { selected ->
-                                manufacturer = selected
-                                val validTypes = Catalog.cableTypes.filter { type ->
-                                    Catalog.cableCatalog.any { cat ->
-                                        cat.typeCode == type.code && cat.mfg.trim().equals(selected.trim(), ignoreCase = true)
-                                    }
-                                }.map { it.cableType }.distinct().sorted()
-                                if (validTypes.isNotEmpty() && !validTypes.contains(cableType)) {
-                                    cableType = validTypes.firstOrNull() ?: ""
-                                }
-                            },
+                            selected = uiState.manufacturer,
+                            options = uiState.availableManufacturers,
+                            onSelect = onManufacturerChange,
                             modifier = Modifier.fillMaxWidth().testTag("input_manufacturer")
                         )
 
@@ -552,13 +706,13 @@ fun QuickCableCalcScreen(
                                             filterMat = mat
                                             val candidate = allParsedFamilies.firstOrNull { it.material == mat && it.armourGroup == filterArmour && it.coresConfig == filterCores }
                                             if (candidate != null) {
-                                                cableType = candidate.originalType
+                                                onCableTypeChange(candidate.originalType)
                                             } else {
                                                 val alt = allParsedFamilies.firstOrNull { it.material == mat }
                                                 if (alt != null) {
                                                     filterArmour = alt.armourGroup
                                                     filterCores = alt.coresConfig
-                                                    cableType = alt.originalType
+                                                    onCableTypeChange(alt.originalType)
                                                 }
                                             }
                                         }
@@ -582,12 +736,12 @@ fun QuickCableCalcScreen(
                                             filterArmour = arm
                                             val candidate = allParsedFamilies.firstOrNull { it.material == filterMat && it.armourGroup == arm && it.coresConfig == filterCores }
                                             if (candidate != null) {
-                                                cableType = candidate.originalType
+                                                onCableTypeChange(candidate.originalType)
                                             } else {
                                                 val alt = allParsedFamilies.firstOrNull { it.material == filterMat && it.armourGroup == arm }
                                                 if (alt != null) {
                                                     filterCores = alt.coresConfig
-                                                    cableType = alt.originalType
+                                                    onCableTypeChange(alt.originalType)
                                                 }
                                             }
                                         }
@@ -619,7 +773,7 @@ fun QuickCableCalcScreen(
                                 filterCores = core
                                 val cand = allParsedFamilies.firstOrNull { it.material == filterMat && it.armourGroup == filterArmour && it.coresConfig == core }
                                 if (cand != null) {
-                                    cableType = cand.originalType
+                                    onCableTypeChange(cand.originalType)
                                 }
                             },
                             modifier = Modifier.fillMaxWidth().testTag("input_core_config")
@@ -634,22 +788,22 @@ fun QuickCableCalcScreen(
                             }
                         }
 
-                        val currentParsed = remember(cableType) { parseFamilyInfo(cableType) }
+                        val currentParsed = remember(uiState.cableType) { parseFamilyInfo(uiState.cableType) }
                         DropdownSelector(
                             label = "Selected Cable Family",
                             selected = currentParsed.displayLabel,
                             options = matchingFamilies.map { it.originalType },
                             onSelect = { selectedType ->
-                                cableType = selectedType
+                                onCableTypeChange(selectedType)
                             },
                             modifier = Modifier.fillMaxWidth().testTag("input_cable_type")
                         )
 
                         DropdownSelector(
                             label = "Installation Method",
-                            selected = installation,
-                            options = availableInstallations,
-                            onSelect = { installation = it },
+                            selected = uiState.installation,
+                            options = uiState.availableInstallations,
+                            onSelect = onInstallationChange,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -674,8 +828,8 @@ fun QuickCableCalcScreen(
                         CableInputFieldRow(
                             first = { fieldModifier ->
                                 OutlinedTextField(
-                                    value = airTempText,
-                                    onValueChange = { airTempText = it },
+                                    value = uiState.airTempText,
+                                    onValueChange = onAirTempChange,
                                     label = { Text("Air Temp (°C)") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
@@ -684,8 +838,8 @@ fun QuickCableCalcScreen(
                             },
                             second = { fieldModifier ->
                                 OutlinedTextField(
-                                    value = gndTempText,
-                                    onValueChange = { gndTempText = it },
+                                    value = uiState.gndTempText,
+                                    onValueChange = onGndTempChange,
                                     label = { Text("Ground Temp (°C)") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
@@ -697,8 +851,8 @@ fun QuickCableCalcScreen(
                         CableInputFieldRow(
                             first = { fieldModifier ->
                                 OutlinedTextField(
-                                    value = burialDepthText,
-                                    onValueChange = { burialDepthText = it },
+                                    value = uiState.burialDepthText,
+                                    onValueChange = onBurialDepthChange,
                                     label = { Text("Burial Depth (m)") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
                                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
@@ -707,8 +861,8 @@ fun QuickCableCalcScreen(
                             },
                             second = { fieldModifier ->
                                 OutlinedTextField(
-                                    value = soilResText,
-                                    onValueChange = { soilResText = it },
+                                    value = uiState.soilResText,
+                                    onValueChange = onSoilResChange,
                                     label = { Text("Soil Res (K·m/W)") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
@@ -720,8 +874,8 @@ fun QuickCableCalcScreen(
                         CableInputFieldRow(
                             first = { fieldModifier ->
                                 OutlinedTextField(
-                                    value = noCircuitsText,
-                                    onValueChange = { noCircuitsText = it },
+                                    value = uiState.noCircuitsText,
+                                    onValueChange = onNoCircuitsChange,
                                     label = { Text("Grouped Circuits") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                                     keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
@@ -731,9 +885,9 @@ fun QuickCableCalcScreen(
                             second = { fieldModifier ->
                                 DropdownSelector(
                                     label = "Formation",
-                                    selected = formation,
-                                    options = availableFormations,
-                                    onSelect = { formation = it },
+                                    selected = uiState.formation,
+                                    options = uiState.availableFormations,
+                                    onSelect = onFormationChange,
                                     modifier = fieldModifier
                                 )
                             }
@@ -754,7 +908,7 @@ fun QuickCableCalcScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { showOverrides = !showOverrides },
+                                .clickable { onToggleOverrides() },
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -764,14 +918,14 @@ fun QuickCableCalcScreen(
                                 Text("4. Manual Overrides (Optional Selectors)", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
                             }
                             Icon(
-                                imageVector = if (showOverrides) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                imageVector = if (uiState.showOverrides) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                                 contentDescription = null,
                                 tint = SlateTextSecondary
                             )
                         }
 
                         AnimatedVisibility(
-                            visible = showOverrides,
+                            visible = uiState.showOverrides,
                             enter = VoltAtlasMotion.expandableEnter(),
                             exit = VoltAtlasMotion.expandableExit()
                         ) {
@@ -780,18 +934,18 @@ fun QuickCableCalcScreen(
                                     first = { fieldModifier ->
                                         DropdownSelector(
                                             label = "Override Breaker Type",
-                                            selected = overrideDeviceType,
-                                            options = availableBreakerTypes,
-                                            onSelect = { overrideDeviceType = it },
+                                            selected = uiState.overrideDeviceType,
+                                            options = uiState.availableBreakerTypes,
+                                            onSelect = onOverrideDeviceTypeChange,
                                             modifier = fieldModifier.testTag("override_breaker_type_dropdown")
                                         )
                                     },
                                     second = { fieldModifier ->
                                         DropdownSelector(
                                             label = "Override Rating (A)",
-                                            selected = overrideDeviceRating,
-                                            options = availableRatings,
-                                            onSelect = { overrideDeviceRating = it },
+                                            selected = uiState.overrideDeviceRating,
+                                            options = uiState.availableRatings,
+                                            onSelect = onOverrideDeviceRatingChange,
                                             modifier = fieldModifier.testTag("override_breaker_rating_dropdown")
                                         )
                                     }
@@ -799,9 +953,9 @@ fun QuickCableCalcScreen(
 
                                 DropdownSelector(
                                     label = "Override Cable Size (Cross-Section)",
-                                    selected = overrideCableSize,
-                                    options = availableCableSizes,
-                                    onSelect = { overrideCableSize = it },
+                                    selected = uiState.overrideCableSize,
+                                    options = uiState.availableCableSizes,
+                                    onSelect = onOverrideCableSizeChange,
                                     modifier = Modifier.fillMaxWidth().testTag("override_cable_size_dropdown")
                                 )
 
@@ -809,18 +963,18 @@ fun QuickCableCalcScreen(
                                     first = { fieldModifier ->
                                         DropdownSelector(
                                             label = "Override Neutral",
-                                            selected = overrideNeutralSize,
-                                            options = availableConductorSizes,
-                                            onSelect = { overrideNeutralSize = it },
+                                            selected = uiState.overrideNeutralSize,
+                                            options = uiState.availableConductorSizes,
+                                            onSelect = onOverrideNeutralSizeChange,
                                             modifier = fieldModifier.testTag("override_neutral_dropdown")
                                         )
                                     },
                                     second = { fieldModifier ->
                                         DropdownSelector(
                                             label = "Override Earth/CPC",
-                                            selected = overrideEarthSize,
-                                            options = availableConductorSizes,
-                                            onSelect = { overrideEarthSize = it },
+                                            selected = uiState.overrideEarthSize,
+                                            options = uiState.availableConductorSizes,
+                                            onSelect = onOverrideEarthSizeChange,
                                             modifier = fieldModifier.testTag("override_earth_dropdown")
                                         )
                                     }
@@ -834,7 +988,7 @@ fun QuickCableCalcScreen(
             // 5. Calculate Button Action
             item {
                 Button(
-                    onClick = { performCalculation() },
+                    onClick = onCalculate,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp)
@@ -859,12 +1013,12 @@ fun QuickCableCalcScreen(
             }
 
             // 6. Result Card Placed Below Calculate Button (Auto-scrolled on calculate)
-            if (calculationResult != null) {
+            if (uiState.calculationResult != null && uiState.calculatedCircuit != null) {
                 item {
                     QuickCalcResultCard(
-                        result = calculationResult!!,
-                        circuit = calculatedCircuit!!,
-                        onCopy = { copySummaryToClipboard() }
+                        result = uiState.calculationResult,
+                        circuit = uiState.calculatedCircuit,
+                        onCopy = onCopySummary
                     )
                 }
             }
@@ -1112,3 +1266,56 @@ private fun SmallMetricBox(
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PREVIEWS
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Preview(name = "Quick Cable Calc Screen - Phone", showBackground = true)
+@Composable
+private fun PreviewQuickCableCalcContentPhone() {
+    VoltAtlasTheme(darkTheme = true) {
+        QuickCableCalcContent(
+            uiState = CableCalcScreenUiState(
+                loadKvaText = "50.0",
+                voltageText = "400",
+                phases = "3P+N",
+                pfText = "0.80",
+                safetyFactorText = "1.00",
+                lengthText = "50.0",
+                maxVdPctText = "3.0",
+                parallelRunsText = "1",
+                cableType = "Cu/XLPE/PVC - 4C",
+                manufacturer = "Elsewedy"
+            ),
+            onLoadKvaChange = {},
+            onVoltageChange = {},
+            onPhasesChange = {},
+            onPfChange = {},
+            onSafetyFactorChange = {},
+            onLengthChange = {},
+            onMaxVdPctChange = {},
+            onParallelRunsChange = {},
+            onManufacturerChange = {},
+            onCableTypeChange = {},
+            onInstallationChange = {},
+            onAirTempChange = {},
+            onGndTempChange = {},
+            onBurialDepthChange = {},
+            onSoilResChange = {},
+            onNoCircuitsChange = {},
+            onFormationChange = {},
+            onSpacingChange = {},
+            onToggleOverrides = {},
+            onOverrideDeviceTypeChange = {},
+            onOverrideDeviceRatingChange = {},
+            onOverrideCableSizeChange = {},
+            onOverrideNeutralSizeChange = {},
+            onOverrideEarthSizeChange = {},
+            onCalculate = {},
+            onBack = {},
+            onCopySummary = {}
+        )
+    }
+}
+
