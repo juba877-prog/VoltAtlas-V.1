@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -25,11 +26,14 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -299,6 +303,8 @@ private fun PfcInputsSection(
     connectionIndex: Int,
     onSelectConnection: (Int) -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
+
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         // 1. Operating Mode & System Topology
         QuickCard {
@@ -334,7 +340,8 @@ private fun PfcInputsSection(
                     value = voltageText,
                     onValueChange = onVoltageChange,
                     label = { Text("Line Voltage (V)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                     modifier = Modifier.weight(0.8f).testTag("pfc_v2_voltage_input")
                 )
             }
@@ -348,7 +355,8 @@ private fun PfcInputsSection(
                         value = powerKwText,
                         onValueChange = onPowerKwChange,
                         label = { Text("Active Power P (kW)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                         modifier = Modifier.fillMaxWidth().testTag("pfc_v2_kw_input")
                     )
                 }
@@ -357,7 +365,8 @@ private fun PfcInputsSection(
                         value = powerKvaText,
                         onValueChange = onPowerKvaChange,
                         label = { Text("Apparent Power S₁ (kVA)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                         modifier = Modifier.fillMaxWidth().testTag("pfc_v2_kva_input")
                     )
                 }
@@ -366,7 +375,8 @@ private fun PfcInputsSection(
                         value = currentAText,
                         onValueChange = onCurrentAChange,
                         label = { Text("Measured Line Current I₁ (Amps)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                         modifier = Modifier.fillMaxWidth().testTag("pfc_v2_amps_input")
                     )
                 }
@@ -389,7 +399,8 @@ private fun PfcInputsSection(
                     value = initialPfText,
                     onValueChange = onInitialPfChange,
                     label = { Text("Initial PF (cosφ₁)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Right) }),
                     modifier = Modifier.weight(1f).testTag("pfc_v2_initial_pf_input")
                 )
 
@@ -397,7 +408,8 @@ private fun PfcInputsSection(
                     value = targetPfText,
                     onValueChange = onTargetPfChange,
                     label = { Text("Target PF (cosφ₂)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                     modifier = Modifier.weight(1f).testTag("pfc_v2_target_pf_input")
                 )
             }

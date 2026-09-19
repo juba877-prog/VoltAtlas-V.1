@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -19,10 +20,13 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -383,6 +387,8 @@ private fun SystemAndOperatingInputsCard(
     onMaxVdLimitChange: (String) -> Unit,
     derivedCurrentA: Double?
 ) {
+    val focusManager = LocalFocusManager.current
+
     QuickCard {
         QuickSectionTitle(
             title = "System & Operating Load",
@@ -409,14 +415,16 @@ private fun SystemAndOperatingInputsCard(
                 value = voltageText,
                 onValueChange = onVoltageChange,
                 label = { Text("Voltage (V)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                 modifier = Modifier.weight(1f)
             )
             OutlinedTextField(
                 value = lengthText,
                 onValueChange = onLengthChange,
                 label = { Text("Route Length (m)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                 modifier = Modifier.weight(1f).testTag("v2_input_length")
             )
         }
@@ -428,7 +436,8 @@ private fun SystemAndOperatingInputsCard(
                 value = currentText,
                 onValueChange = onCurrentChange,
                 label = { Text("Design Load Current (A)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                 modifier = Modifier.fillMaxWidth().testTag("v2_input_current")
             )
         } else {
@@ -438,14 +447,16 @@ private fun SystemAndOperatingInputsCard(
                     value = powerKwText,
                     onValueChange = onPowerKwChange,
                     label = { Text("Active Power (kW)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                     modifier = Modifier.weight(1f).testTag("v2_input_power")
                 )
                 OutlinedTextField(
                     value = powerFactorText,
                     onValueChange = onPowerFactorChange,
                     label = { Text("Power Factor (cosφ)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -479,14 +490,16 @@ private fun SystemAndOperatingInputsCard(
                 value = parallelRunsText,
                 onValueChange = onParallelRunsChange,
                 label = { Text("Parallel Runs (N)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                 modifier = Modifier.weight(1f)
             )
             OutlinedTextField(
                 value = maxVdLimitText,
                 onValueChange = onMaxVdLimitChange,
                 label = { Text("Max Permitted VD (%)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                 modifier = Modifier.weight(1f)
             )
         }
@@ -615,19 +628,22 @@ private fun CableSpecificationCard(
         }
 
         if (isManualOverride) {
+            val focusManager = LocalFocusManager.current
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = manualRText,
                     onValueChange = onManualRChange,
                     label = { Text("Manual R (Ω/km)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                     modifier = Modifier.weight(1f)
                 )
                 OutlinedTextField(
                     value = manualXText,
                     onValueChange = onManualXChange,
                     label = { Text("Manual X (Ω/km)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                     modifier = Modifier.weight(1f)
                 )
             }

@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
@@ -18,12 +20,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ai.service.AssistantMessage
@@ -55,6 +60,15 @@ fun EngineeringAssistantSheet(
         skipPartiallyExpanded = true
     )
     val listState = rememberLazyListState()
+    val inputFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.yield()
+        try {
+            inputFocusRequester.requestFocus()
+        } catch (_: Throwable) {
+        }
+    }
 
     val totalItemsCount = uiState.messages.size + uiState.typedCards.size
     LaunchedEffect(totalItemsCount) {
@@ -374,9 +388,18 @@ fun EngineeringAssistantSheet(
                             cursorColor = ThemePrimary
                         ),
                         shape = RoundedCornerShape(12.dp),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(
+                            onSend = {
+                                if (uiState.inputText.isNotBlank() && !uiState.isThinking) {
+                                    viewModel.sendMessage(uiState.inputText)
+                                }
+                            }
+                        ),
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = 44.dp, max = 100.dp)
+                            .focusRequester(inputFocusRequester)
                             .testTag("assistant_input_field")
                     )
 

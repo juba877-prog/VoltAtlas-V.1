@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -23,12 +24,15 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -109,6 +113,7 @@ fun QuickCableCalcScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -433,7 +438,8 @@ fun QuickCableCalcScreen(
                                     value = loadKvaText,
                                     onValueChange = { loadKvaText = it },
                                     label = { Text("Load (kVA)") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                                     modifier = fieldModifier.testTag("input_load_kva")
                                 )
                             },
@@ -442,7 +448,8 @@ fun QuickCableCalcScreen(
                                     value = voltageText,
                                     onValueChange = { voltageText = it },
                                     label = { Text("Voltage (V)") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                                     modifier = fieldModifier.testTag("input_voltage")
                                 )
                             }
@@ -463,7 +470,8 @@ fun QuickCableCalcScreen(
                                     value = pfText,
                                     onValueChange = { pfText = it },
                                     label = { Text("Power Factor (pf)") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                                     modifier = fieldModifier.testTag("input_pf")
                                 )
                             }
@@ -475,7 +483,8 @@ fun QuickCableCalcScreen(
                                     value = lengthText,
                                     onValueChange = { lengthText = it },
                                     label = { Text("Length (m)") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                                     modifier = fieldModifier.testTag("input_length")
                                 )
                             },
@@ -484,7 +493,8 @@ fun QuickCableCalcScreen(
                                     value = maxVdPctText,
                                     onValueChange = { maxVdPctText = it },
                                     label = { Text("Max VD Limit (%)") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                                     modifier = fieldModifier.testTag("input_max_vd")
                                 )
                             }
@@ -496,7 +506,8 @@ fun QuickCableCalcScreen(
                                     value = safetyFactorText,
                                     onValueChange = { safetyFactorText = it },
                                     label = { Text("Safety Factor") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                                     modifier = fieldModifier
                                 )
                             },
@@ -505,7 +516,8 @@ fun QuickCableCalcScreen(
                                     value = parallelRunsText,
                                     onValueChange = { parallelRunsText = it },
                                     label = { Text("Parallel Runs") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                                     modifier = fieldModifier
                                 )
                             }
@@ -684,7 +696,8 @@ fun QuickCableCalcScreen(
                                     value = airTempText,
                                     onValueChange = { airTempText = it },
                                     label = { Text("Air Temp (°C)") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                                     modifier = fieldModifier
                                 )
                             },
@@ -693,7 +706,8 @@ fun QuickCableCalcScreen(
                                     value = gndTempText,
                                     onValueChange = { gndTempText = it },
                                     label = { Text("Ground Temp (°C)") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                                     modifier = fieldModifier
                                 )
                             }
@@ -705,7 +719,8 @@ fun QuickCableCalcScreen(
                                     value = burialDepthText,
                                     onValueChange = { burialDepthText = it },
                                     label = { Text("Burial Depth (m)") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                                     modifier = fieldModifier
                                 )
                             },
@@ -714,7 +729,8 @@ fun QuickCableCalcScreen(
                                     value = soilResText,
                                     onValueChange = { soilResText = it },
                                     label = { Text("Soil Res (K·m/W)") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                                     modifier = fieldModifier
                                 )
                             }
@@ -726,7 +742,8 @@ fun QuickCableCalcScreen(
                                     value = noCircuitsText,
                                     onValueChange = { noCircuitsText = it },
                                     label = { Text("Grouped Circuits") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                                     modifier = fieldModifier
                                 )
                             },
