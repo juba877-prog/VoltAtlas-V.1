@@ -12,8 +12,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.runtime.*
@@ -23,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -96,39 +98,98 @@ fun VoltAtlasScreenScaffold(
     )
 }
 
+/**
+ * Unified VoltAtlas Engineering Top App Bar (Free-form Slot API).
+ *
+ * Implements Compose Component Design principles:
+ * - Caller-placeable root modifier applied first in the layout chain.
+ * - Flexible composable slots for titleContent, optional navigationIcon, and actions (RowScope).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun VoltAtlasTopBar(
+    titleContent: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    navigationIcon: (@Composable () -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+    colors: TopAppBarColors = TopAppBarDefaults.topAppBarColors(
+        containerColor = DarkCardBg,
+        titleContentColor = ThemeTextColor,
+        navigationIconContentColor = ThemeTextColor,
+        actionIconContentColor = SleekPrimary
+    )
+) {
+    TopAppBar(
+        modifier = modifier,
+        title = titleContent,
+        navigationIcon = {
+            navigationIcon?.invoke()
+        },
+        actions = actions,
+        colors = colors
+    )
+}
+
+/**
+ * Standard Engineering Top App Bar overload for structured screen titles with optional subtitle and back action.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VoltAtlasTopBar(
     title: String,
-    actions: @Composable RowScope.() -> Unit = {}
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    onBack: (() -> Unit)? = null,
+    backDescription: String = "Back to Hub",
+    backButtonTestTag: String? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+    colors: TopAppBarColors = TopAppBarDefaults.topAppBarColors(
+        containerColor = DarkCardBg,
+        titleContentColor = ThemeTextColor,
+        navigationIconContentColor = ThemeTextColor,
+        actionIconContentColor = SleekPrimary
+    )
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = ThemeSurface,
-        border = BorderStroke(1.dp, ThemeBorderSubtle),
-        shadowElevation = 0.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = title,
-                style = ScreenTitle,
-                color = ThemeTextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                content = actions
-            )
-        }
-    }
+    VoltAtlasTopBar(
+        titleContent = {
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = ThemeTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SleekPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        },
+        modifier = modifier,
+        navigationIcon = if (onBack != null) {
+            {
+                IconButton(
+                    onClick = onBack,
+                    modifier = if (backButtonTestTag != null) Modifier.testTag(backButtonTestTag) else Modifier
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = backDescription,
+                        tint = ThemeTextColor
+                    )
+                }
+            }
+        } else null,
+        actions = actions,
+        colors = colors
+    )
 }
 
 @Composable

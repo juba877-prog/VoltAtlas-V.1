@@ -31,6 +31,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.engine.quick.QuickEngineeringDataBridge
+import com.example.ui.components.VoltAtlasTopBar
 import com.example.ui.components.quick.*
 import com.example.ui.formatCatalogCableSizeSafe
 import com.example.ui.screens.QuickDropdown
@@ -161,31 +162,12 @@ fun QuickVoltageDropScreenV2(
     // ── 4. Scaffold Layout ──
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "Voltage Drop Calculator",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = ThemeTextColor
-                        )
-                        Text(
-                            text = "Smart Catalog Resolution & IEC 60364-5-52 Compliance",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = SleekPrimary
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack, modifier = Modifier.testTag("voltage_drop_v2_back_btn")) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back to Hub",
-                            tint = ThemeTextColor
-                        )
-                    }
-                },
+            VoltAtlasTopBar(
+                title = "Voltage Drop Calculator",
+                subtitle = "Smart Catalog Resolution & IEC 60364-5-52 Compliance",
+                onBack = onBack,
+                backDescription = "Back to Hub",
+                backButtonTestTag = "voltage_drop_v2_back_btn",
                 actions = {
                     IconButton(onClick = copySummaryAction, modifier = Modifier.testTag("copy_vd_summary_btn")) {
                         Icon(
@@ -194,8 +176,7 @@ fun QuickVoltageDropScreenV2(
                             tint = SleekPrimary
                         )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkCardBg)
+                }
             )
         },
         containerColor = DarkBackground

@@ -37,6 +37,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.components.VoltAtlasTopBar
 import com.example.ui.components.quick.*
 import com.example.ui.theme.*
 import kotlinx.collections.immutable.persistentListOf
@@ -126,31 +127,12 @@ fun QuickPfcScreenV2(
     // ── 4. Scaffold Layout ──
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "Power Factor Correction",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = ThemeTextColor
-                        )
-                        Text(
-                            text = "Target PF, Reactive Relief & Capacitor Sizing",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = SleekPrimary
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack, modifier = Modifier.testTag("pfc_v2_back_btn")) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back to Hub",
-                            tint = ThemeTextColor
-                        )
-                    }
-                },
+            VoltAtlasTopBar(
+                title = "Power Factor Correction",
+                subtitle = "Target PF, Reactive Relief & Capacitor Sizing",
+                onBack = onBack,
+                backDescription = "Back to Hub",
+                backButtonTestTag = "pfc_v2_back_btn",
                 actions = {
                     IconButton(onClick = copySummaryAction, modifier = Modifier.testTag("copy_pfc_summary_btn")) {
                         Icon(
@@ -159,8 +141,7 @@ fun QuickPfcScreenV2(
                             tint = SleekPrimary
                         )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkCardBg)
+                }
             )
         },
         containerColor = DarkBackground

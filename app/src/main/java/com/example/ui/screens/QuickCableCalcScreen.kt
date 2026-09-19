@@ -52,6 +52,7 @@ import com.example.ui.parseFamilyInfo
 import com.example.ui.standardConductorSizeOptions
 import com.example.ui.standardDeviceRatingOptions
 import com.example.ui.theme.*
+import com.example.ui.components.VoltAtlasTopBar
 import com.example.ui.designsystem.icons.ElectricalIcons
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -347,31 +348,12 @@ fun QuickCableCalcScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "Quick Cable Sizing",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = ThemeTextColor
-                        )
-                        Text(
-                            text = "Stateless Scratchpad (In-Memory)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = SleekPrimary
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack, modifier = Modifier.testTag("quick_calc_back_btn")) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = ThemeTextColor
-                        )
-                    }
-                },
+            VoltAtlasTopBar(
+                title = "Quick Cable Sizing",
+                subtitle = "Stateless Scratchpad (In-Memory)",
+                onBack = onBack,
+                backDescription = "Back",
+                backButtonTestTag = "quick_calc_back_btn",
                 actions = {
                     if (calculationResult != null) {
                         IconButton(onClick = { copySummaryToClipboard() }, modifier = Modifier.testTag("copy_summary_btn")) {
@@ -382,8 +364,7 @@ fun QuickCableCalcScreen(
                             )
                         }
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkCardBg)
+                }
             )
         },
         containerColor = DarkBackground
