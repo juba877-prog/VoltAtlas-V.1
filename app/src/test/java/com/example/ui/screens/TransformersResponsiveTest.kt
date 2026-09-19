@@ -1,4 +1,4 @@
-﻿package com.example.ui.screens
+package com.example.ui.screens
 
 import android.app.Application
 import androidx.compose.runtime.CompositionLocalProvider
@@ -135,7 +135,7 @@ class TransformersNarrowWidthTest {
         }
 
         // Verify "Auto-recommend capacity" switch is reachable in the vertical scroll container
-        composeTestRule.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(hasTestTag("tx_mode_switch"))
+        composeTestRule.onNodeWithTag("transformers_lazy_column").performScrollToNode(hasTestTag("tx_mode_switch"))
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("tx_mode_switch").assertIsDisplayed()
     }
@@ -209,7 +209,7 @@ class TransformersMediumWidthTest {
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithText("Electrical Ratings").assertIsDisplayed()
-        composeTestRule.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(hasTestTag("tx_mode_switch"))
+        composeTestRule.onNodeWithTag("transformers_lazy_column").performScrollToNode(hasTestTag("tx_mode_switch"))
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("tx_mode_switch").assertIsDisplayed()
     }

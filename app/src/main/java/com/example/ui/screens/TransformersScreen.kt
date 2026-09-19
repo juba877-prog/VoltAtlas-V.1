@@ -104,6 +104,7 @@ fun TransformersScreen(state: UiState.Success, viewModel: EngineeringViewModel) 
         color = MaterialTheme.colorScheme.background
     ) {
         LazyColumn(
+            modifier = Modifier.testTag("transformers_lazy_column"),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 80.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
