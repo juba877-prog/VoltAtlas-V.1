@@ -19,15 +19,28 @@ class HybridConversationRouter(
     private val cloudEngine: ConversationEngine,
     private val localEngine: ConversationEngine,
     private val connectivityProbe: NetworkConnectivityProbe = DefaultNetworkConnectivityProbe(),
-    private val cloudTimeoutMs: Long = 4_000L
+    private val cloudTimeoutMs: Long = 4_000L,
+    private val nanoEngine: ConversationEngine? = null
 ) : ConversationEngine {
 
     override suspend fun evaluateTurn(
         input: ConversationTurnInput,
         decisionIdProvider: () -> String
     ): HybridEngineResult {
-        // 1. Fast Offline Probe
+        // 1. Fast Offline Probe -> try on-device Nano first if present, then local engine
         if (!connectivityProbe.isLikelyOnline()) {
+            if (nanoEngine != null) {
+                try {
+                    val nanoResult = nanoEngine.evaluateTurn(input, decisionIdProvider)
+                    if (nanoResult.cloudDegradationReason == null) {
+                        return nanoResult
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Fall through to local rule engine
+                }
+            }
             val localResult = localEngine.evaluateTurn(input, decisionIdProvider)
             return localResult.copy(
                 source = ConversationEngineSource.LOCAL_RULE_ENGINE,

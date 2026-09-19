@@ -28,6 +28,7 @@ data class HybridEngineResult(
  */
 enum class ConversationEngineSource {
     CLOUD_GEMINI,
+    ON_DEVICE_GEMINI_NANO,
     LOCAL_RULE_ENGINE
 }
 
