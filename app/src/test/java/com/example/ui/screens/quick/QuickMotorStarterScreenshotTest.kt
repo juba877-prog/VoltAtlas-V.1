@@ -2,6 +2,7 @@ package com.example.ui.screens.quick
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -89,5 +90,23 @@ class QuickMotorStarterScreenshotTest {
         }
         composeTestRule.waitForIdle()
         composeTestRule.onRoot().captureRoboImage(File(outputDir, "MotorStarter_DOL_Landscape_Dark.png").path)
+    }
+
+    @Test
+    @Config(qualifiers = "w380dp-h850dp-xhdpi")
+    fun testMotorStarter_scanNameplateButton_opensScannerSheet() {
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = true) {
+                QuickMotorStarterScreen(onBack = {})
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        // Verify Scan button is displayed and click it
+        composeTestRule.onNodeWithTag("motor_starter_scan_camera_btn").assertIsDisplayed().performClick()
+        composeTestRule.waitForIdle()
+
+        // Verify that the Nameplate Scanner Sheet is displayed
+        composeTestRule.onNodeWithTag("nameplate_scanner_sheet").assertIsDisplayed()
     }
 }

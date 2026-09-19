@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.camera.nameplate.EquipmentNameplateScannerSheet
 import com.example.ui.components.quick.*
 import com.example.ui.theme.*
 import kotlinx.collections.immutable.persistentListOf
@@ -50,6 +51,7 @@ fun QuickMotorStarterScreen(
     var efficiencyText by rememberSaveable { mutableStateOf("90.0") }
     var starterMethodIndex by rememberSaveable { mutableIntStateOf(0) } // 0=DOL, 1=Y-Δ, 2=Soft, 3=VFD
     var tripClassIndex by rememberSaveable { mutableIntStateOf(0) } // 0=Class 10, 1=Class 20
+    var showScannerSheet by rememberSaveable { mutableStateOf(false) }
 
     val starterMethod = MotorStarterType.entries[starterMethodIndex.coerceIn(0, MotorStarterType.entries.size - 1)]
     val tripClass = if (tripClassIndex == 0) "Class 10" else "Class 20"
@@ -139,6 +141,16 @@ fun QuickMotorStarterScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { showScannerSheet = true },
+                        modifier = Modifier.testTag("motor_starter_scan_nameplate_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = "Scan Nameplate via Camera",
+                            tint = SleekPrimary
+                        )
+                    }
                     IconButton(onClick = copySummaryAction, modifier = Modifier.testTag("motor_starter_copy_btn")) {
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
@@ -164,6 +176,28 @@ fun QuickMotorStarterScreen(
             item {
                 QuickCard {
                     QuickSectionTitle(title = "Motor Nameplate Specifications", accentColor = SleekPrimary, badgeText = "IEC 60034", badgeColor = SleekPrimary)
+
+                    OutlinedButton(
+                        onClick = { showScannerSheet = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("motor_starter_scan_camera_btn"),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = SleekPrimary),
+                        border = BorderStroke(1.dp, SleekPrimary.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Scan Motor Nameplate (Camera OCR)",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                    }
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
@@ -350,6 +384,20 @@ fun QuickMotorStarterScreen(
                     items = provenanceItems
                 )
             }
+        }
+
+        if (showScannerSheet) {
+            EquipmentNameplateScannerSheet(
+                onApplyToMotorStarter = { kw, v, pf, eff ->
+                    motorKwText = String.format(Locale.US, "%.1f", kw)
+                    voltageText = v.toInt().toString()
+                    if (pf > 0.0) powerFactorText = String.format(Locale.US, "%.2f", pf)
+                    if (eff > 0.0) efficiencyText = String.format(Locale.US, "%.1f", eff)
+                    showScannerSheet = false
+                    Toast.makeText(context, "Applied nameplate: ${kw} kW @ ${v.toInt()}V", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { showScannerSheet = false }
+            )
         }
     }
 }
