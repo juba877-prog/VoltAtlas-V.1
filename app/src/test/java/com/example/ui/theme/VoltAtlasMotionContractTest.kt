@@ -112,4 +112,92 @@ class VoltAtlasMotionContractTest {
         assertEquals(200, VoltAtlasMotion.DefaultEffects.DurationMillis)
         assertEquals(350, VoltAtlasMotion.SlowEffects.DurationMillis)
     }
+
+    // ── Stage 4 / O3: Spec factories & intent-based contract assertions ───
+
+    @Test
+    fun testSpatialIntSizeSpecsAreDeterministicTweens() {
+        val standardSize = VoltAtlasMotion.StandardSpatial.intSizeSpec as androidx.compose.animation.core.TweenSpec<androidx.compose.ui.unit.IntSize>
+        assertEquals(200, standardSize.durationMillis)
+        assertEquals(androidx.compose.animation.core.FastOutSlowInEasing, standardSize.easing)
+
+        val fastSize = VoltAtlasMotion.FastSpatial.intSizeSpec as androidx.compose.animation.core.TweenSpec<androidx.compose.ui.unit.IntSize>
+        assertEquals(150, fastSize.durationMillis)
+        assertEquals(androidx.compose.animation.core.FastOutSlowInEasing, fastSize.easing)
+
+        assertNotEquals(
+            "StandardSpatial.intSizeSpec and FastSpatial.intSizeSpec must remain distinct",
+            VoltAtlasMotion.StandardSpatial.intSizeSpec,
+            VoltAtlasMotion.FastSpatial.intSizeSpec
+        )
+    }
+
+    @Test
+    fun testSpecFactoriesNumericValuesAndIntent() {
+        val standardFloat = VoltAtlasMotion.StandardSpatial.floatSpec as androidx.compose.animation.core.TweenSpec<Float>
+        assertEquals(200, standardFloat.durationMillis)
+        assertEquals(androidx.compose.animation.core.FastOutSlowInEasing, standardFloat.easing)
+
+        val fastEffectsFloat = VoltAtlasMotion.FastEffects.floatSpec as androidx.compose.animation.core.TweenSpec<Float>
+        assertEquals(150, fastEffectsFloat.durationMillis)
+        assertEquals(androidx.compose.animation.core.FastOutLinearInEasing, fastEffectsFloat.easing)
+
+        val reducedFloat = VoltAtlasMotion.ReducedMotion.floatSpec as androidx.compose.animation.core.TweenSpec<Float>
+        assertEquals(VoltAtlasMotion.DurationMicro, reducedFloat.durationMillis)
+        assertEquals(100, reducedFloat.durationMillis)
+        assertEquals(androidx.compose.animation.core.LinearEasing, reducedFloat.easing)
+
+        assertTrue(
+            "ReducedMotion duration must be <= 100ms per contract, got ${VoltAtlasMotion.ReducedMotion.DurationMillis}",
+            VoltAtlasMotion.ReducedMotion.DurationMillis <= 100
+        )
+    }
+
+    @Test
+    fun testExpandableTransitionsIntentAndReducedMotionDistinctness() {
+        // 1. Intent-based distinctness assertions: reduced motion must genuinely differ from standard
+        assertNotEquals(
+            "expandableEnter(true) must not equal expandableEnter(false)",
+            VoltAtlasMotion.expandableEnter(reduceMotion = true),
+            VoltAtlasMotion.expandableEnter(reduceMotion = false)
+        )
+        assertNotEquals(
+            "expandableExit(true) must not equal expandableExit(false)",
+            VoltAtlasMotion.expandableExit(reduceMotion = true),
+            VoltAtlasMotion.expandableExit(reduceMotion = false)
+        )
+
+        // 2. Under reduced motion, transition degrades to zero-spatial micro-fade
+        assertEquals(
+            androidx.compose.animation.fadeIn(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec),
+            VoltAtlasMotion.expandableEnter(reduceMotion = true)
+        )
+        assertEquals(
+            androidx.compose.animation.fadeOut(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec),
+            VoltAtlasMotion.expandableExit(reduceMotion = true)
+        )
+    }
+
+    @Test
+    fun testBootContentTransformIntentAndReducedMotionDistinctness() {
+        val standardBoot = VoltAtlasMotion.bootContentTransform(reduceMotion = false)
+        val reducedBoot = VoltAtlasMotion.bootContentTransform(reduceMotion = true)
+
+        assertNotEquals(
+            "bootContentTransform enter transition must differ under reduced motion",
+            standardBoot.targetContentEnter,
+            reducedBoot.targetContentEnter
+        )
+        assertNotEquals(
+            "bootContentTransform exit transition must differ under reduced motion",
+            standardBoot.initialContentExit,
+            reducedBoot.initialContentExit
+        )
+
+        val expectedReducedBootEnter = androidx.compose.animation.fadeIn(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec)
+        val expectedReducedBootExit = androidx.compose.animation.fadeOut(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec)
+
+        assertEquals(expectedReducedBootEnter, reducedBoot.targetContentEnter)
+        assertEquals(expectedReducedBootExit, reducedBoot.initialContentExit)
+    }
 }

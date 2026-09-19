@@ -20,7 +20,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -327,8 +332,23 @@ fun VoltAtlasStatusBadge(
         modifier = modifier
             .height(26.dp)
             .clip(CircleShape)
-            .background(animatedColor.copy(alpha = 0.15f + 0.10f * borderPulse.value))
-            .border(VoltAtlasBorders.subtle, animatedColor.copy(alpha = 0.4f + 0.35f * borderPulse.value), CircleShape)
+            .drawBehind {
+                // Background fill
+                drawRoundRect(
+                    color = animatedColor.copy(alpha = 0.15f + 0.10f * borderPulse.value),
+                    cornerRadius = CornerRadius(size.height / 2f, size.height / 2f)
+                )
+                // Inset border stroke
+                val strokeWidth = VoltAtlasBorders.subtle.toPx()
+                val halfStroke = strokeWidth / 2f
+                drawRoundRect(
+                    color = animatedColor.copy(alpha = 0.4f + 0.35f * borderPulse.value),
+                    topLeft = Offset(halfStroke, halfStroke),
+                    size = Size(size.width - strokeWidth, size.height - strokeWidth),
+                    cornerRadius = CornerRadius((size.height / 2f) - halfStroke, (size.height / 2f) - halfStroke),
+                    style = Stroke(width = strokeWidth)
+                )
+            }
             .padding(horizontal = 10.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center
     ) {

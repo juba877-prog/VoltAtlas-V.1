@@ -1,6 +1,12 @@
 package com.example.ui.theme
 
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -9,7 +15,9 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 
 /**
  * VoltAtlas Centralized Motion System (Phase 8).
@@ -65,6 +73,8 @@ object VoltAtlasMotion {
             tween(durationMillis = DurationMillis, easing = easing)
         val offsetSpec: FiniteAnimationSpec<IntOffset> =
             tween(durationMillis = DurationMillis, easing = easing)
+        val intSizeSpec: FiniteAnimationSpec<IntSize> =
+            tween(durationMillis = DurationMillis, easing = easing)
     }
 
     /** Quick spatial feedback that must not linger (small reveals, chips). */
@@ -74,6 +84,8 @@ object VoltAtlasMotion {
         val floatSpec: FiniteAnimationSpec<Float> =
             tween(durationMillis = DurationMillis, easing = easing)
         val offsetSpec: FiniteAnimationSpec<IntOffset> =
+            tween(durationMillis = DurationMillis, easing = easing)
+        val intSizeSpec: FiniteAnimationSpec<IntSize> =
             tween(durationMillis = DurationMillis, easing = easing)
     }
 
@@ -136,26 +148,53 @@ object VoltAtlasMotion {
             tween(durationMillis = DurationMillis, easing = LinearEasing)
     }
 
-    @Deprecated("Use StandardSpatial.floatSpec", ReplaceWith("VoltAtlasMotion.StandardSpatial.floatSpec"))
-    val fadeEnterSpec: FiniteAnimationSpec<Float> = StandardSpatial.floatSpec
+    // ── EXPANDABLE DRAWER / CARD TRANSITIONS ──────────────────────────────
+    /**
+     * Standardized expand transition for drawers, cards, and calculation breakdowns.
+     * Deterministic 200ms tween on standard spatial tokens; minimal fade under reduced motion.
+     */
+    fun expandableEnter(reduceMotion: Boolean): EnterTransition =
+        if (reduceMotion) {
+            fadeIn(animationSpec = ReducedMotion.floatSpec)
+        } else {
+            fadeIn(animationSpec = StandardSpatial.floatSpec) +
+                expandVertically(animationSpec = StandardSpatial.intSizeSpec)
+        }
 
-    @Deprecated("Use FastEffects.floatSpec", ReplaceWith("VoltAtlasMotion.FastEffects.floatSpec"))
-    val fadeExitSpec: FiniteAnimationSpec<Float> = FastEffects.floatSpec
+    /**
+     * Standardized collapse transition for drawers, cards, and calculation breakdowns.
+     * Deterministic 150ms tween on fast spatial tokens; minimal fade under reduced motion.
+     */
+    fun expandableExit(reduceMotion: Boolean): ExitTransition =
+        if (reduceMotion) {
+            fadeOut(animationSpec = ReducedMotion.floatSpec)
+        } else {
+            fadeOut(animationSpec = FastEffects.floatSpec) +
+                shrinkVertically(animationSpec = FastSpatial.intSizeSpec)
+        }
 
-    @Deprecated("Use ReducedMotion.floatSpec", ReplaceWith("VoltAtlasMotion.ReducedMotion.floatSpec"))
-    val instantFadeSpec: FiniteAnimationSpec<Float> = ReducedMotion.floatSpec
+    @Composable
+    fun expandableEnter(): EnterTransition = expandableEnter(LocalReduceMotion.current)
 
-    @Deprecated("Use EmphasizedSpatial.offsetSpec", ReplaceWith("VoltAtlasMotion.EmphasizedSpatial.offsetSpec"))
-    val slideSpringSpec: FiniteAnimationSpec<IntOffset> = EmphasizedSpatial.offsetSpec
+    @Composable
+    fun expandableExit(): ExitTransition = expandableExit(LocalReduceMotion.current)
 
-    @Deprecated("Use StandardSpatial.offsetSpec", ReplaceWith("VoltAtlasMotion.StandardSpatial.offsetSpec"))
-    val tabSlideSpec: FiniteAnimationSpec<IntOffset> = StandardSpatial.offsetSpec
+    // ── BOOT SCREEN TRANSITION ─────────────────────────────────────────────
+    /**
+     * Boot to MainLayout screen crossfade transition.
+     * Respects reduced motion with instant/micro-fade.
+     */
+    fun bootContentTransform(reduceMotion: Boolean): ContentTransform =
+        if (reduceMotion) {
+            fadeIn(animationSpec = ReducedMotion.floatSpec) togetherWith
+                fadeOut(animationSpec = ReducedMotion.floatSpec)
+        } else {
+            fadeIn(animationSpec = tween(durationMillis = DurationEmphasized, easing = StandardSpatial.easing)) togetherWith
+                fadeOut(animationSpec = FastEffects.floatSpec)
+        }
 
-    @Deprecated("Use StandardSpatial / ReducedMotion contracts directly", ReplaceWith("VoltAtlasMotion.StandardSpatial"))
-    val SpringStiffnessLow = Spring.StiffnessLow
-
-    @Deprecated("Use StandardSpatial / ReducedMotion contracts directly", ReplaceWith("VoltAtlasMotion.ReducedMotion"))
-    val SpringDampingNoBouncy = Spring.DampingRatioNoBouncy
+    @Composable
+    fun bootContentTransform(): ContentTransform = bootContentTransform(LocalReduceMotion.current)
 
     // ── DIRECTIONAL SHARED-AXIS TRANSITION CONTRACT (Slice 8B) ─────────────
 
@@ -244,21 +283,6 @@ object VoltAtlasMotion {
     // ── LEGACY TRANSITIONS (existing MainLayout call sites) ────────────────
     // Slice 8B replaces these with directional shared-axis builders; kept so
     // current call sites compile unchanged until migrated.
-
-    // Tab Transition Specs for MainLayout
-    @Deprecated("Migrated by Slice 8B directional transition builder", ReplaceWith("VoltAtlasMotion.tabContentTransform"))
-    val tabForwardTransition: ContentTransform =
-        (androidx.compose.animation.fadeIn(animationSpec = StandardSpatial.floatSpec) +
-         androidx.compose.animation.slideInHorizontally(animationSpec = StandardSpatial.offsetSpec, initialOffsetX = { it / 4 })) togetherWith
-        (androidx.compose.animation.fadeOut(animationSpec = FastEffects.floatSpec) +
-         androidx.compose.animation.slideOutHorizontally(animationSpec = StandardSpatial.offsetSpec, targetOffsetX = { -it / 4 }))
-
-    @Deprecated("Migrated by Slice 8B directional transition builder", ReplaceWith("VoltAtlasMotion.tabContentTransform"))
-    val tabBackwardTransition: ContentTransform =
-        (androidx.compose.animation.fadeIn(animationSpec = StandardSpatial.floatSpec) +
-         androidx.compose.animation.slideInHorizontally(animationSpec = StandardSpatial.offsetSpec, initialOffsetX = { -it / 4 })) togetherWith
-        (androidx.compose.animation.fadeOut(animationSpec = FastEffects.floatSpec) +
-         androidx.compose.animation.slideOutHorizontally(animationSpec = StandardSpatial.offsetSpec, targetOffsetX = { it / 4 }))
 
     // Reduced motion transition: minimal crossfade without slide offsets
     val tabReducedMotionTransition: ContentTransform =

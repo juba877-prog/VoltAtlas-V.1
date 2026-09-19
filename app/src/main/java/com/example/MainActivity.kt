@@ -76,11 +76,7 @@ class MainActivity : ComponentActivity() {
         AnimatedContent(
             targetState = isBootFinished.value,
             transitionSpec = {
-                if (reduceMotion) {
-                    fadeIn(animationSpec = tween(VoltAtlasMotion.DurationMicro)) togetherWith fadeOut(animationSpec = tween(VoltAtlasMotion.DurationMicro))
-                } else {
-                    fadeIn(animationSpec = tween(VoltAtlasMotion.DurationEmphasized)) togetherWith fadeOut(animationSpec = tween(VoltAtlasMotion.DurationEmphasized))
-                }
+                VoltAtlasMotion.bootContentTransform(reduceMotion)
             },
             label = "BootToMainTransition"
         ) { finished ->

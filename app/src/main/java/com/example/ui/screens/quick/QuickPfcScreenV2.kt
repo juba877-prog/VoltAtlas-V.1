@@ -757,26 +757,11 @@ private fun PfcStepDetailsAccordion(
     steps: List<PfcCalculationStep>
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val reduceMotion = com.example.ui.theme.LocalReduceMotion.current
-
     Card(
         colors = CardDefaults.cardColors(containerColor = SurfaceElevated),
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, BorderColor),
-        modifier = Modifier
-            .fillMaxWidth()
-            // SLICE 8D: central motion tokens — deterministic tween, no spring
-            // bounce on dense engineering content; instant under reduced motion.
-            .animateContentSize(
-                animationSpec = if (reduceMotion) {
-                    androidx.compose.animation.core.tween(com.example.ui.theme.VoltAtlasMotion.ReducedMotion.DurationMillis)
-                } else {
-                    androidx.compose.animation.core.tween(
-                        durationMillis = com.example.ui.theme.VoltAtlasMotion.StandardSpatial.DurationMillis,
-                        easing = com.example.ui.theme.VoltAtlasMotion.StandardSpatial.easing
-                    )
-                }
-            )
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -806,24 +791,8 @@ private fun PfcStepDetailsAccordion(
 
             AnimatedVisibility(
                 visible = expanded,
-                enter = if (reduceMotion) {
-                    fadeIn(animationSpec = androidx.compose.animation.core.tween(com.example.ui.theme.VoltAtlasMotion.ReducedMotion.DurationMillis))
-                } else {
-                    fadeIn(animationSpec = com.example.ui.theme.VoltAtlasMotion.StandardSpatial.floatSpec) +
-                        expandVertically(animationSpec = androidx.compose.animation.core.tween(
-                            durationMillis = com.example.ui.theme.VoltAtlasMotion.StandardSpatial.DurationMillis,
-                            easing = com.example.ui.theme.VoltAtlasMotion.StandardSpatial.easing
-                        ))
-                },
-                exit = if (reduceMotion) {
-                    fadeOut(animationSpec = androidx.compose.animation.core.tween(com.example.ui.theme.VoltAtlasMotion.ReducedMotion.DurationMillis))
-                } else {
-                    fadeOut(animationSpec = com.example.ui.theme.VoltAtlasMotion.FastEffects.floatSpec) +
-                        shrinkVertically(animationSpec = androidx.compose.animation.core.tween(
-                            durationMillis = com.example.ui.theme.VoltAtlasMotion.FastEffects.DurationMillis,
-                            easing = androidx.compose.animation.core.FastOutLinearInEasing
-                        ))
-                }
+                enter = com.example.ui.theme.VoltAtlasMotion.expandableEnter(),
+                exit = com.example.ui.theme.VoltAtlasMotion.expandableExit()
             ) {
                 Column(
                     modifier = Modifier.padding(top = 10.dp),

@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import com.example.ui.theme.VoltAtlasMotion
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -374,8 +375,8 @@ fun BoqDrumsView(state: UiState.Success) {
 
                             AnimatedVisibility(
                                 visible = isExpanded,
-                                enter = fadeIn(tween(200)) + expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)),
-                                exit = fadeOut(tween(150)) + shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow))
+                                enter = VoltAtlasMotion.expandableEnter(),
+                                exit = VoltAtlasMotion.expandableExit()
                             ) {
                                 Column(
                                     modifier = Modifier

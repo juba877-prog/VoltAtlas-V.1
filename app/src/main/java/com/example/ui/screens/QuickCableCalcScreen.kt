@@ -6,6 +6,7 @@ import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import com.example.ui.theme.VoltAtlasMotion
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -771,7 +772,11 @@ fun QuickCableCalcScreen(
                             )
                         }
 
-                        AnimatedVisibility(visible = showOverrides) {
+                        AnimatedVisibility(
+                            visible = showOverrides,
+                            enter = VoltAtlasMotion.expandableEnter(),
+                            exit = VoltAtlasMotion.expandableExit()
+                        ) {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 CableInputFieldRow(
                                     first = { fieldModifier ->

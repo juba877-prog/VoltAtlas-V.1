@@ -22,9 +22,11 @@ class MotionSourceConformanceTest {
             ?: error("Could not locate src/main/java from ${System.getProperty("user.dir")}")
     }
 
-    /** Production sources allowed to declare raw animation primitives. */
-    private val exemptPaths = setOf(
-        "com/example/ui/theme/VoltAtlasMotion.kt"
+    /** Production sources allowed to declare raw animation primitives with mandatory written rationale. */
+    private val allowlist: Map<String, String> = mapOf(
+        "com/example/ui/theme/VoltAtlasMotion.kt" to "Centralized motion system authority defining design tokens",
+        "com/example/ui/circuit/CircuitEditorParallelEntry.kt" to "Group A file: strictly exempt per architectural policy",
+        "com/example/ui/circuit/CircuitEditorShell.kt" to "Group A file: strictly exempt per architectural policy"
     )
 
     /** Raw spring/easing literals that indicate a bypassed motion contract. */
@@ -33,11 +35,27 @@ class MotionSourceConformanceTest {
         Regex("""stiffness\s*=\s*\d{2,}f"""),               // e.g. stiffness = 400f
         Regex("""EaseOut(Bounce|Back|Elastic|Circ|Quart|Quint)"""),
         Regex("""EaseIn(Bounce|Back|Elastic|Circ)"""),
-        Regex("""keyframes\s*\{""")
+        Regex("""keyframes\s*\{"""),
+        Regex("""\bspring\s*\([^)]*StiffnessLow"""),
+        Regex("""\bSpring\.StiffnessLow\b"""),
+        Regex("""\btween\s*\(\s*(durationMillis\s*=\s*)?\d+""")
     )
 
-    private fun walkSources(dir: File): List<File> =
-        dir.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+    private fun walkSources(fileOrDir: File): List<File> =
+        if (fileOrDir.isFile) {
+            if (fileOrDir.extension == "kt") listOf(fileOrDir) else emptyList()
+        } else if (fileOrDir.isDirectory) {
+            fileOrDir.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+        } else {
+            emptyList()
+        }
+
+    @Test
+    fun testAllowlistIntegrity() {
+        for ((path, rationale) in allowlist) {
+            assertTrue("Allowlist entry '$path' must have non-empty rationale", rationale.isNotBlank())
+        }
+    }
 
     @Test
     fun testNoAdHocSpringOrEasingConstantsInProductionMotionScope() {
@@ -46,7 +64,9 @@ class MotionSourceConformanceTest {
         val scopeRoots = listOf(
             File(moduleRoot, "com/example/ui"),
             File(moduleRoot, "com/example/ai/ui"),
-            File(moduleRoot, "com/example/sld")
+            File(moduleRoot, "com/example/sld"),
+            File(moduleRoot, "com/example/boot"),
+            File(moduleRoot, "com/example/MainActivity.kt")
         ).filter { it.exists() }
 
         for (root in scopeRoots) {
@@ -54,7 +74,7 @@ class MotionSourceConformanceTest {
                 val relative = file.invariantSeparatorsPath
                     .substringAfter("com/example/", missingDelimiterValue = "")
                     .let { if (it.isEmpty()) "" else "com/example/$it" }
-                if (relative in exemptPaths) continue
+                if (relative in allowlist) continue
                 val text = file.readText()
                 for (pattern in adHocPatterns) {
                     pattern.findAll(text).forEach { match ->

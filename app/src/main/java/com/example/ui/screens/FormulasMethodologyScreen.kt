@@ -478,11 +478,10 @@ fun FormulasMethodologyScreen() {
                     }
 
                     // Expanded Content Body
-                    val reduceMotion = LocalReduceMotion.current
                     AnimatedVisibility(
                         visible = isExpanded,
-                        enter = if (reduceMotion) fadeIn(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec) else fadeIn(animationSpec = VoltAtlasMotion.StandardSpatial.floatSpec) + expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)),
-                        exit = if (reduceMotion) fadeOut(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec) else fadeOut(animationSpec = VoltAtlasMotion.FastEffects.floatSpec) + shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow))
+                        enter = VoltAtlasMotion.expandableEnter(),
+                        exit = VoltAtlasMotion.expandableExit()
                     ) {
                         Column(
                             modifier = Modifier

@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import com.example.ui.theme.VoltAtlasMotion
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -1010,8 +1011,8 @@ fun CircuitCardV3(
             // Row 4: Expanded Drawer with full sizing specs, CRUD and overrides
             AnimatedVisibility(
                 visible = isSelected,
-                enter = fadeIn(tween(200)) + expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)),
-                exit = fadeOut(tween(150)) + shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow))
+                enter = VoltAtlasMotion.expandableEnter(),
+                exit = VoltAtlasMotion.expandableExit()
             ) {
                 Column(modifier = Modifier.padding(top = 12.dp)) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

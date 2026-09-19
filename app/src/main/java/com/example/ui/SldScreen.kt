@@ -74,6 +74,7 @@ fun SldScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val reduceMotion = LocalReduceMotion.current
     val scope = rememberCoroutineScope()
     val db = remember { com.example.data.AppDatabase.getDatabase(context) }
     val repository = remember { com.example.data.EngineeringRepository(db) }
@@ -435,8 +436,18 @@ fun SldScreen(
         // 2. Animated Search Bar Overlay
         AnimatedVisibility(
             visible = isSearchOpen,
-            enter = slideInVertically() + fadeIn(),
-            exit = slideOutVertically() + fadeOut(),
+            enter = if (reduceMotion) {
+                fadeIn(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec)
+            } else {
+                slideInVertically(animationSpec = VoltAtlasMotion.StandardSpatial.offsetSpec) +
+                    fadeIn(animationSpec = VoltAtlasMotion.StandardSpatial.floatSpec)
+            },
+            exit = if (reduceMotion) {
+                fadeOut(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec)
+            } else {
+                slideOutVertically(animationSpec = VoltAtlasMotion.StandardSpatial.offsetSpec) +
+                    fadeOut(animationSpec = VoltAtlasMotion.FastEffects.floatSpec)
+            },
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
@@ -477,8 +488,18 @@ fun SldScreen(
         // 3. Top-Right Collapsible Radar Minimap (110x75dp)
         AnimatedVisibility(
             visible = isMinimapVisible && engineResult.nodes.isNotEmpty(),
-            enter = fadeIn() + scaleIn(),
-            exit = fadeOut() + scaleOut(),
+            enter = if (reduceMotion) {
+                fadeIn(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec)
+            } else {
+                fadeIn(animationSpec = VoltAtlasMotion.FastEffects.floatSpec) +
+                    scaleIn(animationSpec = VoltAtlasMotion.FastSpatial.floatSpec)
+            },
+            exit = if (reduceMotion) {
+                fadeOut(animationSpec = VoltAtlasMotion.ReducedMotion.floatSpec)
+            } else {
+                fadeOut(animationSpec = VoltAtlasMotion.FastEffects.floatSpec) +
+                    scaleOut(animationSpec = VoltAtlasMotion.FastSpatial.floatSpec)
+            },
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = 58.dp, end = 14.dp)
