@@ -2,8 +2,9 @@ package com.example.camera.nameplate
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * Listener callback interface for receiving real-time equipment nameplate detections.
@@ -17,10 +18,16 @@ fun interface NameplateScanListener {
  * and electrical specification accumulation.
  */
 class NameplateAnalyzer(
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default),
+    parentScope: CoroutineScope? = null,
     private val minConfidenceThreshold: Float = 0.4f,
     private val listener: NameplateScanListener
-) {
+) : AutoCloseable {
+    private val job = SupervisorJob(parentScope?.coroutineContext?.get(kotlinx.coroutines.Job))
+    private val scope = if (parentScope != null) {
+        CoroutineScope(parentScope.coroutineContext + job)
+    } else {
+        CoroutineScope(job + Dispatchers.Default)
+    }
     private var lastScannedResult: NameplateScanResult? = null
     private var consecutiveStableFrames: Int = 0
 
@@ -46,9 +53,10 @@ class NameplateAnalyzer(
                 }
                 lastScannedResult = result
 
-                withContext(Dispatchers.Main) {
-                    listener.onNameplateScanned(result)
-                }
+                // Listener notified on the analysis coroutine scope.
+                // Callers requiring UI-thread dispatch (e.g. Compose state updates)
+                // perform their own main-thread dispatching.
+                listener.onNameplateScanned(result)
             }
         }
     }
@@ -56,5 +64,13 @@ class NameplateAnalyzer(
     fun reset() {
         lastScannedResult = null
         consecutiveStableFrames = 0
+    }
+
+    override fun close() {
+        cancel()
+    }
+
+    fun cancel() {
+        job.cancel()
     }
 }

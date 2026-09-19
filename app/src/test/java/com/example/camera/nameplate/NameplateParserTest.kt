@@ -84,15 +84,31 @@ class NameplateParserTest {
     }
 
     @Test
-    fun testNameplateAnalyzer_frameDebouncing() {
+    fun testNameplateAnalyzer_frameDebouncing() = kotlinx.coroutines.test.runTest {
         var callbackResult: NameplateScanResult? = null
-        val analyzer = NameplateAnalyzer {
+        val analyzer = NameplateAnalyzer(parentScope = this) {
             callbackResult = it
         }
 
         val frame1 = "SIEMENS MOTOR 30 kW 400V FLA: 55A"
         analyzer.processTextFrame(frame1)
+        testScheduler.advanceUntilIdle()
 
-        assertNotNull(analyzer)
+        assertNotNull(callbackResult)
+        assertEquals(NameplateEquipmentType.MOTOR, callbackResult?.equipmentType)
+        assertEquals(30.0, callbackResult?.powerKw ?: 0.0, 0.01)
+        analyzer.close()
+    }
+
+    @Test
+    fun testNameplateAnalyzer_cancellationStopsBackgroundProcessing() = kotlinx.coroutines.test.runTest {
+        var callCount = 0
+        val analyzer = NameplateAnalyzer(parentScope = this) {
+            callCount++
+        }
+        analyzer.close()
+        analyzer.processTextFrame("SIEMENS MOTOR 30 kW 400V FLA: 55A")
+        testScheduler.advanceUntilIdle()
+        assertEquals(0, callCount)
     }
 }
