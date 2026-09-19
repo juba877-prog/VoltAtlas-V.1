@@ -105,6 +105,9 @@ fun SldCanvas(
         }
     }
 
+    val textCache = androidx.compose.runtime.remember { SldTextCache(textMeasurer) }
+    val cachedCallouts = textCache.getOrComputeEdgeCallouts(engineResult, displayMode, effectiveDetailLevel, palette)
+
     Canvas(
         modifier = modifier
             .fillMaxSize()
@@ -286,19 +289,18 @@ fun SldCanvas(
                     val isIscFail = childNode?.dataBlock?.statusText?.uppercase()?.contains("FAIL") == true ||
                             childNode?.dataBlock?.statusText?.uppercase()?.contains("ICU") == true
 
-                    val baseStrokeColor = if (edge.isUnresolved) {
-                        Color(0xFFF59E0B)
-                    } else when (displayMode) {
-                        DisplayMode.VOLTAGE_DROP -> if (!isAtsEdge && childNode != null && !childNode.isSource) vdStatusColor else if (edge.isEmergency) palette.feeders else palette.enclosureBusTaps
-                        DisplayMode.SHORT_CIRCUIT -> if (isIscFail) palette.invalidStatus else if (edge.isEmergency) palette.feeders else palette.enclosureBusTaps
-                        else -> if (isBusway) Color(0xFFE08A4B) else if (edge.isEmergency) palette.feeders else if (palette.isDark) Color(0xFFE2E8F0) else Color(0xFF1E293B)
-                    }
+                    val cachedCallout = cachedCallouts.getOrNull(index)
+                    val baseStrokeColor = cachedCallout?.strokeColor
+                        ?: if (edge.isUnresolved) Color(0xFFF59E0B) else palette.feeders
 
-                    val strokeWidth = if (isBusway) SldTheme.busbarStroke() * 0.45f else if (edge.isEmergency) SldTheme.sourceSpineStroke() else SldTheme.feederStroke()
                     val strokeStyle = if (edge.isUnresolved) {
-                        Stroke(width = 2.0f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f))
+                        SldDrawPrimitives.DASHED_UNRESOLVED_STROKE
+                    } else if (isBusway) {
+                        SldDrawPrimitives.BUSWAY_STROKE
+                    } else if (edge.isEmergency) {
+                        SldDrawPrimitives.SOURCE_SPINE_STROKE
                     } else {
-                        Stroke(width = strokeWidth)
+                        SldDrawPrimitives.FEEDER_STROKE
                     }
 
                     // Draw the orthogonal wire path
@@ -517,18 +519,32 @@ fun SldCanvas(
                         }
 
                         // Render lines with dynamic measured Y advancement for zero label collision.
-                        // Phase 3 §3.3 — each label keeps an 8f clearance envelope from adjacent wires.
+                        // Pre-measured via SldTextCache for zero per-frame allocation at 120 FPS.
                         var currentY = verticalDropStartY + 14f
-                        linesToDraw.forEach { (text, style) ->
-                            val measuredH = textMeasurer.measure(text, style).size.height.toFloat()
-                            drawSafeText(
-                                textMeasurer = textMeasurer,
-                                text = text,
-                                style = style,
-                                topLeft = Offset(feederX + 14f, currentY),
-                                clearanceSegments = wireSegments
-                            )
-                            currentY += measuredH + 4f
+                        val precomputed = cachedCallout?.lines?.takeIf { it.isNotEmpty() }
+                        if (precomputed != null) {
+                            precomputed.forEach { cachedLine ->
+                                drawSafeText(
+                                    textMeasurer = textMeasurer,
+                                    text = cachedLine.text,
+                                    style = cachedLine.style,
+                                    topLeft = Offset(feederX + 14f, currentY),
+                                    clearanceSegments = wireSegments
+                                )
+                                currentY += cachedLine.heightPx + 4f
+                            }
+                        } else {
+                            linesToDraw.forEach { (text, style) ->
+                                val measuredH = textMeasurer.measure(text, style).size.height.toFloat()
+                                drawSafeText(
+                                    textMeasurer = textMeasurer,
+                                    text = text,
+                                    style = style,
+                                    topLeft = Offset(feederX + 14f, currentY),
+                                    clearanceSegments = wireSegments
+                                )
+                                currentY += measuredH + 4f
+                            }
                         }
                     }
                 }
