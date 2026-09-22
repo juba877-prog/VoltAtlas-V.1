@@ -5,6 +5,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.AppDatabase
@@ -74,7 +75,7 @@ class GlobalSettingsNarrowWidthTest {
 
         composeTestRule
             .onNode(hasScrollAction())
-            .performScrollToNode(hasText("4.0%"))
+            .performScrollToIndex(1)
         composeTestRule.waitForIdle()
 
         listOf("4.0%", "6.0%", "7.0%").forEach { chip ->
@@ -134,7 +135,7 @@ class GlobalSettingsEnlargedFontTest {
 
         composeTestRule
             .onNode(hasScrollAction())
-            .performScrollToNode(hasText("4.0%"))
+            .performScrollToIndex(1)
         composeTestRule.waitForIdle()
 
         // Font-scale-stacked chips keep usable width and remain clickable
@@ -184,7 +185,7 @@ class GlobalSettingsMediumInlineRegressionTest {
 
         composeTestRule
             .onNode(hasScrollAction())
-            .performScrollToNode(hasText("4.0%"))
+            .performScrollToIndex(1)
         composeTestRule.waitForIdle()
 
         // Inline contract at medium width + fsc 1.0: label row and its chips
