@@ -111,4 +111,37 @@ class NameplateParserTest {
         testScheduler.advanceUntilIdle()
         assertEquals(0, callCount)
     }
+
+    @Test
+    fun testNameplateAnalyzer_exceptionInAnalysisPathIsSwallowedByHandler() = kotlinx.coroutines.test.runTest {
+        var callbackInvoked = false
+        val analyzer = NameplateAnalyzer(
+            parentScope = this,
+            parser = { throw IllegalArgumentException("Corrupted OCR byte buffer") },
+            listener = { callbackInvoked = true }
+        )
+
+        analyzer.processTextFrame("CORRUPTED OCR FRAME CONTENT")
+        testScheduler.advanceUntilIdle()
+
+        assertFalse("Callback should never be invoked when parser throws", callbackInvoked)
+        analyzer.close()
+    }
+
+    @Test
+    fun testNameplateAnalyzer_cancellationExceptionPropagatesNormallyWithoutBeingSwallowed() = kotlinx.coroutines.test.runTest {
+        var loggedThrowable: Throwable? = null
+        val analyzer = NameplateAnalyzer(
+            parentScope = this,
+            parser = { throw kotlinx.coroutines.CancellationException("Analysis cancelled") },
+            logger = { _, tr -> loggedThrowable = tr },
+            listener = {}
+        )
+
+        analyzer.processTextFrame("SOME TEXT")
+        testScheduler.advanceUntilIdle()
+
+        assertNull("CancellationException must not be routed to the non-fatal error logger", loggedThrowable)
+        analyzer.close()
+    }
 }
