@@ -62,6 +62,15 @@ enum class AssistantState {
 }
 
 /**
+ * Status of background approval gateway and catalog repository initialization.
+ */
+enum class GatewayStatus {
+    Loading,
+    Ready,
+    Failed
+}
+
+/**
  * UI State exposed to the Compose container.
  */
 data class AssistantUiState(
@@ -74,7 +83,9 @@ data class AssistantUiState(
     val approvalExecutionState: ApprovalExecutionUiState = ApprovalExecutionUiState.Idle,
     val inputText: String = "",
     val isThinking: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val gatewayStatus: GatewayStatus = GatewayStatus.Ready,
+    val gatewayErrorMessage: String? = null
 ) {
     val isOpen: Boolean
         get() = state != AssistantState.CLOSED && state != AssistantState.CLOSING
@@ -93,14 +104,18 @@ class EngineeringAssistantViewModel(
     /** Supplied by the production factory; nullable only to preserve isolated legacy UI tests. */
     approvalGateway: TrustedProposalApprovalGateway? = null,
     private val approvalGatewayProvider: (() -> TrustedProposalApprovalGateway?)? = null,
+    private val asyncApprovalGatewayProvider: (suspend () -> TrustedProposalApprovalGateway)? = null,
     private val proposalPreparationCoordinator: CableProposalPreparationCoordinator? = null,
-    private val aiService: EngineeringAiService = FirebaseAiServiceImpl()
+    private val aiService: EngineeringAiService = FirebaseAiServiceImpl(),
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO
 ) : ViewModel() {
 
     private var _approvalGateway: TrustedProposalApprovalGateway? = approvalGateway
     internal var approvalGateway: TrustedProposalApprovalGateway?
         get() = _approvalGateway ?: approvalGatewayProvider?.invoke()?.also { _approvalGateway = it }
         set(value) { _approvalGateway = value }
+
+    private var gatewayJob: Job? = null
 
     private var currentTurnId: Long = 0L
     private var activeTurnJob: Job? = null
@@ -109,6 +124,29 @@ class EngineeringAssistantViewModel(
 
     private val _uiState = MutableStateFlow(AssistantUiState())
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
+
+    init {
+        val asyncProvider = asyncApprovalGatewayProvider
+        if (_approvalGateway != null) {
+            _uiState.update { it.copy(gatewayStatus = GatewayStatus.Ready) }
+        } else if (asyncProvider != null) {
+            _uiState.update { it.copy(gatewayStatus = GatewayStatus.Loading) }
+            gatewayJob = viewModelScope.launch(ioDispatcher) {
+                try {
+                    val gateway = asyncProvider.invoke()
+                    _approvalGateway = gateway
+                    _uiState.update { it.copy(gatewayStatus = GatewayStatus.Ready) }
+                } catch (e: Exception) {
+                    _uiState.update {
+                        it.copy(
+                            gatewayStatus = GatewayStatus.Failed,
+                            gatewayErrorMessage = e.message ?: "Failed to initialize catalog gateway"
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     fun open(entryPoint: AssistantEntryPoint, context: EngineeringContext) {
         val initialGreeting = when (entryPoint) {
@@ -357,11 +395,14 @@ class EngineeringAssistantViewModel(
         )
 
         viewModelScope.launch {
+            gatewayJob?.join()
             val gateway = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { approvalGateway }
             if (gateway == null) {
+                val failureReason = _uiState.value.gatewayErrorMessage
+                    ?: "Trusted approval gateway is unavailable."
                 _uiState.update { state ->
                     state.copy(
-                        approvalExecutionState = ApprovalExecutionUiState.FailedPreCommit("Trusted approval gateway is unavailable.")
+                        approvalExecutionState = ApprovalExecutionUiState.FailedPreCommit(failureReason)
                     )
                 }
                 return@launch

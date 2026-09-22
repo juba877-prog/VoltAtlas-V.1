@@ -236,6 +236,58 @@ fun EngineeringAssistantSheet(
                 }
             }
 
+            // --- GATEWAY STATUS / CATALOG READINESS BANNER ---
+            when (uiState.gatewayStatus) {
+                GatewayStatus.Loading -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .testTag("gateway_loading_indicator"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Loading engineering catalog repository...",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                GatewayStatus.Failed -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.errorContainer)
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .testTag("gateway_error_banner"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Catalog Error",
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Catalog repository error: ${uiState.gatewayErrorMessage ?: "Failed to load"}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+                GatewayStatus.Ready -> {
+                    // Quiescent: no banner
+                }
+            }
+
             // --- CONVERSATION STREAM / MESSAGES / TYPED CARDS ---
             Box(
                 modifier = Modifier

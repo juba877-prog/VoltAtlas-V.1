@@ -20,7 +20,7 @@ import kotlinx.coroutines.withContext
  */
 class EngineeringAssistantViewModelFactory(
     private val conversationEngineProvider: () -> ConversationEngine,
-    private val approvalGatewayProvider: () -> TrustedProposalApprovalGateway,
+    private val approvalGatewayProvider: suspend () -> TrustedProposalApprovalGateway,
     private val proposalCoordinatorProvider: () -> CableProposalPreparationCoordinator
 ) : ViewModelProvider.Factory {
 
@@ -29,7 +29,7 @@ class EngineeringAssistantViewModelFactory(
         if (modelClass.isAssignableFrom(EngineeringAssistantViewModel::class.java)) {
             return EngineeringAssistantViewModel(
                 conversationEngine = conversationEngineProvider(),
-                approvalGatewayProvider = approvalGatewayProvider,
+                asyncApprovalGatewayProvider = approvalGatewayProvider,
                 proposalPreparationCoordinator = proposalCoordinatorProvider()
             ) as T
         }
@@ -49,20 +49,19 @@ class EngineeringAssistantViewModelFactory(
                 projectDao = database.projectDao(),
                 circuitDao = database.circuitDao()
             )
-            // Deferred on-demand gateway: asset JSON files are parsed on Dispatchers.IO
-            val gatewayLazy = lazy {
-                kotlinx.coroutines.runBlocking(Dispatchers.IO) {
-                    val catalogRepository = productionCatalogRepository(application)
-                    DurableMutationWorkflow.createGateway(
-                        database = database,
-                        catalogRepository = catalogRepository,
-                        principalProvider = DefaultTrustedPrincipalProvider(principalProvider)
-                    )
-                }
+            // Asynchronous gateway provider: asset JSON files are parsed on Dispatchers.IO
+            // inside viewModelScope without blocking the calling thread.
+            val asyncGatewayProvider: suspend () -> TrustedProposalApprovalGateway = {
+                val catalogRepository = productionCatalogRepository(application)
+                DurableMutationWorkflow.createGateway(
+                    database = database,
+                    catalogRepository = catalogRepository,
+                    principalProvider = DefaultTrustedPrincipalProvider(principalProvider)
+                )
             }
             return EngineeringAssistantViewModelFactory(
                 conversationEngineProvider = { ConversationEngineProvider.provideConversationEngine() },
-                approvalGatewayProvider = { gatewayLazy.value },
+                approvalGatewayProvider = asyncGatewayProvider,
                 proposalCoordinatorProvider = { proposalCoordinator }
             )
         }
