@@ -193,7 +193,7 @@ class CoordinatorInvocationMeasurementTest {
     }
 
     @Test
-    fun testSilentExceptionSwallowing_swallowsFailureAndReturnsDefault1L() {
+    fun testSilentExceptionSwallowing_removed_failsLoudlyInsteadOfFabricatingRevision1L() {
         val pid = "PRJ_FAILING_PROVIDER"
         val initialProvider = InstrumentedRevisionProvider(delegateRevision = 1L, shouldThrow = false)
         EngineeringCalculationCoordinator.projectRevisionProvider = initialProvider
@@ -213,25 +213,36 @@ class CoordinatorInvocationMeasurementTest {
         val failingProvider = InstrumentedRevisionProvider(delegateRevision = 5L, shouldThrow = true)
         EngineeringCalculationCoordinator.projectRevisionProvider = failingProvider
 
-        // 1. Guarded cache check: caller asks for expectedRevision = 1L
-        // The live database is actually failing, but getProjectRevision catches the exception and returns 1L.
-        // Therefore, entry.projectRevision (1L) == liveRev (1L) matches!
-        val cached = EngineeringCalculationCoordinator.getCachedSizingResultGuarded(pid, 999, expectedRevision = 1L)
-        assertNotNull(
-            "VULNERABILITY PROOF: Stale cache entry at revision 1L was accepted because exception was swallowed and defaulted to 1L",
-            cached
+        // 1. Guarded cache check: caller asks for expectedRevision = 1L.
+        // Gate D' fix: the swallowed 1L fallback is gone, so an indeterminate revision read is raised
+        // as a typed failure and the stale revision-1L entry can never validate as live.
+        var guardedFailure: Throwable? = null
+        try {
+            val cached = EngineeringCalculationCoordinator.getCachedSizingResultGuarded(pid, 999, expectedRevision = 1L)
+            assertNull("Gate D' fix: stale cache entry must not be returned", cached)
+        } catch (t: Throwable) {
+            guardedFailure = t
+        }
+        assertTrue(
+            "Gate D' fix: guarded read must fail loudly, observed=${guardedFailure?.javaClass?.simpleName}",
+            guardedFailure is ProjectRevisionResolutionException
         )
 
-        // 2. Coherent snapshot check: liveRev falls back to 1L
-        val snapshot = EngineeringCalculationCoordinator.getCoherentSnapshot<SizingResult>(
-            projectId = pid,
-            domain = com.example.ai.context.freshness.contracts.CalculationDomain.CABLE_SIZING,
-            entityId = "999",
-            expectedRevision = 1L
-        )
-        assertNotNull(
-            "VULNERABILITY PROOF: Coherent snapshot returned valid at revision 1L despite database failure",
-            snapshot
+        // 2. Coherent snapshot check: same loud failure, never a fabricated revision.
+        var snapshotFailure: Throwable? = null
+        try {
+            EngineeringCalculationCoordinator.getCoherentSnapshot<SizingResult>(
+                projectId = pid,
+                domain = com.example.ai.context.freshness.contracts.CalculationDomain.CABLE_SIZING,
+                entityId = "999",
+                expectedRevision = 1L
+            )
+        } catch (t: Throwable) {
+            snapshotFailure = t
+        }
+        assertTrue(
+            "Gate D' fix: coherent snapshot must fail loudly, observed=${snapshotFailure?.javaClass?.simpleName}",
+            snapshotFailure is ProjectRevisionResolutionException
         )
     }
 }

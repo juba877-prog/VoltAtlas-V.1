@@ -51,6 +51,22 @@ data class CableSizingProjectResult(
 )
 
 /**
+ * Raised when the live project revision cannot be resolved by a configured [ProjectRevisionProvider]
+ * because of an indeterminate read failure (database locked, query timeout, IO failure).
+ *
+ * Gate D' rationale: the previous `catch (_: Exception) { 1L }` fallback let an indeterminate read
+ * masquerade as an authentic initial revision, so a stale cache entry could validate as live and a
+ * valid post-commit revalidation could report as superseded. An indeterminate read must fail loudly.
+ */
+class ProjectRevisionResolutionException(
+    val projectId: String,
+    cause: Throwable?
+) : IllegalStateException(
+    "Failed to resolve live project revision for project '$projectId'; refusing to fabricate a revision.",
+    cause
+)
+
+/**
  * Pure calculation coordinator for engineering sizing calculations.
  *
  * Responsibilities:
@@ -69,22 +85,53 @@ object EngineeringCalculationCoordinator {
         return FreshnessLifecycleRecorder(freshnessRegistry, circuits, transformers)
     }
 
+    /**
+     * Gate D' Option A: the single revision-resolution point for a calculation pass.
+     *
+     * - No provider wired -> [untrackedProjectRevision] (revision tracking is not configured).
+     * - Project row absent -> [untrackedProjectRevision] (definitive answer: no revision exists yet).
+     * - Indeterminate read failure (DB locked / timeout / IO) -> fails loudly with
+     *   [ProjectRevisionResolutionException] instead of the previous silent `1L` fallback, which could
+     *   validate a stale revision-1L cache entry as live or misreport a valid revalidation as superseded.
+     */
+    private val untrackedProjectRevision = 1L
+
     private suspend fun getProjectRevisionSuspend(projectId: String): Long {
+        val provider = projectRevisionProvider ?: return untrackedProjectRevision
         return try {
-            projectRevisionProvider?.getCurrentRevision(projectId)?.revision ?: 1L
-        } catch (_: Exception) {
-            1L
+            provider.getCurrentRevision(projectId).revision
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (_: NoSuchElementException) {
+            untrackedProjectRevision
+        } catch (ex: Exception) {
+            throw ProjectRevisionResolutionException(projectId, ex)
         }
     }
 
     private fun getProjectRevision(projectId: String): Long {
-        val provider = projectRevisionProvider ?: return 1L
+        val provider = projectRevisionProvider ?: return untrackedProjectRevision
         return try {
             runBlocking { provider.getCurrentRevision(projectId).revision }
-        } catch (_: Exception) {
-            1L
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (_: NoSuchElementException) {
+            untrackedProjectRevision
+        } catch (ex: Exception) {
+            throw ProjectRevisionResolutionException(projectId, ex)
         }
     }
+
+    /**
+     * Resolves the one revision shared by an entire calculation pass, reusing an already-resolved
+     * value handed down by an outer pass when supplied.
+     */
+    private fun resolvePassRevision(projectId: String, preResolvedRevision: Long?): Long =
+        preResolvedRevision ?: getProjectRevision(projectId)
+
+    /** Project id a bulk pass belongs to — used for the pass-level revision hoist. */
+    private fun passProjectId(circuits: List<CircuitEntity>): String =
+        circuits.firstOrNull()?.projectId?.ifEmpty { "DEFAULT_PROJECT" } ?: "DEFAULT_PROJECT"
 
     fun clearProjectFreshness(projectId: String) {
         freshnessRegistry.clearProject(projectId)
@@ -399,16 +446,20 @@ object EngineeringCalculationCoordinator {
     fun calculateCableSizing(
         circuit: CircuitEntity,
         allCircuits: List<CircuitEntity>,
-        transformers: List<TransformerEntity> = emptyList()
+        transformers: List<TransformerEntity> = emptyList(),
+        projectRevision: Long? = null
     ): SizingResult {
         val ancestors = resolveAncestorChain(circuit, allCircuits)
         var cumulativeVD = 0.0
+        // Gate D' Option A: resolve the revision once per call and reuse it for the ancestor loop,
+        // the target cache check, and the fresh-publication/error paths (was 2–3 resolutions per call).
+        val passRevision = resolvePassRevision(passProjectId(listOf(circuit)), projectRevision)
 
         for (ancestor in ancestors) {
             val ancestorPid = ancestor.projectId.ifEmpty { "DEFAULT_PROJECT" }
             val ancestorKey = ProjectCircuitKey(ancestorPid, ancestor.id)
             val ancestorSig = computeSignature(ancestor, cumulativeVD, transformers)
-            val liveRev = getProjectRevision(ancestorPid)
+            val liveRev = passRevision
             val cached = sizingCache[ancestorKey]
             val ancestorResult = if (cached != null && cached.signature == ancestorSig && cached.projectRevision == liveRev) {
                 cached.result
@@ -428,7 +479,7 @@ object EngineeringCalculationCoordinator {
         val targetPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
         val targetKey = ProjectCircuitKey(targetPid, circuit.id)
         val targetSig = computeSignature(circuit, cumulativeVD, transformers)
-        val targetLiveRev = getProjectRevision(targetPid)
+        val targetLiveRev = passRevision
         val cachedTarget = sizingCache[targetKey]
         if (cachedTarget != null && cachedTarget.signature == targetSig && cachedTarget.projectRevision == targetLiveRev) {
             val projectId = targetPid
@@ -452,7 +503,7 @@ object EngineeringCalculationCoordinator {
                 upstreamCircuits = ancestors,
                 transformers = transformers
             )
-            val rev = getProjectRevision(projectId)
+            val rev = passRevision
             sizingCache[targetKey] = VersionedCacheEntry(targetSig, freshResult, rev)
             val status = if (freshResult.status.contains("FAIL")) "FAIL" else if (freshResult.status.contains("WARN")) "WARNING" else "PASS"
             try {
@@ -461,7 +512,7 @@ object EngineeringCalculationCoordinator {
             return freshResult
         } catch (ex: Exception) {
             try {
-                val rev = getProjectRevision(projectId)
+                val rev = passRevision
                 getRecorder(allCircuits, transformers).recordError(scope, ExecutionErrorCode.ENGINE_RUNTIME_ERROR, ex.message, rev)
             } catch (_: Exception) { }
             throw ex
@@ -476,9 +527,15 @@ object EngineeringCalculationCoordinator {
      */
     fun calculateProjectCableSizing(
         circuits: List<CircuitEntity>,
-        transformers: List<TransformerEntity> = emptyList()
+        transformers: List<TransformerEntity> = emptyList(),
+        projectRevision: Long? = null
     ): CableSizingProjectResult {
         val normalizedCircuits = circuits.map { CableCalculationService.normalizeAutoOverride(it) }
+        if (normalizedCircuits.isEmpty()) {
+            return CableSizingProjectResult(emptyMap(), emptyMap(), emptyList())
+        }
+        // Gate D' Option A: resolve the pass revision ONCE (was once per circuit — 120 per 60-circuit pass).
+        val passRevision = resolvePassRevision(passProjectId(normalizedCircuits), projectRevision)
 
         val sizingResults = mutableMapOf<Int, SizingResult>()
         val circuitParents = mutableMapOf<Int, Int>()
@@ -516,7 +573,7 @@ object EngineeringCalculationCoordinator {
                     val cPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
                     val cKey = ProjectCircuitKey(cPid, circuit.id)
                     val sig = computeSignature(circuit, parentVD, transformers)
-                    val liveRev = getProjectRevision(cPid)
+                    val liveRev = passRevision
                     val cached = sizingCache[cKey]
                     val sizingRes = if (cached != null && cached.signature == sig && cached.projectRevision == liveRev) {
                         cached.result
@@ -543,7 +600,7 @@ object EngineeringCalculationCoordinator {
             val res = sizingResults[circuit.id]
             if (res != null) {
                 val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
-                val rev = getProjectRevision(pid)
+                val rev = passRevision
                 val status = if (res.status.contains("FAIL")) "FAIL" else if (res.status.contains("WARN")) "WARNING" else "PASS"
                 try {
                     recorder.recordCableSizing(pid, circuit.id, status, rev)
@@ -625,24 +682,30 @@ object EngineeringCalculationCoordinator {
     fun calculateTransformer(
         transformerId: String,
         allCircuits: List<CircuitEntity>,
-        allTransformers: List<TransformerEntity>
+        allTransformers: List<TransformerEntity>,
+        projectRevision: Long? = null
     ): TransformerResult {
         val tx = allTransformers.firstOrNull { it.transformerId.equals(transformerId.trim(), ignoreCase = true) }
             ?: TransformerEntity(transformerId = transformerId, status = "Inactive")
-        return calculateTransformer(tx, allCircuits)
+        return calculateTransformer(tx, allCircuits, projectRevision)
     }
 
     /**
      * Targeted single-transformer calculation for a given [TransformerEntity].
+     *
+     * @param projectRevision Gate D' Option A: pass-level hoisted revision; when supplied, no revision
+     *   resolution is performed (the whole pass shares one resolved value).
      */
     fun calculateTransformer(
         transformer: TransformerEntity,
-        allCircuits: List<CircuitEntity>
+        allCircuits: List<CircuitEntity>,
+        projectRevision: Long? = null
     ): TransformerResult {
         val pid = transformer.projectId.ifEmpty { "DEFAULT_PROJECT" }
         val txKey = ProjectTransformerKey(pid, transformer.transformerId)
         val sig = computeTransformerSignature(transformer, allCircuits)
-        val liveRev = getProjectRevision(pid)
+        // Gate D' Option A: resolve once per call and reuse for cache check, publication and recording.
+        val liveRev = resolvePassRevision(pid, projectRevision)
         val cached = transformerCache[txKey]
         if (cached != null && cached.signature == sig && cached.projectRevision == liveRev) {
             val rev = liveRev
@@ -658,7 +721,7 @@ object EngineeringCalculationCoordinator {
 
         try {
             val freshResult = TransformerCalculationService.calculateSingleTransformer(transformer, allCircuits)
-            val rev = getProjectRevision(pid)
+            val rev = liveRev
             transformerCache[txKey] = VersionedCacheEntry(sig, freshResult, rev)
             try {
                 getRecorder(allCircuits, listOf(transformer)).recordTransformer(pid, transformer.transformerId, "PASS", rev)
@@ -666,7 +729,7 @@ object EngineeringCalculationCoordinator {
             return freshResult
         } catch (ex: Exception) {
             try {
-                val rev = getProjectRevision(pid)
+                val rev = liveRev
                 getRecorder(allCircuits, listOf(transformer)).recordError(scope, ExecutionErrorCode.ENGINE_RUNTIME_ERROR, ex.message, rev)
             } catch (_: Exception) { }
             throw ex
@@ -680,15 +743,20 @@ object EngineeringCalculationCoordinator {
      */
     fun calculateProjectTransformers(
         circuits: List<CircuitEntity>,
-        transformers: List<TransformerEntity>
+        transformers: List<TransformerEntity>,
+        projectRevision: Long? = null
     ): Map<String, TransformerResult> {
+        if (transformers.isEmpty()) return emptyMap()
+        // Gate D' Option A: resolve the pass revision ONCE and thread it into every transformer stage.
+        val passPid = transformers.firstOrNull()?.projectId?.ifEmpty { "DEFAULT_PROJECT" } ?: "DEFAULT_PROJECT"
+        val passRevision = resolvePassRevision(passPid, projectRevision)
         val results = transformers.associate { transformer ->
-            transformer.transformerId to calculateTransformer(transformer, circuits)
+            transformer.transformerId to calculateTransformer(transformer, circuits, passRevision)
         }
         val recorder = getRecorder(circuits, transformers)
         transformers.forEach { tx ->
             val pid = tx.projectId.ifEmpty { "DEFAULT_PROJECT" }
-            val rev = getProjectRevision(pid)
+            val rev = passRevision
             try {
                 recorder.recordTransformer(pid, tx.transformerId, "PASS", rev)
             } catch (_: Exception) { }
@@ -754,7 +822,8 @@ object EngineeringCalculationCoordinator {
     fun calculateShortCircuit(
         circuitId: Int,
         allCircuits: List<CircuitEntity>,
-        allTransformers: List<TransformerEntity>
+        allTransformers: List<TransformerEntity>,
+        projectRevision: Long? = null
     ): ShortCircuitResult {
         val circuit = allCircuits.firstOrNull { it.id == circuitId }
             ?: return ShortCircuitResult(
@@ -816,7 +885,8 @@ object EngineeringCalculationCoordinator {
 
         val pid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
         val scKey = ProjectCircuitKey(pid, circuit.id)
-        val liveRev = getProjectRevision(pid)
+        // Gate D' Option A: resolve once per call and reuse for cache check, publication and recording.
+        val liveRev = resolvePassRevision(pid, projectRevision)
         val cached = shortCircuitCache[scKey]
         if (cached != null && cached.signature == sig && cached.projectRevision == liveRev) {
             val rev = liveRev
@@ -844,7 +914,7 @@ object EngineeringCalculationCoordinator {
                 sizingResults = branchSizings,
                 transformerResults = txMap
             )
-            val rev = getProjectRevision(pid)
+            val rev = liveRev
             shortCircuitCache[scKey] = VersionedCacheEntry(sig, fresh, rev)
             val status = if (fresh.status.contains("FAIL") || fresh.status.contains("MISSING")) "FAIL" else "PASS"
             try {
@@ -853,7 +923,7 @@ object EngineeringCalculationCoordinator {
             return fresh
         } catch (ex: Exception) {
             try {
-                val rev = getProjectRevision(pid)
+                val rev = liveRev
                 getRecorder(allCircuits, allTransformers).recordError(scope, ExecutionErrorCode.ENGINE_RUNTIME_ERROR, ex.message, rev)
             } catch (_: Exception) { }
             throw ex
@@ -870,8 +940,12 @@ object EngineeringCalculationCoordinator {
         circuitParents: Map<Int, Int>,
         sizingResults: Map<Int, SizingResult>,
         transformerResults: Map<String, TransformerResult>,
-        generatorResults: Map<String, GeneratorResult> = emptyMap()
+        generatorResults: Map<String, GeneratorResult> = emptyMap(),
+        projectRevision: Long? = null
     ): Map<Int, ShortCircuitResult> {
+        if (resolvedCircuits.isEmpty()) return emptyMap()
+        // Gate D' Option A: resolve the pass revision ONCE (was once per circuit — 180 per 60-circuit pass).
+        val passRevision = resolvePassRevision(passProjectId(resolvedCircuits), projectRevision)
         val results = mutableMapOf<Int, ShortCircuitResult>()
         val circuitsToCompute = mutableListOf<CircuitEntity>()
 
@@ -905,7 +979,7 @@ object EngineeringCalculationCoordinator {
             val sig = computeShortCircuitSignature(circuit, sizing, txResult, ancestorPairs)
             val scPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
             val scKey = ProjectCircuitKey(scPid, circuit.id)
-            val liveRev = getProjectRevision(scPid)
+            val liveRev = passRevision
             val cached = shortCircuitCache[scKey]
 
             if (cached != null && cached.signature == sig && cached.projectRevision == liveRev) {
@@ -953,7 +1027,7 @@ object EngineeringCalculationCoordinator {
                 val sig = computeShortCircuitSignature(circuit, sizing, txResult, ancestorPairs)
                 val scPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
                 val scKey = ProjectCircuitKey(scPid, circuit.id)
-                val rev = getProjectRevision(scPid)
+                val rev = passRevision
                 shortCircuitCache[scKey] = VersionedCacheEntry(sig, fresh, rev)
                 results[circuit.id] = fresh
             }
@@ -965,7 +1039,7 @@ object EngineeringCalculationCoordinator {
             val sc = results[c.id]
             if (sc != null) {
                 val pid = c.projectId.ifEmpty { "DEFAULT_PROJECT" }
-                val rev = getProjectRevision(pid)
+                val rev = passRevision
                 val status = if (sc.status.contains("FAIL") || sc.status.contains("MISSING")) "FAIL" else "PASS"
                 try {
                     recorder.recordShortCircuit(pid, c.id, status, rev)
@@ -1050,15 +1124,16 @@ object EngineeringCalculationCoordinator {
         circuitId: Int,
         allCircuits: List<CircuitEntity>,
         allTransformers: List<TransformerEntity> = emptyList(),
-        ze_ohm: Double = 0.01
+        ze_ohm: Double = 0.01,
+        projectRevision: Long? = null
     ): AdsResult {
         val circuit = allCircuits.firstOrNull { it.id == circuitId }
             ?: return ProtectionCalculationService.buildMissingAdsResult(
                 CircuitEntity(id = circuitId, circuitName = "Circuit $circuitId", projectId = "")
             )
 
-        val sizingResult = calculateCableSizing(circuit, allCircuits, allTransformers)
-        val txMap = calculateProjectTransformers(allCircuits, allTransformers)
+        val sizingResult = calculateCableSizing(circuit, allCircuits, allTransformers, projectRevision)
+        val txMap = calculateProjectTransformers(allCircuits, allTransformers, projectRevision)
         val sourceTx = resolveSourceTransformer(circuit, allCircuits, txMap)
         val derivedZe = if (sourceTx != null)
             ProtectionEngine.deriveZeFromSource(sourceTx.isc3Phase, sourceTx.voltage)
@@ -1068,7 +1143,8 @@ object EngineeringCalculationCoordinator {
         val sig = computeAdsSignature(circuit, sizingResult, effZe)
         val adsPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
         val adsKey = ProjectCircuitKey(adsPid, circuit.id)
-        val liveRev = getProjectRevision(adsPid)
+        // Gate D' Option A: resolve once per call and reuse for cache check and publication.
+        val liveRev = resolvePassRevision(adsPid, projectRevision)
 
         val cached = adsCache[adsKey]
         if (cached != null && cached.signature == sig && cached.projectRevision == liveRev) {
@@ -1094,15 +1170,16 @@ object EngineeringCalculationCoordinator {
     fun calculateProtection(
         circuitId: Int,
         allCircuits: List<CircuitEntity>,
-        allTransformers: List<TransformerEntity>
+        allTransformers: List<TransformerEntity>,
+        projectRevision: Long? = null
     ): ProtectionResult {
         val circuit = allCircuits.firstOrNull { it.id == circuitId }
             ?: return ProtectionCalculationService.buildMissingProtectionResult(
                 CircuitEntity(id = circuitId, circuitName = "Circuit $circuitId", projectId = "")
             )
 
-        val sizingResult = calculateCableSizing(circuit, allCircuits, allTransformers)
-        val scResult = calculateShortCircuit(circuitId, allCircuits, allTransformers)
+        val sizingResult = calculateCableSizing(circuit, allCircuits, allTransformers, projectRevision)
+        val scResult = calculateShortCircuit(circuitId, allCircuits, allTransformers, projectRevision)
 
         // Find parent device size or transformer FLC with cycle guard
         val parent = (if (circuit.parentId != null) allCircuits.find { it.id == circuit.parentId } else null)
@@ -1112,13 +1189,13 @@ object EngineeringCalculationCoordinator {
         val upstreamName: String
         val hasUpstreamDevice: Boolean
         if (parent != null && parent.id != circuit.id) {
-            val parentSizing = calculateCableSizing(parent, allCircuits, allTransformers)
+            val parentSizing = calculateCableSizing(parent, allCircuits, allTransformers, projectRevision)
             upstreamIn = parentSizing.deviceSize_A
             upstreamName = parent.circuitName
             hasUpstreamDevice = upstreamIn > 0.0
         } else {
             val txResult = if (circuit.transformerId.isNotBlank()) {
-                calculateTransformer(circuit.transformerId, allCircuits, allTransformers)
+                calculateTransformer(circuit.transformerId, allCircuits, allTransformers, projectRevision)
             } else null
             upstreamIn = txResult?.flc ?: 0.0
             upstreamName = if (circuit.transformerId.isNotBlank()) "Incomer (${circuit.transformerId})" else "Incomer"
@@ -1128,7 +1205,8 @@ object EngineeringCalculationCoordinator {
         val sig = computeProtectionSignature(circuit, sizingResult, scResult, upstreamIn, upstreamName)
         val protPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
         val protKey = ProjectCircuitKey(protPid, circuit.id)
-        val liveRev = getProjectRevision(protPid)
+        // Gate D' Option A: resolve once per call and reuse for cache check, publication and recording.
+        val liveRev = resolvePassRevision(protPid, projectRevision)
         val cached = protectionCache[protKey]
         if (cached != null && cached.signature == sig && cached.projectRevision == liveRev) {
             val pid = protPid
@@ -1153,7 +1231,7 @@ object EngineeringCalculationCoordinator {
                 upstreamName = upstreamName,
                 hasUpstreamDevice = hasUpstreamDevice
             )
-            val rev = getProjectRevision(pid)
+            val rev = liveRev
             protectionCache[protKey] = VersionedCacheEntry(sig, fresh, rev)
             try {
                 getRecorder(allCircuits, allTransformers).recordProtectionAds(pid, circuitId, fresh.finalStatus, rev)
@@ -1161,7 +1239,7 @@ object EngineeringCalculationCoordinator {
             return fresh
         } catch (ex: Exception) {
             try {
-                val rev = getProjectRevision(pid)
+                val rev = liveRev
                 getRecorder(allCircuits, allTransformers).recordError(scope, ExecutionErrorCode.ENGINE_RUNTIME_ERROR, ex.message, rev)
             } catch (_: Exception) { }
             throw ex
@@ -1177,8 +1255,12 @@ object EngineeringCalculationCoordinator {
         resolvedCircuits: List<CircuitEntity>,
         sizingResults: Map<Int, SizingResult>,
         ze_ohm: Double = 0.01,
-        transformerResults: Map<String, TransformerResult> = emptyMap()
+        transformerResults: Map<String, TransformerResult> = emptyMap(),
+        projectRevision: Long? = null
     ): Map<Int, AdsResult> {
+        if (resolvedCircuits.isEmpty()) return emptyMap()
+        // Gate D' Option A: resolve the pass revision ONCE (was once per circuit — 60 per 60-circuit pass).
+        val passRevision = resolvePassRevision(passProjectId(resolvedCircuits), projectRevision)
         val results = mutableMapOf<Int, AdsResult>()
         for (circuit in resolvedCircuits) {
             val sizing = sizingResults[circuit.id] ?: continue
@@ -1196,7 +1278,7 @@ object EngineeringCalculationCoordinator {
             val sig = computeAdsSignature(circuit, sizing, effZe)
             val adsPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
             val adsKey = ProjectCircuitKey(adsPid, circuit.id)
-            val liveRev = getProjectRevision(adsPid)
+            val liveRev = passRevision
             val cached = adsCache[adsKey]
             if (cached != null && cached.signature == sig && cached.projectRevision == liveRev) {
                 results[circuit.id] = cached.result
@@ -1244,8 +1326,12 @@ object EngineeringCalculationCoordinator {
         sizingResults: Map<Int, SizingResult>,
         shortCircuitResults: Map<Int, ShortCircuitResult>,
         transformerResults: Map<String, TransformerResult>,
-        allCircuits: List<CircuitEntity> = resolvedCircuits
+        allCircuits: List<CircuitEntity> = resolvedCircuits,
+        projectRevision: Long? = null
     ): Map<Int, ProtectionResult> {
+        if (resolvedCircuits.isEmpty()) return emptyMap()
+        // Gate D' Option A: resolve the pass revision ONCE (was once per circuit — 120 per 60-circuit pass).
+        val passRevision = resolvePassRevision(passProjectId(resolvedCircuits), projectRevision)
         val results = mutableMapOf<Int, ProtectionResult>()
         for (circuit in resolvedCircuits) {
             val sizing = sizingResults[circuit.id] ?: continue
@@ -1263,7 +1349,7 @@ object EngineeringCalculationCoordinator {
             val sig = computeProtectionSignature(circuit, sizing, sc, upstreamIn, parentName)
             val protPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
             val protKey = ProjectCircuitKey(protPid, circuit.id)
-            val liveRev = getProjectRevision(protPid)
+            val liveRev = passRevision
             val cached = protectionCache[protKey]
             if (cached != null && cached.signature == sig && cached.projectRevision == liveRev) {
                 results[circuit.id] = cached.result
@@ -1288,7 +1374,7 @@ object EngineeringCalculationCoordinator {
             val prot = results[c.id]
             if (prot != null) {
                 val pid = c.projectId.ifEmpty { "DEFAULT_PROJECT" }
-                val rev = getProjectRevision(pid)
+                val rev = passRevision
                 try {
                     recorder.recordProtectionAds(pid, c.id, prot.finalStatus, rev)
                 } catch (_: Exception) { }
@@ -1356,7 +1442,8 @@ object EngineeringCalculationCoordinator {
     fun calculateCoordination(
         circuitId: Int,
         allCircuits: List<CircuitEntity>,
-        allTransformers: List<TransformerEntity> = emptyList()
+        allTransformers: List<TransformerEntity> = emptyList(),
+        projectRevision: Long? = null
     ): CoordinationResult {
         val circuit = allCircuits.firstOrNull { it.id == circuitId }
             ?: return CoordinationCalculationService.buildMissingCoordinationResult(
@@ -1364,7 +1451,7 @@ object EngineeringCalculationCoordinator {
                 "Circuit $circuitId not found in project"
             )
 
-        val sizingResult = calculateCableSizing(circuit, allCircuits, allTransformers)
+        val sizingResult = calculateCableSizing(circuit, allCircuits, allTransformers, projectRevision)
 
         // Resolve upstream parent device or transformer incomer with cycle protection
         val visited = mutableSetOf<Int>()
@@ -1377,13 +1464,13 @@ object EngineeringCalculationCoordinator {
         val upstreamRating: Double
 
         if (parent != null && parent.id != circuit.id && !visited.contains(parent.id)) {
-            val parentSizing = calculateCableSizing(parent, allCircuits, allTransformers)
+            val parentSizing = calculateCableSizing(parent, allCircuits, allTransformers, projectRevision)
             upstreamRating = parentSizing.deviceSize_A
             upstreamName = parent.circuitName
         } else if (circuit.fedFrom.equals("Transformer", ignoreCase = true) || circuit.transformerId.isNotBlank()) {
             val tx = allTransformers.firstOrNull { it.transformerId.equals(circuit.transformerId.trim(), ignoreCase = true) }
             if (tx != null) {
-                val txResult = calculateTransformer(tx, allCircuits)
+                val txResult = calculateTransformer(tx, allCircuits, projectRevision)
                 upstreamRating = txResult.flc
                 upstreamName = "Incomer (${tx.transformerId})"
             } else {
@@ -1402,7 +1489,8 @@ object EngineeringCalculationCoordinator {
         val sig = computeCoordinationSignature(circuit, sizingResult, upstreamName, upstreamRating)
         val coordPid = circuit.projectId.ifEmpty { "DEFAULT_PROJECT" }
         val coordKey = ProjectCircuitKey(coordPid, circuit.id)
-        val liveRev = getProjectRevision(coordPid)
+        // Gate D' Option A: resolve once per call and reuse for cache check, publication and recording.
+        val liveRev = resolvePassRevision(coordPid, projectRevision)
         val cached = coordinationCache[coordKey]
         if (cached != null && cached.signature == sig && cached.projectRevision == liveRev) {
             val pid = coordPid
@@ -1425,7 +1513,7 @@ object EngineeringCalculationCoordinator {
                 upstreamName = upstreamName,
                 upstreamRating = upstreamRating
             )
-            val rev = getProjectRevision(pid)
+            val rev = liveRev
             coordinationCache[coordKey] = VersionedCacheEntry(sig, fresh, rev)
             try {
                 getRecorder(allCircuits, allTransformers).recordCoordination(pid, circuitId, fresh.status, rev)
@@ -1433,7 +1521,7 @@ object EngineeringCalculationCoordinator {
             return fresh
         } catch (ex: Exception) {
             try {
-                val rev = getProjectRevision(pid)
+                val rev = liveRev
                 getRecorder(allCircuits, allTransformers).recordError(scope, ExecutionErrorCode.ENGINE_RUNTIME_ERROR, ex.message, rev)
             } catch (_: Exception) { }
             throw ex
@@ -1450,8 +1538,12 @@ object EngineeringCalculationCoordinator {
         circuitParents: Map<Int, Int>,
         sizingResults: Map<Int, SizingResult>,
         transformerResults: Map<String, TransformerResult>,
-        allCircuits: List<CircuitEntity> = resolvedCircuits
+        allCircuits: List<CircuitEntity> = resolvedCircuits,
+        projectRevision: Long? = null
     ): List<CoordinationResult> {
+        if (resolvedCircuits.isEmpty()) return emptyList()
+        // Gate D' Option A: resolve the pass revision ONCE (was once per circuit — 120 per 60-circuit pass).
+        val passRevision = resolvePassRevision(passProjectId(resolvedCircuits), projectRevision)
         val results = resolvedCircuits.mapNotNull { circ ->
             val sizingRes = sizingResults[circ.id] ?: return@mapNotNull null
             val parentId = circuitParents[circ.id]
@@ -1481,7 +1573,7 @@ object EngineeringCalculationCoordinator {
             val sig = computeCoordinationSignature(circ, sizingRes, upstreamName, upstreamRating)
             val circPid = circ.projectId.ifEmpty { "DEFAULT_PROJECT" }
             val circKey = ProjectCircuitKey(circPid, circ.id)
-            val liveRev = getProjectRevision(circPid)
+            val liveRev = passRevision
             val cached = coordinationCache[circKey]
             if (cached != null && cached.signature == sig && cached.projectRevision == liveRev) {
                 cached.result
@@ -1504,7 +1596,7 @@ object EngineeringCalculationCoordinator {
             try {
                 val c = allCircuits.find { it.id == coord.downstreamCircuitId }
                 val pid = c?.projectId?.ifEmpty { "DEFAULT_PROJECT" } ?: "DEFAULT_PROJECT"
-                val rev = getProjectRevision(pid)
+                val rev = passRevision
                 recorder.recordCoordination(pid, coord.downstreamCircuitId, coord.status, rev)
             } catch (_: Exception) { }
         }
