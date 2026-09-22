@@ -29,7 +29,9 @@ fun AssistantApprovalConfirmationCard(
     isSubmitting: Boolean,
     onConfirmApprove: () -> Unit,
     onCancel: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isApplyEnabled: Boolean = true,
+    gatewayUnavailableReason: String? = null
 ) {
     Card(
         modifier = modifier
@@ -89,6 +91,15 @@ fun AssistantApprovalConfirmationCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            if (!isApplyEnabled && gatewayUnavailableReason != null) {
+                Text(
+                    text = gatewayUnavailableReason,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("gateway_unavailable_reason")
+                )
+            }
+
             // Actions Row
             Row(
                 modifier = Modifier
@@ -106,7 +117,7 @@ fun AssistantApprovalConfirmationCard(
 
                 Button(
                     onClick = onConfirmApprove,
-                    enabled = !isSubmitting,
+                    enabled = !isSubmitting && isApplyEnabled,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     modifier = Modifier.weight(1.5f).testTag("action_approve_and_apply")
                 ) {

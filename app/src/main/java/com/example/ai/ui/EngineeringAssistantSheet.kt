@@ -283,8 +283,30 @@ fun EngineeringAssistantSheet(
                         )
                     }
                 }
-                GatewayStatus.Ready,
                 GatewayStatus.Unavailable -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .testTag("gateway_unavailable_banner"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Gateway Unavailable",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "AI mutation gateway is unavailable. Project modifications are disabled.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                GatewayStatus.Ready -> {
                     // Quiescent: no banner
                 }
             }
@@ -358,6 +380,16 @@ fun EngineeringAssistantSheet(
                                 AssistantApprovalConfirmationCard(
                                     reviewModel = card.model,
                                     isSubmitting = card.isSubmitting,
+                                    isApplyEnabled = uiState.gatewayStatus == GatewayStatus.Ready,
+                                    gatewayUnavailableReason = when (uiState.gatewayStatus) {
+                                        GatewayStatus.Unavailable ->
+                                            "AI mutation gateway is not configured. Modifications cannot be applied."
+                                        GatewayStatus.Failed ->
+                                            "AI mutation gateway failed to initialize. Modifications cannot be applied."
+                                        GatewayStatus.Loading ->
+                                            "AI mutation gateway is still initializing. Please wait..."
+                                        GatewayStatus.Ready -> null
+                                    },
                                     onConfirmApprove = { viewModel.onConfirmApproveAndApply() },
                                     onCancel = { viewModel.onCancelApproval() }
                                 )
