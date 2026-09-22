@@ -67,7 +67,8 @@ enum class AssistantState {
 enum class GatewayStatus {
     Loading,
     Ready,
-    Failed
+    Failed,
+    Unavailable
 }
 
 /**
@@ -84,7 +85,7 @@ data class AssistantUiState(
     val inputText: String = "",
     val isThinking: Boolean = false,
     val errorMessage: String? = null,
-    val gatewayStatus: GatewayStatus = GatewayStatus.Ready,
+    val gatewayStatus: GatewayStatus = GatewayStatus.Unavailable,
     val gatewayErrorMessage: String? = null
 ) {
     val isOpen: Boolean
@@ -145,6 +146,8 @@ class EngineeringAssistantViewModel(
                     }
                 }
             }
+        } else {
+            _uiState.update { it.copy(gatewayStatus = GatewayStatus.Unavailable) }
         }
     }
 
@@ -396,7 +399,7 @@ class EngineeringAssistantViewModel(
 
         viewModelScope.launch {
             gatewayJob?.join()
-            val gateway = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { approvalGateway }
+            val gateway = approvalGateway
             if (gateway == null) {
                 val failureReason = _uiState.value.gatewayErrorMessage
                     ?: "Trusted approval gateway is unavailable."

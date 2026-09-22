@@ -283,7 +283,8 @@ fun EngineeringAssistantSheet(
                         )
                     }
                 }
-                GatewayStatus.Ready -> {
+                GatewayStatus.Ready,
+                GatewayStatus.Unavailable -> {
                     // Quiescent: no banner
                 }
             }

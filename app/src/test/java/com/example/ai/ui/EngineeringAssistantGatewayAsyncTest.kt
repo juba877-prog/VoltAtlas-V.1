@@ -112,4 +112,18 @@ class EngineeringAssistantGatewayAsyncTest {
             viewModel.uiState.value.gatewayStatus == GatewayStatus.Ready
         )
     }
+
+    @Test
+    fun testViewModelCreation_bothGatewayAndProviderNull_setsStatusUnavailable() = runTest(testDispatcher) {
+        val viewModel = EngineeringAssistantViewModel(
+            approvalGateway = null,
+            asyncApprovalGatewayProvider = null,
+            ioDispatcher = testDispatcher
+        )
+        assertEquals(
+            "When neither gateway nor provider is supplied, status must be Unavailable (never Ready)",
+            GatewayStatus.Unavailable,
+            viewModel.uiState.value.gatewayStatus
+        )
+    }
 }
