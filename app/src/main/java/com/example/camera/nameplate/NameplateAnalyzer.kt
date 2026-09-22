@@ -26,7 +26,7 @@ class NameplateAnalyzer(
     private val logger: (String, Throwable?) -> Unit = { msg, tr ->
         try {
             android.util.Log.w("NameplateAnalyzer", msg, tr)
-        } catch (_: Throwable) {
+        } catch (_: RuntimeException) {
             // Android Log not mocked on pure JVM test environments without Robolectric
         }
     },
@@ -35,7 +35,7 @@ class NameplateAnalyzer(
     private val job = SupervisorJob(parentScope?.coroutineContext?.get(Job))
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         if (throwable is kotlinx.coroutines.CancellationException) {
-            throw throwable
+            return@CoroutineExceptionHandler
         }
         // Frame analysis / parsing failure must never propagate or leak into the shared pool
         logger("Swallowed unhandled frame analysis exception", throwable)

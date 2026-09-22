@@ -129,7 +129,7 @@ class NameplateParserTest {
     }
 
     @Test
-    fun testNameplateAnalyzer_cancellationExceptionPropagatesNormallyWithoutBeingSwallowed() = kotlinx.coroutines.test.runTest {
+    fun testNameplateAnalyzer_cancellationExceptionTreatedAsCancellationAndNotLoggedAsFailure() = kotlinx.coroutines.test.runTest {
         var loggedThrowable: Throwable? = null
         val analyzer = NameplateAnalyzer(
             parentScope = this,
@@ -141,6 +141,7 @@ class NameplateParserTest {
         analyzer.processTextFrame("SOME TEXT")
         testScheduler.advanceUntilIdle()
 
+        // Normal CancellationException is handled by coroutine machinery and must never be routed to the non-fatal error logger
         assertNull("CancellationException must not be routed to the non-fatal error logger", loggedThrowable)
         analyzer.close()
     }
