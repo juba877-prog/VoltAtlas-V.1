@@ -616,7 +616,7 @@ class ConversationPolicyEngineTest {
                 "deratedAmpacityIz" to "65.0 A"
             )
         )
-        val inquiries = listOf("cable", "what cable", "size", "sizing", "feeder")
+        val inquiries = listOf("cable", "what cable", "feeder")
         for (query in inquiries) {
             val input = ConversationTurnInput(userUtterance = query, projectContext = ctx)
             val decision = ConversationPolicyEngine.evaluateTurn(input)
@@ -627,6 +627,34 @@ class ConversationPolicyEngineTest {
             assertFalse("Query '$query' must not return 'Ready for deterministic calculation.'",
                 explanation == "All required inputs satisfied. Ready for deterministic calculation.")
             assertTrue("Query '$query' must explain cable size", explanation.contains("16.0 mm²"))
+        }
+    }
+
+    // 33. Explicit sizing command on sized circuit triggers calculation
+    @Test
+    fun sizeQuery_onSizedCircuit_triggersCalculation() {
+        val ctx = createSampleProjectContext(
+            freshness = "CURRENT",
+            knownInputs = mapOf(
+                "installation" to "In Conduit",
+                "cableSize" to "16.0",
+                "cableMaterial" to "Cu",
+                "insulation" to "XLPE",
+                "designCurrentIb" to "45.0 A",
+                "breakerSize" to "50 A",
+                "deratedAmpacityIz" to "65.0 A",
+                "voltageDropPct" to "1.20%"
+            )
+        )
+        val calcQueries = listOf("size", "size this", "size this circuit", "calculate", "احسب الكابل")
+        for (query in calcQueries) {
+            val input = ConversationTurnInput(userUtterance = query, projectContext = ctx)
+            val decision = ConversationPolicyEngine.evaluateTurn(input)
+
+            assertEquals("Query '$query' must return RUN_CALCULATION",
+                ConversationActionType.RUN_CALCULATION, decision.action.actionType)
+            val explanation = decision.explanationSummary ?: ""
+            assertTrue("Query '$query' must mention compliant selection", explanation.contains("16.0 mm²") || explanation.contains("16.0 مم²"))
         }
     }
 
