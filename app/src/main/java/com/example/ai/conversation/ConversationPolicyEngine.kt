@@ -78,6 +78,31 @@ object ConversationPolicyEngine {
         val decisionId = decisionIdProvider()
         val lower = normalizedUtterance.lowercase()
 
+        // 4.0. Greeting Check ("hi", "hello", "مرحبا", "سلام")
+        if (isGreeting(lower)) {
+            val isArabic = detectLanguage(normalizedUtterance) == ConversationLanguage.AR
+            val greetingMsg = if (isArabic) {
+                "مرحباً بك! أنا مساعد VoltAtlas الهندسي. كيف يمكنني مساعدتك في الحسابات الكهربائية أو اختيار الكابلات أو مراجعة المشروع؟"
+            } else {
+                "Hello! I am your VoltAtlas Engineering Assistant. How can I assist you with your electrical calculations, cable sizing, or circuit analysis today?"
+            }
+            val action = ConversationAction(
+                actionType = ConversationActionType.READ_CONTEXT,
+                reasonCode = "GREETING_ACKNOWLEDGED",
+                requiredPermission = PromptPermissionMode.READ,
+                responseMode = ResponseMode.DIRECT_ANSWER
+            )
+            return ConversationTurnDecision(
+                decisionId = decisionId,
+                action = action,
+                updatedState = workingState.copy(
+                    primaryIntent = AssistantIntent.CHECK_STATUS,
+                    lastDecisionId = decisionId
+                ),
+                explanationSummary = greetingMsg
+            )
+        }
+
         // 4.1. Out of Scope Check
         if (isOutOfScope(lower)) {
             val action = ConversationAction(
@@ -525,6 +550,29 @@ object ConversationPolicyEngine {
     private fun isCostOptimizationQuery(lower: String): Boolean {
         return lower.contains("cheaper") || lower.contains("cheapest") || lower.contains("ارخص") ||
                 lower.contains("توفير") || lower.contains("cost") || lower.contains("سعر")
+    }
+
+    private fun isGreeting(lower: String): Boolean {
+        val clean = lower.trim().trimEnd('.', '!', '?', ',', '،').trim()
+        val exactGreetings = setOf(
+            "hi", "hello", "hey", "greetings", "good morning", "good evening", "good afternoon",
+            "howdy", "hello there", "hi there",
+            "مرحبا", "مرحباً", "اهلا", "اهلاً", "أهلا", "أهلاً", "سلام", "السلام عليكم",
+            "صباح الخير", "مساء الخير", "هلا"
+        )
+        if (clean in exactGreetings) return true
+
+        val isGreetingPrefix = clean.startsWith("hi ") || clean.startsWith("hello ") ||
+                clean.startsWith("hey ") || clean.startsWith("مرحبا ") ||
+                clean.startsWith("أهلا ") || clean.startsWith("اهلا ") || clean.startsWith("سلام ")
+        if (isGreetingPrefix) {
+            val hasEngineeringIntent = clean.contains("size") || clean.contains("cable") ||
+                    clean.contains("calculate") || clean.contains("voltage") || clean.contains("feeder") ||
+                    clean.contains("كابل") || clean.contains("احسب") || clean.contains("مقطع") ||
+                    clean.contains("هبوط") || clean.contains("فولت")
+            return !hasEngineeringIntent
+        }
+        return false
     }
 
     private fun isOutOfScope(lower: String): Boolean {

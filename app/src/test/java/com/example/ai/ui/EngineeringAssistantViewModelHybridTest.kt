@@ -3,6 +3,7 @@ package com.example.ai.ui
 import com.example.ai.context.EngineeringContext
 import com.example.ai.conversation.*
 import com.example.ai.hybrid.*
+import com.example.ai.service.MessageRole
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -234,5 +235,86 @@ class EngineeringAssistantViewModelHybridTest {
 
         assertNotNull(router)
         assertFalse("Real cloud engine factory must never be invoked when gate is disabled", factoryInvoked)
+    }
+
+    // 8. onChipSelected submits turn through injected conversation engine
+    @Test
+    fun onChipSelected_submitsTurnThroughInjectedConversationEngine() = runTest(testDispatcher) {
+        var lastUtterance: String? = null
+        val mockRouter = object : ConversationEngine {
+            override suspend fun evaluateTurn(
+                input: ConversationTurnInput,
+                decisionIdProvider: () -> String
+            ): HybridEngineResult {
+                lastUtterance = input.userUtterance
+                return HybridEngineResult(
+                    decision = ConversationTurnDecision(
+                        decisionId = "DEC-CHIP",
+                        action = ConversationAction(ConversationActionType.RUN_CALCULATION, "CHIP_SUBMITTED"),
+                        updatedState = ConversationTaskState("T-CHIP", "P-1", 1L),
+                        explanationSummary = "Calculation completed with selected installation method."
+                    ),
+                    source = ConversationEngineSource.LOCAL_RULE_ENGINE
+                )
+            }
+        }
+
+        val viewModel = EngineeringAssistantViewModel(conversationEngine = mockRouter)
+        viewModel.open(AssistantEntryPoint.TOP_BAR_ICON, EngineeringContext(projectId = "P-1"))
+
+        viewModel.onChipSelected("Perforated Tray")
+        testScheduler.advanceUntilIdle()
+
+        assertEquals("Perforated Tray", lastUtterance)
+        val uiState = viewModel.uiState.value
+        assertEquals("Perforated Tray", uiState.messages.filter { it.role == MessageRole.USER }.last().text)
+        assertEquals("Calculation completed with selected installation method.", uiState.messages.last().text)
+    }
+
+    // 9. onCardAction with CANCEL_TASK dismisses card from UI state
+    @Test
+    fun onCardAction_cancelTask_dismissesCardFromUiState() = runTest(testDispatcher) {
+        val viewModel = EngineeringAssistantViewModel()
+        viewModel.open(AssistantEntryPoint.TOP_BAR_ICON, EngineeringContext(projectId = "P-1"))
+
+        val testCardId = "CARD-BLOCKING-1"
+        val dismissAction = SuggestedActionUiModel(ConversationActionType.CANCEL_TASK, "Cancel")
+        viewModel.onCardAction(testCardId, dismissAction)
+
+        val uiState = viewModel.uiState.value
+        assertFalse("Card must not be in typedCards", uiState.typedCards.any { it.cardId == testCardId })
+    }
+
+    // 10. onCardAction with non-cancel action submits action label as user message
+    @Test
+    fun onCardAction_actionClick_submitsLabelAsTurn() = runTest(testDispatcher) {
+        var submittedUtterance: String? = null
+        val mockRouter = object : ConversationEngine {
+            override suspend fun evaluateTurn(
+                input: ConversationTurnInput,
+                decisionIdProvider: () -> String
+            ): HybridEngineResult {
+                submittedUtterance = input.userUtterance
+                return HybridEngineResult(
+                    decision = ConversationTurnDecision(
+                        decisionId = "DEC-ACTION",
+                        action = ConversationAction(ConversationActionType.RUN_CALCULATION, "ACTION_CLICKED"),
+                        updatedState = ConversationTaskState("T-ACT", "P-1", 1L),
+                        explanationSummary = "Recalculation started."
+                    ),
+                    source = ConversationEngineSource.LOCAL_RULE_ENGINE
+                )
+            }
+        }
+
+        val viewModel = EngineeringAssistantViewModel(conversationEngine = mockRouter)
+        viewModel.open(AssistantEntryPoint.TOP_BAR_ICON, EngineeringContext(projectId = "P-1"))
+
+        val action = SuggestedActionUiModel(ConversationActionType.RUN_CALCULATION, "Recalculate", isPrimary = true)
+        viewModel.onCardAction("CARD-1", action)
+        testScheduler.advanceUntilIdle()
+
+        assertEquals("Recalculate", submittedUtterance)
+        assertEquals("Recalculate", viewModel.uiState.value.messages.filter { it.role == MessageRole.USER }.last().text)
     }
 }

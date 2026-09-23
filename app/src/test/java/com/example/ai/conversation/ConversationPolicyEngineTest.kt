@@ -531,4 +531,40 @@ class ConversationPolicyEngineTest {
     fun executionModeMutationRemainsDisabled() {
         assertFalse(ExecutionModePolicy.isCurrentlyExecutable(ExecutionMode.MUTATION))
     }
+
+    // 27. Greetings return direct welcoming answer without triggering blocking question
+    @Test
+    fun greetings_returnDirectAnswerWithoutTriggeringBlockingQuestion() {
+        // Missing installationMethod in context: a calculation query would trigger ASK_BLOCKING_QUESTION
+        val ctx = createSampleProjectContext(knownInputs = emptyMap())
+
+        val greetings = listOf("hi", "hello", "hey", "good morning", "مرحبا", "سلام", "اهلا", "السلام عليكم")
+        for (greeting in greetings) {
+            val input = ConversationTurnInput(userUtterance = greeting, projectContext = ctx)
+            val decision = ConversationPolicyEngine.evaluateTurn(input)
+
+            assertEquals("Greeting '$greeting' must return READ_CONTEXT action",
+                ConversationActionType.READ_CONTEXT, decision.action.actionType)
+            assertEquals("Greeting '$greeting' must have GREETING_ACKNOWLEDGED reasonCode",
+                "GREETING_ACKNOWLEDGED", decision.action.reasonCode)
+            assertEquals("Greeting '$greeting' must return DIRECT_ANSWER mode",
+                ResponseMode.DIRECT_ANSWER, decision.action.responseMode)
+            assertTrue("Greeting '$greeting' must not have missing blocking slots",
+                decision.updatedState.missingBlockingSlots.isEmpty())
+            assertTrue("Greeting '$greeting' must have a non-blank welcoming explanation",
+                decision.explanationSummary?.isNotBlank() == true)
+        }
+    }
+
+    // 28. Greeting combined with explicit engineering intent routes to engineering rule
+    @Test
+    fun greetingWithEngineeringIntent_routesToEngineeringRule() {
+        val ctx = createSampleProjectContext(knownInputs = emptyMap())
+        val input = ConversationTurnInput(userUtterance = "hi, size this feeder", projectContext = ctx)
+        val decision = ConversationPolicyEngine.evaluateTurn(input)
+
+        // Since installationMethod is missing and user explicitly asked to "size this feeder", it should trigger calculation rule
+        assertEquals(ConversationActionType.ASK_BLOCKING_QUESTION, decision.action.actionType)
+        assertTrue(decision.action.requiredSlots.contains("installationMethod"))
+    }
 }

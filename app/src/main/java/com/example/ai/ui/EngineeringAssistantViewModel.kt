@@ -13,6 +13,7 @@ import com.example.ai.proposal.RevalidationStatus
 import com.example.ai.runtime.BoundedProjectContext
 import com.example.ai.conversation.ConversationTaskState
 import com.example.ai.conversation.ConversationActionType
+import com.example.ai.conversation.ConversationLifecycleState
 import com.example.ai.conversation.ConversationTurnInput
 import com.example.ai.hybrid.ConversationEngine
 import com.example.ai.hybrid.ConversationEngineProvider
@@ -318,6 +319,51 @@ class EngineeringAssistantViewModel(
                 ),
                 isThinking = false
             )
+        }
+    }
+
+    /**
+     * Submits a suggested chip choice as an explicit user turn.
+     */
+    fun onChipSelected(chipText: String) {
+        sendMessage(chipText)
+    }
+
+    /**
+     * Dismisses a typed card from the active container without side-effects.
+     */
+    fun onDismissCard(cardId: String) {
+        _uiState.update { current ->
+            current.copy(typedCards = current.typedCards.filterNot { it.cardId == cardId })
+        }
+    }
+
+    /**
+     * Handles card-level suggested actions (Cancel, Recalculate, Review & Apply, etc.).
+     */
+    fun onCardAction(cardId: String, action: SuggestedActionUiModel) {
+        when (action.actionType) {
+            ConversationActionType.CANCEL_TASK -> {
+                onDismissCard(cardId)
+                if (activeConversationState?.lifecycleState == ConversationLifecycleState.WAITING_FOR_USER_INPUT) {
+                    activeConversationState = activeConversationState?.copy(
+                        lifecycleState = ConversationLifecycleState.CANCELLED,
+                        missingBlockingSlots = emptyList()
+                    )
+                }
+            }
+            ConversationActionType.SHOW_APPROVAL_REQUIRED_NON_EXECUTABLE -> {
+                val proposal = activeProposalReview?.first
+                val reviewModel = activeProposalReview?.second
+                if (proposal != null && reviewModel != null) {
+                    onContinueToApproval(proposal, reviewModel)
+                } else {
+                    sendMessage(action.label)
+                }
+            }
+            else -> {
+                sendMessage(action.label)
+            }
         }
     }
 

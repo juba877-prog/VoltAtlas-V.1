@@ -330,44 +330,44 @@ fun EngineeringAssistantSheet(
                             is AssistantCardUiModel.ResultSummaryCard -> {
                                 AssistantResultCard(
                                     card = card,
-                                    onActionClick = { /* Non-executing UI action in 7F-3 */ }
+                                    onActionClick = { action -> viewModel.onCardAction(card.cardId, action) }
                                 )
                             }
                             is AssistantCardUiModel.BlockingQuestionCard -> {
                                 AssistantBlockingQuestionCard(
                                     card = card,
-                                    onChipClick = { chipText -> viewModel.setInputText(chipText) },
-                                    onActionClick = { /* Non-executing UI action */ }
+                                    onChipClick = { chipText -> viewModel.onChipSelected(chipText) },
+                                    onActionClick = { action -> viewModel.onCardAction(card.cardId, action) }
                                 )
                             }
                             is AssistantCardUiModel.WhatIfResultCard -> {
                                 AssistantWhatIfCard(
                                     card = card,
-                                    onActionClick = { /* Non-executing UI action */ }
+                                    onActionClick = { action -> viewModel.onCardAction(card.cardId, action) }
                                 )
                             }
                             is AssistantCardUiModel.SafeErrorCard -> {
                                 AssistantSafeErrorCard(
                                     card = card,
-                                    onActionClick = { /* Non-executing UI action */ }
+                                    onActionClick = { action -> viewModel.onCardAction(card.cardId, action) }
                                 )
                             }
                             is AssistantCardUiModel.DirectAnswerCard -> {
                                 AssistantDirectAnswerCard(
                                     card = card,
-                                    onActionClick = { /* Non-executing UI action */ }
+                                    onActionClick = { action -> viewModel.onCardAction(card.cardId, action) }
                                 )
                             }
                             is AssistantCardUiModel.ComparisonCard -> {
                                 AssistantComparisonCard(
                                     card = card,
-                                    onActionClick = { /* Non-executing UI action */ }
+                                    onActionClick = { action -> viewModel.onCardAction(card.cardId, action) }
                                 )
                             }
                             is AssistantCardUiModel.ApprovalRequiredNonExecutableCard -> {
                                 AssistantApprovalRequiredCard(
                                     card = card,
-                                    onActionClick = { /* Non-executing UI action */ }
+                                    onActionClick = { action -> viewModel.onCardAction(card.cardId, action) }
                                 )
                             }
                             is AssistantCardUiModel.ProposalReviewCard -> {
@@ -446,6 +446,7 @@ fun EngineeringAssistantSheet(
                 border = BorderStroke(1.dp, ThemeBorderSubtle),
                 modifier = Modifier
                     .fillMaxWidth()
+                    .imePadding()
                     .navigationBarsPadding()
             ) {
                 Row(
