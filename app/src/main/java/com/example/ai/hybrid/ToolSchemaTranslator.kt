@@ -1,25 +1,51 @@
 package com.example.ai.hybrid
 
 import com.example.ai.runtime.BoundedProjectContext
+import com.example.ai.tools.EngineeringToolDescriptor
+import com.example.ai.tools.EngineeringToolParameter
+import com.example.ai.tools.EngineeringToolParameterType
+import com.example.ai.tools.EngineeringToolRegistry
 
 /**
- * Descriptor for a deterministic tool exposed to Cloud LLM function calling.
+ * Provider-facing function declaration derived from an [EngineeringToolDescriptor].
+ *
+ * There is deliberately no hand-written declaration list anywhere: every instance of
+ * this type is generated from the authoritative descriptor catalog.
  */
 data class CloudFunctionDeclaration(
     val name: String,
     val description: String,
-    val parameters: Map<String, String>,
+    val parameters: List<CloudFunctionParameter>,
     val requiredParameters: List<String>
+) {
+    /** Convenience view mapping parameter name to provider type token. */
+    val parameterTypes: Map<String, String> get() = parameters.associate { it.name to it.type }
+}
+
+/**
+ * Provider-facing parameter declaration. [type] is always a provider-interpretable
+ * token produced by [ToolSchemaTranslator.providerTypeOf]; pseudo-types such as
+ * "STRING_OPTIONAL" are impossible to express.
+ */
+data class CloudFunctionParameter(
+    val name: String,
+    val type: String,
+    val description: String,
+    val required: Boolean,
+    val fields: List<CloudFunctionParameter> = emptyList()
 )
 
 /**
- * Translates registered Phase 5 (Read) and Phase 6 (Cable) tools into scoped
- * function declarations for Gemini function calling.
+ * Generates provider function declarations from the single authoritative tool registry.
  *
  * Invariants:
- * - Scoped Exposure: Only tools relevant to the active context are returned.
- * - Zero Mutation Tools: Mutation/approval tools are strictly forbidden from ever being translated.
- * - Zero Implementation Leakage: No Room entity names, SQL schemas, or internal package paths.
+ * - Registry-driven: declarations derive from [EngineeringToolDescriptor] entries, never
+ *   from a duplicated list.
+ * - Scoped exposure: only tools legitimately available for the active context are emitted.
+ * - Zero mutation tools: any declaration whose name or description contains mutation-related
+ *   vocabulary is a hard failure.
+ * - Valid type tokens: optionality is expressed by [CloudFunctionParameter.required] rather
+ *   than by an invented type token.
  */
 object ToolSchemaTranslator {
 
@@ -28,140 +54,101 @@ object ToolSchemaTranslator {
         "durable", "gateway", "workflow", "commit", "insert", "update", "delete"
     )
 
-    private val ALL_READ_TOOL_DECLARATIONS = listOf(
-        CloudFunctionDeclaration(
-            name = "GetCurrentProjectContextTool",
-            description = "Retrieves high-level summary and revision metadata of the active project.",
-            parameters = mapOf("projectId" to "STRING"),
-            requiredParameters = listOf("projectId")
-        ),
-        CloudFunctionDeclaration(
-            name = "GetEntityTool",
-            description = "Retrieves electrical attributes of a circuit, panel, or transformer node.",
-            parameters = mapOf(
-                "projectId" to "STRING",
-                "entityType" to "STRING",
-                "entityId" to "STRING"
-            ),
-            requiredParameters = listOf("projectId", "entityType", "entityId")
-        ),
-        CloudFunctionDeclaration(
-            name = "GetCalculationStateTool",
-            description = "Checks the calculation freshness and verification status for an electrical domain.",
-            parameters = mapOf(
-                "projectId" to "STRING",
-                "domain" to "STRING"
-            ),
-            requiredParameters = listOf("projectId", "domain")
-        ),
-        CloudFunctionDeclaration(
-            name = "GetDependenciesTool",
-            description = "Retrieves downstream circuits and connected loads for an electrical node.",
-            parameters = mapOf(
-                "projectId" to "STRING",
-                "entityId" to "STRING"
-            ),
-            requiredParameters = listOf("projectId", "entityId")
-        ),
-        CloudFunctionDeclaration(
-            name = "GetChangeHistoryTool",
-            description = "Retrieves the revision history and recent audit log for the project.",
-            parameters = mapOf("projectId" to "STRING"),
-            requiredParameters = listOf("projectId")
-        ),
-        CloudFunctionDeclaration(
-            name = "GetCatalogItemTool",
-            description = "Searches the equipment catalog for cables, breakers, or transformers.",
-            parameters = mapOf(
-                "catalogType" to "STRING",
-                "query" to "STRING"
-            ),
-            requiredParameters = listOf("catalogType", "query")
-        )
-    )
+    /** All declarations for the supplied registry. */
+    fun getAllDeclarations(registry: EngineeringToolRegistry): List<CloudFunctionDeclaration> =
+        getAllDeclarations(registry.getAllDescriptors())
 
-    private val ALL_CABLE_TOOL_DECLARATIONS = listOf(
-        CloudFunctionDeclaration(
-            name = "CalculateCableSizingTool",
-            description = "Runs deterministic cable sizing calculation for a specific circuit using standards.",
-            parameters = mapOf(
-                "projectId" to "STRING",
-                "circuitId" to "STRING",
-                "conductorMaterial" to "STRING_OPTIONAL",
-                "overrideCableSize" to "STRING_OPTIONAL"
-            ),
-            requiredParameters = listOf("projectId", "circuitId")
-        ),
-        CloudFunctionDeclaration(
-            name = "EvaluateCableCandidateTool",
-            description = "Evaluates whether a specific candidate cable cross-section meets ampacity and voltage drop criteria.",
-            parameters = mapOf(
-                "projectId" to "STRING",
-                "circuitId" to "STRING",
-                "candidateSize" to "STRING"
-            ),
-            requiredParameters = listOf("projectId", "circuitId", "candidateSize")
-        ),
-        CloudFunctionDeclaration(
-            name = "CompareCableCandidatesTool",
-            description = "Compares multiple candidate cable cross-sections across ampacity, voltage drop, and thermal margin.",
-            parameters = mapOf(
-                "projectId" to "STRING",
-                "circuitId" to "STRING",
-                "candidateSizes" to "STRING_LIST"
-            ),
-            requiredParameters = listOf("projectId", "circuitId", "candidateSizes")
-        ),
-        CloudFunctionDeclaration(
-            name = "RunCableWhatIfTool",
-            description = "Simulates alternative parameters (e.g. ambient temperature, length, material) on cable sizing without mutating project.",
-            parameters = mapOf(
-                "projectId" to "STRING",
-                "circuitId" to "STRING",
-                "whatIfParameters" to "MAP_STRING_STRING"
-            ),
-            requiredParameters = listOf("projectId", "circuitId", "whatIfParameters")
-        )
-    )
-
-    /**
-     * Translates and filters tool declarations based on active [BoundedProjectContext].
-     */
-    fun getScopedDeclarations(context: BoundedProjectContext?): List<CloudFunctionDeclaration> {
-        val isCircuitOrCableContext = context?.activeEntityType.equals("CIRCUIT", ignoreCase = true) ||
-                context?.activeScreen?.contains("Circuit", ignoreCase = true) == true ||
-                context?.activeScreen?.contains("Cable", ignoreCase = true) == true
-
-        val scopedTools = if (isCircuitOrCableContext) {
-            ALL_CABLE_TOOL_DECLARATIONS + ALL_READ_TOOL_DECLARATIONS.filter {
-                it.name in setOf("GetEntityTool", "GetCalculationStateTool", "GetCatalogItemTool")
-            }
-        } else {
-            ALL_READ_TOOL_DECLARATIONS
-        }
-
-        // Structural verification: ensure zero mutation keywords
-        validateZeroMutationTools(scopedTools)
-
-        return scopedTools
+    /** All declarations for an explicit descriptor set (used by schema tests and tooling). */
+    fun getAllDeclarations(descriptors: List<EngineeringToolDescriptor>): List<CloudFunctionDeclaration> {
+        val declarations = descriptors.map { toDeclaration(it) }
+        validateZeroMutationTools(declarations)
+        return declarations
     }
 
+    /** Declarations legitimately scoped to the active bounded context. */
+    fun getScopedDeclarations(
+        registry: EngineeringToolRegistry,
+        context: BoundedProjectContext?
+    ): List<CloudFunctionDeclaration> =
+        getScopedDeclarations(registry.getAvailableDescriptors(context))
+
+    /** Scoped declarations for an explicit descriptor set. */
+    fun getScopedDeclarations(descriptors: List<EngineeringToolDescriptor>): List<CloudFunctionDeclaration> {
+        val declarations = descriptors.map { toDeclaration(it) }
+        validateZeroMutationTools(declarations)
+        return declarations
+    }
+
+    /** Deterministic single-descriptor projection. */
+    fun toDeclaration(descriptor: EngineeringToolDescriptor): CloudFunctionDeclaration =
+        CloudFunctionDeclaration(
+            name = descriptor.toolName,
+            description = buildDescription(descriptor),
+            parameters = descriptor.parameters.map { toParameter(it) },
+            requiredParameters = descriptor.requiredParameters
+        )
+
     /**
-     * Returns all registered non-mutating declarations.
+     * Maps a descriptor parameter type onto a provider-interpretable type token.
+     * Optionality is never encoded here.
      */
-    fun getAllDeclarations(): List<CloudFunctionDeclaration> {
-        val all = ALL_READ_TOOL_DECLARATIONS + ALL_CABLE_TOOL_DECLARATIONS
-        validateZeroMutationTools(all)
-        return all
+    fun providerTypeOf(type: EngineeringToolParameterType): String = when (type) {
+        EngineeringToolParameterType.STRING -> "STRING"
+        EngineeringToolParameterType.INTEGER -> "INTEGER"
+        EngineeringToolParameterType.NUMBER -> "NUMBER"
+        EngineeringToolParameterType.BOOLEAN -> "BOOLEAN"
+        EngineeringToolParameterType.STRING_LIST -> "ARRAY<STRING>"
+        EngineeringToolParameterType.STRING_MAP -> "OBJECT"
+        EngineeringToolParameterType.OBJECT -> "OBJECT"
+        EngineeringToolParameterType.OBJECT_LIST -> "ARRAY<OBJECT>"
+    }
+
+    private fun toParameter(parameter: EngineeringToolParameter): CloudFunctionParameter =
+        CloudFunctionParameter(
+            name = parameter.name,
+            type = providerTypeOf(parameter.type),
+            description = parameter.description,
+            required = parameter.required,
+            fields = parameter.fields.map {
+                CloudFunctionParameter(
+                    name = it.name,
+                    type = providerTypeOf(it.type),
+                    description = it.description,
+                    required = it.required
+                )
+            }
+        )
+
+    private fun buildDescription(descriptor: EngineeringToolDescriptor): String = buildString {
+        append("PURPOSE: ").append(descriptor.purpose).append('\n')
+        append("WHEN TO USE: ").append(descriptor.whenToUse).append('\n')
+        append("WHEN NOT TO USE: ").append(descriptor.whenNotToUse).append('\n')
+        append("REQUIRED INPUTS: ").append(
+            descriptor.requiredParameters.joinToString(", ").ifBlank { "none" }
+        ).append('\n')
+        append("OUTPUT MEANING: ").append(descriptor.outputMeaning).append('\n')
+        append("SIDE EFFECTS: ").append(descriptor.sideEffects).append('\n')
+        append("FRESHNESS RULE: ").append(descriptor.requiredFreshness.name).append('\n')
+        append("PROJECT SCOPE: ").append(
+            if (descriptor.requiresProjectContext) "authoritative project context is required"
+            else "project context is not required"
+        ).append('\n')
+        append("ENTITY SCOPE: ").append(
+            if (descriptor.requiresEntityContext) "an authorized entity binding is required"
+            else "no entity binding is required"
+        ).append('\n')
+        append("PROVENANCE: ").append(descriptor.provenanceRule).append('\n')
+        append("AUTHORIZATION LEVEL: ").append(descriptor.authorizationLevel.name).append('\n')
+        append("EXECUTION MODE: ").append(descriptor.executionMode.name)
     }
 
     private fun validateZeroMutationTools(declarations: List<CloudFunctionDeclaration>) {
-        for (decl in declarations) {
-            val lowerName = decl.name.lowercase()
-            val lowerDesc = decl.description.lowercase()
+        for (declaration in declarations) {
+            val haystacks = listOf(declaration.name.lowercase(), declaration.description.lowercase())
             for (keyword in FORBIDDEN_MUTATION_KEYWORDS) {
-                require(!lowerName.contains(keyword)) {
-                    "Security violation: Tool declaration '${decl.name}' contains forbidden mutation keyword '$keyword'."
+                require(haystacks.none { it.contains(keyword) }) {
+                    "Security violation: tool declaration '${declaration.name}' contains " +
+                        "forbidden mutation keyword '$keyword'."
                 }
             }
         }

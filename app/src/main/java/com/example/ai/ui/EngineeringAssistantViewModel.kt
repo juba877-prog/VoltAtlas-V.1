@@ -6,6 +6,7 @@ import com.example.ai.approval.TrustedApprovalGateResult
 import com.example.ai.approval.TrustedApprovalRequest
 import com.example.ai.approval.TrustedProposalApprovalGateway
 import com.example.ai.context.EngineeringContext
+import com.example.ai.context.revision.ProjectRevisionProvider
 import com.example.ai.proposal.CableEngineeringProposal
 import com.example.ai.proposal.DurableMutationOutcome
 import com.example.ai.proposal.RevalidationOutcome
@@ -15,21 +16,23 @@ import com.example.ai.conversation.ConversationTaskState
 import com.example.ai.conversation.ConversationActionType
 import com.example.ai.conversation.ConversationLifecycleState
 import com.example.ai.conversation.ConversationTurnInput
+import com.example.ai.hybrid.CloudToolActionMapping
 import com.example.ai.hybrid.ConversationEngine
 import com.example.ai.hybrid.ConversationEngineProvider
 import com.example.ai.hybrid.ConversationEngineSource
 import com.example.ai.hybrid.HybridEngineResult
 import com.example.ai.service.AssistantMessage
 import com.example.ai.service.AssistantResponse
-import com.example.ai.service.EngineeringAiService
-import com.example.ai.service.FirebaseAiServiceImpl
 import com.example.ai.service.MessageRole
+import com.example.ai.tools.AssistantToolRuntime
+import com.example.ai.tools.ToolExecutionOutcome
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 /**
@@ -108,7 +111,19 @@ class EngineeringAssistantViewModel(
     private val approvalGatewayProvider: (() -> TrustedProposalApprovalGateway?)? = null,
     private val asyncApprovalGatewayProvider: (suspend () -> TrustedProposalApprovalGateway)? = null,
     private val proposalPreparationCoordinator: CableProposalPreparationCoordinator? = null,
-    private val aiService: EngineeringAiService = FirebaseAiServiceImpl(),
+    /**
+     * Authoritative revision source. When absent, a turn can only proceed if a prior
+     * conversation state already carries a resolved revision; otherwise the turn is
+     * blocked rather than being evaluated against a fabricated revision.
+     */
+    private val projectRevisionProvider: ProjectRevisionProvider? = null,
+    /**
+     * Deterministic tool runtime supplier. When present, tool-backed turns become reachable
+     * from the production assistant path. Resolved lazily on an IO dispatcher because catalog
+     * JSON parsing is not safe on the main thread. When absent (legacy isolated UI tests) the
+     * assistant still degrades safely because no tool result is ever fabricated.
+     */
+    private val toolRuntimeProvider: (suspend () -> AssistantToolRuntime?)? = null,
     private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO
 ) : ViewModel() {
 
@@ -123,6 +138,14 @@ class EngineeringAssistantViewModel(
     private var activeTurnJob: Job? = null
     private var activeConversationState: ConversationTaskState? = null
     private var activeProposalReview: Pair<CableEngineeringProposal, ProposalReviewUiModel>? = null
+
+    /**
+     * Most recent deterministic tool outcome for this assistant session. Non-null only when a
+     * real tool executed; this is the evidence handle used to distinguish certified results
+     * from unbacked conversation.
+     */
+    private val _lastToolOutcome = MutableStateFlow<ToolExecutionOutcome?>(null)
+    val lastToolOutcome: StateFlow<ToolExecutionOutcome?> = _lastToolOutcome.asStateFlow()
 
     private val _uiState = MutableStateFlow(AssistantUiState())
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
@@ -221,21 +244,41 @@ class EngineeringAssistantViewModel(
             )
         }
 
-        val currentCtx = _uiState.value.context
-        val boundedContext = BoundedProjectContext(
-            projectId = currentCtx.projectId ?: "DEFAULT_PROJ",
-            projectName = currentCtx.projectName,
-            liveRevision = activeConversationState?.baseProjectRevision ?: 1L,
-            activeScreen = currentCtx.currentScreen,
-            activeEntityType = currentCtx.activeEntityType,
-            activeEntityId = currentCtx.activeEntityId,
-            activeEntityName = currentCtx.activeEntityName,
-            knownEntityInputs = currentCtx.knownEntityInputs,
-            validatedResultSummary = currentCtx.validatedResultSummary
-        )
-
         activeTurnJob?.cancel()
         activeTurnJob = viewModelScope.launch {
+            val currentCtx = _uiState.value.context
+
+            // Fail closed: never evaluate a turn against a fabricated project identity.
+            val projectId = currentCtx.projectId?.takeIf { it.isNotBlank() }
+            if (projectId == null) {
+                appendContextBlocked(
+                    "No active project. Open a project before asking the assistant for engineering results."
+                )
+                return@launch
+            }
+
+            // Fail closed: never evaluate a turn against a fabricated revision.
+            val liveRevision = resolveLiveRevision(projectId)
+                ?: activeConversationState?.baseProjectRevision
+            if (liveRevision == null) {
+                appendContextBlocked(
+                    "The project revision could not be resolved, so no result can be certified as current."
+                )
+                return@launch
+            }
+
+            val boundedContext = BoundedProjectContext(
+                projectId = projectId,
+                projectName = currentCtx.projectName,
+                liveRevision = liveRevision,
+                activeScreen = currentCtx.currentScreen,
+                activeEntityType = currentCtx.activeEntityType,
+                activeEntityId = currentCtx.activeEntityId,
+                activeEntityName = currentCtx.activeEntityName,
+                knownEntityInputs = currentCtx.knownEntityInputs,
+                validatedResultSummary = currentCtx.validatedResultSummary
+            )
+
             val input = ConversationTurnInput(
                 userUtterance = trimmed,
                 projectContext = boundedContext,
@@ -249,7 +292,72 @@ class EngineeringAssistantViewModel(
                 return@launch
             }
 
+            executeToolForDecision(result, boundedContext)
+
+            if (turnId != currentTurnId) {
+                return@launch
+            }
+
             applyHybridResult(result, boundedContext)
+        }
+    }
+
+    /**
+     * Executes the deterministic tool that the resolved decision requires, and records the
+     * typed outcome as evidence. This is the production path that makes the previously
+     * orphaned read and cable tool families reachable.
+     *
+     * The project and entity identities passed to the executor come from the authoritative
+     * bounded context, never from the conversation model.
+     */
+    private suspend fun executeToolForDecision(
+        result: HybridEngineResult,
+        projectContext: BoundedProjectContext
+    ) {
+        val toolName = CloudToolActionMapping.toolFor(result.decision.action.actionType) ?: return
+
+        // Resolved lazily: building the runtime loads and parses catalog JSON.
+        val runtime = withContext(ioDispatcher) { toolRuntimeProvider?.invoke() } ?: return
+
+        if (!runtime.descriptorRegistry.isRegistered(toolName)) return
+
+        val outcome = runtime.dispatcher.execute(
+            toolName = toolName,
+            projectId = projectContext.projectId,
+            entityType = projectContext.activeEntityType,
+            entityId = projectContext.activeEntityId,
+            conversationId = activeConversationState?.taskId,
+            arguments = result.decision.action.candidateParameters
+        )
+        _lastToolOutcome.value = outcome
+    }
+
+    /** Resolves the live project revision from authoritative state; null when unavailable. */
+    private suspend fun resolveLiveRevision(projectId: String): Long? {
+        val provider = projectRevisionProvider ?: return null
+        return try {
+            provider.getCurrentRevision(projectId).revision
+        } catch (e: NoSuchElementException) {
+            null
+        }
+    }
+
+    /**
+     * Surfaces a fail-closed context block. No engineering value is produced, and no
+     * fabricated project or revision is substituted.
+     */
+    private fun appendContextBlocked(message: String) {
+        _uiState.update { current ->
+            current.copy(
+                isThinking = false,
+                typedCards = current.typedCards + AssistantCardUiModel.SafeErrorCard(
+                    cardId = "CTX-BLOCKED-" + System.currentTimeMillis(),
+                    userFacingMessage = message,
+                    isRecoverable = true,
+                    dataUnchangedConfirmed = true,
+                    suggestedActions = emptyList()
+                )
+            )
         }
     }
 

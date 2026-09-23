@@ -1,10 +1,15 @@
 package com.example.ai.hybrid
 
 import com.example.ai.conversation.*
+import com.example.ai.runtime.CapabilityManifest
 import com.example.ai.runtime.CompiledPromptArtifact
 import com.example.ai.runtime.PromptCompilationResult
 import com.example.ai.runtime.RuntimePromptCompiler
 import com.example.ai.runtime.RuntimePromptInputs
+import com.example.ai.runtime.ToolCapabilityDescriptor
+import com.example.ai.tools.EngineeringToolCatalog
+import com.example.ai.tools.EngineeringToolDescriptor
+import com.example.ai.tools.EngineeringToolRegistry
 import kotlinx.coroutines.CancellationException
 import java.io.IOException
 import java.net.SocketTimeoutException
@@ -71,7 +76,13 @@ class RealGoogleGenAiClientSeam(
  */
 class CloudLlmConversationEngine(
     private val clientSeam: GeminiClientSeam = RealGoogleGenAiClientSeam(),
-    private val toolTranslator: ToolSchemaTranslator = ToolSchemaTranslator,
+    /**
+     * Authoritative tool descriptors. Defaults to the single descriptor catalog, so
+     * schema generation needs no live database. Scoping uses
+     * [EngineeringToolRegistry.scopeTo], the same rule the executable registry uses.
+     */
+    private val toolDescriptors: List<EngineeringToolDescriptor> =
+        EngineeringToolCatalog.READ_TOOLS + EngineeringToolCatalog.CABLE_TOOLS,
     private val promptCompiler: (RuntimePromptInputs) -> PromptCompilationResult = { RuntimePromptCompiler.compile(it) }
 ) : ConversationEngine {
 
@@ -88,8 +99,29 @@ class CloudLlmConversationEngine(
             )
         }
 
-        // 2. Compile Immutable Bounded Prompt (Layer D frozen context)
+        // 2. Resolve the authoritative, context-scoped tool manifest.
+        //    Scoping uses the exact same rule as the executable registry, so the schema the
+        //    model sees can never include a tool the runtime cannot dispatch.
+        val scopedDescriptors = EngineeringToolRegistry.scopeTo(toolDescriptors, input.projectContext)
+        val scopedTools = ToolSchemaTranslator.getScopedDeclarations(scopedDescriptors)
+        val validToolNames = scopedTools.map { it.name }.toSet()
+
+        // 2b. Feed the same manifest to the prompt compiler so the tool capability layer of
+        //     the prompt is generated from the registry rather than being empty.
+        val capabilityManifest = CapabilityManifest(
+            capabilities = scopedDescriptors.map { descriptor ->
+                ToolCapabilityDescriptor(
+                    name = descriptor.toolName,
+                    permissionMode = descriptor.authorizationLevel,
+                    summary = descriptor.purpose,
+                    parameterSchema = ToolSchemaTranslator.toDeclaration(descriptor).parameterTypes.toString()
+                )
+            }
+        )
+
+        // 3. Compile Immutable Bounded Prompt (Layer D frozen context + capability manifest)
         val promptInputs = RuntimePromptInputs(
+            capabilities = capabilityManifest,
             projectContext = input.projectContext,
             latestUserUtterance = input.userUtterance
         )
@@ -103,10 +135,6 @@ class CloudLlmConversationEngine(
             )
         }
         val artifact = compileResult.artifact
-
-        // 3. Translate Scoped Non-Mutating Tools
-        val scopedTools = toolTranslator.getScopedDeclarations(input.projectContext)
-        val validToolNames = scopedTools.map { it.name }.toSet()
 
         // 4. Invoke Client Seam
         val rawResponse = try {
@@ -134,15 +162,28 @@ class CloudLlmConversationEngine(
             return buildDegradedResult(input, decisionIdProvider(), CloudDegradationReason.RATE_LIMITED)
         }
 
-        // 6. Handle Structured Tool Call Request
+        // 6. Handle Structured Tool Call Request.
+        //    This layer does NOT execute tools, so it must never claim a backing tool result.
+        //    It emits a typed tool *request*; execution and the resulting evidence record are
+        //    produced downstream by the deterministic tool runtime. Claiming
+        //    hasBackingToolResult = true here was a safety defect: it asserted evidence that
+        //    had never been produced.
         if (!rawResponse.toolCallName.isNullOrBlank()) {
             val toolName = rawResponse.toolCallName
+
             if (!validToolNames.contains(toolName)) {
-                // Rejected: Cloud model requested tool outside turn's scoped manifest
+                // Rejected: the model requested a tool outside this turn's scoped manifest.
                 return buildDegradedResult(input, decisionIdProvider(), CloudDegradationReason.INVALID_TOOL_CALL)
             }
 
-            val mappedActionType = mapToolNameToActionType(toolName)
+            // Fail closed: an unmappable tool must never be silently relabelled as a read.
+            val mappedActionType = CloudToolActionMapping.actionFor(toolName)
+                ?: return buildDegradedResult(
+                    input = input,
+                    decisionId = decisionIdProvider(),
+                    reason = CloudDegradationReason.INVALID_TOOL_CALL
+                )
+
             val decision = ConversationTurnDecision(
                 decisionId = decisionIdProvider(),
                 action = ConversationAction(
@@ -164,7 +205,7 @@ class CloudLlmConversationEngine(
                 decision = decision,
                 source = ConversationEngineSource.CLOUD_GEMINI,
                 cloudDegradationReason = null,
-                hasBackingToolResult = true
+                hasBackingToolResult = false
             )
         }
 
@@ -207,17 +248,6 @@ class CloudLlmConversationEngine(
         )
     }
 
-    private fun mapToolNameToActionType(toolName: String): ConversationActionType {
-        return when (toolName) {
-            "CalculateCableSizingTool" -> ConversationActionType.RUN_CALCULATION
-            "EvaluateCableCandidateTool" -> ConversationActionType.EVALUATE_CANDIDATE
-            "CompareCableCandidatesTool" -> ConversationActionType.COMPARE_CANDIDATES
-            "RunCableWhatIfTool" -> ConversationActionType.RUN_WHAT_IF
-            "GetEntityTool", "GetCurrentProjectContextTool" -> ConversationActionType.READ_CONTEXT
-            else -> ConversationActionType.READ_CONTEXT
-        }
-    }
-
     private fun buildDegradedResult(
         input: ConversationTurnInput,
         decisionId: String,
@@ -242,3 +272,53 @@ class CloudLlmConversationEngine(
         )
     }
 }
+
+/**
+ * Explicit, total-by-contract mapping from a canonical tool name to the conversation
+ * action it serves.
+ *
+ * Returns null for any tool without an explicit mapping so callers fail closed. There is
+ * deliberately no catch-all branch: the previous `else -> READ_CONTEXT` silently
+ * relabelled unknown tools as harmless reads, which is how an unsupported tool request
+ * could produce a plausible-looking answer. Coverage against the descriptor catalog is
+ * asserted by AssistantToolContractTest, so a newly declared tool cannot ship unmapped.
+ */
+internal object CloudToolActionMapping {
+
+    fun actionFor(toolName: String): ConversationActionType? = when (toolName) {
+        "calculate_cable_sizing" -> ConversationActionType.RUN_CALCULATION
+        "evaluate_cable_candidate" -> ConversationActionType.EVALUATE_CANDIDATE
+        "compare_cable_candidates" -> ConversationActionType.COMPARE_CANDIDATES
+        "run_what_if" -> ConversationActionType.RUN_WHAT_IF
+
+        "get_current_project_context",
+        "get_entity",
+        "get_calculation_state",
+        "get_dependencies",
+        "get_change_history",
+        "get_catalog_item" -> ConversationActionType.READ_CONTEXT
+
+        else -> null
+    }
+
+    /**
+     * Inverse of [actionFor]: the tool that satisfies a given conversation action.
+     *
+     * Returns null when an action has no deterministic tool behind it, which is the correct
+     * answer for purely conversational actions. Callers must treat null as "no tool to run"
+     * and must never substitute an approximation.
+     */
+    fun toolFor(actionType: ConversationActionType): String? = when (actionType) {
+        ConversationActionType.RUN_CALCULATION,
+        ConversationActionType.RECALCULATE_STALE -> "calculate_cable_sizing"
+
+        ConversationActionType.EVALUATE_CANDIDATE -> "evaluate_cable_candidate"
+        ConversationActionType.COMPARE_CANDIDATES -> "compare_cable_candidates"
+        ConversationActionType.RUN_WHAT_IF -> "run_what_if"
+        ConversationActionType.READ_CONTEXT,
+        ConversationActionType.ANSWER_FROM_CURRENT_RESULT -> "get_entity"
+
+        else -> null
+    }
+}
+

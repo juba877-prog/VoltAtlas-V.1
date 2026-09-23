@@ -5,11 +5,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.ai.approval.DefaultTrustedPrincipalProvider
 import com.example.ai.approval.TrustedProposalApprovalGateway
+import com.example.ai.context.revision.ProjectRevisionProvider
 import com.example.ai.hybrid.ConversationEngine
 import com.example.ai.hybrid.ConversationEngineProvider
 import com.example.ai.proposal.DurableMutationWorkflow
+import com.example.ai.tools.AssistantToolRuntime
 import com.example.data.AppDatabase
 import com.example.data.Catalog
+import com.example.data.EngineeringRepository
 import com.example.data.GlobalPreferences
 import com.example.data.catalog.CatalogRepository
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +24,9 @@ import kotlinx.coroutines.withContext
 class EngineeringAssistantViewModelFactory(
     private val conversationEngineProvider: () -> ConversationEngine,
     private val approvalGatewayProvider: suspend () -> TrustedProposalApprovalGateway,
-    private val proposalCoordinatorProvider: () -> CableProposalPreparationCoordinator
+    private val proposalCoordinatorProvider: () -> CableProposalPreparationCoordinator,
+    private val projectRevisionProvider: ProjectRevisionProvider? = null,
+    private val toolRuntimeProvider: (suspend () -> AssistantToolRuntime?)? = null
 ) : ViewModelProvider.Factory {
 
     @Suppress("UNCHECKED_CAST")
@@ -30,7 +35,9 @@ class EngineeringAssistantViewModelFactory(
             return EngineeringAssistantViewModel(
                 conversationEngine = conversationEngineProvider(),
                 asyncApprovalGatewayProvider = approvalGatewayProvider,
-                proposalPreparationCoordinator = proposalCoordinatorProvider()
+                proposalPreparationCoordinator = proposalCoordinatorProvider(),
+                projectRevisionProvider = projectRevisionProvider,
+                toolRuntimeProvider = toolRuntimeProvider
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
@@ -45,6 +52,9 @@ class EngineeringAssistantViewModelFactory(
             val principalProvider: () -> String = {
                 preferences.trustedEngineerIdentity.value
             }
+            // Single authoritative repository: also serves as the ProjectRevisionProvider so
+            // assistant turns resolve a real revision instead of a fabricated one.
+            val repository = EngineeringRepository(database)
             val proposalCoordinator = CableProposalPreparationCoordinator(
                 projectDao = database.projectDao(),
                 circuitDao = database.circuitDao()
@@ -59,10 +69,23 @@ class EngineeringAssistantViewModelFactory(
                     principalProvider = DefaultTrustedPrincipalProvider(principalProvider)
                 )
             }
+            // Built once, on first tool-backed turn, on an IO dispatcher. Catalog JSON parsing
+            // must never run on the main thread.
+            var cachedToolRuntime: AssistantToolRuntime? = null
+            val toolRuntimeProvider: suspend () -> AssistantToolRuntime? = {
+                cachedToolRuntime ?: productionCatalogRepository(application).let { catalogRepository ->
+                    AssistantToolRuntime.create(
+                        repository = repository,
+                        catalogRepository = catalogRepository
+                    ).also { cachedToolRuntime = it }
+                }
+            }
             return EngineeringAssistantViewModelFactory(
                 conversationEngineProvider = { ConversationEngineProvider.provideConversationEngine() },
                 approvalGatewayProvider = asyncGatewayProvider,
-                proposalCoordinatorProvider = { proposalCoordinator }
+                proposalCoordinatorProvider = { proposalCoordinator },
+                projectRevisionProvider = repository,
+                toolRuntimeProvider = toolRuntimeProvider
             )
         }
 
