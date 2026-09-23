@@ -567,4 +567,109 @@ class ConversationPolicyEngineTest {
         assertEquals(ConversationActionType.ASK_BLOCKING_QUESTION, decision.action.actionType)
         assertTrue(decision.action.requiredSlots.contains("installationMethod"))
     }
+
+    // 29. Why on sized circuit returns detailed governing explanation, not placeholder
+    @Test
+    fun why_onSizedCircuit_returnsDetailedGoverningExplanation() {
+        val ctx = createSampleProjectContext(
+            freshness = "CURRENT",
+            knownInputs = mapOf(
+                "installation" to "In Conduit",
+                "cableSize" to "16.0",
+                "cableMaterial" to "Cu",
+                "insulation" to "XLPE",
+                "designCurrentIb" to "45.0 A",
+                "breakerSize" to "50 A",
+                "breakerType" to "MCB",
+                "deratedAmpacityIz" to "65.0 A",
+                "deratingFactor" to "0.82",
+                "voltageDropPct" to "1.20%",
+                "voltageDropV" to "2.40 V",
+                "maxVDpct" to "3.00"
+            )
+        )
+        val input = ConversationTurnInput(userUtterance = "why?", projectContext = ctx)
+        val decision = ConversationPolicyEngine.evaluateTurn(input)
+
+        assertEquals(ConversationActionType.EXPLAIN_RESULT, decision.action.actionType)
+        val explanation = decision.explanationSummary ?: ""
+        assertFalse("Must not return raw placeholder string", explanation == "Explaining governing criteria for active sizing result.")
+        assertTrue("Explanation must mention conductor size", explanation.contains("16.0 mm²"))
+        assertTrue("Explanation must mention ampacity Iz", explanation.contains("65.0 A"))
+        assertTrue("Explanation must mention breaker", explanation.contains("50 A"))
+        assertTrue("Explanation must mention voltage drop", explanation.contains("1.20%"))
+        assertTrue("Explanation must mention IEC standard", explanation.contains("IEC 60364-5-52"))
+    }
+
+    // 30. Cable inquiry on already-sized circuit answers from current result
+    @Test
+    fun cableInquiry_onSizedCircuit_returnsAnswerFromCurrentResult() {
+        val ctx = createSampleProjectContext(
+            freshness = "CURRENT",
+            knownInputs = mapOf(
+                "installation" to "In Conduit",
+                "cableSize" to "16.0",
+                "cableMaterial" to "Cu",
+                "insulation" to "XLPE",
+                "designCurrentIb" to "45.0 A",
+                "breakerSize" to "50 A",
+                "deratedAmpacityIz" to "65.0 A"
+            )
+        )
+        val inquiries = listOf("cable", "what cable", "size", "sizing", "feeder")
+        for (query in inquiries) {
+            val input = ConversationTurnInput(userUtterance = query, projectContext = ctx)
+            val decision = ConversationPolicyEngine.evaluateTurn(input)
+
+            assertEquals("Query '$query' must return ANSWER_FROM_CURRENT_RESULT",
+                ConversationActionType.ANSWER_FROM_CURRENT_RESULT, decision.action.actionType)
+            val explanation = decision.explanationSummary ?: ""
+            assertFalse("Query '$query' must not return 'Ready for deterministic calculation.'",
+                explanation == "All required inputs satisfied. Ready for deterministic calculation.")
+            assertTrue("Query '$query' must explain cable size", explanation.contains("16.0 mm²"))
+        }
+    }
+
+    // 31. Known installation does not trigger missing blocking question
+    @Test
+    fun knownInstallation_doesNotTriggerMissingBlockingQuestion() {
+        val ctx = createSampleProjectContext(
+            knownInputs = mapOf(
+                "installation" to "Laid in Ducts",
+                "cableSize" to "25.0"
+            )
+        )
+        val input = ConversationTurnInput(userUtterance = "cable", projectContext = ctx)
+        val decision = ConversationPolicyEngine.evaluateTurn(input)
+
+        assertNotEquals("Must not ask blocking question when installation is known",
+            ConversationActionType.ASK_BLOCKING_QUESTION, decision.action.actionType)
+    }
+
+    // 32. Arabic why on sized circuit returns Arabic governing explanation
+    @Test
+    fun arabicWhy_onSizedCircuit_returnsArabicGoverningExplanation() {
+        val ctx = createSampleProjectContext(
+            freshness = "CURRENT",
+            knownInputs = mapOf(
+                "installation" to "داخل مواسير",
+                "cableSize" to "16.0",
+                "cableMaterial" to "Cu",
+                "insulation" to "XLPE",
+                "designCurrentIb" to "45.0 A",
+                "breakerSize" to "50 A",
+                "deratedAmpacityIz" to "65.0 A",
+                "voltageDropPct" to "1.20%"
+            )
+        )
+        val input = ConversationTurnInput(userUtterance = "ليه؟", projectContext = ctx)
+        val decision = ConversationPolicyEngine.evaluateTurn(input)
+
+        assertEquals(ConversationActionType.EXPLAIN_RESULT, decision.action.actionType)
+        assertEquals(ConversationLanguage.AR, decision.updatedState.userLanguage)
+        val explanation = decision.explanationSummary ?: ""
+        assertTrue("Must contain Arabic conductor header", explanation.contains("المقطع المحدد"))
+        assertTrue("Must contain cable size", explanation.contains("16.0 مم²"))
+        assertTrue("Must contain governing criterion in Arabic", explanation.contains("المعيار الحاكم"))
+    }
 }

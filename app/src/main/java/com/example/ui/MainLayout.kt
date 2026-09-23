@@ -323,6 +323,49 @@ fun MainLayout(
             12 -> "Panel Schedule"
             else -> "Dashboard"
         }
+
+        val successState = state as? UiState.Success
+        val circuit = if (entityType == "CIRCUIT" && entityId != null) {
+            successState?.circuits?.find { it.id.toString() == entityId || it.circuitName == entityName }
+        } else null
+        val sizing = if (circuit != null) successState?.sizingResults?.get(circuit.id) else null
+
+        val knownInputs = mutableMapOf<String, String>()
+        var validatedSummary: String? = null
+
+        if (circuit != null) {
+            knownInputs["installation"] = circuit.installation
+            knownInputs["voltage"] = circuit.voltageV.toString()
+            knownInputs["loadKVA"] = circuit.loadKVA.toString()
+            knownInputs["length"] = circuit.length_m.toString()
+            knownInputs["phases"] = circuit.phases
+            knownInputs["powerFactor"] = circuit.pf.toString()
+            knownInputs["cableType"] = circuit.cableType
+            knownInputs["ambientTemp"] = circuit.airTempC.toString()
+            knownInputs["parallelRuns"] = circuit.parallelRuns.toString()
+            knownInputs["maxVDpct"] = String.format(Locale.US, "%.2f", circuit.maxVDpct * 100.0)
+
+            if (sizing != null) {
+                knownInputs["cableSize"] = sizing.cableSize_mm2
+                knownInputs["cableMaterial"] = sizing.cableMaterial
+                knownInputs["insulation"] = sizing.insulation
+                knownInputs["designCurrentIb"] = String.format(Locale.US, "%.1f A", sizing.Ib_A)
+                knownInputs["breakerSize"] = String.format(Locale.US, "%.0f A", sizing.deviceSize_A)
+                knownInputs["breakerType"] = sizing.deviceType
+                knownInputs["deratedAmpacityIz"] = String.format(Locale.US, "%.1f A", sizing.capacity_derated_Iz_A)
+                knownInputs["deratingFactor"] = String.format(Locale.US, "%.2f", sizing.cTotalDerating)
+                knownInputs["voltageDropV"] = String.format(Locale.US, "%.2f V", sizing.voltDrop_V)
+                knownInputs["voltageDropPct"] = String.format(Locale.US, "%.2f%%", sizing.vdPct)
+                knownInputs["status"] = sizing.status
+
+                validatedSummary = if (sizing.status == "PASS") {
+                    "Circuit ${circuit.circuitName} is sized with ${sizing.cableSize_mm2} mm² ${sizing.cableMaterial}/${sizing.insulation} (${circuit.installation}). Design load Ib = ${String.format(Locale.US, "%.1f", sizing.Ib_A)} A, Breaker = ${String.format(Locale.US, "%.0f", sizing.deviceSize_A)} A (${sizing.deviceType}), Derated Iz = ${String.format(Locale.US, "%.1f", sizing.capacity_derated_Iz_A)} A (derating ${String.format(Locale.US, "%.2f", sizing.cTotalDerating)}), Voltage Drop = ${String.format(Locale.US, "%.2f", sizing.vdPct)}% (${String.format(Locale.US, "%.2f", sizing.voltDrop_V)} V, limit ${String.format(Locale.US, "%.2f", circuit.maxVDpct * 100.0)}%)."
+                } else {
+                    "Circuit ${circuit.circuitName} sizing is NON-COMPLIANT: ${sizing.failReason.ifBlank { "Constraints violated" }}. Cable ${sizing.cableSize_mm2} mm², Ib = ${String.format(Locale.US, "%.1f", sizing.Ib_A)} A, Iz = ${String.format(Locale.US, "%.1f", sizing.capacity_derated_Iz_A)} A, VD = ${String.format(Locale.US, "%.2f", sizing.vdPct)}%."
+                }
+            }
+        }
+
         val ctx = com.example.ai.context.EngineeringContext(
             projectId = activeId,
             projectName = projectName,
@@ -330,7 +373,9 @@ fun MainLayout(
             activeEntityType = entityType,
             activeEntityId = entityId,
             activeEntityName = entityName,
-            projectSummary = summary
+            projectSummary = summary,
+            knownEntityInputs = knownInputs,
+            validatedResultSummary = validatedSummary
         )
         isAssistantInitialized = true
         val assistantVm = resolveAssistantViewModel()

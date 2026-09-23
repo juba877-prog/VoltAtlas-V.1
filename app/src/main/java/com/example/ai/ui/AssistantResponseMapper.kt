@@ -114,6 +114,7 @@ object AssistantResponseMapper {
                 )
             }
 
+            ConversationActionType.RUN_CALCULATION,
             ConversationActionType.EXPLAIN_RESULT,
             ConversationActionType.ANSWER_FROM_CURRENT_RESULT -> {
                 val isStale = ctx.freshnessSummary["CABLE_SIZING"] == "STALE"
@@ -130,23 +131,33 @@ object AssistantResponseMapper {
                         )
                     )
                 } else {
-                    val summary = ctx.validatedResultSummary ?: "300 mm² passes ampacity (Iz > Ib); VD is 1.85% (under 3.00% limit)."
+                    val summary = ctx.validatedResultSummary
+                        ?: decision.explanationSummary
+                        ?: "300 mm² passes ampacity (Iz > Ib); VD is 1.85% (under 3.00% limit)."
+                    val conductorVal = ctx.knownEntityInputs["cableSize"]?.replace(" mm²", "")?.replace("mm²", "")?.trim() ?: "300.0"
+                    val izVal = ctx.knownEntityInputs["deratedAmpacityIz"]?.replace(" A", "") ?: "345"
+                    val ibVal = ctx.knownEntityInputs["designCurrentIb"] ?: "310 A"
+                    val vdVal = ctx.knownEntityInputs["voltageDropPct"]?.replace("%", "") ?: "1.85"
+                    val vdLimit = ctx.knownEntityInputs["maxVDpct"]?.let { "$it%" } ?: "3.00%"
+                    val isPass = ctx.knownEntityInputs["status"] != "FAIL"
+                    val cardStatus = if (isPass) EngineeringStatusUiModel.PASS else EngineeringStatusUiModel.FAIL
+
                     AssistantCardUiModel.ResultSummaryCard(
                         cardId = cardId,
-                        title = "Cable Sizing Summary: ${state.activeEntityName ?: "Selected Circuit"}",
-                        status = EngineeringStatusUiModel.PASS,
-                        governingCriterion = "Ampacity derating is governing constraint",
+                        title = "Cable Sizing Summary: ${state.activeEntityName ?: ctx.activeEntityName ?: "Selected Circuit"}",
+                        status = cardStatus,
+                        governingCriterion = if (isPass) "Ampacity derating & voltage drop compliant" else "Engineering constraints violated",
                         summaryText = summary,
                         metrics = listOf(
-                            EngineeringMetricUiModel("Conductor", "300.0", "mm²", status = EngineeringStatusUiModel.PASS),
-                            EngineeringMetricUiModel("Ampacity Iz", "345", "A", limit = "310 A", isGoverning = true, status = EngineeringStatusUiModel.PASS),
-                            EngineeringMetricUiModel("Voltage Drop", "1.85", "%", limit = "3.00%", status = EngineeringStatusUiModel.PASS)
+                            EngineeringMetricUiModel("Conductor", conductorVal, "mm²", status = cardStatus),
+                            EngineeringMetricUiModel("Ampacity Iz", izVal, "A", limit = ibVal, isGoverning = true, status = cardStatus),
+                            EngineeringMetricUiModel("Voltage Drop", vdVal, "%", limit = vdLimit, status = cardStatus)
                         ),
                         provenance = ProvenanceLabel.CALCULATED_BY_VOLTATLAS,
                         suggestedActions = listOf(
                             SuggestedActionUiModel(ConversationActionType.EVALUATE_CANDIDATE, "Can 240 work?"),
                             SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "Try Aluminum"),
-                            SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Use 300 mm²", isPrimary = true)
+                            SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Use $conductorVal mm²", isPrimary = true)
                         ).take(3)
                     )
                 }

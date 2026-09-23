@@ -217,4 +217,59 @@ class AssistantResponseMapperTest {
         assertTrue(uiState.isExpanded)
         assertTrue(uiState.activeCard is AssistantCardUiModel.ComparisonCard)
     }
+
+    // 12. RUN_CALCULATION maps to ResultSummaryCard
+    @Test
+    fun runCalculation_mapsToResultSummaryCard() {
+        val ctx = createProjectContext(freshness = "CURRENT")
+        val decision = createTurnDecision(ConversationActionType.RUN_CALCULATION)
+        val uiState = AssistantResponseMapper.mapDecisionToUiState(decision, decision.updatedState, ctx)
+
+        assertTrue("RUN_CALCULATION must produce ResultSummaryCard", uiState.activeCard is AssistantCardUiModel.ResultSummaryCard)
+        val card = uiState.activeCard as AssistantCardUiModel.ResultSummaryCard
+        assertEquals(EngineeringStatusUiModel.PASS, card.status)
+        assertEquals(ProvenanceLabel.CALCULATED_BY_VOLTATLAS, card.provenance)
+    }
+
+    // 13. ResultSummaryCard uses dynamic context metrics from knownEntityInputs
+    @Test
+    fun resultSummaryCard_usesDynamicContextMetrics() {
+        val ctx = BoundedProjectContext(
+            projectId = "P-1",
+            projectName = "Substation",
+            liveRevision = 1L,
+            activeEntityType = "CIRCUIT",
+            activeEntityId = "10",
+            activeEntityName = "Feeder F-10",
+            knownEntityInputs = mapOf(
+                "cableSize" to "16.0",
+                "deratedAmpacityIz" to "65.0 A",
+                "designCurrentIb" to "45.0 A",
+                "voltageDropPct" to "1.20%",
+                "maxVDpct" to "3.00",
+                "status" to "PASS"
+            ),
+            validatedResultSummary = "16.0 mm² Cu passes ampacity and voltage drop."
+        )
+        val decision = createTurnDecision(ConversationActionType.ANSWER_FROM_CURRENT_RESULT)
+        val uiState = AssistantResponseMapper.mapDecisionToUiState(decision, decision.updatedState, ctx)
+
+        assertTrue(uiState.activeCard is AssistantCardUiModel.ResultSummaryCard)
+        val card = uiState.activeCard as AssistantCardUiModel.ResultSummaryCard
+        assertEquals("16.0 mm² Cu passes ampacity and voltage drop.", card.summaryText)
+
+        val conductorMetric = card.metrics.find { it.label == "Conductor" }
+        assertNotNull(conductorMetric)
+        assertEquals("16.0", conductorMetric?.value)
+
+        val izMetric = card.metrics.find { it.label == "Ampacity Iz" }
+        assertNotNull(izMetric)
+        assertEquals("65.0", izMetric?.value)
+        assertEquals("45.0 A", izMetric?.limit)
+
+        val vdMetric = card.metrics.find { it.label == "Voltage Drop" }
+        assertNotNull(vdMetric)
+        assertEquals("1.20", vdMetric?.value)
+        assertEquals("3.00%", vdMetric?.limit)
+    }
 }

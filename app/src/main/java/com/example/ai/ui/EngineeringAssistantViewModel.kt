@@ -229,7 +229,9 @@ class EngineeringAssistantViewModel(
             activeScreen = currentCtx.currentScreen,
             activeEntityType = currentCtx.activeEntityType,
             activeEntityId = currentCtx.activeEntityId,
-            activeEntityName = currentCtx.activeEntityName
+            activeEntityName = currentCtx.activeEntityName,
+            knownEntityInputs = currentCtx.knownEntityInputs,
+            validatedResultSummary = currentCtx.validatedResultSummary
         )
 
         activeTurnJob?.cancel()

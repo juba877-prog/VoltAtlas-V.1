@@ -12,7 +12,9 @@ data class EngineeringContext(
     val activeEntityId: String? = null,
     val activeEntityName: String? = null,
     val projectSummary: ProjectSummarySnapshot = ProjectSummarySnapshot(),
-    val availableManufacturers: List<String> = listOf("Elsewedy", "Riyadh Cables", "Ducab", "IEC-Generic")
+    val availableManufacturers: List<String> = listOf("Elsewedy", "Riyadh Cables", "Ducab", "IEC-Generic"),
+    val knownEntityInputs: Map<String, String> = emptyMap(),
+    val validatedResultSummary: String? = null
 )
 
 /**

@@ -179,6 +179,7 @@ object ConversationPolicyEngine {
                     requiredPermission = PromptPermissionMode.READ,
                     responseMode = ResponseMode.RESULT_SUMMARY
                 )
+                val explanation = buildGoverningExplanation(input.projectContext, workingState, language)
                 return ConversationTurnDecision(
                     decisionId = decisionId,
                     action = action,
@@ -187,9 +188,32 @@ object ConversationPolicyEngine {
                         engineeringObjective = EngineeringObjective.EXPLAIN_GOVERNING_CRITERION,
                         lastDecisionId = decisionId
                     ),
-                    explanationSummary = "Explaining governing criteria for active sizing result."
+                    explanationSummary = explanation
                 )
             }
+        }
+
+        // 4.4b. Circuit or Cable Inquiry on already-sized circuit ("cable", "size", "what cable", "feeder")
+        if (isCircuitOrCableInquiry(lower) &&
+            (input.projectContext.validatedResultSummary != null || input.projectContext.knownEntityInputs.containsKey("cableSize"))
+        ) {
+            val action = ConversationAction(
+                actionType = ConversationActionType.ANSWER_FROM_CURRENT_RESULT,
+                reasonCode = "ANSWER_FROM_ACTIVE_SIZING_RESULT",
+                requiredPermission = PromptPermissionMode.READ,
+                responseMode = ResponseMode.RESULT_SUMMARY
+            )
+            val explanation = buildGoverningExplanation(input.projectContext, workingState, language)
+            return ConversationTurnDecision(
+                decisionId = decisionId,
+                action = action,
+                updatedState = workingState.copy(
+                    primaryIntent = AssistantIntent.CHECK_STATUS,
+                    engineeringObjective = EngineeringObjective.VERIFY_COMPLIANCE,
+                    lastDecisionId = decisionId
+                ),
+                explanationSummary = explanation
+            )
         }
 
         // 4.5. Evaluate Candidate ("Can 240 work?", "Is 185 ok?")
@@ -334,6 +358,11 @@ object ConversationPolicyEngine {
             requiredPermission = PromptPermissionMode.CALCULATE,
             responseMode = ResponseMode.RESULT_SUMMARY
         )
+        val explanation = if (input.projectContext.validatedResultSummary != null || input.projectContext.knownEntityInputs.containsKey("cableSize")) {
+            buildGoverningExplanation(input.projectContext, workingState, language)
+        } else {
+            "All required inputs satisfied. Ready for deterministic calculation."
+        }
         return ConversationTurnDecision(
             decisionId = decisionId,
             action = calcAction,
@@ -342,7 +371,7 @@ object ConversationPolicyEngine {
                 lifecycleState = ConversationLifecycleState.READY_FOR_CALCULATION,
                 lastDecisionId = decisionId
             ),
-            explanationSummary = "All required inputs satisfied. Ready for deterministic calculation."
+            explanationSummary = explanation
         )
     }
 
@@ -584,6 +613,93 @@ object ConversationPolicyEngine {
     fun detectLanguage(text: String): ConversationLanguage {
         val arabicRegex = Regex("""[\u0600-\u06FF]""")
         return if (arabicRegex.containsMatchIn(text)) ConversationLanguage.AR else ConversationLanguage.EN
+    }
+
+    private fun isCircuitOrCableInquiry(lower: String): Boolean {
+        val clean = lower.trim().trimEnd('.', '!', '?', ',', '،').trim()
+        val exactKeywords = setOf(
+            "cable", "cables", "feeder", "feeders", "size", "sizing", "cable size",
+            "circuit", "circuits", "conductor",
+            "كابل", "كابلات", "سلك", "مقطع", "مقاس", "الدائرة", "تغذية", "المقطع"
+        )
+        if (clean in exactKeywords) return true
+
+        return clean.contains("what cable") || clean.contains("which cable") ||
+                clean.contains("cable size") || clean.contains("feeder size") ||
+                clean.contains("show sizing") || clean.contains("sizing result") ||
+                clean.contains("tell me about") || clean.contains("ما هو الكابل") ||
+                clean.contains("كم مقطع") || clean.contains("مقطع الكابل") ||
+                clean.contains("احسب الكابل")
+    }
+
+    fun buildGoverningExplanation(
+        projectContext: BoundedProjectContext,
+        state: ConversationTaskState,
+        language: ConversationLanguage
+    ): String {
+        val entityName = state.activeEntityName ?: projectContext.activeEntityName ?: "Selected Circuit"
+        val inputs = projectContext.knownEntityInputs
+        val rawSize = inputs["cableSize"] ?: state.knownSlots["size"]?.value
+        val cableSize = rawSize?.replace(" mm²", "")?.replace(" مم²", "")?.replace("mm²", "")?.trim()
+        val material = inputs["cableMaterial"] ?: "Cu"
+        val insulation = inputs["insulation"] ?: "XLPE"
+        val installation = inputs["installation"] ?: state.knownSlots["installation"]?.value ?: "specified installation"
+        val ib = inputs["designCurrentIb"]
+        val breaker = inputs["breakerSize"]
+        val breakerType = inputs["breakerType"] ?: "Breaker"
+        val iz = inputs["deratedAmpacityIz"]
+        val derating = inputs["deratingFactor"]
+        val vdPct = inputs["voltageDropPct"]
+        val vdV = inputs["voltageDropV"]
+        val maxVd = inputs["maxVDpct"]
+
+        if (language == ConversationLanguage.AR) {
+            val sb = StringBuilder()
+            sb.append("بالنسبة للدائرة **$entityName**:\n")
+            if (cableSize != null) {
+                sb.append("• **المقطع المحدد**: $cableSize مم² $material/$insulation (طريقة التمديد: $installation)\n")
+            }
+            if (ib != null && breaker != null) {
+                sb.append("• **الحمل والحماية**: تيار التصميم $ib، سعة القاطع $breaker ($breakerType)\n")
+            }
+            if (iz != null) {
+                val deratingText = if (derating != null) " (معامل التصحيح = $derating)" else ""
+                sb.append("• **التحمل الحراري**: تيار الكابل بعد التصحيح $iz$deratingText، محققاً شرط الأمان (Iz ≥ In ≥ Ib)\n")
+            }
+            if (vdPct != null) {
+                val vdVText = if (vdV != null) " ($vdV)" else ""
+                val limitText = if (maxVd != null) " (الحد الأقصى: $maxVd%)" else ""
+                sb.append("• **هبوط الجهد**: $vdPct$vdVText$limitText، مطابق للحد المسموح به\n")
+            }
+            if (projectContext.validatedResultSummary != null && cableSize == null) {
+                sb.append("• **ملخص الحسابات**: ${projectContext.validatedResultSummary}\n")
+            }
+            sb.append("• **المعيار الحاكم**: تم اختيار هذا المقطع لضمان التحمل الحراري المستمر وهبوط جهد ضمن الحدود المسموحة وفقاً للمواصفة IEC 60364-5-52.")
+            return sb.toString()
+        } else {
+            val sb = StringBuilder()
+            sb.append("For circuit **$entityName**:\n")
+            if (cableSize != null) {
+                sb.append("• **Conductor**: $cableSize mm² $material/$insulation ($installation)\n")
+            }
+            if (ib != null && breaker != null) {
+                sb.append("• **Load & Protection**: Design current $ib, protective device $breaker ($breakerType)\n")
+            }
+            if (iz != null) {
+                val deratingText = if (derating != null) " (derating factor = $derating)" else ""
+                sb.append("• **Ampacity**: Derated capacity $iz$deratingText, satisfying Iz ≥ In ≥ Ib\n")
+            }
+            if (vdPct != null) {
+                val vdVText = if (vdV != null) " ($vdV)" else ""
+                val limitText = if (maxVd != null) " (limit: $maxVd%)" else ""
+                sb.append("• **Voltage Drop**: $vdPct$vdVText$limitText, within allowable limit\n")
+            }
+            if (projectContext.validatedResultSummary != null && cableSize == null) {
+                sb.append("• **Sizing Summary**: ${projectContext.validatedResultSummary}\n")
+            }
+            sb.append("• **Governing Constraint**: Sizing is governed by thermal ampacity derating and maximum allowable voltage drop per IEC 60364-5-52.")
+            return sb.toString()
+        }
     }
 
     fun normalizeUtterance(text: String): String {
