@@ -325,9 +325,32 @@ fun MainLayout(
         }
 
         val successState = state as? UiState.Success
-        val circuit = if (entityType == "CIRCUIT" && entityId != null) {
-            successState?.circuits?.find { it.id.toString() == entityId || it.circuitName == entityName }
-        } else null
+        // Auto-detect circuit context when opened from top bar without explicit entity
+        val resolvedEntityType: String?
+        val resolvedEntityId: String?
+        val resolvedEntityName: String?
+        val circuit: com.example.data.CircuitEntity?
+        if (entityType == "CIRCUIT" && entityId != null) {
+            circuit = successState?.circuits?.find { it.id.toString() == entityId || it.circuitName == entityName }
+            resolvedEntityType = entityType
+            resolvedEntityId = entityId
+            resolvedEntityName = entityName
+        } else {
+            // Auto-detect: prefer the only circuit, or the selected circuit, or the first circuit on Circuits tab
+            val autoCircuit = when {
+                successState?.circuits?.size == 1 -> successState.circuits.first()
+                currentTab == 1 && successState != null -> {
+                    val selId = viewModel.selectedCircuitId.value
+                    if (selId != null) successState.circuits.find { it.id == selId }
+                    else successState.circuits.firstOrNull()
+                }
+                else -> null
+            }
+            circuit = autoCircuit
+            resolvedEntityType = if (autoCircuit != null) "CIRCUIT" else entityType
+            resolvedEntityId = if (autoCircuit != null) autoCircuit.id.toString() else entityId
+            resolvedEntityName = if (autoCircuit != null) autoCircuit.circuitName else entityName
+        }
         val sizing = if (circuit != null) successState?.sizingResults?.get(circuit.id) else null
 
         val knownInputs = mutableMapOf<String, String>()
@@ -377,9 +400,9 @@ fun MainLayout(
             projectId = activeId,
             projectName = projectName,
             currentScreen = currentScreenName,
-            activeEntityType = entityType,
-            activeEntityId = entityId,
-            activeEntityName = entityName,
+            activeEntityType = resolvedEntityType,
+            activeEntityId = resolvedEntityId,
+            activeEntityName = resolvedEntityName,
             projectSummary = summary,
             knownEntityInputs = knownInputs,
             validatedResultSummary = validatedSummary
