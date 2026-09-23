@@ -26,7 +26,19 @@ class AssistantResponseMapperTest {
             activeEntityName = entityName,
             knownEntityInputs = mapOf(
                 "lengthM" to "45.0",
-                "installation" to "Perforated Cable Tray"
+                "installation" to "Perforated Cable Tray",
+                // Authoritative status from project data. Status is never inferred from the
+                // absence of a FAIL marker.
+                "status" to "PASS",
+                // Authoritative metrics. Metrics are only rendered when these exist; nothing
+                // is defaulted in the mapper.
+                "cableSize" to "300.0",
+                "cableMaterial" to "Cu",
+                "insulation" to "XLPE",
+                "deratedAmpacityIz" to "345.0 A",
+                "designCurrentIb" to "310.0 A",
+                "voltageDropPct" to "1.85%",
+                "maxVDpct" to "3.00%"
             ),
             freshnessSummary = mapOf("CABLE_SIZING" to freshness),
             validatedResultSummary = "300 mm² Cu, Iz=345A, VD=1.85%"

@@ -272,7 +272,26 @@ object ConversationPolicyEngine {
 
         // 4.7. Create Proposal ("Use 300", "Select 300", "Set cable to 300")
         if (isCreateProposalQuery(lower)) {
-            val size = candidateSize ?: workingState.knownSlots["size"]?.value ?: "300.0"
+            val size = candidateSize ?: workingState.knownSlots["size"]?.value
+            if (size.isNullOrBlank()) {
+                // Never default to a cable size. A proposal without an explicit target size is
+                // a blocking input, not something to fill with a plausible value.
+                return ConversationTurnDecision(
+                    decisionId = decisionId,
+                    action = ConversationAction(
+                        actionType = ConversationActionType.ASK_BLOCKING_QUESTION,
+                        reasonCode = "MISSING_CANDIDATE_SIZE",
+                        requiredSlots = listOf("size"),
+                        responseMode = ResponseMode.BLOCKING_QUESTION
+                    ),
+                    updatedState = workingState.copy(primaryIntent = AssistantIntent.REQUEST_APPLY),
+                    explanationSummary = if (workingState.userLanguage == ConversationLanguage.AR) {
+                        "أي مقطع تريد اعتماده؟ لم يتم تحديد مقاس صريح في طلبك."
+                    } else {
+                        "Which conductor size would you like to propose? Your request did not specify one."
+                    }
+                )
+            }
             val updatedState = workingState.copy(
                 primaryIntent = AssistantIntent.CREATE_PROPOSAL,
                 activeProposalId = "PROP-" + UUID.randomUUID().toString().take(8),
@@ -654,74 +673,96 @@ object ConversationPolicyEngine {
                 clean.contains("can you size") || clean.contains("ممكن تحسب")
     }
 
-    fun parseEntityInputs(projectContext: BoundedProjectContext, state: ConversationTaskState): ParsedCircuitInputs {
+    /**
+     * Parses authoritative circuit facts out of project context.
+     *
+     * Returns null when any safety-critical value cannot be sourced from project data. There
+     * are deliberately no default values here: a missing ampacity, current, voltage drop,
+     * derating factor or length previously fell back to a plausible constant, which is how
+     * the AI layer grew a second engineering knowledge base.
+     *
+     * The only inputs accepted are persisted project values, a parsed authoritative result
+     * summary, or values already supplied by the user in conversation slots.
+     */
+    fun parseEntityInputs(
+        projectContext: BoundedProjectContext,
+        state: ConversationTaskState
+    ): ParsedCircuitInputs? {
         val inputs = projectContext.knownEntityInputs
         val summary = projectContext.validatedResultSummary ?: ""
         val entityName = state.activeEntityName ?: projectContext.activeEntityName ?: "Selected Circuit"
 
-        // 1. Raw Size
+        // 1. Cable size (safety-critical)
         val rawSizeFromInputs = inputs["cableSize"] ?: state.knownSlots["size"]?.value
-        val rawSize = rawSizeFromInputs ?: Regex("""(\d+(?:\.\d+)?)\s*mm²""").find(summary)?.groupValues?.get(1) ?: "16.0"
+        val rawSize = rawSizeFromInputs
+            ?: Regex("""(\d+(?:\.\d+)?)\s*mm²""").find(summary)?.groupValues?.get(1)
+            ?: return null
         val cleanSizeStr = rawSize.replace(" mm²", "").replace(" مم²", "").replace("mm²", "").trim()
-        val sizeVal = cleanSizeStr.toDoubleOrNull() ?: 16.0
+        val sizeVal = cleanSizeStr.toDoubleOrNull() ?: return null
 
-        // 2. Material & Insulation
+        // 2. Material, insulation, installation (descriptive; may be absent)
         val material = inputs["cableMaterial"]
-            ?: if (summary.contains("Al", ignoreCase = true) && !summary.contains("Cu", ignoreCase = true)) "Al" else "Cu"
+            ?: (if (summary.contains("Al", true) && !summary.contains("Cu", true)) "Al" else null)
         val insulation = inputs["insulation"]
-            ?: if (summary.contains("PVC", ignoreCase = true) && !summary.contains("XLPE", ignoreCase = true)) "PVC" else "XLPE"
-        val installation = inputs["installation"] ?: state.knownSlots["installation"]?.value ?: "In Conduit"
+            ?: (if (summary.contains("PVC", true) && !summary.contains("XLPE", true)) "PVC" else null)
+        val installation = inputs["installation"] ?: state.knownSlots["installation"]?.value
 
-        // 3. Derated Ampacity Iz
+        // 3. Derated ampacity Iz (safety-critical)
         val izStr = inputs["deratedAmpacityIz"]
-            ?: Regex("""Iz\s*=\s*(\d+(?:\.\d+)?)\s*A?""", RegexOption.IGNORE_CASE).find(summary)?.groupValues?.let { "${it[1]} A" }
-            ?: "88.4 A"
-        val izVal = izStr.replace(" A", "").replace("A", "").trim().toDoubleOrNull() ?: 88.4
+            ?: Regex("""Iz\s*=\s*(\d+(?:\.\d+)?)\s*A?""", RegexOption.IGNORE_CASE)
+                .find(summary)?.groupValues?.let { "${it[1]} A" }
+            ?: return null
+        val izVal = izStr.replace(" A", "").replace("A", "").trim().toDoubleOrNull() ?: return null
 
-        // 4. Design Current Ib
-        val parsedIbFromSummary = Regex("""Ib\s*=\s*(\d+(?:\.\d+)?)\s*A?""", RegexOption.IGNORE_CASE).find(summary)?.groupValues?.get(1)
+        // 4. Design current Ib (safety-critical). Never derived from Iz by an assumed ratio.
+        val parsedIbFromSummary = Regex("""Ib\s*=\s*(\d+(?:\.\d+)?)\s*A?""", RegexOption.IGNORE_CASE)
+            .find(summary)?.groupValues?.get(1)
         val ibStr = inputs["designCurrentIb"]
-            ?: (if (parsedIbFromSummary != null) "$parsedIbFromSummary A" else String.format(Locale.US, "%.1f A", (izVal * 0.88)))
-        val ibVal = ibStr.replace(" A", "").replace("A", "").trim().toDoubleOrNull() ?: (izVal * 0.88)
+            ?: parsedIbFromSummary?.let { "$it A" }
+            ?: return null
+        val ibVal = ibStr.replace(" A", "").replace("A", "").trim().toDoubleOrNull() ?: return null
 
-        // 5. Breaker Size & Type
-        val parsedBreakerFromSummary = Regex("""Breaker\s*=\s*(\d+(?:\.\d+)?)\s*A?""", RegexOption.IGNORE_CASE).find(summary)?.groupValues?.get(1)
+        // 5. Breaker size & type (safety-critical size; type is descriptive)
+        val parsedBreakerFromSummary = Regex("""Breaker\s*=\s*(\d+(?:\.\d+)?)\s*A?""", RegexOption.IGNORE_CASE)
+            .find(summary)?.groupValues?.get(1)
         val breakerStr = inputs["breakerSize"]
-            ?: (if (parsedBreakerFromSummary != null) "$parsedBreakerFromSummary A" else String.format(Locale.US, "%.0f A", (ibVal * 1.1).coerceAtLeast(16.0)))
-        val breakerVal = breakerStr.replace(" A", "").replace("A", "").trim().toDoubleOrNull() ?: 16.0
+            ?: parsedBreakerFromSummary?.let { "$it A" }
+            ?: return null
+        val breakerVal = breakerStr.replace(" A", "").replace("A", "").trim().toDoubleOrNull() ?: return null
         val breakerType = inputs["breakerType"]
             ?: Regex("""\((MCB|MCCB|ACB)\)""", RegexOption.IGNORE_CASE).find(summary)?.groupValues?.get(1)
-            ?: "MCB"
 
-        // 6. Derating Factor
+        // 6. Derating factor (safety-critical)
         val deratingStr = inputs["deratingFactor"]
-            ?: Regex("""derating\s*(\d+(?:\.\d+)?)""", RegexOption.IGNORE_CASE).find(summary)?.groupValues?.get(1)
-            ?: "0.82"
-        val deratingVal = deratingStr.toDoubleOrNull() ?: 0.82
+            ?: Regex("""derating\s*(\d+(?:\.\d+)?)""", RegexOption.IGNORE_CASE)
+                .find(summary)?.groupValues?.get(1)
+            ?: return null
+        val deratingVal = deratingStr.toDoubleOrNull() ?: return null
 
-        // 7. Voltage Drop
+        // 7. Voltage drop and its limit (safety-critical)
         val vdStr = inputs["voltageDropPct"]
-            ?: Regex("""VD\s*=\s*(\d+(?:\.\d+)?)\s*%?""", RegexOption.IGNORE_CASE).find(summary)?.groupValues?.let { "${it[1]}%" }
-            ?: "0.23%"
-        val vdVal = vdStr.replace("%", "").trim().toDoubleOrNull() ?: 0.23
+            ?: Regex("""VD\s*=\s*(\d+(?:\.\d+)?)\s*%?""", RegexOption.IGNORE_CASE)
+                .find(summary)?.groupValues?.let { "${it[1]}%" }
+            ?: return null
+        val vdVal = vdStr.replace("%", "").trim().toDoubleOrNull() ?: return null
 
         val maxVdStr = inputs["maxVDpct"]
-            ?: Regex("""limit\s*(\d+(?:\.\d+)?)\s*%?""", RegexOption.IGNORE_CASE).find(summary)?.groupValues?.let { "${it[1]}%" }
-            ?: "3.00%"
-        val maxVdVal = maxVdStr.replace("%", "").trim().toDoubleOrNull() ?: 3.00
+            ?: Regex("""limit\s*(\d+(?:\.\d+)?)\s*%?""", RegexOption.IGNORE_CASE)
+                .find(summary)?.groupValues?.let { "${it[1]}%" }
+            ?: return null
+        val maxVdVal = maxVdStr.replace("%", "").trim().toDoubleOrNull() ?: return null
 
-        val lengthStr = inputs["length"] ?: inputs["lengthM"] ?: "50"
-        val lengthVal = lengthStr.toDoubleOrNull() ?: 50.0
+        // 8. Length (safety-critical)
+        val lengthStr = inputs["length"] ?: inputs["lengthM"] ?: return null
+        val lengthVal = lengthStr.toDoubleOrNull() ?: return null
 
         val hasManualOverride = inputs.containsKey("overrideCableSize") &&
                 inputs["overrideCableSize"]?.isNotBlank() == true &&
                 !inputs["overrideCableSize"].equals("AUTO", ignoreCase = true)
 
-        val status = inputs["status"]
-            ?: if (summary.contains("NON-COMPLIANT", ignoreCase = true) || summary.contains("FAIL", ignoreCase = true)) "FAIL" else "PASS"
+        val status = inputs["status"] ?: ""
         val failReason = inputs["failReason"] ?: ""
-
-        val utilizationPct = if (izVal > 0.0) (ibVal / izVal) * 100.0 else 0.0
+        val utilizationPct = if (ibVal == 0.0) 0.0 else (ibVal / izVal) * 100.0
 
         return ParsedCircuitInputs(
             entityName = entityName,
@@ -752,16 +793,29 @@ object ConversationPolicyEngine {
         )
     }
 
+    /**
+     * The single response for any explanation that cannot be produced from authoritative
+     * circuit facts. Never replaced with an estimate.
+     */
+    private fun unavailableExplanation(language: ConversationLanguage): String =
+        if (language == ConversationLanguage.AR) {
+            "النتيجة الهندسية الموثقة غير متاحة. لم يتم العثور على بيانات الدائرة المطلوبة في المشروع؛ " +
+                "شغّل الحساب المطابق أولاً للحصول على قيمة موثقة."
+        } else {
+            "Verified engineering result unavailable. The required circuit data is not present in the " +
+                "project; run the matching calculation first to obtain a certified value."
+        }
+
     fun buildCurrentStatusSummary(
         projectContext: BoundedProjectContext,
         state: ConversationTaskState,
         language: ConversationLanguage
     ): String {
-        val p = parseEntityInputs(projectContext, state)
+        val p = parseEntityInputs(projectContext, state) ?: return unavailableExplanation(language)
         return if (language == ConversationLanguage.AR) {
-            "الدائرة **${p.entityName}** محدد لها حالياً مقطع **${p.cableSizeStr} مم² ${p.material}/${p.insulation}** (طريقة التمديد: ${p.installation}). تيار التصميم ${p.ibStr} مع قاطع ${p.breakerStr}، وسعة الكابل بعد التصحيح ${p.izStr} مع هبوط جهد ${p.vdStr} (الحد: ${p.maxVdStr})."
+            "الدائرة **${p.entityName}** محدد لها حالياً مقطع **${p.cableSizeStr} مم² ${p.material ?: "—"}${p.insulation?.let { "/$it" } ?: ""}** (طريقة التمديد: ${p.installation ?: "—"}). تيار التصميم ${p.ibStr} مع قاطع ${p.breakerStr}، وسعة الكابل بعد التصحيح ${p.izStr} مع هبوط جهد ${p.vdStr} (الحد: ${p.maxVdStr})."
         } else {
-            "Circuit **${p.entityName}** is currently sized with **${p.cableSizeStr} mm² ${p.material}/${p.insulation}** (${p.installation}). Design current is ${p.ibStr} with a ${p.breakerStr} breaker. Derated capacity is ${p.izStr}, and voltage drop is ${p.vdStr} (limit ${p.maxVdStr})."
+            "Circuit **${p.entityName}** is currently sized with **${p.cableSizeStr} mm² ${p.material ?: "—"}${p.insulation?.let { "/$it" } ?: ""}** (${p.installation ?: "—"}). Design current is ${p.ibStr} with a ${p.breakerStr} breaker. Derated capacity is ${p.izStr}, and voltage drop is ${p.vdStr} (limit ${p.maxVdStr})."
         }
     }
 
@@ -770,42 +824,21 @@ object ConversationPolicyEngine {
         state: ConversationTaskState,
         language: ConversationLanguage
     ): String {
-        val p = parseEntityInputs(projectContext, state)
-        val suggestedSmaller = getSuggestedSmallerCandidate(p.ibVal, p.breakerVal)
+        val p = parseEntityInputs(projectContext, state) ?: return unavailableExplanation(language)
+        val composition = "${p.cableSizeStr} mm² ${p.material ?: "—"}${p.insulation?.let { "/$it" } ?: ""}"
+        val installationSuffix = p.installation?.let { " ($it)" } ?: ""
 
-        if (p.utilizationPct < 40.0 && p.vdVal < p.maxVdVal * 0.7) {
-            return if (language == ConversationLanguage.AR) {
-                "مقطع **${p.cableSizeStr} مم² ${p.material}/${p.insulation}** هو المحدد للدائرة **${p.entityName}** (${p.installation}).\n" +
-                "عند حمل ${p.ibStr}، يعمل الكابل بهامش أمان عالي بنسبة تشغيل ${String.format(Locale.US, "%.1f", p.utilizationPct)}% (السعة ${p.izStr}، القاطع ${p.breakerStr}). هبوط الجهد ${p.vdStr} (الحد ${p.maxVdStr}).\n" +
-                "**التالي:** يمكنك تقييم مقطع أصغر (مثل $suggestedSmaller مم²) أو إنشاء مقترح لاعتماده."
-            } else {
-                "**${p.cableSizeStr} mm² ${p.material}/${p.insulation}** is selected for **${p.entityName}** (${p.installation}).\n" +
-                "At ${p.ibStr} load, this conductor operates with high reserve margin at ${String.format(Locale.US, "%.1f", p.utilizationPct)}% utilization (Iz = ${p.izStr}, breaker ${p.breakerStr}). Voltage drop is ${p.vdStr} (limit ${p.maxVdStr}).\n" +
-                "**Next:** You can evaluate a smaller candidate (e.g. $suggestedSmaller mm²) or create a proposal to apply."
-            }
-        }
-
-        val isVdGoverning = p.vdVal >= p.maxVdVal * 0.85 || (p.lengthVal > 60.0 && p.utilizationPct < 60.0)
-        if (isVdGoverning) {
-            return if (language == ConversationLanguage.AR) {
-                "**${p.cableSizeStr} مم² ${p.material}/${p.insulation}** هو المقطع المطابق للدائرة **${p.entityName}** (${p.installation}).\n" +
-                "هبوط الجهد هو المعيار الحاكم بنسبة ${p.vdStr} (الحد الأقصى ${p.maxVdStr}) على طول المسار. سعة الكابل ${p.izStr} مقابل تيار حمل ${p.ibStr} (قاطع ${p.breakerStr}).\n" +
-                "**التالي:** يمكنك تجربة مقطع بديل أو إنشاء مقترح لاعتماده."
-            } else {
-                "**${p.cableSizeStr} mm² ${p.material}/${p.insulation}** is the compliant selection for **${p.entityName}** (${p.installation}).\n" +
-                "Voltage drop is the governing criterion at ${p.vdStr} (limit ${p.maxVdStr}) over the run length. Derated capacity is ${p.izStr} against ${p.ibStr} load (${p.breakerStr} breaker).\n" +
-                "**Next:** You can test an alternative size or create a proposal to apply."
-            }
-        }
-
+        // Facts only. The governing criterion and the compliance verdict are produced by the
+        // deterministic engine (calculate_cable_sizing); no smaller-size candidate is suggested
+        // here because producing one without evaluating it would be an uncalled calculation.
         return if (language == ConversationLanguage.AR) {
-            "**${p.cableSizeStr} مم² ${p.material}/${p.insulation}** هو المقطع المطابق للدائرة **${p.entityName}** (${p.installation}).\n" +
-            "سعة الكابل بعد التصحيح ${p.izStr} مقابل تيار تصميم ${p.ibStr}، وهبوط الجهد ${p.vdStr} (الحد الأقصى ${p.maxVdStr}). التحمل الحراري هو المعيار الحاكم بعد تطبيق معاملات التصحيح.\n" +
-            "**التالي:** يمكنك تجربة مقطع بديل أو إنشاء مقترح لاعتماده."
+            "الدائرة **${p.entityName}** محددة بمقطع **${p.cableSizeStr} مم² ${p.material ?: "—"}${p.insulation?.let { "/$it" } ?: ""}**$installationSuffix.\n" +
+                "تيار التصميم ${p.ibStr}، القاطع ${p.breakerStr}، السعة بعد التصحيح ${p.izStr} (معامل ${p.deratingStr})، هبوط الجهد ${p.vdStr} (الحد ${p.maxVdStr}) على طول ${p.lengthStr} م.\n" +
+                "**التالي:** شغّل حساب المقطع للحصول على المعيار الحاكم والتحقق الرسمي، أو قيّم مرشحاً بديلاً."
         } else {
-            "**${p.cableSizeStr} mm² ${p.material}/${p.insulation}** is the compliant selection for **${p.entityName}** (${p.installation}).\n" +
-            "Derated capacity is ${p.izStr} against ${p.ibStr} design current; voltage drop is ${p.vdStr} (limit ${p.maxVdStr}). Ampacity is the governing criterion after derating.\n" +
-            "**Next:** You can test an alternative size or create a proposal to apply."
+            "Circuit **${p.entityName}** is sized at **$composition**$installationSuffix.\n" +
+                "Design current ${p.ibStr}, breaker ${p.breakerStr}, derated capacity ${p.izStr} (factor ${p.deratingStr}), voltage drop ${p.vdStr} (limit ${p.maxVdStr}) over ${p.lengthStr} m.\n" +
+                "**Next:** Run cable sizing for the authoritative governing criterion and compliance verdict, or evaluate an alternative candidate."
         }
     }
 
@@ -814,10 +847,14 @@ object ConversationPolicyEngine {
         state: ConversationTaskState,
         language: ConversationLanguage
     ): String {
-        val p = parseEntityInputs(projectContext, state)
-        val isFail = p.status.contains("FAIL", ignoreCase = true) || p.izVal < p.ibVal || p.vdVal > p.maxVdVal + 0.05
-        val nextDown = getNextStandardSizeDown(p.cableSizeVal)
-        val suggestedSmaller = getSuggestedSmallerCandidate(p.ibVal, p.breakerVal)
+        val p = parseEntityInputs(projectContext, state) ?: return unavailableExplanation(language)
+        // Compliance verdicts, the governing criterion, and alternative candidate sizes are
+        // produced by the deterministic engines, never by this policy layer. The +0.05
+        // voltage-drop tolerance, the standard-size ladder and the smaller-size suggestion
+        // that previously lived here were removed along with them.
+        val isFail = p.status.contains("FAIL", ignoreCase = true) ||
+            p.izVal < p.ibVal ||
+            p.vdVal > p.maxVdVal
 
         // 1. Engineering Failure / Non-compliant
         if (isFail) {
@@ -829,39 +866,25 @@ object ConversationPolicyEngine {
             }
         }
 
-        // 2. Active Manual User Override
-        if (p.hasManualOverride) {
-            return if (language == ConversationLanguage.AR) {
-                "مقطع **${p.cableSizeStr} مم² ${p.material}/${p.insulation}** محدد حالياً كـتجاوز يدوي (Manual Override) للدائرة **${p.entityName}** (${p.installation}). كهربائياً، يعمل الكابل بهامش أمان واسع بنسبة تشغيل حراري تبلغ ${String.format(Locale.US, "%.1f", p.utilizationPct)}% فقط (السعة ${p.izStr} مقابل تيار حمل ${p.ibStr} وقاطع ${p.breakerStr} ${p.breakerType})، مع هبوط جهد ${p.vdStr}. الحساب التلقائي وفق المعايير يوصي بمقطع أصغر ($suggestedSmaller مم²)."
-            } else {
-                "**${p.cableSizeStr} mm² ${p.material}/${p.insulation}** is an active manual override for **${p.entityName}** (${p.installation}). Electrically, it operates with substantial margin at only ${String.format(Locale.US, "%.1f", p.utilizationPct)}% thermal utilization (Iz = ${p.izStr} vs Ib = ${p.ibStr}, In = ${p.breakerStr} ${p.breakerType}) and ${p.vdStr} voltage drop. The calculated minimum compliant size would be significantly smaller ($suggestedSmaller mm²)."
-            }
-        }
-
-        // 3. Substantially Oversized (utilization < 40% and VD well below limit)
-        if (p.utilizationPct < 40.0 && p.vdVal < p.maxVdVal * 0.7) {
-            return if (language == ConversationLanguage.AR) {
-                "عند تيار حمل ${p.ibStr}، يعتبر مقطع **${p.cableSizeStr} مم² ${p.material}/${p.insulation}** أكبر بكثير من المتطلبات الحرارية للدائرة **${p.entityName}**، حيث يعمل بنسبة تشغيل تبلغ ${String.format(Locale.US, "%.1f", p.utilizationPct)}% فقط (السعة بعد التصحيح ${p.izStr} مقابل قاطع ${p.breakerStr} ${p.breakerType}). هبوط الجهد ضئيل جداً عند ${p.vdStr} (الحد ${p.maxVdStr}). كهربائياً، مقطع أصغر ($suggestedSmaller مم²) يحقق متطلبات IEC 60364 بالكامل. اختيار مقطع ${p.cableSizeStr} مم² عادة ما يحكمه الحد الأدنى لتوفر مقاسات التصنيع في الكتالوج لهذا النوع من الكابلات، أبعاد نهايات القاطع (Terminal Lugs)، أو احتياطي لتوسعات مستقبلية."
-            } else {
-                "At ${p.ibStr} load, **${p.cableSizeStr} mm² ${p.material}/${p.insulation}** is substantially oversized for **${p.entityName}**, operating at only ${String.format(Locale.US, "%.1f", p.utilizationPct)}% thermal utilization (Iz = ${p.izStr} vs ${p.breakerStr} ${p.breakerType}). Voltage drop is negligible at ${p.vdStr} (limit ${p.maxVdStr}). Electrically, a smaller conductor ($suggestedSmaller mm²) would comfortably satisfy IEC 60364-5-52. This ${p.cableSizeStr} mm² selection is typically governed by minimum catalog manufacturing availability for this cable construction, switchgear terminal lug constraints, or project reserves for future load expansion."
-            }
-        }
-
-        // 4. Governed by Voltage Drop
-        val isVdGoverning = p.vdVal >= p.maxVdVal * 0.85 || (p.lengthVal > 60.0 && p.utilizationPct < 60.0)
-        if (isVdGoverning) {
-            return if (language == ConversationLanguage.AR) {
-                "هبوط الجهد هو المعيار الحاكم لاختيار مقطع **${p.cableSizeStr} مم² ${p.material}/${p.insulation}** للدائرة **${p.entityName}** على مسار طوله ${p.lengthStr}م. فبينما يحقق مقطع أصغر التحمل الحراري لتيار الحمل (${p.ibStr})، إلا أن مقاومته سترفع هبوط الجهد ليتجاوز الحد المسموح (${p.maxVdStr}). مقطع **${p.cableSizeStr} مم²** يحدد هبوط الجهد عند ${p.vdStr} مع سعة حرارية ${p.izStr} (قاطع ${p.breakerStr} ${p.breakerType})."
-            } else {
-                "Voltage drop is the governing criterion for **${p.entityName}** over its ${p.lengthStr}m run. While a smaller conductor would satisfy thermal ampacity (${p.ibStr} load), its impedance would cause voltage drop to exceed the ${p.maxVdStr} limit. **${p.cableSizeStr} mm² ${p.material}/${p.insulation}** restricts voltage drop to ${p.vdStr} while providing ${p.izStr} derated capacity (breaker ${p.breakerStr} ${p.breakerType})."
-            }
-        }
-
-        // 5. Governed by Thermal Ampacity (Standard)
+        // 2. Remaining explanation: report verified facts only. This layer never decides which
+        //    criterion governs, never asserts that a smaller size would comply, and never
+        //    recommends a specific alternative size. Those are calculation outcomes.
         return if (language == ConversationLanguage.AR) {
-            "التحمل الحراري بعد معاملات التصحيح (${p.deratingStr}) هو المعيار الحاكم لاختيار **المقطع المحدد** (${p.cableSizeStr} مم² ${p.material}/${p.insulation}) للدائرة **${p.entityName}**. يوفر هذا المقطع سعة ${p.izStr} لحماية القاطع ${p.breakerStr} (${p.breakerType}) وتيار الحمل ${p.ibStr} بأمان (نسبة تشغيل ${String.format(Locale.US, "%.1f", p.utilizationPct)}%). المقطع الأصغر التالي ($nextDown مم²) لا يحقق سعة التيار المطلوبة (Iz < In). هبوط الجهد يبلغ ${p.vdStr} وهو ضمن حد ${p.maxVdStr} وفقاً للمواصفة IEC 60364-5-52."
+            "الدائرة **${p.entityName}** محددة بمقطع **${p.cableSizeStr} مم² ${p.material ?: "—"}${p.insulation?.let { "/$it" } ?: ""}**" +
+                (p.hasManualOverride.let { if (it) " (تجاوز يدوي Manual Override)" else "" }) + ".\n" +
+                "الحقائق الموثقة: تيار التصميم ${p.ibStr}، القاطع ${p.breakerStr}${p.breakerType?.let { " ($it)" } ?: ""}، " +
+                "السعة بعد التصحيح ${p.izStr} (معامل ${p.deratingStr})، هبوط الجهد ${p.vdStr} (الحد ${p.maxVdStr}) " +
+                "على طول ${p.lengthStr} م، نسبة التشغيل ${String.format(Locale.US, "%.1f", p.utilizationPct)}%.\n" +
+                "**المعيار الحاكم:** يحدده نتيجة الحساب الرسمي.\n" +
+                "**التالي:** شغّل حساب المقطع أو قيّم مرشحاً محدداً للحصول على تقييم موثق."
         } else {
-            "Ampacity is the governing criterion for **${p.entityName}**. After applying derating (${p.deratingStr}), **${p.cableSizeStr} mm² ${p.material}/${p.insulation}** delivers ${p.izStr} to safely protect the ${p.breakerStr} (${p.breakerType}) breaker and ${p.ibStr} design load (operating at ${String.format(Locale.US, "%.1f", p.utilizationPct)}% utilization). The next size down ($nextDown mm²) fails the ampacity requirement (Iz < In). Voltage drop is ${p.vdStr}, well within the ${p.maxVdStr} limit per IEC 60364-5-52."
+            "Circuit **${p.entityName}** is selected at **${p.cableSizeStr} mm² ${p.material ?: "—"}${p.insulation?.let { "/$it" } ?: ""}**" +
+                (if (p.hasManualOverride) " (active manual override)" else "") + ".\n" +
+                "Verified facts: design current ${p.ibStr}, breaker ${p.breakerStr}${p.breakerType?.let { " ($it)" } ?: ""}, " +
+                "derated capacity ${p.izStr} (factor ${p.deratingStr}), voltage drop ${p.vdStr} (limit ${p.maxVdStr}) " +
+                "over ${p.lengthStr} m, utilization ${String.format(Locale.US, "%.1f", p.utilizationPct)}%.\n" +
+                "**Governing criterion:** determined by the official calculation result, not by this layer.\n" +
+                "**Next:** Run cable sizing or evaluate a specific candidate for a certified verdict."
         }
     }
 
@@ -872,42 +895,36 @@ object ConversationPolicyEngine {
         language: ConversationLanguage
     ): String {
         val p = parseEntityInputs(projectContext, state)
-        val candSizeVal = candidateSize.toDoubleOrNull() ?: 16.0
+        val candSizeVal = candidateSize.toDoubleOrNull() ?: return (
+            if (language == ConversationLanguage.AR) "مقاس المرشح غير صالح." else "The candidate size is not valid."
+            )
         val candSizeFormatted = formatCableSize(candSizeVal)
 
-        val candIz = estimateDeratedAmpacity(candSizeVal, p.deratingVal)
-        val candVd = estimateCandidateVoltageDrop(candSizeVal, p.cableSizeVal, p.vdVal)
-
-        val ampacityPass = candIz >= p.ibVal && candIz >= p.breakerVal * 0.95
-        val vdPass = candVd <= p.maxVdVal + 0.05
-        val isPass = ampacityPass && vdPass
-
-        val candIzStr = String.format(Locale.US, "%.1f", candIz)
-        val candVdStr = String.format(Locale.US, "%.2f%%", candVd)
-
-        if (isPass) {
-            return if (language == ConversationLanguage.AR) {
-                "نعم، مقطع **$candSizeFormatted مم²** مطابق هندسياً للدائرة **${p.entityName}**. تحت ظروف التمديد (${p.installation}) مع معامل تصحيح ${p.deratingStr}، يوفر سعة تقديرية بعد التصحيح تبلغ $candIzStr أمبير (تغطي القاطع ${p.breakerStr} وتيار الحمل ${p.ibStr} بأمان)، مع هبوط جهد تقريبي $candVdStr (الحد ${p.maxVdStr}).\n**التالي:** هل ترغب في إنشاء مقترح لاعتماد مقطع **$candSizeFormatted مم²**؟"
+        // Candidate ampacity and voltage drop are NEVER estimated in this layer. Estimating them
+        // required a hardcoded ampacity table plus an invented voltage-drop formula, which is a
+        // second engineering implementation. Compliance for a candidate must come from
+        // evaluate_cable_candidate / compare_cable_candidates.
+        val currentFacts = if (p != null) {
+            if (language == ConversationLanguage.AR) {
+                "المقطع الحالي ${p.cableSizeStr} مم²، السعة بعد التصحيح ${p.izStr}، تيار التصميم ${p.ibStr}، " +
+                    "القاطع ${p.breakerStr}، هبوط الجهد ${p.vdStr} (الحد ${p.maxVdStr})."
             } else {
-                "Yes, **$candSizeFormatted mm²** is technically compliant for **${p.entityName}**. Under ${p.installation} conditions with ${p.deratingStr} derating, it delivers an estimated $candIzStr A derated capacity (safely exceeding the ${p.breakerStr} breaker and ${p.ibStr} load), with voltage drop at approximately $candVdStr (limit ${p.maxVdStr}).\n**Next:** Would you like to create a proposal to use **$candSizeFormatted mm²**?"
+                "Current size ${p.cableSizeStr} mm², derated capacity ${p.izStr}, design current ${p.ibStr}, " +
+                    "breaker ${p.breakerStr}, voltage drop ${p.vdStr} (limit ${p.maxVdStr})."
             }
-        }
-
-        if (!ampacityPass) {
-            val deficit = if (candIz < p.ibVal) "design load (${p.ibStr})" else "breaker rating (${p.breakerStr})"
-            val arDeficit = if (candIz < p.ibVal) "تيار الحمل المطلوب (${p.ibStr})" else "سعة القاطع (${p.breakerStr})"
-            return if (language == ConversationLanguage.AR) {
-                "لا، لا يمكن استخدام مقطع **$candSizeFormatted مم²** للدائرة **${p.entityName}**. سعته بعد التصحيح ($candIzStr أمبير) أقل من $arDeficit تحت معامل التصحيح الحالي (${p.deratingStr}). التحمل الحراري هو القيد الحاكم للمخالفة.\n**التالي:** يفضل الإبقاء على مقطع **${p.cableSizeStr} مم²** أو اختبار مقطع أكبر."
-            } else {
-                "No, **$candSizeFormatted mm²** cannot be used for **${p.entityName}**. Its derated capacity ($candIzStr A) falls below the required $deficit under current derating (${p.deratingStr}). Ampacity is the governing failure constraint.\n**Next:** We should retain **${p.cableSizeStr} mm²** or evaluate a larger candidate."
-            }
-        }
-
-        // Failed on Voltage Drop
-        return if (language == ConversationLanguage.AR) {
-            "لا، مقطع **$candSizeFormatted مم²** لا يحقق شرط هبوط الجهد للدائرة **${p.entityName}**. فعلى الرغم من أن سعته بعد التصحيح ($candIzStr أمبير) كافية حرارياً، إلا أن مقاومة الموصل سترفع هبوط الجهد إلى نحو $candVdStr متجاوزة الحد الأقصى للمشروع (${p.maxVdStr}) على مسار بطول ${p.lengthStr}م."
         } else {
-            "No, **$candSizeFormatted mm²** fails voltage drop for **${p.entityName}**. While its derated capacity ($candIzStr A) satisfies thermal ampacity, its higher conductor impedance pushes voltage drop to approximately $candVdStr, exceeding the ${p.maxVdStr} project limit over the ${p.lengthStr}m run."
+            if (language == ConversationLanguage.AR) "بيانات الدائرة الحالية غير متاحة." else "Current circuit data is unavailable."
+        }
+
+        return if (language == ConversationLanguage.AR) {
+            "تم استلام المرشح **$candSizeFormatted مم²**. $currentFacts\n" +
+                "المطابقة لم تُحسب بعد، لذلك لا يمكن تأكيد أو نفي المطابقة هنا.\n" +
+                "**التالي:** شغّل أداة تقييم المرشح للحصول على نتيجة موثقة (السعة بعد التصحيح، هبوط الجهد، والمعيار الحاكم)."
+        } else {
+            "Candidate **$candSizeFormatted mm²** has been recorded. $currentFacts\n" +
+                "Compliance has not been computed yet, so it can be neither confirmed nor ruled out here.\n" +
+                "**Next:** Run the candidate evaluation tool for a certified result " +
+                "(derated ampacity, voltage drop, and governing criterion)."
         }
     }
 
@@ -917,98 +934,42 @@ object ConversationPolicyEngine {
         language: ConversationLanguage
     ): String {
         val p = parseEntityInputs(projectContext, state)
-        val suggestedSmaller = getSuggestedSmallerCandidate(p.ibVal, p.breakerVal)
-        val isOversized = p.utilizationPct < 40.0 && p.vdVal < p.maxVdVal * 0.7
-
-        if (isOversized && suggestedSmaller.toDoubleOrNull() != null && suggestedSmaller.toDouble() < p.cableSizeVal) {
-            val candIz = String.format(Locale.US, "%.1f", estimateDeratedAmpacity(suggestedSmaller.toDouble(), p.deratingVal))
-            val candVd = String.format(Locale.US, "%.2f%%", estimateCandidateVoltageDrop(suggestedSmaller.toDouble(), p.cableSizeVal, p.vdVal))
-            return if (language == ConversationLanguage.AR) {
-                "لتحسين التكلفة في الدائرة **${p.entityName}**، يمكن تقليل مقطع الكابل بأمان من **${p.cableSizeStr} مم²** إلى **$suggestedSmaller مم²**. هذا المقطع يحقق المطابقة الكاملة ($candIz أمبير سعة مصححة > قاطع ${p.breakerStr}، وهبوط جهد $candVd < ${p.maxVdStr}) مع خفض وزن النحاس وتكلفة التوريد بشكل ملحوظ.\n**التالي:** هل ترغب في إنشاء مقترح لاعتماد مقطع $suggestedSmaller مم²؟"
+        // Cost optimization must not be driven by a utilization heuristic in this layer.
+        // Selecting a smaller size requires real catalogue candidates re-evaluated by the
+        // authoritative engine against every governing criterion; this layer only routes intent.
+        val facts = p?.let { q ->
+            if (language == ConversationLanguage.AR) {
+                "المقطع الحالي **${q.cableSizeStr} مم²** (نسبة التشغيل ${String.format(Locale.US, "%.1f", q.utilizationPct)}%)."
             } else {
-                "To optimize cost on **${p.entityName}**, the cable can safely be downsized from **${p.cableSizeStr} mm²** to **$suggestedSmaller mm²**. This maintains full compliance ($candIz A derated capacity > ${p.breakerStr} breaker, $candVd VD < ${p.maxVdStr}) while significantly reducing copper weight and procurement cost.\n**Next:** Would you like to create a proposal to use $suggestedSmaller mm²?"
+                "Current size **${q.cableSizeStr} mm²** (utilization ${String.format(Locale.US, "%.1f", q.utilizationPct)}%)."
             }
+        } ?: if (language == ConversationLanguage.AR) {
+            "بيانات الدائرة الحالية غير متاحة."
+        } else {
+            "Current circuit data is unavailable."
         }
 
         return if (language == ConversationLanguage.AR) {
-            "المقطع الحالي **${p.cableSizeStr} مم²** هو بالفعل الحد الأدنى المطابق للمواصفات للدائرة **${p.entityName}** وفق IEC 60364-5-52. أي تصغير إضافي سيؤدي لمخالفة حدود السعة أو هبوط الجهد. لتحسين التكلفة، يمكن دراسة تغيير مادة الموصل من النحاس إلى الألومنيوم (مثل Al/XLPE)."
+            "$facts\n" +
+                "تحسين التكلفة يتطلب تقييم مرشحين حقيقيين من الكتالوج عبر محرك الحساب المطابق؛ " +
+                "لا يمكن اقتراح تخفيض مقطع دون تقييم موثق لكل شرط حاكم.\n" +
+                "**التالي:** شغّل مقارنة المرشحين الآن؟"
         } else {
-            "The current **${p.cableSizeStr} mm²** is already at the minimum compliant size for **${p.entityName}** under IEC 60364-5-52. Downsizing further would violate ampacity or voltage drop limits. For cost optimization, switching conductor material from Copper to Aluminum (e.g. Al/XLPE) could be explored."
+            "$facts\n" +
+                "Cost optimization requires evaluating real catalogue candidates through the authoritative engine; " +
+                "a smaller size cannot be suggested without a certified evaluation of every governing condition.\n" +
+                "**Next:** Run candidate comparison now?"
         }
     }
 
     fun formatCableSize(size: Double): String =
         if (size % 1.0 == 0.0) "${size.toInt()}" else "$size"
 
-    fun getNextStandardSizeDown(size: Double): String {
-        val standardSizes = listOf(
-            1.5, 2.5, 4.0, 6.0, 10.0, 16.0, 25.0, 35.0, 50.0, 70.0,
-            95.0, 120.0, 150.0, 185.0, 240.0, 300.0, 400.0, 500.0, 630.0, 800.0, 1000.0
-        )
-        val idx = standardSizes.indexOfFirst { kotlin.math.abs(it - size) < 0.1 }
-        return if (idx > 0) {
-            formatCableSize(standardSizes[idx - 1])
-        } else {
-            "1.5"
-        }
-    }
-
-    fun getSuggestedSmallerCandidate(ib: Double, breaker: Double): String {
-        val targetI = maxOf(ib, breaker)
-        return when {
-            targetI <= 16.0 -> "2.5"
-            targetI <= 25.0 -> "4"
-            targetI <= 32.0 -> "6"
-            targetI <= 50.0 -> "10"
-            targetI <= 63.0 -> "16"
-            targetI <= 100.0 -> "25"
-            targetI <= 125.0 -> "35"
-            targetI <= 160.0 -> "50"
-            targetI <= 200.0 -> "70"
-            targetI <= 250.0 -> "95"
-            targetI <= 300.0 -> "120"
-            targetI <= 350.0 -> "150"
-            targetI <= 400.0 -> "185"
-            targetI <= 500.0 -> "240"
-            targetI <= 600.0 -> "300"
-            else -> "400"
-        }
-    }
-
-    fun estimateDeratedAmpacity(sizeMm2: Double, deratingFactor: Double = 0.82): Double {
-        val baseTableAmpacity = when {
-            sizeMm2 <= 1.5 -> 20.0
-            sizeMm2 <= 2.5 -> 28.0
-            sizeMm2 <= 4.0 -> 38.0
-            sizeMm2 <= 6.0 -> 49.0
-            sizeMm2 <= 10.0 -> 68.0
-            sizeMm2 <= 16.0 -> 91.0
-            sizeMm2 <= 25.0 -> 121.0
-            sizeMm2 <= 35.0 -> 150.0
-            sizeMm2 <= 50.0 -> 184.0
-            sizeMm2 <= 70.0 -> 234.0
-            sizeMm2 <= 95.0 -> 284.0
-            sizeMm2 <= 120.0 -> 330.0
-            sizeMm2 <= 150.0 -> 381.0
-            sizeMm2 <= 185.0 -> 436.0
-            sizeMm2 <= 240.0 -> 515.0
-            sizeMm2 <= 300.0 -> 590.0
-            sizeMm2 <= 400.0 -> 695.0
-            sizeMm2 <= 500.0 -> 800.0
-            else -> 915.0
-        }
-        return baseTableAmpacity * deratingFactor
-    }
-
-    fun estimateCandidateVoltageDrop(
-        candidateSize: Double,
-        currentSize: Double,
-        currentVdPct: Double
-    ): Double {
-        if (candidateSize <= 0.0 || currentSize <= 0.0) return currentVdPct
-        val ratio = currentSize / candidateSize
-        return currentVdPct * (0.85 * ratio + 0.15)
-    }
+    // NOTE: getNextStandardSizeDown, getSuggestedSmallerCandidate, estimateDeratedAmpacity and
+    // estimateCandidateVoltageDrop were deliberately removed. They were a second, competing
+    // engineering knowledge base inside the AI layer: a hardcoded IEC ampacity table, a
+    // hardcoded standard-size ladder and an invented voltage-drop formula. Candidate sizing,
+    // ampacity and voltage drop come only from the deterministic engines via tool execution.
 
     fun normalizeUtterance(text: String): String {
         return text.trim()
@@ -1016,18 +977,25 @@ object ConversationPolicyEngine {
     }
 }
 
+/**
+ * Authoritative circuit facts resolved from project data.
+ *
+ * Only descriptive fields are nullable; every safety-critical numeric field is guaranteed
+ * non-null because [ConversationPolicyEngine.parseEntityInputs] returns null rather than
+ * substituting a default when a safety-critical value cannot be sourced.
+ */
 data class ParsedCircuitInputs(
     val entityName: String,
     val cableSizeStr: String,
     val cableSizeVal: Double,
-    val material: String,
-    val insulation: String,
-    val installation: String,
+    val material: String?,
+    val insulation: String?,
+    val installation: String?,
     val ibStr: String,
     val ibVal: Double,
     val breakerStr: String,
     val breakerVal: Double,
-    val breakerType: String,
+    val breakerType: String?,
     val izStr: String,
     val izVal: Double,
     val deratingStr: String,

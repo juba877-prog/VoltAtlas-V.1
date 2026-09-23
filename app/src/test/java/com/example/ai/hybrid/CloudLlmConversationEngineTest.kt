@@ -96,7 +96,7 @@ class CloudLlmConversationEngineTest {
             ): CloudLlmRawResponse {
                 return CloudLlmRawResponse(
                     text = "Evaluating candidate...",
-                    toolCallName = "EvaluateCableCandidateTool",
+                    toolCallName = "evaluate_cable_candidate",
                     toolCallArguments = mapOf("candidateSize" to "240.0")
                 )
             }
@@ -107,9 +107,14 @@ class CloudLlmConversationEngineTest {
         val result = engine.evaluateTurn(input)
 
         assertNull(result.cloudDegradationReason)
-        assertTrue(result.hasBackingToolResult)
         assertEquals(ConversationActionType.EVALUATE_CANDIDATE, result.decision.action.actionType)
         assertEquals("240.0", result.decision.action.candidateParameters["candidateSize"])
+        // The cloud layer never executes a tool, so it must not claim one did. Claiming backing
+        // evidence for an unexecuted tool was a safety defect.
+        assertFalse(
+            "A tool *request* must not be reported as a backing tool result",
+            result.hasBackingToolResult
+        )
     }
 
     // 4. SDK exception types map to existing CloudDegradationReason enum

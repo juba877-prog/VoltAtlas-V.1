@@ -28,7 +28,8 @@ enum class EngineeringStatusUiModel(val label: String) {
 }
 
 /**
- * Individual engineering metric display model (e.g. Ib = 345 A, VD = 1.85%).
+ * Individual engineering metric display model. Every value must be supplied by evidence;
+ * the UI layer never originates a number.
  */
 data class EngineeringMetricUiModel(
     val label: String,

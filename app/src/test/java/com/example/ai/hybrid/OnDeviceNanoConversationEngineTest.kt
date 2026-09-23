@@ -30,11 +30,13 @@ class OnDeviceNanoConversationEngineTest {
 
         assertEquals(ConversationEngineSource.ON_DEVICE_GEMINI_NANO, result.source)
         assertNull(result.cloudDegradationReason)
-        assertTrue(result.hasBackingToolResult)
+        // Intent extraction only: no tool ran, so no tool backing may be claimed.
+        assertFalse(result.hasBackingToolResult)
         val text = result.decision.explanationSummary.orEmpty()
-        assertTrue("Output should mention 45 kW: $text", text.contains("45.0 kW") || text.contains("45 kW"))
-        assertTrue("Output should recommend Star-Delta: $text", text.contains("Star-Delta"))
-        assertTrue("Output should contain FLC: $text", text.contains("FLC:"))
+        assertTrue("Should route to the authoritative engine: $text", text.contains("authoritative VoltAtlas engine"))
+        // The on-device layer must not compute starter results any more.
+        assertFalse("Must not emit an FLC value: $text", text.contains("FLC"))
+        assertFalse("Must not recommend a starter method: $text", text.contains("Star-Delta"))
     }
 
     @Test
@@ -48,9 +50,11 @@ class OnDeviceNanoConversationEngineTest {
         val result = engine.evaluateTurn(input) { "DEC-TEST-002" }
 
         assertEquals(ConversationEngineSource.ON_DEVICE_GEMINI_NANO, result.source)
+        assertFalse(result.hasBackingToolResult)
         val text = result.decision.explanationSummary.orEmpty()
-        assertTrue("Output should contain kvar: $text", text.contains("kvar"))
-        assertTrue("Output should contain IEC 60831 standard: $text", text.contains("IEC 60831"))
+        assertTrue("Should route to the authoritative engine: $text", text.contains("authoritative VoltAtlas engine"))
+        assertFalse("Must not compute a kvar value: $text", text.contains("kvar"))
+        assertFalse("Must not cite an IEC result: $text", text.contains("IEC 60831"))
     }
 
     @Test
@@ -64,9 +68,11 @@ class OnDeviceNanoConversationEngineTest {
         val result = engine.evaluateTurn(input) { "DEC-TEST-003" }
 
         assertEquals(ConversationEngineSource.ON_DEVICE_GEMINI_NANO, result.source)
+        assertFalse(result.hasBackingToolResult)
         val text = result.decision.explanationSummary.orEmpty()
-        assertTrue("Output should contain kA: $text", text.contains("kA"))
-        assertTrue("Output should cite IEC 60909: $text", text.contains("IEC 60909"))
+        assertTrue("Should route to the authoritative engine: $text", text.contains("authoritative VoltAtlas engine"))
+        assertFalse("Must not compute a fault level: $text", text.contains("kA"))
+        assertFalse("Must not cite an IEC result: $text", text.contains("IEC 60909"))
     }
 
     @Test
@@ -80,9 +86,11 @@ class OnDeviceNanoConversationEngineTest {
         val result = engine.evaluateTurn(input) { "DEC-TEST-004" }
 
         assertEquals(ConversationEngineSource.ON_DEVICE_GEMINI_NANO, result.source)
+        assertFalse(result.hasBackingToolResult)
         val text = result.decision.explanationSummary.orEmpty()
-        assertTrue("Output should mention mm²: $text", text.contains("mm²"))
-        assertTrue("Output should cite IEC 60364-5-52: $text", text.contains("IEC 60364-5-52"))
+        assertTrue("Should route to the authoritative engine: $text", text.contains("authoritative VoltAtlas engine"))
+        assertFalse("Must not emit a conductor size: $text", text.contains("mm²"))
+        assertFalse("Must not cite an IEC result: $text", text.contains("IEC 60364"))
     }
 
     @Test
@@ -147,8 +155,11 @@ class OnDeviceNanoConversationEngineTest {
 
         val result = router.evaluateTurn(input)
 
-        // Offline probe with functional Nano routes to Nano!
+        // Offline probe with functional Nano routes to Nano, which reports intent routing only
+        // (it must not compute a motor result itself).
         assertEquals(ConversationEngineSource.ON_DEVICE_GEMINI_NANO, result.source)
-        assertTrue(result.decision.explanationSummary.orEmpty().contains("22.0 kW") || result.decision.explanationSummary.orEmpty().contains("22 kW"))
+        val summary = result.decision.explanationSummary.orEmpty()
+        assertTrue("Should route to the authoritative engine: $summary", summary.contains("authoritative VoltAtlas engine"))
+        assertFalse("Must not emit a motor rating result: $summary", summary.contains("kW"))
     }
 }

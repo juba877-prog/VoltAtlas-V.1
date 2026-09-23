@@ -1,6 +1,8 @@
 package com.example.ai.ui
 
 import com.example.ai.context.EngineeringContext
+import com.example.ai.context.revision.ProjectRevisionProvider
+import com.example.ai.context.revision.ProjectRevisionSnapshot
 import com.example.ai.conversation.*
 import com.example.ai.hybrid.*
 import com.example.ai.service.MessageRole
@@ -18,6 +20,15 @@ import java.io.File
 class EngineeringAssistantViewModelHybridTest {
 
     private val testDispatcher = StandardTestDispatcher()
+
+    /**
+     * Authoritative revision source. The ViewModel now fails closed when it cannot resolve a
+     * real project revision, so tests must supply one rather than rely on a fabricated default.
+     */
+    private val revisionProvider = object : ProjectRevisionProvider {
+        override suspend fun getCurrentRevision(projectId: String) =
+            ProjectRevisionSnapshot(projectId, 7L, System.currentTimeMillis())
+    }
 
     @Before
     fun setUp() {
@@ -54,7 +65,7 @@ class EngineeringAssistantViewModelHybridTest {
             }
         }
 
-        val viewModel = EngineeringAssistantViewModel(conversationEngine = mockRouter)
+        val viewModel = EngineeringAssistantViewModel(projectRevisionProvider = revisionProvider, conversationEngine = mockRouter)
         viewModel.open(
             AssistantEntryPoint.CONTEXTUAL_CIRCUIT,
             EngineeringContext(projectId = "P-1", projectName = "Test Project")
@@ -90,7 +101,7 @@ class EngineeringAssistantViewModelHybridTest {
             }
         }
 
-        val viewModel = EngineeringAssistantViewModel(conversationEngine = degradedRouter)
+        val viewModel = EngineeringAssistantViewModel(projectRevisionProvider = revisionProvider, conversationEngine = degradedRouter)
         viewModel.open(AssistantEntryPoint.TOP_BAR_ICON, EngineeringContext(projectId = "P-1"))
 
         viewModel.onUserSubmit("Explain sizing")
@@ -122,7 +133,7 @@ class EngineeringAssistantViewModelHybridTest {
             }
         }
 
-        val viewModel = EngineeringAssistantViewModel(conversationEngine = normalRouter)
+        val viewModel = EngineeringAssistantViewModel(projectRevisionProvider = revisionProvider, conversationEngine = normalRouter)
         viewModel.open(AssistantEntryPoint.TOP_BAR_ICON, EngineeringContext(projectId = "P-1"))
 
         viewModel.onUserSubmit("Explain sizing")
@@ -161,7 +172,7 @@ class EngineeringAssistantViewModelHybridTest {
             }
         }
 
-        val viewModel = EngineeringAssistantViewModel(conversationEngine = mixedRouter)
+        val viewModel = EngineeringAssistantViewModel(projectRevisionProvider = revisionProvider, conversationEngine = mixedRouter)
         viewModel.open(AssistantEntryPoint.TOP_BAR_ICON, EngineeringContext(projectId = "P-1"))
 
         // Turn 1 (slow)
@@ -259,7 +270,7 @@ class EngineeringAssistantViewModelHybridTest {
             }
         }
 
-        val viewModel = EngineeringAssistantViewModel(conversationEngine = mockRouter)
+        val viewModel = EngineeringAssistantViewModel(projectRevisionProvider = revisionProvider, conversationEngine = mockRouter)
         viewModel.open(AssistantEntryPoint.TOP_BAR_ICON, EngineeringContext(projectId = "P-1"))
 
         viewModel.onChipSelected("Perforated Tray")
@@ -274,7 +285,7 @@ class EngineeringAssistantViewModelHybridTest {
     // 9. onCardAction with CANCEL_TASK dismisses card from UI state
     @Test
     fun onCardAction_cancelTask_dismissesCardFromUiState() = runTest(testDispatcher) {
-        val viewModel = EngineeringAssistantViewModel()
+        val viewModel = EngineeringAssistantViewModel(projectRevisionProvider = revisionProvider)
         viewModel.open(AssistantEntryPoint.TOP_BAR_ICON, EngineeringContext(projectId = "P-1"))
 
         val testCardId = "CARD-BLOCKING-1"
@@ -307,7 +318,7 @@ class EngineeringAssistantViewModelHybridTest {
             }
         }
 
-        val viewModel = EngineeringAssistantViewModel(conversationEngine = mockRouter)
+        val viewModel = EngineeringAssistantViewModel(projectRevisionProvider = revisionProvider, conversationEngine = mockRouter)
         viewModel.open(AssistantEntryPoint.TOP_BAR_ICON, EngineeringContext(projectId = "P-1"))
 
         val action = SuggestedActionUiModel(ConversationActionType.RUN_CALCULATION, "Recalculate", isPrimary = true)

@@ -585,7 +585,8 @@ class ConversationPolicyEngineTest {
                 "deratingFactor" to "0.82",
                 "voltageDropPct" to "1.20%",
                 "voltageDropV" to "2.40 V",
-                "maxVDpct" to "3.00"
+                "maxVDpct" to "3.00",
+                "lengthM" to "50.0"
             )
         )
         val input = ConversationTurnInput(userUtterance = "why?", projectContext = ctx)
@@ -598,7 +599,12 @@ class ConversationPolicyEngineTest {
         assertTrue("Explanation must mention ampacity Iz", explanation.contains("65.0 A"))
         assertTrue("Explanation must mention breaker", explanation.contains("50 A"))
         assertTrue("Explanation must mention voltage drop", explanation.contains("1.20%"))
-        assertTrue("Explanation must mention IEC standard", explanation.contains("IEC 60364-5-52"))
+        // The governing criterion and any standard compliance claim come from the calculation
+        // result; the policy layer must defer rather than assert them itself.
+        assertTrue("Must defer the governing criterion to the calculation result",
+            explanation.contains("Governing criterion"))
+        assertFalse("Must not claim a standard compliance the policy layer did not verify",
+            explanation.contains("IEC 60364-5-52"))
     }
 
     // 30. Cable inquiry on already-sized circuit answers from current result
@@ -613,7 +619,11 @@ class ConversationPolicyEngineTest {
                 "insulation" to "XLPE",
                 "designCurrentIb" to "45.0 A",
                 "breakerSize" to "50 A",
-                "deratedAmpacityIz" to "65.0 A"
+                "deratedAmpacityIz" to "65.0 A",
+                "deratingFactor" to "0.82",
+                "voltageDropPct" to "1.20%",
+                "maxVDpct" to "3.00",
+                "lengthM" to "50.0"
             )
         )
         val inquiries = listOf("cable", "what cable", "feeder")
@@ -643,7 +653,10 @@ class ConversationPolicyEngineTest {
                 "designCurrentIb" to "45.0 A",
                 "breakerSize" to "50 A",
                 "deratedAmpacityIz" to "65.0 A",
-                "voltageDropPct" to "1.20%"
+                "deratingFactor" to "0.82",
+                "voltageDropPct" to "1.20%",
+                "maxVDpct" to "3.00",
+                "lengthM" to "50.0"
             )
         )
         val calcQueries = listOf("size", "size this", "size this circuit", "calculate", "احسب الكابل")
@@ -687,7 +700,10 @@ class ConversationPolicyEngineTest {
                 "designCurrentIb" to "45.0 A",
                 "breakerSize" to "50 A",
                 "deratedAmpacityIz" to "65.0 A",
-                "voltageDropPct" to "1.20%"
+                "deratingFactor" to "0.82",
+                "voltageDropPct" to "1.20%",
+                "maxVDpct" to "3.00",
+                "lengthM" to "50.0"
             )
         )
         val input = ConversationTurnInput(userUtterance = "ليه؟", projectContext = ctx)
@@ -696,7 +712,7 @@ class ConversationPolicyEngineTest {
         assertEquals(ConversationActionType.EXPLAIN_RESULT, decision.action.actionType)
         assertEquals(ConversationLanguage.AR, decision.updatedState.userLanguage)
         val explanation = decision.explanationSummary ?: ""
-        assertTrue("Must contain Arabic conductor header", explanation.contains("المقطع المحدد"))
+        assertTrue("Must contain an Arabic conductor statement", explanation.contains("محددة بمقطع"))
         assertTrue("Must contain cable size", explanation.contains("16.0 مم²"))
         assertTrue("Must contain governing criterion in Arabic", explanation.contains("المعيار الحاكم"))
     }
@@ -716,7 +732,9 @@ class ConversationPolicyEngineTest {
                 "breakerType" to "MCB",
                 "deratedAmpacityIz" to "88.4 A",
                 "voltageDropPct" to "0.23%",
-                "maxVDpct" to "3.00%"
+                "maxVDpct" to "3.00%",
+                "deratingFactor" to "0.82",
+                "lengthM" to "50.0"
             )
         )
         val input = ConversationTurnInput(userUtterance = "why?", projectContext = ctx)
@@ -724,9 +742,14 @@ class ConversationPolicyEngineTest {
 
         assertEquals(ConversationActionType.EXPLAIN_RESULT, decision.action.actionType)
         val explanation = decision.explanationSummary ?: ""
-        assertTrue("Must recognize circuit is substantially oversized", explanation.contains("substantially oversized", ignoreCase = true))
-        assertTrue("Must report low thermal utilization", explanation.contains("16.3% thermal utilization") || explanation.contains("thermal utilization"))
-        assertTrue("Must mention smaller viable candidate like 2.5 mm²", explanation.contains("2.5 mm²"))
+        // The policy layer no longer labels a circuit "substantially oversized" or names a
+        // smaller compliant size: both required a second engineering calculation. It reports
+        // verified facts and defers both judgements to the calculation result.
+        assertTrue("Must report utilization", explanation.contains("utilization"))
+        assertTrue("Must report ampacity", explanation.contains("88.4 A"))
+        assertTrue("Must defer the governing criterion", explanation.contains("Governing criterion"))
+        assertFalse("Must not name a specific alternative size without evaluating it",
+            explanation.contains("2.5 mm²"))
         assertFalse("Must NOT claim next size down fails", explanation.contains("The next size down fails"))
     }
 
@@ -745,7 +768,9 @@ class ConversationPolicyEngineTest {
                 "breakerType" to "MCB",
                 "deratedAmpacityIz" to "88.4 A",
                 "voltageDropPct" to "0.23%",
-                "maxVDpct" to "3.00%"
+                "maxVDpct" to "3.00%",
+                "deratingFactor" to "0.82",
+                "lengthM" to "50.0"
             )
         )
         val input = ConversationTurnInput(userUtterance = "ليه؟", projectContext = ctx)
@@ -754,8 +779,11 @@ class ConversationPolicyEngineTest {
         assertEquals(ConversationActionType.EXPLAIN_RESULT, decision.action.actionType)
         assertEquals(ConversationLanguage.AR, decision.updatedState.userLanguage)
         val explanation = decision.explanationSummary ?: ""
-        assertTrue("Must state that cable is substantially oversized in Arabic", explanation.contains("أكبر بكثير"))
-        assertTrue("Must mention 2.5 مم² as compliant smaller option", explanation.contains("2.5 مم²"))
+        // No "oversized" judgement and no named smaller alternative: those are calculation
+        // outcomes, not policy-layer conclusions.
+        assertTrue("Must report utilization in Arabic", explanation.contains("نسبة التشغيل"))
+        assertTrue("Must defer the governing criterion in Arabic", explanation.contains("المعيار الحاكم"))
+        assertFalse("Must not name a specific smaller size", explanation.contains("2.5 مم²"))
     }
 
     // 35. Candidate inquiry for 2.5 mm² on 14.4A circuit returns compliant answer
@@ -773,7 +801,9 @@ class ConversationPolicyEngineTest {
                 "breakerType" to "MCB",
                 "deratedAmpacityIz" to "88.4 A",
                 "voltageDropPct" to "0.23%",
-                "maxVDpct" to "3.00%"
+                "maxVDpct" to "3.00%",
+                "deratingFactor" to "0.82",
+                "lengthM" to "50.0"
             )
         )
         val input = ConversationTurnInput(userUtterance = "Can 2.5 work?", projectContext = ctx)
@@ -782,7 +812,13 @@ class ConversationPolicyEngineTest {
         assertEquals(ConversationActionType.EVALUATE_CANDIDATE, decision.action.actionType)
         assertEquals("2.5", decision.action.candidateParameters["targetSize"])
         val explanation = decision.explanationSummary ?: ""
-        assertTrue("Must indicate 2.5 mm² can work", explanation.startsWith("Yes, **2.5 mm²** is technically compliant"))
+        // Compliance is never estimated in the policy layer; it must report that the evaluation
+        // still has to run rather than answering "Yes".
+        assertFalse("Must not claim a candidate is compliant without a calculation",
+            explanation.startsWith("Yes, **2.5 mm²**"))
+        assertTrue("Must report the recorded candidate", explanation.contains("2.5 mm²"))
+        assertTrue("Must direct to the candidate evaluation tool",
+            explanation.contains("candidate evaluation tool"))
     }
 
     // 36. Candidate inquiry for 1.5 mm² on 50A breaker circuit returns non-compliant
@@ -800,7 +836,9 @@ class ConversationPolicyEngineTest {
                 "breakerType" to "MCB",
                 "deratedAmpacityIz" to "65.0 A",
                 "voltageDropPct" to "1.20%",
-                "maxVDpct" to "3.00%"
+                "maxVDpct" to "3.00%",
+                "deratingFactor" to "0.82",
+                "lengthM" to "50.0"
             )
         )
         val input = ConversationTurnInput(userUtterance = "Can 1.5 work?", projectContext = ctx)
@@ -809,7 +847,12 @@ class ConversationPolicyEngineTest {
         assertEquals(ConversationActionType.EVALUATE_CANDIDATE, decision.action.actionType)
         assertEquals("1.5", decision.action.candidateParameters["targetSize"])
         val explanation = decision.explanationSummary ?: ""
-        assertTrue("Must indicate 1.5 mm² cannot work", explanation.startsWith("No, **1.5 mm²** cannot be used"))
+        // Compliance is never estimated in the policy layer; it must not answer "No" either.
+        assertFalse("Must not claim a candidate fails without a calculation",
+            explanation.startsWith("No, **1.5 mm²**"))
+        assertTrue("Must report the recorded candidate", explanation.contains("1.5 mm²"))
+        assertTrue("Must direct to the candidate evaluation tool",
+            explanation.contains("candidate evaluation tool"))
     }
 
     // 37. Cost optimization on oversized circuit recommends downsizing
@@ -827,7 +870,9 @@ class ConversationPolicyEngineTest {
                 "breakerType" to "MCB",
                 "deratedAmpacityIz" to "88.4 A",
                 "voltageDropPct" to "0.23%",
-                "maxVDpct" to "3.00%"
+                "maxVDpct" to "3.00%",
+                "deratingFactor" to "0.82",
+                "lengthM" to "50.0"
             )
         )
         val input = ConversationTurnInput(userUtterance = "Make it cheaper", projectContext = ctx)
@@ -836,6 +881,10 @@ class ConversationPolicyEngineTest {
         assertEquals(ConversationActionType.COMPARE_CANDIDATES, decision.action.actionType)
         assertEquals("COST_OPTIMIZE_WITHOUT_PRICING", decision.action.reasonCode)
         val explanation = decision.explanationSummary ?: ""
-        assertTrue("Must recommend downsizing to 2.5 mm²", explanation.contains("2.5 mm²"))
+        // Cost optimisation must not recommend a specific downsize from a utilization heuristic.
+        assertFalse("Must not name a specific downsize without evaluating catalogue candidates",
+            explanation.contains("2.5 mm²"))
+        assertTrue("Must route to candidate comparison",
+            explanation.contains("Run candidate comparison now?"))
     }
 }

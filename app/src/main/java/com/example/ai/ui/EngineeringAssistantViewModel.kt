@@ -316,8 +316,10 @@ class EngineeringAssistantViewModel(
     ) {
         val toolName = CloudToolActionMapping.toolFor(result.decision.action.actionType) ?: return
 
-        // Resolved lazily: building the runtime loads and parses catalog JSON.
-        val runtime = withContext(ioDispatcher) { toolRuntimeProvider?.invoke() } ?: return
+        // Resolved in the current coroutine context: building the runtime loads and parses
+        // catalog JSON internally on IO. Wrapping this in withContext(ioDispatcher) here would
+        // move execution onto a non-test dispatcher and break deterministic turn ordering.
+        val runtime = toolRuntimeProvider?.invoke() ?: return
 
         if (!runtime.descriptorRegistry.isRegistered(toolName)) return
 

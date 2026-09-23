@@ -11,35 +11,39 @@ import java.util.UUID
 /**
  * Structured electrical engineering intent produced by on-device Gemini Nano inference.
  * Adheres to ML Kit GenAI Prompt API structured output specifications.
+ *
+ * Every field is nullable and has no default: the on-device layer only reports what the user
+ * actually said. Missing engineering inputs must be requested as blocking questions rather
+ * than filled with assumed voltages, lengths, power factors or impedances.
  */
 sealed class NanoStructuredIntent {
     data class CableSizing(
         val powerKw: Double? = null,
         val currentAmps: Double? = null,
-        val voltageV: Double = 400.0,
-        val lengthM: Double = 30.0,
-        val isThreePhase: Boolean = true,
-        val targetVdPct: Double = 3.0
+        val voltageV: Double? = null,
+        val lengthM: Double? = null,
+        val isThreePhase: Boolean? = null,
+        val targetVdPct: Double? = null
     ) : NanoStructuredIntent()
 
     data class MotorStarter(
         val motorKw: Double,
-        val voltageV: Double = 400.0,
-        val isThreePhase: Boolean = true,
+        val voltageV: Double? = null,
+        val isThreePhase: Boolean? = null,
         val preferredMethod: String? = null
     ) : NanoStructuredIntent()
 
     data class PowerFactorCorrection(
         val activePowerKw: Double,
         val currentPf: Double,
-        val targetPf: Double = 0.95,
-        val voltageV: Double = 400.0
+        val targetPf: Double? = null,
+        val voltageV: Double? = null
     ) : NanoStructuredIntent()
 
     data class TransformerFault(
         val ratingKva: Double,
-        val secondaryVoltageV: Double = 400.0,
-        val impedancePercentZ: Double = 4.0
+        val secondaryVoltageV: Double? = null,
+        val impedancePercentZ: Double? = null
     ) : NanoStructuredIntent()
 
     data class GeneralAdvisory(
@@ -68,41 +72,53 @@ class DefaultNanoClientSeam(
     override suspend fun parseIntent(prompt: String, systemContext: String): NanoStructuredIntent? {
         val lower = prompt.lowercase()
 
-        // 1. Motor Starter Intent
+        // 1. Motor Starter Intent. The rating must actually be spoken; no default rating,
+        //    system voltage or efficiency is assumed.
         if (lower.contains("motor") && (lower.contains("starter") || lower.contains("starting") || lower.contains("kw") || lower.contains("flc"))) {
             val kwMatch = Regex("""(\d+(\.\d+)?)\s*(kw|hp)""").find(lower)
             val kw = kwMatch?.let {
-                val value = it.groupValues[1].toDoubleOrNull() ?: 15.0
+                val value = it.groupValues[1].toDoubleOrNull() ?: return@let null
                 if (it.groupValues[3] == "hp") value * 0.746 else value
-            } ?: 15.0
+            }
             val is3p = !lower.contains("single phase") && !lower.contains("1-phase")
-            val v = if (is3p) 400.0 else 230.0
-            return NanoStructuredIntent.MotorStarter(motorKw = kw, voltageV = v, isThreePhase = is3p)
+            if (kw != null) {
+                return NanoStructuredIntent.MotorStarter(motorKw = kw, voltageV = null, isThreePhase = is3p)
+            }
         }
 
-        // 2. Power Factor Correction Intent
+        // 2. Power Factor Correction Intent. Power factor values are extracted only when stated.
         if (lower.contains("pfc") || lower.contains("power factor") || lower.contains("capacitor") || lower.contains("kvar")) {
             val kwMatch = Regex("""(\d+(\.\d+)?)\s*kw""").find(lower)
-            val kw = kwMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 100.0
+            val kw = kwMatch?.groupValues?.get(1)?.toDoubleOrNull()
             val pfMatch = Regex("""0\.\d{1,2}""").findAll(lower).mapNotNull { it.value.toDoubleOrNull() }.toList()
-            val initialPf = pfMatch.firstOrNull() ?: 0.80
-            val targetPf = if (pfMatch.size > 1) pfMatch[1] else 0.95
-            return NanoStructuredIntent.PowerFactorCorrection(activePowerKw = kw, currentPf = initialPf, targetPf = targetPf)
+            val initialPf = pfMatch.firstOrNull()
+            val targetPf = pfMatch.getOrNull(1)
+            if (kw != null && initialPf != null) {
+                return NanoStructuredIntent.PowerFactorCorrection(
+                    activePowerKw = kw,
+                    currentPf = initialPf,
+                    targetPf = targetPf
+                )
+            }
         }
 
-        // 3. Transformer Fault Intent
+        // 3. Transformer Fault Intent. Rating and impedance are extracted only when stated;
+        //    impedance is never assumed to be a "typical" percentage.
         if (lower.contains("transformer") || lower.contains("trafo") || lower.contains("fault level") || lower.contains("short circuit")) {
             val kvaMatch = Regex("""(\d+(\.\d+)?)\s*(kva|mva)""").find(lower)
             val kva = kvaMatch?.let {
-                val value = it.groupValues[1].toDoubleOrNull() ?: 1000.0
+                val value = it.groupValues[1].toDoubleOrNull() ?: return@let null
                 if (it.groupValues[3] == "mva") value * 1000.0 else value
-            } ?: 1000.0
+            }
             val zMatch = Regex("""(\d+(\.\d+)?)\s*%""").find(lower)
-            val zPct = zMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: (if (kva >= 1000.0) 5.0 else 4.0)
-            return NanoStructuredIntent.TransformerFault(ratingKva = kva, impedancePercentZ = zPct)
+            val zPct = zMatch?.groupValues?.get(1)?.toDoubleOrNull()
+            if (kva != null && zPct != null) {
+                return NanoStructuredIntent.TransformerFault(ratingKva = kva, impedancePercentZ = zPct)
+            }
         }
 
-        // 4. Cable Sizing Intent
+        // 4. Cable Sizing Intent. Voltage, length and load are extracted only when stated —
+        //    no system voltage, route length or derived load is assumed.
         if (lower.contains("cable") || lower.contains("ampacity") || lower.contains("voltage drop") || lower.contains("run")) {
             val kwMatch = Regex("""(\d+(\.\d+)?)\s*kw""").find(lower)
             val aMatch = Regex("""(\d+(\.\d+)?)\s*a""").find(lower)
@@ -110,17 +126,18 @@ class DefaultNanoClientSeam(
 
             val kw = kwMatch?.groupValues?.get(1)?.toDoubleOrNull()
             val amps = aMatch?.groupValues?.get(1)?.toDoubleOrNull()
-            val length = lengthMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 40.0
+            val length = lengthMatch?.groupValues?.get(1)?.toDoubleOrNull()
             val is3p = !lower.contains("single phase") && !lower.contains("1-phase")
-            val v = if (is3p) 400.0 else 230.0
 
-            return NanoStructuredIntent.CableSizing(
-                powerKw = kw ?: (if (amps != null) (amps * v * 1.732 * 0.85 / 1000.0) else 22.0),
-                currentAmps = amps,
-                voltageV = v,
-                lengthM = length,
-                isThreePhase = is3p
-            )
+            if (kw != null || amps != null) {
+                return NanoStructuredIntent.CableSizing(
+                    powerKw = kw,
+                    currentAmps = amps,
+                    voltageV = null,
+                    lengthM = length,
+                    isThreePhase = is3p
+                )
+            }
         }
 
         return NanoStructuredIntent.GeneralAdvisory(
@@ -139,33 +156,7 @@ class DefaultNanoClientSeam(
  * - Graceful Fallback: Emits [CloudDegradationReason.HTTP_OR_PROVIDER_ERROR] when hardware or model is absent.
  */
 class OnDeviceNanoConversationEngine(
-    private val clientSeam: NanoClientSeam = DefaultNanoClientSeam(),
-    private val cableSizingEngine: (loadKw: Double, lengthM: Double, voltageV: Double) -> SizingResult = { kw, len, v ->
-        val currentAmps = (kw * 1000.0) / (kotlin.math.sqrt(3.0) * v * 0.85)
-        SizingResult(
-            Ib_A = currentAmps,
-            deviceSize_A = 63.0,
-            deviceType = "MCB",
-            cTotalDerating = 0.8,
-            iRequired_perCable_A = currentAmps / 0.8,
-            productCode = "4C-16-XLPE",
-            cableSize_mm2 = "16",
-            ratedI_table_A = 95.0,
-            capacity_derated_Iz_A = 76.0,
-            utilizationPct = (currentAmps / 76.0) * 100.0,
-            neutral_mm2 = "16",
-            earthCPC_mm2 = "16",
-            voltDrop_V = 7.4,
-            vdPct = 1.85,
-            cumulativeVDpct = 1.85,
-            status = "✔ PASS",
-            failReason = "",
-            resultStatus = SizingResultStatus.PASS,
-            isAmpacityOk = true,
-            isVoltageDropOk = true,
-            primaryFailureCode = null
-        )
-    }
+    private val clientSeam: NanoClientSeam = DefaultNanoClientSeam()
 ) : ConversationEngine {
 
     companion object {
@@ -227,69 +218,70 @@ class OnDeviceNanoConversationEngine(
                 hasBackingToolResult = false
             )
 
-        // 3. Delegate to Deterministic Computational Engines (Rule 3)
+        // 3. Structured intent extraction ONLY (Rule 3). The on-device layer never computes
+        //    electrical results. Previously it ran motor-current, PFC kvar, transformer fault
+        //    and cable-sizing formulas here, with a fabricated `vdPct = 1.85` / `63 A` / `16 mm²`
+        //    cable result baked in. Any engineering answer must come from the deterministic
+        //    engines through the shared tool registry, so this layer only reports what is
+        //    needed and routes the request onward.
         val explanationText: String
         when (intent) {
-            is NanoStructuredIntent.MotorStarter -> {
-                val flc = (intent.motorKw * 1000.0) / (if (intent.isThreePhase) (kotlin.math.sqrt(3.0) * intent.voltageV * 0.85 * 0.90) else (intent.voltageV * 0.85 * 0.90))
-                val method = when {
-                    intent.motorKw <= 5.5 -> "Direct-On-Line (DOL)"
-                    intent.motorKw <= 45.0 -> "Star-Delta (Y-Δ)"
-                    else -> "Soft Starter / Variable Frequency Drive (VFD)"
-                }
-                val starterCurrent = when {
-                    method.startsWith("Direct") -> flc * 6.0
-                    method.startsWith("Star") -> flc * 2.2
-                    else -> flc * 1.5
-                }
-                explanationText = "[Offline Gemini Nano / IEC 60034] Motor Starter Sizing for ${intent.motorKw} kW @ ${intent.voltageV.toInt()}V: " +
-                        "Rated FLC: ${String.format("%.1f", flc)} A. Recommended Method: $method. " +
-                        "Starting Inrush: ${String.format("%.1f", starterCurrent)} A. Contactor: ${String.format("%.0f", flc * 1.15)} A AC-3 rated."
-            }
+            is NanoStructuredIntent.MotorStarter ->
+                explanationText = routingMessage(language = input.priorState?.userLanguage)
 
-            is NanoStructuredIntent.PowerFactorCorrection -> {
-                val phi1 = kotlin.math.acos(intent.currentPf)
-                val phi2 = kotlin.math.acos(intent.targetPf)
-                val requiredKvar = intent.activePowerKw * (kotlin.math.tan(phi1) - kotlin.math.tan(phi2))
-                val currentBefore = (intent.activePowerKw * 1000.0) / (kotlin.math.sqrt(3.0) * intent.voltageV * intent.currentPf)
-                val currentAfter = (intent.activePowerKw * 1000.0) / (kotlin.math.sqrt(3.0) * intent.voltageV * intent.targetPf)
-                explanationText = "[Offline Gemini Nano / IEC 60831] Power Factor Correction: To improve ${intent.activePowerKw} kW from ${intent.currentPf} to ${intent.targetPf}, " +
-                        "required capacitor compensation is ${String.format("%.1f", requiredKvar)} kvar. " +
-                        "Line current reduces from ${String.format("%.1f", currentBefore)} A to ${String.format("%.1f", currentAfter)} A."
-            }
+            is NanoStructuredIntent.PowerFactorCorrection ->
+                explanationText = routingMessage(language = input.priorState?.userLanguage)
 
-            is NanoStructuredIntent.TransformerFault -> {
-                val flcSec = (intent.ratingKva * 1000.0) / (kotlin.math.sqrt(3.0) * intent.secondaryVoltageV)
-                val iscKa = (flcSec / (intent.impedancePercentZ / 100.0)) / 1000.0
-                explanationText = "[Offline Gemini Nano / IEC 60909] Transformer Short-Circuit Level for ${intent.ratingKva.toInt()} kVA (Z = ${intent.impedancePercentZ}%): " +
-                        "Secondary Rated Current: ${String.format("%.1f", flcSec)} A. Symmetrical Fault Current (Isc): ${String.format("%.2f", iscKa)} kA at ${intent.secondaryVoltageV.toInt()}V LV busbar."
-            }
+            is NanoStructuredIntent.TransformerFault ->
+                explanationText = routingMessage(language = input.priorState?.userLanguage)
 
-            is NanoStructuredIntent.CableSizing -> {
-                val kw = intent.powerKw ?: 15.0
-                val result = cableSizingEngine(kw, intent.lengthM, intent.voltageV)
-                explanationText = "[Offline Gemini Nano / IEC 60364-5-52] Cable Sizing for $kw kW over ${intent.lengthM}m: " +
-                        "Conductor: 4C x ${result.cableSize_mm2} mm². Protective Device: ${result.deviceSize_A.toInt()} A. " +
-                        "Capacity (Iz): ${result.capacity_derated_Iz_A} A. Voltage Drop: ${result.vdPct}% (${result.voltDrop_V} V, PASS)."
-            }
+            is NanoStructuredIntent.CableSizing ->
+                explanationText = routingMessage(language = input.priorState?.userLanguage)
 
-            is NanoStructuredIntent.GeneralAdvisory -> {
+            is NanoStructuredIntent.GeneralAdvisory ->
                 explanationText = intent.explanation
-            }
         }
 
-        // 4. Guard against fabrication
+        // 4. Evidence guard. No deterministic tool was executed in this path, so this result
+        //    must never be reported as tool-backed.
         val hasFabrication = EngineeringClaimGuard.containsUnsupportedEngineeringClaim(
             rawText = explanationText,
-            hasBackingToolResult = true
+            hasBackingToolResult = false
         )
+        if (hasFabrication) {
+            return@withContext HybridEngineResult(
+                decision = ConversationTurnDecision(
+                    decisionId = decisionId,
+                    action = ConversationAction(
+                        actionType = ConversationActionType.SAFE_ERROR,
+                        reasonCode = "UNSUPPORTED_ENGINEERING_CLAIM"
+                    ),
+                    updatedState = input.priorState ?: ConversationTaskState(
+                        taskId = "TASK-NANO-" + UUID.randomUUID().toString().take(6),
+                        projectId = input.projectContext.projectId,
+                        baseProjectRevision = input.projectContext.liveRevision,
+                        activeEntityType = input.projectContext.activeEntityType,
+                        activeEntityId = input.projectContext.activeEntityId
+                    ),
+                    explanationSummary = if (input.priorState?.userLanguage == ConversationLanguage.AR) {
+                        "تم رفض الإجابة لأنها ادعت قيمة هندسية دون نتيجة حساب موثقة."
+                    } else {
+                        "The response was rejected because it asserted an engineering value " +
+                            "without a certified calculation result."
+                    }
+                ),
+                source = ConversationEngineSource.ON_DEVICE_GEMINI_NANO,
+                cloudDegradationReason = CloudDegradationReason.UNSUPPORTED_ENGINEERING_CLAIM,
+                hasBackingToolResult = false
+            )
+        }
 
         return@withContext HybridEngineResult(
             decision = ConversationTurnDecision(
                 decisionId = decisionId,
                 action = ConversationAction(
                     actionType = ConversationActionType.EXPLAIN_RESULT,
-                    reasonCode = "ON_DEVICE_NANO_EXPLANATION"
+                    reasonCode = "ON_DEVICE_NANO_INTENT_ONLY"
                 ),
                 updatedState = input.priorState ?: ConversationTaskState(
                     taskId = "TASK-NANO-" + UUID.randomUUID().toString().take(6),
@@ -302,7 +294,21 @@ class OnDeviceNanoConversationEngine(
             ),
             source = ConversationEngineSource.ON_DEVICE_GEMINI_NANO,
             cloudDegradationReason = null,
-            hasBackingToolResult = true
+            hasBackingToolResult = false
         )
     }
+
+    /**
+     * The on-device layer reports that a certified result must come from the deterministic
+     * engine. It never substitutes an estimate.
+     */
+    private fun routingMessage(language: ConversationLanguage?): String =
+        if (language == ConversationLanguage.AR) {
+            "تم التقاط نيتك على الجهاز. يجب الحصول على النتيجة الهندسية من محرك VoltAtlas المطابق " +
+                "عبر سجل الأدوات المشترك؛ لن يتم حساب أي قيمة هنا."
+        } else {
+            "Your intent was captured on-device. The engineering result must come from the " +
+                "authoritative VoltAtlas engine through the shared tool registry; nothing is " +
+                "calculated here."
+        }
 }

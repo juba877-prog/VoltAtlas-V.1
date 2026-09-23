@@ -70,7 +70,7 @@ class EvaluateCableCandidateTool(
                 errors = listOf(
                     StructuredError(
                         errorCode = "MISSING_CANDIDATE_SIZE",
-                        message = "A candidate conductor size must be specified (e.g. 240.0 or '240 mm²').",
+                        message = "A candidate conductor size must be specified.",
                         isRecoverable = true
                     )
                 )

@@ -4,15 +4,53 @@ import com.example.ai.conversation.AssistantIntent
 import com.example.ai.conversation.ConversationActionType
 import com.example.ai.conversation.ConversationTaskState
 import com.example.ai.conversation.ConversationTurnDecision
-import com.example.ai.conversation.ConversationPolicyEngine
 import com.example.ai.runtime.BoundedProjectContext
 import com.example.ai.runtime.ProvenanceLabel
-import java.util.Locale
 
 /**
  * Pure deterministic mapper converting [ConversationTurnDecision] and context into typed [AssistantSheetUiState].
  */
 object AssistantResponseMapper {
+
+    /**
+     * Rendered whenever an authoritative value is absent. The UI must never substitute a
+     * plausible engineering number for missing evidence, and must never render a metric
+     * whose value it cannot source.
+     */
+    private const val UNAVAILABLE = "Verified engineering result unavailable."
+
+    /** Maps a project-supplied status string to a typed UI status; null when unknown. */
+    private fun statusFrom(raw: String?): EngineeringStatusUiModel? = when (raw?.trim()?.uppercase()) {
+        "PASS" -> EngineeringStatusUiModel.PASS
+        "FAIL" -> EngineeringStatusUiModel.FAIL
+        "WARNING" -> EngineeringStatusUiModel.WARNING
+        "STALE" -> EngineeringStatusUiModel.STALE
+        else -> null
+    }
+
+    /** Reads a known entity input, returning null when absent or blank. */
+    private fun BoundedProjectContext.input(key: String): String? =
+        knownEntityInputs[key]?.takeIf { it.isNotBlank() }
+
+    /** Builds a metric only when a real value exists; absent values are never rendered. */
+    private fun metricOrNull(
+        label: String,
+        raw: String?,
+        unit: String? = null,
+        limit: String? = null,
+        isGoverning: Boolean = false,
+        status: EngineeringStatusUiModel? = null
+    ): EngineeringMetricUiModel? {
+        val value = raw?.takeIf { it.isNotBlank() } ?: return null
+        return EngineeringMetricUiModel(
+            label = label,
+            value = value,
+            unit = unit,
+            limit = limit,
+            isGoverning = isGoverning,
+            status = status ?: EngineeringStatusUiModel.INFO
+        )
+    }
 
     fun mapDecisionToUiState(
         decision: ConversationTurnDecision,
@@ -79,13 +117,10 @@ object AssistantResponseMapper {
         return when (action.actionType) {
             ConversationActionType.ASK_BLOCKING_QUESTION -> {
                 val missing = action.requiredSlots
-                val chips = if (missing.any { it.contains("installation", ignoreCase = true) }) {
-                    listOf("Perforated Tray", "In Conduit", "Direct Buried")
-                } else if (missing.any { it.contains("voltage", ignoreCase = true) }) {
-                    listOf("400V 3Ph", "230V 1Ph")
-                } else {
-                    emptyList()
-                }
+                // No hardcoded option chips: installation methods and system voltages are
+                // engineering choices that must come from project data or the catalog, never
+                // from the UI layer.
+                val chips = emptyList<String>()
 
                 AssistantCardUiModel.BlockingQuestionCard(
                     cardId = cardId,
@@ -135,32 +170,48 @@ object AssistantResponseMapper {
                 } else {
                     val summary = ctx.validatedResultSummary
                         ?: decision.explanationSummary
-                        ?: "300 mm² passes ampacity (Iz > Ib); VD is 1.85% (under 3.00% limit)."
-                    val conductorVal = ctx.knownEntityInputs["cableSize"]?.replace(" mm²", "")?.replace("mm²", "")?.trim() ?: "300.0"
-                    val izVal = ctx.knownEntityInputs["deratedAmpacityIz"]?.replace(" A", "") ?: "345"
-                    val ibVal = ctx.knownEntityInputs["designCurrentIb"] ?: "310 A"
-                    val vdVal = ctx.knownEntityInputs["voltageDropPct"]?.replace("%", "") ?: "1.85"
-                    val vdLimit = ctx.knownEntityInputs["maxVDpct"]?.let { "$it%" } ?: "3.00%"
-                    val isPass = ctx.knownEntityInputs["status"] != "FAIL"
-                    val cardStatus = if (isPass) EngineeringStatusUiModel.PASS else EngineeringStatusUiModel.FAIL
+                        ?: UNAVAILABLE
+                    val conductorVal = ctx.input("cableSize")?.replace(" mm²", "")?.replace("mm²", "")?.trim()
+                    val izVal = ctx.input("deratedAmpacityIz")?.replace(" A", "")
+                    val ibVal = ctx.input("designCurrentIb")
+                    val vdVal = ctx.input("voltageDropPct")?.replace("%", "")
+                    val vdLimit = ctx.input("maxVDpct")?.let { "$it%" }
+
+                    // Status must come from authoritative project data. Its absence is reported
+                    // as unknown; it is never reinterpreted as PASS.
+                    val cardStatus = statusFrom(ctx.input("status")) ?: EngineeringStatusUiModel.INFO
+                    val governingCriterion = when (cardStatus) {
+                        EngineeringStatusUiModel.PASS ->
+                            ctx.input("governingCriterion") ?: "Compliance confirmed by authoritative calculation."
+                        EngineeringStatusUiModel.FAIL ->
+                            ctx.input("failReason") ?: "Engineering constraints violated"
+                        EngineeringStatusUiModel.WARNING ->
+                            "Marginal compliance reported by authoritative calculation"
+                        else -> UNAVAILABLE
+                    }
+
+                    val metrics = listOfNotNull(
+                        metricOrNull("Conductor", conductorVal, "mm²", status = cardStatus),
+                        metricOrNull("Ampacity Iz", izVal, "A", limit = ibVal, isGoverning = true, status = cardStatus),
+                        metricOrNull("Voltage Drop", vdVal, "%", limit = vdLimit, status = cardStatus)
+                    )
 
                     AssistantCardUiModel.ResultSummaryCard(
                         cardId = cardId,
                         title = "Cable Sizing Summary: ${state.activeEntityName ?: ctx.activeEntityName ?: "Selected Circuit"}",
                         status = cardStatus,
-                        governingCriterion = if (isPass) "Ampacity derating & voltage drop compliant" else "Engineering constraints violated",
+                        governingCriterion = governingCriterion,
                         summaryText = summary,
-                        metrics = listOf(
-                            EngineeringMetricUiModel("Conductor", conductorVal, "mm²", status = cardStatus),
-                            EngineeringMetricUiModel("Ampacity Iz", izVal, "A", limit = ibVal, isGoverning = true, status = cardStatus),
-                            EngineeringMetricUiModel("Voltage Drop", vdVal, "%", limit = vdLimit, status = cardStatus)
-                        ),
-                        provenance = ProvenanceLabel.CALCULATED_BY_VOLTATLAS,
-                        suggestedActions = listOf(
-                            SuggestedActionUiModel(ConversationActionType.EVALUATE_CANDIDATE, "Can 240 work?"),
-                            SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "Try Aluminum"),
-                            SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Use $conductorVal mm²", isPrimary = true)
-                        ).take(3)
+                        metrics = metrics,
+                        provenance = if (summary == UNAVAILABLE) ProvenanceLabel.UNAVAILABLE
+                                     else ProvenanceLabel.CALCULATED_BY_VOLTATLAS,
+                        suggestedActions = listOfNotNull(
+                            SuggestedActionUiModel(ConversationActionType.EVALUATE_CANDIDATE, "Evaluate a candidate"),
+                            SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "Run what-if"),
+                            conductorVal?.let {
+                                SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Propose $it mm²", isPrimary = true)
+                            }
+                        )
                     )
                 }
             }
@@ -168,55 +219,61 @@ object AssistantResponseMapper {
             ConversationActionType.EVALUATE_CANDIDATE,
             ConversationActionType.COMPARE_CANDIDATES -> {
                 val candidateSize = action.candidateParameters["targetSize"]
-                    ?: (if (action.candidateParameters["costDataAvailable"] == "false") "2.5" else "240.0")
-                val currentSize = ctx.knownEntityInputs["cableSize"]?.replace(" mm²", "")?.replace(" مم²", "")?.replace("mm²", "")?.trim() ?: "16.0"
-                val ibVal = ctx.knownEntityInputs["designCurrentIb"] ?: "14.4 A"
-                val izVal = ctx.knownEntityInputs["deratedAmpacityIz"]?.replace(" A", "") ?: "88.4"
-                val vdVal = ctx.knownEntityInputs["voltageDropPct"]?.replace("%", "") ?: "0.23"
-                val vdLimit = ctx.knownEntityInputs["maxVDpct"]?.let { "$it%" } ?: "3.00%"
-                val summary = decision.explanationSummary ?: "$candidateSize mm² evaluated against current $currentSize mm²."
+                    ?: action.candidateParameters["candidateSizeMm2"]
+                    ?: action.candidateParameters["candidateSizeText"]
+                val currentSize = ctx.input("cableSize")
+                    ?.replace(" mm²", "")?.replace(" مم²", "")?.replace("mm²", "")?.trim()
+                val ibVal = ctx.input("designCurrentIb")
+                val izVal = ctx.input("deratedAmpacityIz")?.replace(" A", "")
+                val vdVal = ctx.input("voltageDropPct")?.replace("%", "")
+                val vdLimit = ctx.input("maxVDpct")?.let { "$it%" }
+                val summary = decision.explanationSummary ?: UNAVAILABLE
 
-                val candSizeDbl = candidateSize.toDoubleOrNull() ?: 240.0
-                val currSizeDbl = currentSize.toDoubleOrNull() ?: 16.0
-                val currVdDbl = vdVal.toDoubleOrNull() ?: 0.23
-                val deratingDbl = ctx.knownEntityInputs["deratingFactor"]?.toDoubleOrNull() ?: 0.82
-                val estCandIz = String.format(Locale.US, "%.1f", ConversationPolicyEngine.estimateDeratedAmpacity(candSizeDbl, deratingDbl))
-                val estCandVd = String.format(Locale.US, "%.2f", ConversationPolicyEngine.estimateCandidateVoltageDrop(candSizeDbl, currSizeDbl, currVdDbl))
-                val isCandPass = !summary.startsWith("No,", ignoreCase = true) && !summary.startsWith("لا،", ignoreCase = true)
-                val candStatus = if (isCandPass) EngineeringStatusUiModel.PASS else EngineeringStatusUiModel.FAIL
+                // Candidate ampacity and voltage drop are NEVER estimated here. Estimating them
+                // would be a second engineering implementation living in the UI. Candidate
+                // metrics must arrive as tool evidence; absent evidence renders no metric.
+                val currentStatus = statusFrom(ctx.input("status")) ?: EngineeringStatusUiModel.INFO
+                val currentLabel = currentSize?.let { "$it mm²" } ?: "Current"
+                val candidateLabel = candidateSize?.let { "$it mm²" } ?: "Candidate"
+
+                val currentMetrics = listOfNotNull(
+                    metricOrNull("Iz", izVal, "A", limit = ibVal, isGoverning = true, status = currentStatus),
+                    metricOrNull("VD", vdVal, "%", limit = vdLimit, status = currentStatus)
+                )
+                val candidateMetrics = buildMap {
+                    if (currentMetrics.isNotEmpty()) put(currentLabel, currentMetrics)
+                }
 
                 AssistantCardUiModel.ComparisonCard(
                     cardId = cardId,
-                    title = "Candidate Comparison: $candidateSize mm² vs $currentSize mm²",
-                    candidateMetrics = mapOf(
-                        "$candidateSize mm²" to listOf(
-                            EngineeringMetricUiModel("Iz", estCandIz, "A", limit = ibVal, isGoverning = true, status = candStatus),
-                            EngineeringMetricUiModel("VD", estCandVd, "%", limit = vdLimit, status = EngineeringStatusUiModel.PASS)
-                        ),
-                        "$currentSize mm²" to listOf(
-                            EngineeringMetricUiModel("Iz", izVal, "A", limit = ibVal, isGoverning = true, status = EngineeringStatusUiModel.PASS),
-                            EngineeringMetricUiModel("VD", vdVal, "%", limit = vdLimit, status = EngineeringStatusUiModel.PASS)
-                        )
-                    ),
+                    title = "Candidate Comparison: $candidateLabel vs $currentLabel",
+                    candidateMetrics = candidateMetrics,
                     comparisonSummary = summary,
-                    suggestedActions = listOf(
-                        SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Use $candidateSize mm²", isPrimary = true),
-                        SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "Try Aluminum")
+                    suggestedActions = listOfNotNull(
+                        candidateSize?.let {
+                            SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Propose $it mm²", isPrimary = true)
+                        },
+                        SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "Run what-if")
                     )
                 )
             }
 
             ConversationActionType.RUN_WHAT_IF -> {
+                val scenarioMetrics = listOfNotNull(
+                    action.candidateParameters["conductorMaterial"]?.takeIf { it.isNotBlank() }?.let {
+                        EngineeringMetricUiModel("Conductor Material", it, status = EngineeringStatusUiModel.INFO)
+                    },
+                    action.candidateParameters["overrideCableSize"]?.takeIf { it.isNotBlank() }?.let {
+                        EngineeringMetricUiModel("Simulated Size", it, "mm²", status = EngineeringStatusUiModel.INFO)
+                    }
+                )
                 AssistantCardUiModel.WhatIfResultCard(
                     cardId = cardId,
                     scenarioTitle = "What-If Scenario (In-Memory Exploration)",
                     changedParameters = action.candidateParameters,
                     baseRevision = ctx.liveRevision,
                     deltaSummary = "Simulated with ${action.candidateParameters}. Baseline project state remains unchanged.",
-                    metrics = listOf(
-                        EngineeringMetricUiModel("Conductor Material", action.candidateParameters["conductorMaterial"] ?: "Al", status = EngineeringStatusUiModel.INFO),
-                        EngineeringMetricUiModel("Simulated Size", action.candidateParameters["overrideCableSize"] ?: "400.0", "mm²", status = EngineeringStatusUiModel.INFO)
-                    ),
+                    metrics = scenarioMetrics,
                     suggestedActions = listOf(
                         SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Propose This Size"),
                         SuggestedActionUiModel(ConversationActionType.CANCEL_TASK, "Exit Scenario")
@@ -227,24 +284,40 @@ object AssistantResponseMapper {
             ConversationActionType.CREATE_PROPOSAL,
             ConversationActionType.REVIEW_PROPOSAL -> {
                 val size = action.candidateParameters["overrideCableSize"]
-                    ?: ctx.knownEntityInputs["cableSize"]?.replace(" mm²", "")?.replace(" مم²", "")?.replace("mm²", "")?.trim()
-                    ?: "16.0"
-                val material = ctx.knownEntityInputs["cableMaterial"] ?: "Cu"
-                val insulation = ctx.knownEntityInputs["insulation"] ?: "XLPE"
-                val iz = ctx.knownEntityInputs["deratedAmpacityIz"] ?: "88.4 A"
-                val ib = ctx.knownEntityInputs["designCurrentIb"] ?: "14.4 A"
-                val vd = ctx.knownEntityInputs["voltageDropPct"] ?: "0.23%"
-                AssistantCardUiModel.RecommendationCard(
-                    cardId = cardId,
-                    title = "Proposal Created: $size mm²",
-                    recommendedSize = "$size mm² $material/$insulation",
-                    governingReason = "Ampacity Iz = $iz exceeds design load Ib = $ib; VD = $vd under limit.",
-                    tradeOffsSummary = "Compliant conductor selection with verified thermal and voltage drop margins.",
-                    suggestedActions = listOf(
-                        SuggestedActionUiModel(ConversationActionType.SHOW_APPROVAL_REQUIRED_NON_EXECUTABLE, "Review & Apply", isPrimary = true),
-                        SuggestedActionUiModel(ConversationActionType.CANCEL_TASK, "Discard")
+                    ?: ctx.input("cableSize")?.replace(" mm²", "")?.replace(" مم²", "")?.replace("mm²", "")?.trim()
+
+                if (size == null) {
+                    // No authoritative proposed size exists: never fabricate one.
+                    AssistantCardUiModel.SafeErrorCard(
+                        cardId = cardId,
+                        userFacingMessage = UNAVAILABLE,
+                        isRecoverable = true,
+                        dataUnchangedConfirmed = true,
+                        suggestedActions = listOf(
+                            SuggestedActionUiModel(ConversationActionType.CANCEL_TASK, "Dismiss")
+                        )
                     )
-                )
+                } else {
+                    val material = ctx.input("cableMaterial")
+                    val insulation = ctx.input("insulation")
+                    val sizeLabel = "$size mm²" + (material?.let { "/$it" } ?: "")
+                    // Rationale comes from the originating decision or project data; it is never
+                    // an ampacity/VD claim re-derived in the UI.
+                    val governingReason = decision.explanationSummary
+                        ?: ctx.input("governingCriterion")
+                        ?: "Proposal rationale supplied by the originating calculation result."
+                    AssistantCardUiModel.RecommendationCard(
+                        cardId = cardId,
+                        title = "Proposal Created: $sizeLabel",
+                        recommendedSize = if (insulation != null) "$sizeLabel/$insulation" else sizeLabel,
+                        governingReason = governingReason,
+                        tradeOffsSummary = "Proposed change prepared for review. Nothing has been applied.",
+                        suggestedActions = listOf(
+                            SuggestedActionUiModel(ConversationActionType.SHOW_APPROVAL_REQUIRED_NON_EXECUTABLE, "Review & Apply", isPrimary = true),
+                            SuggestedActionUiModel(ConversationActionType.CANCEL_TASK, "Discard")
+                        )
+                    )
+                }
             }
 
             ConversationActionType.SHOW_APPROVAL_REQUIRED_NON_EXECUTABLE -> {
@@ -260,16 +333,19 @@ object AssistantResponseMapper {
             }
 
             ConversationActionType.DIAGNOSE_FAILURE -> {
-                AssistantCardUiModel.FailureDiagnosisCard(
+                // Diagnosis facts (violated criterion, actual vs limit values, remediation
+                // options) must be produced by inspecting a deterministic calculation result.
+                // Rendering a canned diagnosis here was fabricating engineering output, so this
+                // path now surfaces the decision's own explanation when present and otherwise
+                // reports that verified evidence is unavailable.
+                AssistantCardUiModel.SafeErrorCard(
                     cardId = cardId,
-                    title = "Diagnostic Analysis: Feeder Protection",
-                    violatedCriterion = "Thermal Overload",
-                    actualValue = "380 A continuous",
-                    limitValue = "315 A cable Iz",
-                    diagnosisText = "Feeder is experiencing steady-state thermal overload exceeding derated cable ampacity.",
-                    remediationOptions = listOf("Upsize conductor to 300 mm²", "Add parallel conductor run", "Rebalance phase loading"),
+                    userFacingMessage = decision.explanationSummary ?: UNAVAILABLE,
+                    isRecoverable = true,
+                    dataUnchangedConfirmed = true,
                     suggestedActions = listOf(
-                        SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "Simulate 300 mm²", isPrimary = true)
+                        SuggestedActionUiModel(ConversationActionType.RUN_CALCULATION, "Inspect calculation", isPrimary = true),
+                        SuggestedActionUiModel(ConversationActionType.CANCEL_TASK, "Dismiss")
                     )
                 )
             }
