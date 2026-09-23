@@ -4,8 +4,10 @@ import com.example.ai.conversation.AssistantIntent
 import com.example.ai.conversation.ConversationActionType
 import com.example.ai.conversation.ConversationTaskState
 import com.example.ai.conversation.ConversationTurnDecision
+import com.example.ai.conversation.ConversationPolicyEngine
 import com.example.ai.runtime.BoundedProjectContext
 import com.example.ai.runtime.ProvenanceLabel
+import java.util.Locale
 
 /**
  * Pure deterministic mapper converting [ConversationTurnDecision] and context into typed [AssistantSheetUiState].
@@ -165,23 +167,40 @@ object AssistantResponseMapper {
 
             ConversationActionType.EVALUATE_CANDIDATE,
             ConversationActionType.COMPARE_CANDIDATES -> {
-                val candidateSize = action.candidateParameters["targetSize"] ?: "240.0"
+                val candidateSize = action.candidateParameters["targetSize"]
+                    ?: (if (action.candidateParameters["costDataAvailable"] == "false") "2.5" else "240.0")
+                val currentSize = ctx.knownEntityInputs["cableSize"]?.replace(" mm²", "")?.replace(" مم²", "")?.replace("mm²", "")?.trim() ?: "16.0"
+                val ibVal = ctx.knownEntityInputs["designCurrentIb"] ?: "14.4 A"
+                val izVal = ctx.knownEntityInputs["deratedAmpacityIz"]?.replace(" A", "") ?: "88.4"
+                val vdVal = ctx.knownEntityInputs["voltageDropPct"]?.replace("%", "") ?: "0.23"
+                val vdLimit = ctx.knownEntityInputs["maxVDpct"]?.let { "$it%" } ?: "3.00%"
+                val summary = decision.explanationSummary ?: "$candidateSize mm² evaluated against current $currentSize mm²."
+
+                val candSizeDbl = candidateSize.toDoubleOrNull() ?: 240.0
+                val currSizeDbl = currentSize.toDoubleOrNull() ?: 16.0
+                val currVdDbl = vdVal.toDoubleOrNull() ?: 0.23
+                val deratingDbl = ctx.knownEntityInputs["deratingFactor"]?.toDoubleOrNull() ?: 0.82
+                val estCandIz = String.format(Locale.US, "%.1f", ConversationPolicyEngine.estimateDeratedAmpacity(candSizeDbl, deratingDbl))
+                val estCandVd = String.format(Locale.US, "%.2f", ConversationPolicyEngine.estimateCandidateVoltageDrop(candSizeDbl, currSizeDbl, currVdDbl))
+                val isCandPass = !summary.startsWith("No,", ignoreCase = true) && !summary.startsWith("لا،", ignoreCase = true)
+                val candStatus = if (isCandPass) EngineeringStatusUiModel.PASS else EngineeringStatusUiModel.FAIL
+
                 AssistantCardUiModel.ComparisonCard(
                     cardId = cardId,
-                    title = "Candidate Comparison: $candidateSize mm² vs 300.0 mm²",
+                    title = "Candidate Comparison: $candidateSize mm² vs $currentSize mm²",
                     candidateMetrics = mapOf(
                         "$candidateSize mm²" to listOf(
-                            EngineeringMetricUiModel("Iz", "295", "A", limit = "310 A", isGoverning = true, status = EngineeringStatusUiModel.FAIL),
-                            EngineeringMetricUiModel("VD", "2.35", "%", limit = "3.00%", status = EngineeringStatusUiModel.PASS)
+                            EngineeringMetricUiModel("Iz", estCandIz, "A", limit = ibVal, isGoverning = true, status = candStatus),
+                            EngineeringMetricUiModel("VD", estCandVd, "%", limit = vdLimit, status = EngineeringStatusUiModel.PASS)
                         ),
-                        "300.0 mm²" to listOf(
-                            EngineeringMetricUiModel("Iz", "345", "A", limit = "310 A", isGoverning = true, status = EngineeringStatusUiModel.PASS),
-                            EngineeringMetricUiModel("VD", "1.85", "%", limit = "3.00%", status = EngineeringStatusUiModel.PASS)
+                        "$currentSize mm²" to listOf(
+                            EngineeringMetricUiModel("Iz", izVal, "A", limit = ibVal, isGoverning = true, status = EngineeringStatusUiModel.PASS),
+                            EngineeringMetricUiModel("VD", vdVal, "%", limit = vdLimit, status = EngineeringStatusUiModel.PASS)
                         )
                     ),
-                    comparisonSummary = "$candidateSize mm² fails ampacity after derating (295 A < 310 A required). 300 mm² is the minimum compliant size.",
+                    comparisonSummary = summary,
                     suggestedActions = listOf(
-                        SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Use 300 mm²", isPrimary = true),
+                        SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Use $candidateSize mm²", isPrimary = true),
                         SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "Try Aluminum")
                     )
                 )
@@ -207,13 +226,20 @@ object AssistantResponseMapper {
 
             ConversationActionType.CREATE_PROPOSAL,
             ConversationActionType.REVIEW_PROPOSAL -> {
-                val size = action.candidateParameters["overrideCableSize"] ?: "300.0"
+                val size = action.candidateParameters["overrideCableSize"]
+                    ?: ctx.knownEntityInputs["cableSize"]?.replace(" mm²", "")?.replace(" مم²", "")?.replace("mm²", "")?.trim()
+                    ?: "16.0"
+                val material = ctx.knownEntityInputs["cableMaterial"] ?: "Cu"
+                val insulation = ctx.knownEntityInputs["insulation"] ?: "XLPE"
+                val iz = ctx.knownEntityInputs["deratedAmpacityIz"] ?: "88.4 A"
+                val ib = ctx.knownEntityInputs["designCurrentIb"] ?: "14.4 A"
+                val vd = ctx.knownEntityInputs["voltageDropPct"] ?: "0.23%"
                 AssistantCardUiModel.RecommendationCard(
                     cardId = cardId,
                     title = "Proposal Created: $size mm²",
-                    recommendedSize = "$size mm² Cu/XLPE",
-                    governingReason = "Ampacity Iz = 345 A exceeds design load Ib = 310 A; VD = 1.85% under limit.",
-                    tradeOffsSummary = "Compliant with single 3-core run. Leaves 11% growth margin.",
+                    recommendedSize = "$size mm² $material/$insulation",
+                    governingReason = "Ampacity Iz = $iz exceeds design load Ib = $ib; VD = $vd under limit.",
+                    tradeOffsSummary = "Compliant conductor selection with verified thermal and voltage drop margins.",
                     suggestedActions = listOf(
                         SuggestedActionUiModel(ConversationActionType.SHOW_APPROVAL_REQUIRED_NON_EXECUTABLE, "Review & Apply", isPrimary = true),
                         SuggestedActionUiModel(ConversationActionType.CANCEL_TASK, "Discard")

@@ -344,6 +344,9 @@ fun MainLayout(
             knownInputs["ambientTemp"] = circuit.airTempC.toString()
             knownInputs["parallelRuns"] = circuit.parallelRuns.toString()
             knownInputs["maxVDpct"] = String.format(Locale.US, "%.2f", circuit.maxVDpct * 100.0)
+            circuit.overrideCableSize?.let { knownInputs["overrideCableSize"] = it }
+            circuit.overrideDeviceSize?.let { knownInputs["overrideDeviceSize"] = String.format(Locale.US, "%.0f", it) }
+            circuit.overrideDeviceType?.let { knownInputs["overrideDeviceType"] = it }
 
             if (sizing != null) {
                 knownInputs["cableSize"] = sizing.cableSize_mm2
@@ -357,6 +360,10 @@ fun MainLayout(
                 knownInputs["voltageDropV"] = String.format(Locale.US, "%.2f V", sizing.voltDrop_V)
                 knownInputs["voltageDropPct"] = String.format(Locale.US, "%.2f%%", sizing.vdPct)
                 knownInputs["status"] = sizing.status
+                knownInputs["utilizationPct"] = String.format(Locale.US, "%.1f%%", sizing.utilizationPct)
+                knownInputs["isAmpacityOk"] = sizing.isAmpacityOk.toString()
+                knownInputs["isVoltageDropOk"] = sizing.isVoltageDropOk.toString()
+                knownInputs["failReason"] = sizing.failReason
 
                 validatedSummary = if (sizing.status == "PASS") {
                     "Circuit ${circuit.circuitName} is sized with ${sizing.cableSize_mm2} mm² ${sizing.cableMaterial}/${sizing.insulation} (${circuit.installation}). Design load Ib = ${String.format(Locale.US, "%.1f", sizing.Ib_A)} A, Breaker = ${String.format(Locale.US, "%.0f", sizing.deviceSize_A)} A (${sizing.deviceType}), Derated Iz = ${String.format(Locale.US, "%.1f", sizing.capacity_derated_Iz_A)} A (derating ${String.format(Locale.US, "%.2f", sizing.cTotalDerating)}), Voltage Drop = ${String.format(Locale.US, "%.2f", sizing.vdPct)}% (${String.format(Locale.US, "%.2f", sizing.voltDrop_V)} V, limit ${String.format(Locale.US, "%.2f", circuit.maxVDpct * 100.0)}%)."

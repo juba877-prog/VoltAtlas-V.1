@@ -700,4 +700,142 @@ class ConversationPolicyEngineTest {
         assertTrue("Must contain cable size", explanation.contains("16.0 مم²"))
         assertTrue("Must contain governing criterion in Arabic", explanation.contains("المعيار الحاكم"))
     }
+
+    // 33. Oversized circuit "why" explains high margin and smaller compliant sizes instead of claiming next down fails
+    @Test
+    fun oversizedCircuit_whyExplainsHighMarginAndSmallerViableConductors() {
+        val ctx = createSampleProjectContext(
+            freshness = "CURRENT",
+            knownInputs = mapOf(
+                "installation" to "In Conduit",
+                "cableSize" to "16.0",
+                "cableMaterial" to "Cu",
+                "insulation" to "XLPE",
+                "designCurrentIb" to "14.4 A",
+                "breakerSize" to "16 A",
+                "breakerType" to "MCB",
+                "deratedAmpacityIz" to "88.4 A",
+                "voltageDropPct" to "0.23%",
+                "maxVDpct" to "3.00%"
+            )
+        )
+        val input = ConversationTurnInput(userUtterance = "why?", projectContext = ctx)
+        val decision = ConversationPolicyEngine.evaluateTurn(input)
+
+        assertEquals(ConversationActionType.EXPLAIN_RESULT, decision.action.actionType)
+        val explanation = decision.explanationSummary ?: ""
+        assertTrue("Must recognize circuit is substantially oversized", explanation.contains("substantially oversized", ignoreCase = true))
+        assertTrue("Must report low thermal utilization", explanation.contains("16.3% thermal utilization") || explanation.contains("thermal utilization"))
+        assertTrue("Must mention smaller viable candidate like 2.5 mm²", explanation.contains("2.5 mm²"))
+        assertFalse("Must NOT claim next size down fails", explanation.contains("The next size down fails"))
+    }
+
+    // 34. Arabic oversized circuit "why" explains high margin in Arabic
+    @Test
+    fun arabicOversizedCircuit_whyExplainsHighMarginInArabic() {
+        val ctx = createSampleProjectContext(
+            freshness = "CURRENT",
+            knownInputs = mapOf(
+                "installation" to "In Conduit",
+                "cableSize" to "16.0",
+                "cableMaterial" to "Cu",
+                "insulation" to "XLPE",
+                "designCurrentIb" to "14.4 A",
+                "breakerSize" to "16 A",
+                "breakerType" to "MCB",
+                "deratedAmpacityIz" to "88.4 A",
+                "voltageDropPct" to "0.23%",
+                "maxVDpct" to "3.00%"
+            )
+        )
+        val input = ConversationTurnInput(userUtterance = "ليه؟", projectContext = ctx)
+        val decision = ConversationPolicyEngine.evaluateTurn(input)
+
+        assertEquals(ConversationActionType.EXPLAIN_RESULT, decision.action.actionType)
+        assertEquals(ConversationLanguage.AR, decision.updatedState.userLanguage)
+        val explanation = decision.explanationSummary ?: ""
+        assertTrue("Must state that cable is substantially oversized in Arabic", explanation.contains("أكبر بكثير"))
+        assertTrue("Must mention 2.5 مم² as compliant smaller option", explanation.contains("2.5 مم²"))
+    }
+
+    // 35. Candidate inquiry for 2.5 mm² on 14.4A circuit returns compliant answer
+    @Test
+    fun candidateInquiry_2_5mm2_onLowLoadCircuit_returnsCompliant() {
+        val ctx = createSampleProjectContext(
+            freshness = "CURRENT",
+            knownInputs = mapOf(
+                "installation" to "In Conduit",
+                "cableSize" to "16.0",
+                "cableMaterial" to "Cu",
+                "insulation" to "XLPE",
+                "designCurrentIb" to "14.4 A",
+                "breakerSize" to "16 A",
+                "breakerType" to "MCB",
+                "deratedAmpacityIz" to "88.4 A",
+                "voltageDropPct" to "0.23%",
+                "maxVDpct" to "3.00%"
+            )
+        )
+        val input = ConversationTurnInput(userUtterance = "Can 2.5 work?", projectContext = ctx)
+        val decision = ConversationPolicyEngine.evaluateTurn(input)
+
+        assertEquals(ConversationActionType.EVALUATE_CANDIDATE, decision.action.actionType)
+        assertEquals("2.5", decision.action.candidateParameters["targetSize"])
+        val explanation = decision.explanationSummary ?: ""
+        assertTrue("Must indicate 2.5 mm² can work", explanation.startsWith("Yes, **2.5 mm²** is technically compliant"))
+    }
+
+    // 36. Candidate inquiry for 1.5 mm² on 50A breaker circuit returns non-compliant
+    @Test
+    fun candidateInquiry_1_5mm2_onHighLoadCircuit_returnsNonCompliant() {
+        val ctx = createSampleProjectContext(
+            freshness = "CURRENT",
+            knownInputs = mapOf(
+                "installation" to "In Conduit",
+                "cableSize" to "16.0",
+                "cableMaterial" to "Cu",
+                "insulation" to "XLPE",
+                "designCurrentIb" to "45.0 A",
+                "breakerSize" to "50 A",
+                "breakerType" to "MCB",
+                "deratedAmpacityIz" to "65.0 A",
+                "voltageDropPct" to "1.20%",
+                "maxVDpct" to "3.00%"
+            )
+        )
+        val input = ConversationTurnInput(userUtterance = "Can 1.5 work?", projectContext = ctx)
+        val decision = ConversationPolicyEngine.evaluateTurn(input)
+
+        assertEquals(ConversationActionType.EVALUATE_CANDIDATE, decision.action.actionType)
+        assertEquals("1.5", decision.action.candidateParameters["targetSize"])
+        val explanation = decision.explanationSummary ?: ""
+        assertTrue("Must indicate 1.5 mm² cannot work", explanation.startsWith("No, **1.5 mm²** cannot be used"))
+    }
+
+    // 37. Cost optimization on oversized circuit recommends downsizing
+    @Test
+    fun costOptimization_onOversizedCircuit_recommendsDownsizing() {
+        val ctx = createSampleProjectContext(
+            freshness = "CURRENT",
+            knownInputs = mapOf(
+                "installation" to "In Conduit",
+                "cableSize" to "16.0",
+                "cableMaterial" to "Cu",
+                "insulation" to "XLPE",
+                "designCurrentIb" to "14.4 A",
+                "breakerSize" to "16 A",
+                "breakerType" to "MCB",
+                "deratedAmpacityIz" to "88.4 A",
+                "voltageDropPct" to "0.23%",
+                "maxVDpct" to "3.00%"
+            )
+        )
+        val input = ConversationTurnInput(userUtterance = "Make it cheaper", projectContext = ctx)
+        val decision = ConversationPolicyEngine.evaluateTurn(input)
+
+        assertEquals(ConversationActionType.COMPARE_CANDIDATES, decision.action.actionType)
+        assertEquals("COST_OPTIMIZE_WITHOUT_PRICING", decision.action.reasonCode)
+        val explanation = decision.explanationSummary ?: ""
+        assertTrue("Must recommend downsizing to 2.5 mm²", explanation.contains("2.5 mm²"))
+    }
 }
