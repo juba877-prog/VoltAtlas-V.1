@@ -25,6 +25,15 @@ interface MutationExecutionReceiptDao {
     @Query("SELECT * FROM mutation_execution_receipts WHERE approvalId = :approvalId LIMIT 1")
     suspend fun getReceiptByApprovalId(approvalId: String): MutationExecutionReceiptEntity?
 
+    /**
+     * Returns the already-committed receipt for an identical semantic mutation signature
+     * (same project, same base revision, same entity, same patch), if one exists.
+     * Authoritative duplicate-execution / idempotency lookup: a non-null result means the exact
+     * approved semantic action is already durable and must never be executed a second time.
+     */
+    @Query("SELECT * FROM mutation_execution_receipts WHERE projectId = :projectId AND proposalSemanticKey = :semanticKey ORDER BY committedAt ASC LIMIT 1")
+    suspend fun getReceiptBySemanticKey(projectId: String, semanticKey: String): MutationExecutionReceiptEntity?
+
     @Query("SELECT * FROM mutation_execution_receipts WHERE projectId = :projectId ORDER BY committedAt DESC")
     suspend fun getReceiptsForProject(projectId: String): List<MutationExecutionReceiptEntity>
 

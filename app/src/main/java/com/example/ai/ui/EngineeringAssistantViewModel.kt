@@ -138,6 +138,7 @@ class EngineeringAssistantViewModel(
     private var activeTurnJob: Job? = null
     private var activeConversationState: ConversationTaskState? = null
     private var activeProposalReview: Pair<CableEngineeringProposal, ProposalReviewUiModel>? = null
+    private val _conversationEvidence = mutableListOf<com.example.ai.evidence.EngineeringEvidenceRecord>()
 
     /**
      * Most recent deterministic tool outcome for this assistant session. Non-null only when a
@@ -176,6 +177,13 @@ class EngineeringAssistantViewModel(
     }
 
     fun open(entryPoint: AssistantEntryPoint, context: EngineeringContext) {
+        // Project isolation: if switching projects, reset conversation state and evidence
+        if (context.projectId != activeConversationState?.projectId) {
+            activeConversationState = null
+            _lastToolOutcome.value = null
+            _conversationEvidence.clear()
+        }
+
         val initialGreeting = when (entryPoint) {
             AssistantEntryPoint.CONTEXTUAL_CIRCUIT -> 
                 "Inspecting circuit **${context.activeEntityName ?: context.activeEntityId ?: "selected"}**. How can I help optimize or verify this feeder?"
@@ -279,10 +287,24 @@ class EngineeringAssistantViewModel(
                 validatedResultSummary = currentCtx.validatedResultSummary
             )
 
+            val availableEntities = if (currentCtx.activeEntityType != null && currentCtx.activeEntityId != null) {
+                listOf(
+                    com.example.ai.conversation.EntityBinding(
+                        entityType = currentCtx.activeEntityType,
+                        entityId = currentCtx.activeEntityId,
+                        entityName = currentCtx.activeEntityName
+                    )
+                )
+            } else {
+                emptyList()
+            }
+
             val input = ConversationTurnInput(
                 userUtterance = trimmed,
                 projectContext = boundedContext,
-                priorState = activeConversationState
+                priorState = activeConversationState,
+                availableEntities = availableEntities,
+                priorEvidence = _conversationEvidence.toList()
             )
 
             val result = conversationEngine.evaluateTurn(input)
@@ -332,6 +354,14 @@ class EngineeringAssistantViewModel(
             arguments = result.decision.action.candidateParameters
         )
         _lastToolOutcome.value = outcome
+        val rec = com.example.ai.evidence.EngineeringEvidenceRecord.fromOutcome(
+            outcome = outcome,
+            entityType = projectContext.activeEntityType,
+            entityId = projectContext.activeEntityId
+        )
+        if (!_conversationEvidence.any { it.evidenceId == rec.evidenceId }) {
+            _conversationEvidence.add(rec)
+        }
     }
 
     /** Resolves the live project revision from authoritative state; null when unavailable. */
@@ -369,9 +399,22 @@ class EngineeringAssistantViewModel(
     ) {
         val decision = result.decision
         activeConversationState = decision.updatedState
+        if (result.evidence.isNotEmpty()) {
+            for (rec in result.evidence) {
+                if (!_conversationEvidence.any { it.evidenceId == rec.evidenceId }) {
+                    _conversationEvidence.add(rec)
+                }
+            }
+        }
 
         if (decision.action.actionType == ConversationActionType.CREATE_PROPOSAL) {
-            when (val preparation = proposalPreparationCoordinator?.prepare(decision.action, projectContext, decision.decisionId)) {
+            when (val preparation = proposalPreparationCoordinator?.prepare(
+                action = decision.action,
+                projectContext = projectContext,
+                decisionId = decision.decisionId,
+                evidence = result.evidence.ifEmpty { _conversationEvidence },
+                taskState = activeConversationState
+            )) {
                 is CableProposalPreparationCoordinator.Result.Ready -> {
                     activeProposalReview = preparation.proposal to preparation.review
                     _uiState.update { current ->
@@ -395,7 +438,18 @@ class EngineeringAssistantViewModel(
             projectContext = projectContext,
             existingState = AssistantSheetUiState(
                 allCards = _uiState.value.typedCards
-            )
+            ),
+            evidence = result.evidence.ifEmpty {
+                _lastToolOutcome.value?.let {
+                    listOf(
+                        com.example.ai.evidence.EngineeringEvidenceRecord.fromOutcome(
+                            outcome = it,
+                            entityType = projectContext.activeEntityType,
+                            entityId = projectContext.activeEntityId
+                        )
+                    )
+                } ?: emptyList()
+            }
         )
 
         val isOfflineWithDegradation = result.source == ConversationEngineSource.LOCAL_RULE_ENGINE &&
@@ -545,15 +599,12 @@ class EngineeringAssistantViewModel(
             )
         }
 
-        val boundedContext = BoundedProjectContext(
-            projectId = proposal.projectId,
-            projectName = current.context.projectName,
-            liveRevision = proposal.baseProjectRevision,
-            activeScreen = "AssistantReview",
-            activeEntityType = proposal.targetEntityType,
-            activeEntityId = proposal.targetEntityId,
-            activeEntityName = current.context.activeEntityName
-        )
+        // Structured approval input. Preconditions are derived from the reviewed proposal model,
+        // which was produced by the preparation coordinator from authoritative persisted state.
+        // The conversational model contributes nothing to these values.
+        val expectedCurrentValues = reviewModel.fieldChanges.mapNotNull { change ->
+            change.currentValue?.rawValue?.let { raw -> change.fieldKey to raw }
+        }.toMap()
 
         viewModelScope.launch {
             gatewayJob?.join()
@@ -569,11 +620,28 @@ class EngineeringAssistantViewModel(
                 return@launch
             }
 
+            // Authoritative live revision where available. The trusted approval gateway re-resolves
+            // project identity, entity identity, and revision from the durable store regardless, so
+            // this projection can never be the authority for a write.
+            val authoritativeLiveRevision = resolveLiveRevision(proposal.projectId)
+                ?: proposal.baseProjectRevision
+
+            val boundedContext = BoundedProjectContext(
+                projectId = proposal.projectId,
+                projectName = current.context.projectName,
+                liveRevision = authoritativeLiveRevision,
+                activeScreen = "AssistantReview",
+                activeEntityType = proposal.targetEntityType,
+                activeEntityId = proposal.targetEntityId,
+                activeEntityName = current.context.activeEntityName
+            )
+
             val gateResult = gateway.processApprovalAndExecute(
                 TrustedApprovalRequest(
                     proposal = proposal,
                     projectContext = boundedContext,
-                    userActionId = userActionId
+                    userActionId = userActionId,
+                    expectedCurrentValues = expectedCurrentValues
                 )
             )
 
@@ -601,6 +669,7 @@ class EngineeringAssistantViewModel(
                                     typedCards = state.typedCards.filterNot { it is AssistantCardUiModel.ApprovalConfirmationCard } + receiptCard
                                 )
                             }
+                            onMutationCommitted(outcome.receipt.revisionAfter)
                         }
                         is DurableMutationOutcome.CommittedPartial -> {
                             val receiptCard = AssistantCardUiModel.MutationReceiptCard(
@@ -624,6 +693,7 @@ class EngineeringAssistantViewModel(
                                     typedCards = state.typedCards.filterNot { it is AssistantCardUiModel.ApprovalConfirmationCard } + receiptCard
                                 )
                             }
+                            onMutationCommitted(outcome.receipt.revisionAfter)
                         }
                         is DurableMutationOutcome.CommittedRevalidationFailed -> {
                             val receiptCard = AssistantCardUiModel.MutationReceiptCard(
@@ -647,6 +717,10 @@ class EngineeringAssistantViewModel(
                                     typedCards = state.typedCards.filterNot { it is AssistantCardUiModel.ApprovalConfirmationCard } + receiptCard
                                 )
                             }
+                            // The mutation remains COMMITTED and its receipt stays authoritative.
+                            // A post-commit revalidation failure is deliberately never reclassified
+                            // as a mutation failure.
+                            onMutationCommitted(outcome.receipt.revisionAfter)
                         }
                         is DurableMutationOutcome.ExistingReceiptReturned -> {
                             val receiptCard = AssistantCardUiModel.MutationReceiptCard(
@@ -666,6 +740,37 @@ class EngineeringAssistantViewModel(
                                         appliedChanges = reviewModel.fieldChanges
                                     ),
                                     typedCards = state.typedCards.filterNot { it is AssistantCardUiModel.ApprovalConfirmationCard } + receiptCard
+                                )
+                            }
+                            onMutationCommitted(outcome.receipt.revisionAfter)
+                        }
+                        is DurableMutationOutcome.NoOp -> {
+                            // The approved patch is already the persisted state. Zero mutation,
+                            // zero receipt, zero revision advance. Never reported as applied.
+                            activeProposalReview = null
+                            _uiState.update { state ->
+                                state.copy(
+                                    approvalExecutionState = ApprovalExecutionUiState.NoChangeRequired(outcome.sanitizedReason),
+                                    typedCards = state.typedCards.filterNot { it is AssistantCardUiModel.ApprovalConfirmationCard },
+                                    isThinking = false
+                                )
+                            }
+                        }
+                        is DurableMutationOutcome.CurrentValueChanged -> {
+                            // The persisted value changed after review. Fail closed and require a new
+                            // proposal; the approved patch is never rebased or reinterpreted.
+                            _uiState.update { state ->
+                                state.copy(
+                                    approvalExecutionState = ApprovalExecutionUiState.StaleBeforeApproval(outcome.sanitizedReason)
+                                )
+                            }
+                        }
+                        is DurableMutationOutcome.RevisionConflict -> {
+                            _uiState.update { state ->
+                                state.copy(
+                                    approvalExecutionState = ApprovalExecutionUiState.StaleBeforeApproval(
+                                        "The project changed before the mutation could be committed. Review the proposal again."
+                                    )
                                 )
                             }
                         }
@@ -707,6 +812,28 @@ class EngineeringAssistantViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Post-commit context update (Gate 10 §26).
+     *
+     * After a durable commit the conversation/task context must reflect the new project state:
+     * - the committed proposal is no longer pending,
+     * - the task base revision advances to the committed revision so no later turn can be
+     *   evaluated against a superseded revision,
+     * - stale in-memory proposal bindings are cleared instead of being reused.
+     *
+     * Historical evidence and receipts are never deleted or overwritten here.
+     */
+    private fun onMutationCommitted(committedRevision: Long) {
+        activeProposalReview = null
+        val state = activeConversationState ?: return
+        activeConversationState = state.copy(
+            baseProjectRevision = committedRevision,
+            activeProposalId = null,
+            activeProposalDigest = null,
+            activeProposalSemanticKey = null
+        )
     }
 
     /**

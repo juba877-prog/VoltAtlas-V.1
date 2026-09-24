@@ -345,14 +345,17 @@ class EngineeringToolDispatcher(
                 ))
         )
 
-        CableToolNames.RUN_WHAT_IF -> cableInvoker.executeDirect<RunCableWhatIfRequest, CableWhatIfResult>(
-            envelope(requestId, conversationId, projectId, revision, entityType, entityId, toolName, mode,
-                RunCableWhatIfRequest(
-                    projectId = projectId,
-                    circuitId = entityId.orEmpty(),
-                    overrides = whatIfOverrides(argObject(arguments, "overrides"))
-                ))
-        )
+        CableToolNames.RUN_WHAT_IF -> {
+            val overridesMap = argObject(arguments, "overrides").ifEmpty { arguments }
+            cableInvoker.executeDirect<RunCableWhatIfRequest, CableWhatIfResult>(
+                envelope(requestId, conversationId, projectId, revision, entityType, entityId, toolName, mode,
+                    RunCableWhatIfRequest(
+                        projectId = projectId,
+                        circuitId = entityId.orEmpty(),
+                        overrides = whatIfOverrides(overridesMap)
+                    ))
+            )
+        }
 
         else -> ToolResultEnvelope.notSupported<Any>(
             requestId = requestId,

@@ -2,6 +2,8 @@ package com.example.ai.hybrid
 
 import com.example.ai.conversation.ConversationTurnDecision
 import com.example.ai.conversation.ConversationTurnInput
+import com.example.ai.evidence.EngineeringEvidenceRecord
+import com.example.ai.grounding.GroundingValidationResult
 
 /**
  * Common conversational engine interface implemented by both Cloud and Local paths.
@@ -20,7 +22,9 @@ data class HybridEngineResult(
     val decision: ConversationTurnDecision,
     val source: ConversationEngineSource,
     val cloudDegradationReason: CloudDegradationReason? = null,
-    val hasBackingToolResult: Boolean = false
+    val hasBackingToolResult: Boolean = false,
+    val evidence: List<EngineeringEvidenceRecord> = emptyList(),
+    val groundingResult: GroundingValidationResult? = null
 )
 
 /**
@@ -42,5 +46,6 @@ enum class CloudDegradationReason {
     SAFETY_BLOCKED,
     INVALID_TOOL_CALL,
     RATE_LIMITED,
-    UNSUPPORTED_ENGINEERING_CLAIM
+    UNSUPPORTED_ENGINEERING_CLAIM,
+    GROUNDING_VALIDATION_FAILED
 }

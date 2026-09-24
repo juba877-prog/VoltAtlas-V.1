@@ -37,6 +37,7 @@ class CatalogSingleFlightTest {
     @After
     fun tearDown() {
         Catalog.resetForTesting()
+        Catalog.loadAll(context)
     }
 
     // 1. Initial state is unloaded

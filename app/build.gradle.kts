@@ -167,6 +167,7 @@ dependencies {
   // Immutable Collections & Baseline Profile Installer for Compose Stability
   implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.3.7")
   implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
   // Firebase Auth with Google Sign-In requires all of the following to be uncommented together.
   // If you are using Firebase Auth with other providers (e.g. Email/Password), you may only need

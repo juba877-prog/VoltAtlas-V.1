@@ -118,7 +118,8 @@ data class ActiveConversationStateSummary(
     val whatIfParameters: Map<String, String> = emptyMap(),
     val activeProposalId: String? = null,
     val activeProposalDigest: String? = null,
-    val activeProposalSemanticKey: String? = null
+    val activeProposalSemanticKey: String? = null,
+    val recentEvidenceReferences: List<String> = emptyList()
 )
 
 /**

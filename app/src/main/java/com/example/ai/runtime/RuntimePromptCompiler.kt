@@ -378,6 +378,13 @@ You are the VoltAtlas Assistant — a senior electrical engineering consultant e
         summary.activeProposalDigest?.let { sb.append("  activeProposalDigest: ").append(escapeXml(it)).append("\n") }
         summary.activeProposalSemanticKey?.let { sb.append("  activeProposalSemanticKey: ").append(escapeXml(it)).append("\n") }
 
+        if (summary.recentEvidenceReferences.isNotEmpty()) {
+            sb.append("  recentEvidenceReferences:\n")
+            summary.recentEvidenceReferences.forEach { ref ->
+                sb.append("    - ").append(escapeXml(ref)).append("\n")
+            }
+        }
+
         sb.append("</active_task_state>")
         return sb.toString()
     }

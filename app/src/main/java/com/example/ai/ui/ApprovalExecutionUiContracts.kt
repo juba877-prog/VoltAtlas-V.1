@@ -58,6 +58,14 @@ sealed interface ApprovalExecutionUiState {
         val reason: String
     ) : ApprovalExecutionUiState
 
+    /**
+     * The approved patch is already the persisted state. No mutation, no receipt, and no revision
+     * advance occurred; the explicit "apply" request requires nothing further.
+     */
+    data class NoChangeRequired(
+        val safeMessage: String
+    ) : ApprovalExecutionUiState
+
     data class FailedPreCommit(
         val safeMessage: String
     ) : ApprovalExecutionUiState

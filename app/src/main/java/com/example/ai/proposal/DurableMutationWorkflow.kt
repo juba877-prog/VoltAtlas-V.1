@@ -284,7 +284,29 @@ internal class DurableMutationWorkflow(
                         throw InternalDurableRollbackException.ProjectMismatch(intent.projectId, circuit.projectId)
                     }
 
-                    // 6.4. Validate merged catalog combination
+                    // 6.3a. Approved-precondition revalidation against authoritative persisted state.
+                    //      Fails closed before any write; the rollback is a pure no-op, so no partial
+                    //      value change, revision advance, or receipt can survive.
+                    val preconditionFailure = evaluatePrecondition(
+                        circuit = circuit,
+                        expectedCurrentValues = request.expectedCurrentValues
+                    )
+                    if (preconditionFailure != null) {
+                        throw preconditionFailure
+                    }
+
+                    // 6.4. Build patched circuit & field changes (pure transformation)
+                    val (patchedCircuit, fieldChanges) = CableCircuitMutationApplier.buildPatchedCircuit(
+                        original = circuit,
+                        instructions = intent.instructions
+                    )
+
+                    // 6.4a. No-op protection: the approved patch must produce a real persisted change.
+                    if (patchedCircuit == circuit) {
+                        throw InternalDurableRollbackException.NoOpDetected(intent.proposalId)
+                    }
+
+                    // 6.5. Validate merged catalog combination
                     val mergedError = CableCircuitMutationApplier.validateMergedCatalogCombination(
                         circuit = circuit,
                         instructions = intent.instructions,
@@ -293,12 +315,6 @@ internal class DurableMutationWorkflow(
                     if (mergedError != null) {
                         throw InternalDurableRollbackException.InvalidPatch(mergedError)
                     }
-
-                    // 6.5. Build patched circuit & field changes
-                    val (patchedCircuit, fieldChanges) = CableCircuitMutationApplier.buildPatchedCircuit(
-                        original = circuit,
-                        instructions = intent.instructions
-                    )
 
                     // 6.6. Checked circuit write
                     val circuitRows = circuitDao.updateCircuit(patchedCircuit)
@@ -358,6 +374,26 @@ internal class DurableMutationWorkflow(
                     sanitizedReason = "Failed to consume approval grant."
                 )
             }
+        } catch (e: InternalDurableRollbackException.NoOpDetected) {
+            return DurableMutationOutcome.NoOp(
+                proposalId = intent.proposalId,
+                projectId = intent.projectId,
+                targetEntityId = intent.targetEntityId,
+                revision = intent.baseProjectRevision,
+                sanitizedReason = "The approved patch is already the persisted state; no change was required."
+            )
+        } catch (e: InternalDurableRollbackException.PreconditionFailed) {
+            return DurableMutationOutcome.CurrentValueChanged(
+                proposalId = intent.proposalId,
+                projectId = intent.projectId,
+                targetEntityId = intent.targetEntityId,
+                revision = intent.baseProjectRevision,
+                fieldName = e.fieldName,
+                expectedValue = e.expectedValue,
+                actualValue = e.actualValue,
+                sanitizedReason = "The persisted value of '${e.fieldName}' changed after the proposal was reviewed. " +
+                    "Re-review and recreate the proposal before approving."
+            )
         } catch (e: InternalDurableRollbackException.RevisionConflict) {
             return DurableMutationOutcome.RevisionConflict(
                 projectId = e.projectId,
@@ -394,6 +430,122 @@ internal class DurableMutationWorkflow(
 
         // 7. Post-Commit Revalidation Phase
         return runRevalidationLifecycle(commitRecord)
+    }
+
+    /**
+     * Resolves the authoritative project/entity binding for an approval request directly from Room.
+     *
+     * This is the approval-time source of truth: no caller-supplied context, model summary, or
+     * conversation projection participates. Returns null when the project itself does not exist,
+     * which the gateway must treat as a fail-closed rejection.
+     */
+    internal suspend fun resolveAuthoritativeApprovalContext(
+        projectId: String,
+        entityType: String,
+        entityId: String
+    ): AuthoritativeApprovalContext? {
+        if (projectId.isBlank()) return null
+        val liveRevision = projectDao.getRevision(projectId) ?: return null
+
+        val numericEntityId = entityId.toIntOrNull()
+        if (entityType != CIRCUIT_ENTITY_TYPE || numericEntityId == null) {
+            return AuthoritativeApprovalContext(
+                projectId = projectId,
+                liveRevision = liveRevision,
+                targetEntityType = entityType,
+                targetEntityId = entityId,
+                entityFound = false,
+                targetEntityProjectId = null
+            )
+        }
+
+        val scoped = circuitDao.getCircuitByIdAndProject(projectId, numericEntityId)
+        if (scoped != null) {
+            return AuthoritativeApprovalContext(
+                projectId = projectId,
+                liveRevision = liveRevision,
+                targetEntityType = entityType,
+                targetEntityId = entityId,
+                entityFound = true,
+                targetEntityProjectId = scoped.projectId
+            )
+        }
+
+        // The entity exists, but not inside the authoritative project -> cross-project attempt.
+        val foreign = circuitDao.getCircuitById(numericEntityId)
+        return AuthoritativeApprovalContext(
+            projectId = projectId,
+            liveRevision = liveRevision,
+            targetEntityType = entityType,
+            targetEntityId = entityId,
+            entityFound = false,
+            targetEntityProjectId = foreign?.projectId
+        )
+    }
+
+    /**
+     * Authoritative idempotency lookup: returns the already-committed receipt for an identical
+     * semantic mutation signature, if one exists. A non-null result means the exact approved
+     * semantic action is already durable and must never be executed a second time.
+     */
+    internal suspend fun findExistingReceipt(
+        projectId: String,
+        proposalSemanticKey: String
+    ): MutationExecutionReceiptEntity? {
+        if (projectId.isBlank() || proposalSemanticKey.isBlank()) return null
+        return mutationExecutionReceiptDao.getReceiptBySemanticKey(projectId, proposalSemanticKey)
+    }
+
+    /**
+     * Revalidates the recorded persisted-value preconditions of an approved proposal against the
+     * authoritative circuit row read inside the mutation transaction.
+     *
+     * Value-identity comparison only: no engineering quantity is recomputed, re-derived, or
+     * "corrected" here. Returns null when every recorded precondition currently holds.
+     */
+    private fun evaluatePrecondition(
+        circuit: CircuitEntity,
+        expectedCurrentValues: Map<String, String>
+    ): InternalDurableRollbackException.PreconditionFailed? {
+        for ((fieldName, expectedValue) in expectedCurrentValues) {
+            val actualValue: String? = when (fieldName) {
+                "overrideCableSize" -> circuit.overrideCableSize
+                "cableType" -> circuit.cableType
+                "manufacturer" -> circuit.manufacturer
+                "installation" -> circuit.installation
+                "parallelRuns" -> circuit.parallelRuns.toString()
+                "overrideDeviceSize" -> circuit.overrideDeviceSize?.toString()
+                "overrideDeviceType" -> circuit.overrideDeviceType
+                "lengthM" -> circuit.length_m.toString()
+                else -> return InternalDurableRollbackException.PreconditionFailed(
+                    fieldName = fieldName,
+                    expectedValue = expectedValue,
+                    actualValue = null
+                )
+            }
+            if (!scalarValuesMatch(expectedValue, actualValue)) {
+                return InternalDurableRollbackException.PreconditionFailed(
+                    fieldName = fieldName,
+                    expectedValue = expectedValue,
+                    actualValue = actualValue
+                )
+            }
+        }
+        return null
+    }
+
+    /**
+     * Compares two persisted scalar values for identity. String comparison is exact after trimming;
+     * numeric formatting differences ("240" vs "240.0") are treated as the same persisted value.
+     */
+    private fun scalarValuesMatch(expected: String?, actual: String?): Boolean {
+        val e = expected?.trim()
+        val a = actual?.trim()
+        if (e == null || a == null) return e == a
+        if (e == a) return true
+        val eNum = e.toDoubleOrNull()
+        val aNum = a.toDoubleOrNull()
+        return eNum != null && aNum != null && kotlin.math.abs(eNum - aNum) < SCALAR_IDENTITY_EPSILON
     }
 
     /**
@@ -658,6 +810,15 @@ internal class DurableMutationWorkflow(
     }
 
     companion object {
+        /**
+         * Authoritative entity type for the only mutation domain currently approved in the trusted
+         * boundary. A proposal cannot change its domain at approval time.
+         */
+        internal const val CIRCUIT_ENTITY_TYPE = "CIRCUIT"
+
+        /** Tolerance for treating two persisted scalar encodings as the same value identity. */
+        private const val SCALAR_IDENTITY_EPSILON = 1.0E-6
+
         fun createGateway(
             database: AppDatabase,
             catalogRepository: CatalogRepository,

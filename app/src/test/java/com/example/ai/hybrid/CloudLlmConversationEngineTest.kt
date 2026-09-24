@@ -11,6 +11,7 @@ import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import kotlinx.serialization.json.JsonPrimitive
 import java.net.SocketTimeoutException
 
 class CloudLlmConversationEngineTest {
@@ -97,7 +98,7 @@ class CloudLlmConversationEngineTest {
                 return CloudLlmRawResponse(
                     text = "Evaluating candidate...",
                     toolCallName = "evaluate_cable_candidate",
-                    toolCallArguments = mapOf("candidateSize" to "240.0")
+                    toolCallArguments = mapOf("candidateSize" to JsonPrimitive("240.0"))
                 )
             }
         }
@@ -163,5 +164,102 @@ class CloudLlmConversationEngineTest {
         job.join()
 
         assertTrue("Job must be cancelled via CancellationException", job.isCancelled)
+    }
+
+    // 6. Typed response safety block degrades to SAFETY_BLOCKED
+    @Test
+    fun cloudEngine_typedSafetyBlock_degradesToSafetyBlocked() = runTest {
+        val safetySeam = object : GeminiClientSeam {
+            override suspend fun generate(
+                systemPrompt: String,
+                userPrompt: String,
+                tools: List<CloudFunctionDeclaration>
+            ): CloudLlmRawResponse {
+                return CloudLlmRawResponse(
+                    responseType = CloudLlmResponseType.SAFETY_BLOCK,
+                    isSafetyBlocked = true
+                )
+            }
+        }
+
+        val engine = CloudLlmConversationEngine(clientSeam = safetySeam)
+        val input = ConversationTurnInput(userUtterance = "Check sizing", projectContext = sampleContext)
+        val result = engine.evaluateTurn(input)
+
+        assertEquals(CloudDegradationReason.SAFETY_BLOCKED, result.cloudDegradationReason)
+        assertEquals(ConversationActionType.SAFE_ERROR, result.decision.action.actionType)
+    }
+
+    // 7. Typed response timeout degrades to NETWORK_TIMEOUT
+    @Test
+    fun cloudEngine_typedTimeout_degradesToNetworkTimeout() = runTest {
+        val timeoutSeam = object : GeminiClientSeam {
+            override suspend fun generate(
+                systemPrompt: String,
+                userPrompt: String,
+                tools: List<CloudFunctionDeclaration>
+            ): CloudLlmRawResponse {
+                return CloudLlmRawResponse(
+                    responseType = CloudLlmResponseType.TIMEOUT,
+                    errorMessage = "Timeout"
+                )
+            }
+        }
+
+        val engine = CloudLlmConversationEngine(clientSeam = timeoutSeam)
+        val input = ConversationTurnInput(userUtterance = "Check sizing", projectContext = sampleContext)
+        val result = engine.evaluateTurn(input)
+
+        assertEquals(CloudDegradationReason.NETWORK_TIMEOUT, result.cloudDegradationReason)
+        assertEquals(ConversationActionType.SAFE_ERROR, result.decision.action.actionType)
+    }
+
+    // 8. Typed response rate limited provider error degrades to RATE_LIMITED
+    @Test
+    fun cloudEngine_typedRateLimitedProviderError_degradesToRateLimited() = runTest {
+        val rateLimitSeam = object : GeminiClientSeam {
+            override suspend fun generate(
+                systemPrompt: String,
+                userPrompt: String,
+                tools: List<CloudFunctionDeclaration>
+            ): CloudLlmRawResponse {
+                return CloudLlmRawResponse(
+                    responseType = CloudLlmResponseType.PROVIDER_ERROR,
+                    isRateLimited = true,
+                    errorMessage = "429 Too Many Requests"
+                )
+            }
+        }
+
+        val engine = CloudLlmConversationEngine(clientSeam = rateLimitSeam)
+        val input = ConversationTurnInput(userUtterance = "Check sizing", projectContext = sampleContext)
+        val result = engine.evaluateTurn(input)
+
+        assertEquals(CloudDegradationReason.RATE_LIMITED, result.cloudDegradationReason)
+        assertEquals(ConversationActionType.SAFE_ERROR, result.decision.action.actionType)
+    }
+
+    // 9. Typed response malformed response degrades to HTTP_OR_PROVIDER_ERROR
+    @Test
+    fun cloudEngine_typedMalformedResponse_degradesToProviderError() = runTest {
+        val malformedSeam = object : GeminiClientSeam {
+            override suspend fun generate(
+                systemPrompt: String,
+                userPrompt: String,
+                tools: List<CloudFunctionDeclaration>
+            ): CloudLlmRawResponse {
+                return CloudLlmRawResponse(
+                    responseType = CloudLlmResponseType.MALFORMED_RESPONSE,
+                    errorMessage = "Malformed response"
+                )
+            }
+        }
+
+        val engine = CloudLlmConversationEngine(clientSeam = malformedSeam)
+        val input = ConversationTurnInput(userUtterance = "Check sizing", projectContext = sampleContext)
+        val result = engine.evaluateTurn(input)
+
+        assertEquals(CloudDegradationReason.HTTP_OR_PROVIDER_ERROR, result.cloudDegradationReason)
+        assertEquals(ConversationActionType.SAFE_ERROR, result.decision.action.actionType)
     }
 }

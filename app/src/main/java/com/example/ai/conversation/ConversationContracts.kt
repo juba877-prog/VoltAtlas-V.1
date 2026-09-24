@@ -1,5 +1,8 @@
 package com.example.ai.conversation
 
+import com.example.ai.contracts.EngineeringValue
+import com.example.ai.context.freshness.contracts.CalculationDomain
+import com.example.ai.evidence.EngineeringEvidenceRecord
 import com.example.ai.runtime.PromptPermissionMode
 import com.example.ai.runtime.ProvenanceLabel
 import com.example.ai.runtime.ResponseDetailLevel
@@ -87,7 +90,8 @@ data class SlotValue(
     val unit: String? = null,
     val provenance: ProvenanceLabel = ProvenanceLabel.USER_PROVIDED,
     val isSafetyCritical: Boolean = false,
-    val lastUpdatedRevision: Long? = null
+    val lastUpdatedRevision: Long? = null,
+    val typedValue: EngineeringValue? = null
 )
 
 /**
@@ -100,7 +104,9 @@ data class ContradictionRecord(
     val userValue: String,
     val projectSource: ProvenanceLabel = ProvenanceLabel.KNOWN_FROM_PROJECT,
     val userSource: ProvenanceLabel = ProvenanceLabel.USER_PROVIDED,
-    val safeChoices: List<String> = listOf("RUN_WHAT_IF", "PROPOSE_CHANGE")
+    val safeChoices: List<String> = listOf("RUN_WHAT_IF", "PROPOSE_CHANGE"),
+    val typedProjectValue: EngineeringValue? = null,
+    val typedUserValue: EngineeringValue? = null
 )
 
 /**
@@ -171,6 +177,9 @@ data class ConversationTaskState(
     val detectedContradictions: List<ContradictionRecord> = emptyList(),
     val isWhatIfBranch: Boolean = false,
     val whatIfOverrides: Map<String, String> = emptyMap(),
+    val typedWhatIfOverrides: Map<String, EngineeringValue> = emptyMap(),
+    val activeDomain: CalculationDomain? = null,
+    val evidenceReferences: List<String> = emptyList(),
     val activeProposalId: String? = null,
     val activeProposalDigest: String? = null,
     val activeProposalSemanticKey: String? = null,
@@ -188,7 +197,8 @@ data class ConversationTurnInput(
     val projectContext: BoundedProjectContext,
     val priorState: ConversationTaskState? = null,
     val availableEntities: List<EntityBinding> = emptyList(),
-    val forcedLanguage: ConversationLanguage? = null
+    val forcedLanguage: ConversationLanguage? = null,
+    val priorEvidence: List<EngineeringEvidenceRecord> = emptyList()
 )
 
 /**

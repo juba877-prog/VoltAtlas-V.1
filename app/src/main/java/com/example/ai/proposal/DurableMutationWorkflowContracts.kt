@@ -7,11 +7,29 @@ import com.squareup.moshi.JsonClass
 
 /**
  * Request container for executing a pre-validated proposal with an issued durable approval grant.
+ *
+ * @param expectedCurrentValues Persisted values the approved proposal was prepared against, keyed
+ *   by allowlisted patch field name. Enforced against authoritative Room state inside the mutation
+ *   transaction. Empty means no recorded precondition.
  */
 data class DurableMutationRequest(
     val intent: ValidatedCableProposalIntent,
     val approvalId: String,
-    val executionId: String? = null
+    val executionId: String? = null,
+    val expectedCurrentValues: Map<String, String> = emptyMap()
+)
+
+/**
+ * Authoritative, read-only snapshot of the project/entity binding an approval request claims.
+ * Resolved from Room at approval time so that no caller-supplied projection can authorise a write.
+ */
+data class AuthoritativeApprovalContext(
+    val projectId: String,
+    val liveRevision: Long,
+    val targetEntityType: String,
+    val targetEntityId: String,
+    val entityFound: Boolean,
+    val targetEntityProjectId: String?
 )
 
 /**
@@ -54,6 +72,25 @@ internal sealed class InternalDurableRollbackException(message: String) : Runtim
 
     class DatabaseError(val errorCode: String, val sanitizedMessage: String) :
         InternalDurableRollbackException(sanitizedMessage)
+
+    /**
+     * The patch produces no effective change against the authoritative persisted circuit state.
+     * Raised inside the transaction before any write, so the rollback is a pure no-op.
+     */
+    class NoOpDetected(val proposalId: String) :
+        InternalDurableRollbackException("Approved patch is already the persisted state; no change is required.")
+
+    /**
+     * A recorded precondition no longer matches the authoritative persisted value.
+     * Raised inside the transaction before any write, so the rollback is a pure no-op.
+     */
+    class PreconditionFailed(
+        val fieldName: String,
+        val expectedValue: String?,
+        val actualValue: String?
+    ) : InternalDurableRollbackException(
+        "Persisted value for '$fieldName' no longer matches the approved precondition."
+    )
 }
 
 /**
@@ -217,6 +254,36 @@ sealed class DurableMutationOutcome {
         val messageKey: String,
         val isRecoverable: Boolean,
         val diagnosticRef: String? = null,
+        val sanitizedReason: String
+    ) : DurableMutationOutcome()
+
+    /**
+     * Approved patch produces no effective change against the authoritative persisted state.
+     * Zero database modifications occurred, zero receipt was created, and the receipt-free
+     * revision is unchanged. This is not a failure and never a fabricated success.
+     */
+    data class NoOp(
+        val proposalId: String,
+        val projectId: String,
+        val targetEntityId: String,
+        val revision: Long,
+        val sanitizedReason: String
+    ) : DurableMutationOutcome()
+
+    /**
+     * A recorded precondition no longer matches the authoritative persisted value
+     * (e.g. the proposal expected 300 mm² but the project now persists a different value).
+     * Zero database modifications occurred. The proposal must be re-reviewed and recreated;
+     * it is never silently rebased.
+     */
+    data class CurrentValueChanged(
+        val proposalId: String,
+        val projectId: String,
+        val targetEntityId: String,
+        val revision: Long,
+        val fieldName: String,
+        val expectedValue: String?,
+        val actualValue: String?,
         val sanitizedReason: String
     ) : DurableMutationOutcome()
 

@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -773,6 +774,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
             )
 
         } catch (exception: Exception) {
+            if (exception is CancellationException) throw exception
             UiState.Error(
                 exception.message ?: "An engineering calculation error occurred."
             )
