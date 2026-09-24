@@ -24,6 +24,7 @@ fun AssistantSafeErrorCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
+            .testTag("safe_error_card")
             .testTag("assistant_safe_error_card_${card.cardId}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(

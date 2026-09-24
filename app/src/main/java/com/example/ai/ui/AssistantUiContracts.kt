@@ -181,6 +181,13 @@ sealed interface AssistantCardUiModel {
         val isPartialOrFailed: Boolean = false,
         val isAlreadyApplied: Boolean = false
     ) : AssistantCardUiModel
+
+    data class ToolExecutionCard(
+        override val cardId: String,
+        val toolName: String = "Deterministic Cable Sizing",
+        val methodology: String = "IEC 60364-5-52",
+        val checkpoints: List<com.example.ai.ui.components.ToolExecutionCheckpoint> = emptyList()
+    ) : AssistantCardUiModel
 }
 
 /**

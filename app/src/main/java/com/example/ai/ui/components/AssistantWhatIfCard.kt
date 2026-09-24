@@ -30,6 +30,7 @@ fun AssistantWhatIfCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
+            .testTag("what_if_card")
             .testTag("assistant_what_if_card_${card.cardId}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(

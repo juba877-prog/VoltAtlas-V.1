@@ -37,6 +37,7 @@ fun AssistantApprovalConfirmationCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
+            .testTag("approval_confirmation_card")
             .testTag("assistant_approval_confirmation_card"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -90,6 +91,52 @@ fun AssistantApprovalConfirmationCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            // Explicit Natural Language Notice (Gate 12 Section 6 / State J)
+            Text(
+                text = "Notice: Conversational text ('yes', 'apply', 'اعتمد') cannot apply changes. Press Approve & Apply to execute.",
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.testTag("conversational_refusal_notice")
+            )
+
+            // State K: In-Flight Mutation Pipeline Progression
+            if (isSubmitting) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .testTag("mutation_pipeline_indicator")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Applying changes to database...",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            text = "Approval accepted → Revalidating → Committing → Receipt recorded → Post-commit validation",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
 
             if (!isApplyEnabled && gatewayUnavailableReason != null) {
                 Text(

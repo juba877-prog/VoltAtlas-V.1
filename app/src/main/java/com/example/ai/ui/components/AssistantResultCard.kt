@@ -31,6 +31,7 @@ fun AssistantResultCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
+            .testTag("verified_result_card")
             .testTag("assistant_result_card_${card.cardId}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(

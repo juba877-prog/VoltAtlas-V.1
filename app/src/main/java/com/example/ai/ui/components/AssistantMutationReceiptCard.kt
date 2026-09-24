@@ -35,6 +35,7 @@ fun AssistantMutationReceiptCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
+            .testTag("mutation_receipt")
             .testTag("assistant_mutation_receipt_card_$receiptId"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -54,7 +55,11 @@ fun AssistantMutationReceiptCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (isAlreadyApplied) "Already Applied" else "Change Applied",
+                    text = when {
+                        isAlreadyApplied -> "Already Applied"
+                        isPartialOrFailed -> "Change Applied (Revalidation Warning)"
+                        else -> "Change Applied"
+                    },
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -91,11 +96,30 @@ fun AssistantMutationReceiptCard(
                 }
             }
 
-            Text(
-                text = "Project Revision: Rev $revisionBefore → Rev $revisionAfter",
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.primary
-            )
+            // State N: Already applied / Idempotent
+            if (isAlreadyApplied) {
+                Text(
+                    text = "Project is already in the requested state. No changes were applied. Revision remains Rev $revisionBefore.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Text(
+                    text = "Project Revision: Rev $revisionBefore → Rev $revisionAfter",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                // State M notice: never say mutation failed
+                if (isPartialOrFailed) {
+                    Text(
+                        text = "Change committed to project (Rev $revisionBefore → Rev $revisionAfter). Revalidation flagged warnings: $revalidationStatus",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.testTag("revalidation_warning_notice")
+                    )
+                }
+            }
 
             if (appliedChanges.isNotEmpty()) {
                 Text(
@@ -113,11 +137,23 @@ fun AssistantMutationReceiptCard(
                 }
             }
 
-            Text(
-                text = "Revalidation: $revalidationStatus\nReceipt ID: $receiptId",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Revalidation: $revalidationStatus",
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = if (isPartialOrFailed) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.testTag("revalidation_status")
+                )
+                Text(
+                    text = "Receipt: $receiptId",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Button(
                 onClick = onDismiss,

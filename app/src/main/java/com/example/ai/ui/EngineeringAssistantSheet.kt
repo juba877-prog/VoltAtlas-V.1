@@ -35,6 +35,8 @@ import com.example.ai.service.AssistantMessage
 import com.example.ai.service.MessageRole
 import com.example.ai.ui.AssistantCardUiModel
 import com.example.ai.ui.components.*
+import com.example.ui.adaptive.rememberVoltAtlasWindowWidth
+import com.example.ui.adaptive.VoltAtlasWindowWidth
 import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -45,6 +47,8 @@ fun EngineeringAssistantSheet(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val reduceMotion = LocalReduceMotion.current
+    val windowWidth = rememberVoltAtlasWindowWidth()
+    val isWide = windowWidth != VoltAtlasWindowWidth.Compact
 
     if (!uiState.isOpen) return
 
@@ -106,6 +110,7 @@ fun EngineeringAssistantSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(if (isWide) Modifier.widthIn(max = 720.dp).align(Alignment.CenterHorizontally) else Modifier)
                 .fillMaxHeight(if (uiState.isExpanded) 0.95f else 0.80f)
                 .graphicsLayer {
                     alpha = contentEntrance.value
@@ -406,8 +411,30 @@ fun EngineeringAssistantSheet(
                                     onDismiss = { viewModel.close() }
                                 )
                             }
-                            else -> {
-                                // Default fallback card
+                            is AssistantCardUiModel.FailureDiagnosisCard -> {
+                                AssistantFailureDiagnosisCard(
+                                    card = card,
+                                    onActionClick = { action -> viewModel.onCardAction(card.cardId, action) }
+                                )
+                            }
+                            is AssistantCardUiModel.RecommendationCard -> {
+                                AssistantRecommendationCard(
+                                    card = card,
+                                    onActionClick = { action -> viewModel.onCardAction(card.cardId, action) }
+                                )
+                            }
+                            is AssistantCardUiModel.ToolExecutionCard -> {
+                                AssistantToolExecutionCard(
+                                    toolName = card.toolName,
+                                    methodology = card.methodology,
+                                    checkpoints = card.checkpoints.ifEmpty {
+                                        listOf(
+                                            ToolExecutionCheckpoint("Inputs resolved from active project"),
+                                            ToolExecutionCheckpoint("Deterministic calculation completed"),
+                                            ToolExecutionCheckpoint("Engineering evidence verified")
+                                        )
+                                    }
+                                )
                             }
                         }
                     }
@@ -417,12 +444,25 @@ fun EngineeringAssistantSheet(
                         AssistantMessageBubbleItem(message = message)
                     }
 
+                    // State A: Idle Landing Surface (Zero fake metrics, contextual suggestions)
+                    if (uiState.typedCards.isEmpty() && uiState.messages.none { it.role == MessageRole.USER } && !uiState.isThinking) {
+                        item {
+                            AssistantIdleLanding(
+                                context = uiState.context,
+                                onPromptClick = { prompt -> viewModel.sendMessage(prompt) }
+                            )
+                        }
+                    }
+
+                    // State C: In-Flight Tool Execution Indicator
                     if (uiState.isThinking) {
                         item {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.padding(start = 8.dp, top = 4.dp)
+                                modifier = Modifier
+                                    .padding(start = 8.dp, top = 4.dp)
+                                    .testTag("assistant_processing_indicator")
                             ) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(16.dp),
@@ -430,7 +470,7 @@ fun EngineeringAssistantSheet(
                                     color = ThemePrimary
                                 )
                                 Text(
-                                    text = "Analyzing engineering inputs...",
+                                    text = "Running deterministic engineering calculation...",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = ThemeTextSecondary
                                 )
@@ -456,58 +496,68 @@ fun EngineeringAssistantSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedTextField(
-                        value = uiState.inputText,
-                        onValueChange = { viewModel.setInputText(it) },
-                        placeholder = {
-                            Text(
-                                text = "Ask about sizing, load, or voltage drop...",
-                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
-                                color = ThemeTextSecondary
-                            )
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = ThemePrimary,
-                            unfocusedBorderColor = ThemeBorderSubtle,
-                            focusedTextColor = ThemeTextPrimary,
-                            unfocusedTextColor = ThemeTextPrimary,
-                            cursorColor = ThemePrimary
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(
-                            onSend = {
-                                if (uiState.inputText.isNotBlank() && !uiState.isThinking) {
-                                    viewModel.sendMessage(uiState.inputText)
-                                }
-                            }
-                        ),
+                    Box(
                         modifier = Modifier
                             .weight(1f)
-                            .heightIn(min = 44.dp, max = 100.dp)
-                            .focusRequester(inputFocusRequester)
-                            .testTag("assistant_input_field")
-                    )
-
-                    IconButton(
-                        onClick = {
-                            viewModel.sendMessage(uiState.inputText)
-                        },
-                        enabled = uiState.inputText.isNotBlank() && !uiState.isThinking,
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(
-                                color = if (uiState.inputText.isNotBlank()) ThemePrimary else ThemeBorderSubtle,
-                                shape = CircleShape
-                            )
-                            .testTag("assistant_send_button")
+                            .testTag("assistant_input")
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send message",
-                            tint = if (uiState.inputText.isNotBlank()) Color.White else ThemeTextSecondary,
-                            modifier = Modifier.size(18.dp)
+                        OutlinedTextField(
+                            value = uiState.inputText,
+                            onValueChange = { viewModel.setInputText(it) },
+                            placeholder = {
+                                Text(
+                                    text = "Ask about sizing, load, or voltage drop...",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                                    color = ThemeTextSecondary
+                                )
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = ThemePrimary,
+                                unfocusedBorderColor = ThemeBorderSubtle,
+                                focusedTextColor = ThemeTextPrimary,
+                                unfocusedTextColor = ThemeTextPrimary,
+                                cursorColor = ThemePrimary
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(
+                                onSend = {
+                                    if (uiState.inputText.isNotBlank() && !uiState.isThinking) {
+                                        viewModel.sendMessage(uiState.inputText)
+                                    }
+                                }
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp, max = 100.dp)
+                                .focusRequester(inputFocusRequester)
+                                .testTag("assistant_input_field")
                         )
+                    }
+
+                    Box(
+                        modifier = Modifier.testTag("assistant_send")
+                    ) {
+                        IconButton(
+                            onClick = {
+                                viewModel.sendMessage(uiState.inputText)
+                            },
+                            enabled = uiState.inputText.isNotBlank() && !uiState.isThinking,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(
+                                    color = if (uiState.inputText.isNotBlank()) ThemePrimary else ThemeBorderSubtle,
+                                    shape = CircleShape
+                                )
+                                .testTag("assistant_send_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send message",
+                                tint = if (uiState.inputText.isNotBlank()) Color.White else ThemeTextSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }

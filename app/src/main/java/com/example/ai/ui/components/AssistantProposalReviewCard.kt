@@ -36,6 +36,7 @@ fun AssistantProposalReviewCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
+            .testTag("proposal_card")
             .testTag("assistant_proposal_review_card_${model.proposalId}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
