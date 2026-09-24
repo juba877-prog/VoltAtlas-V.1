@@ -13,7 +13,7 @@ import android.os.IBinder
 class VoltAtlasAppFunctionService : Service() {
 
     private val binder = LocalBinder()
-    val appFunctions: VoltAtlasAppFunctions by lazy { VoltAtlasAppFunctions() }
+    var appFunctions: VoltAtlasAppFunctions = VoltAtlasAppFunctions()
 
     inner class LocalBinder : Binder() {
         fun getService(): VoltAtlasAppFunctionService = this@VoltAtlasAppFunctionService

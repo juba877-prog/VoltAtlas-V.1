@@ -350,7 +350,7 @@ object GroundedResponseValidator {
                 is CableSizingExecutionResult -> {
                     when (canonicalName) {
                         "cablesize", "conductor", "cablesize_mm2" -> {
-                            val magnitude = res.details.cableSize_mm2.toDoubleOrNull()
+                            val magnitude = parseSizeMagnitude(res.details.cableSize_mm2)
                             if (magnitude != null) {
                                 return EngineeringValue.ofDecimal(magnitude, EngineeringUnit.SQUARE_MILLIMETER)
                             }
@@ -388,13 +388,13 @@ object GroundedResponseValidator {
                 is CableWhatIfResult -> {
                     when (canonicalName) {
                         "cablesize", "conductor", "scenariosize" -> {
-                            val magnitude = res.scenarioSize.toDoubleOrNull()
+                            val magnitude = parseSizeMagnitude(res.scenarioSize)
                             if (magnitude != null) {
                                 return EngineeringValue.ofDecimal(magnitude, EngineeringUnit.SQUARE_MILLIMETER)
                             }
                         }
                         "baselinesize" -> {
-                            val magnitude = res.baselineSize?.toDoubleOrNull()
+                            val magnitude = parseSizeMagnitude(res.baselineSize)
                             if (magnitude != null) {
                                 return EngineeringValue.ofDecimal(magnitude, EngineeringUnit.SQUARE_MILLIMETER)
                             }
@@ -447,7 +447,7 @@ object GroundedResponseValidator {
         for (record in evidenceList) {
             when (val res = record.result) {
                 is CableSizingExecutionResult -> {
-                    val sizeMag = res.details.cableSize_mm2.toDoubleOrNull()
+                    val sizeMag = parseSizeMagnitude(res.details.cableSize_mm2)
                     if (sizeMag != null && abs(claimMag - sizeMag) > NUMERIC_EPSILON) {
                         return "Claimed size $claimMag ${claim.typedValue?.unit?.symbol ?: "mm²"} conflicts with verified selected size $sizeMag mm²"
                     }
@@ -458,8 +458,8 @@ object GroundedResponseValidator {
                     }
                 }
                 is CableWhatIfResult -> {
-                    val scenarioMag = res.scenarioSize.toDoubleOrNull()
-                    val baselineMag = res.baselineSize?.toDoubleOrNull()
+                    val scenarioMag = parseSizeMagnitude(res.scenarioSize)
+                    val baselineMag = parseSizeMagnitude(res.baselineSize)
                     val matchesScenario = scenarioMag != null && abs(claimMag - scenarioMag) <= NUMERIC_EPSILON
                     val matchesBaseline = baselineMag != null && abs(claimMag - baselineMag) <= NUMERIC_EPSILON
                     if (!matchesScenario && !matchesBaseline) {
@@ -540,5 +540,21 @@ object GroundedResponseValidator {
             }
         }
         return if (hasEngineeringResult) CheckStatus.PASS else null
+    }
+
+    private fun parseSizeMagnitude(raw: String?): Double? {
+        if (raw == null) return null
+        val cleaned = raw.replace("mm²", "", ignoreCase = true)
+            .replace("mm2", "", ignoreCase = true)
+            .replace("مم²", "")
+            .replace("مم2", "")
+            .trim()
+        val direct = cleaned.toDoubleOrNull()
+        if (direct != null) return direct
+        val xMatch = Regex("""\b\d+\s*x\s*(\d+(\.\d+)?)\b""", RegexOption.IGNORE_CASE).find(cleaned)
+        if (xMatch != null) {
+            return xMatch.groupValues[1].toDoubleOrNull()
+        }
+        return null
     }
 }

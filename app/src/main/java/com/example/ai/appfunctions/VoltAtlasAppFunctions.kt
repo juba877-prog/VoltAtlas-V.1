@@ -1,5 +1,11 @@
 package com.example.ai.appfunctions
 
+import com.example.ai.contracts.ToolStatus
+import com.example.ai.evidence.EngineeringEvidenceRecord
+import com.example.ai.tools.AssistantToolRuntime
+import com.example.ai.tools.ToolExecutionOutcome
+import com.example.ai.tools.cable.CableSizingExecutionResult
+import com.example.ai.tools.cable.CableToolNames
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.acos
@@ -38,6 +44,10 @@ class AppFunctionInvalidArgumentException(message: String) : AppFunctionExceptio
 /** Parameters for sizing an electrical low-voltage power cable. */
 @AppFunctionSerializable(isDescribedByKDoc = true)
 data class CableSizingParams(
+    /** Authoritative project identity. */
+    val projectId: String? = null,
+    /** Authoritative circuit identity. */
+    val circuitId: String? = null,
     /** Design load operating current in Amperes. */
     val loadCurrentAmps: Double = 0.0,
     /** Rated phase-to-phase system voltage in Volts. Not defaulted: a missing system voltage is a blocking input. */
@@ -195,7 +205,9 @@ data class TransformerFaultOutput(
  * - Concurrency: All routines execute on [Dispatchers.IO].
  * - Precision: Inputs validated against engineering domain boundaries.
  */
-class VoltAtlasAppFunctions {
+class VoltAtlasAppFunctions(
+    var toolRuntimeProvider: (suspend () -> AssistantToolRuntime?)? = null
+) {
 
     companion object {
         // The hardcoded STANDARD_COPPER_SIZES and STANDARD_BREAKER_RATINGS arrays were
@@ -207,18 +219,53 @@ class VoltAtlasAppFunctions {
     /**
      * Sizing of electrical low-voltage power cables.
      *
-     * NOTE: This AppFunction is a transport wrapper only and deliberately performs no
-     * calculation. The duplicated cable-sizing path that lived here (temperature/grouping
-     * derating table, local ampacity table, mV/A/m table and local compliance verdict) was
-     * removed because there must be exactly one calculation implementation: `CableSizingEngine`
-     * reached through the deterministic tool registry. Wiring this surface to that registry is
-     * the AppFunctions gate.
+     * Invariant: Never calculates engineering values internally.
+     * Delegates to the authoritative deterministic tool dispatcher when a project and circuit
+     * are provided.
      */
     @AppFunction(isDescribedByKDoc = true)
     suspend fun calculateCableSize(params: CableSizingParams): CableSizingOutput = withContext(Dispatchers.IO) {
         if (params.loadCurrentAmps <= 0.0) {
             throw AppFunctionInvalidArgumentException("Load current must be greater than 0 A.")
         }
+        if (params.projectId != null && params.projectId.isBlank()) {
+            throw AppFunctionInvalidArgumentException("Project ID cannot be blank.")
+        }
+        if (params.circuitId != null && params.circuitId.isBlank()) {
+            throw AppFunctionInvalidArgumentException("Circuit ID cannot be blank.")
+        }
+
+        if (params.projectId != null && params.circuitId != null) {
+            val runtime = toolRuntimeProvider?.invoke()
+                ?: throw AppFunctionException("ENGINE_UNAVAILABLE: AssistantToolRuntime is not configured.")
+
+            val outcome = runtime.dispatcher.execute(
+                toolName = CableToolNames.CALCULATE_CABLE_SIZING,
+                projectId = params.projectId,
+                entityType = "circuit",
+                entityId = params.circuitId,
+                conversationId = null,
+                arguments = emptyMap()
+            )
+
+            val result = outcome.envelope.result as? CableSizingExecutionResult
+                ?: run {
+                    val err = outcome.envelope.errors.firstOrNull()?.message
+                        ?: "Calculation failed with status ${outcome.envelope.status}"
+                    throw AppFunctionException("CALCULATION_FAILED: $err")
+                }
+
+            return@withContext CableSizingOutput(
+                recommendedSizeMm2 = result.details.cableSize_mm2,
+                protectiveDeviceRatingAmps = result.details.deviceSize_A,
+                izCapacityAmps = result.details.capacity_derated_Iz_A,
+                voltageDropPct = result.details.vdPct,
+                voltageDropVolts = result.details.voltDrop_V,
+                status = result.overallStatus.name,
+                standardReference = "IEC 60364-5-52"
+            )
+        }
+
         if (params.voltageV == null || params.cableLengthMeters == null || params.maxVdPct == null) {
             throw AppFunctionInvalidArgumentException(
                 "System voltage, cable length and voltage-drop limit are required; " +
@@ -229,6 +276,111 @@ class VoltAtlasAppFunctions {
             "ENGINE_UNAVAILABLE: cable sizing must be executed by the authoritative " +
                 "VoltAtlas CableSizingEngine through the engineering tool registry. " +
                 "This wrapper never computes a conductor size itself."
+        )
+    }
+
+    /**
+     * Executes authoritative cable sizing via the registered deterministic tool runtime
+     * and produces an [EngineeringEvidenceRecord].
+     *
+     * Invariant: Read-only operation. Zero Room mutations, zero revision changes.
+     */
+    suspend fun executeCableSizing(
+        projectId: String,
+        circuitId: String,
+        conversationId: String? = null
+    ): Pair<ToolExecutionOutcome, EngineeringEvidenceRecord> = withContext(Dispatchers.IO) {
+        if (projectId.isBlank()) {
+            throw AppFunctionInvalidArgumentException("Project ID cannot be blank.")
+        }
+        if (circuitId.isBlank()) {
+            throw AppFunctionInvalidArgumentException("Circuit ID cannot be blank.")
+        }
+        val runtime = toolRuntimeProvider?.invoke()
+            ?: throw AppFunctionException("ENGINE_UNAVAILABLE: AssistantToolRuntime is not configured.")
+
+        val outcome = runtime.dispatcher.execute(
+            toolName = CableToolNames.CALCULATE_CABLE_SIZING,
+            projectId = projectId,
+            entityType = "circuit",
+            entityId = circuitId,
+            conversationId = conversationId,
+            arguments = emptyMap()
+        )
+        val evidence = EngineeringEvidenceRecord.fromOutcome(
+            outcome = outcome,
+            conversationId = conversationId,
+            entityType = "CIRCUIT",
+            entityId = circuitId
+        )
+        Pair(outcome, evidence)
+    }
+
+    /**
+     * Executes an in-memory cable what-if calculation via the registered deterministic tool runtime.
+     *
+     * Invariant: In-memory only. Zero Room mutations, zero revision changes.
+     */
+    suspend fun executeCableWhatIf(
+        projectId: String,
+        circuitId: String,
+        overrides: Map<String, Any?>,
+        conversationId: String? = null
+    ): ToolExecutionOutcome = withContext(Dispatchers.IO) {
+        if (projectId.isBlank()) {
+            throw AppFunctionInvalidArgumentException("Project ID cannot be blank.")
+        }
+        if (circuitId.isBlank()) {
+            throw AppFunctionInvalidArgumentException("Circuit ID cannot be blank.")
+        }
+        val runtime = toolRuntimeProvider?.invoke()
+            ?: throw AppFunctionException("ENGINE_UNAVAILABLE: AssistantToolRuntime is not configured.")
+
+        runtime.dispatcher.execute(
+            toolName = CableToolNames.RUN_WHAT_IF,
+            projectId = projectId,
+            entityType = "circuit",
+            entityId = circuitId,
+            conversationId = conversationId,
+            arguments = mapOf("overrides" to overrides)
+        )
+    }
+
+    /**
+     * Executes deterministic candidate comparison via the registered deterministic tool runtime.
+     *
+     * Invariant: In-memory only. Zero Room mutations, zero revision changes.
+     */
+    suspend fun executeCandidateComparison(
+        projectId: String,
+        circuitId: String,
+        candidates: List<Map<String, Any?>>,
+        sortPolicy: String? = null,
+        conversationId: String? = null
+    ): ToolExecutionOutcome = withContext(Dispatchers.IO) {
+        if (projectId.isBlank()) {
+            throw AppFunctionInvalidArgumentException("Project ID cannot be blank.")
+        }
+        if (circuitId.isBlank()) {
+            throw AppFunctionInvalidArgumentException("Circuit ID cannot be blank.")
+        }
+        if (candidates.isEmpty()) {
+            throw AppFunctionInvalidArgumentException("Candidates list cannot be empty.")
+        }
+        val runtime = toolRuntimeProvider?.invoke()
+            ?: throw AppFunctionException("ENGINE_UNAVAILABLE: AssistantToolRuntime is not configured.")
+
+        val args = mutableMapOf<String, Any?>("candidates" to candidates)
+        if (sortPolicy != null) {
+            args["sortPolicy"] = sortPolicy
+        }
+        runtime.dispatcher.execute(
+            toolName = CableToolNames.COMPARE_CABLE_CANDIDATES,
+            projectId = projectId,
+            entityType = "circuit",
+            entityId = circuitId,
+            conversationId = conversationId,
+            arguments = args
         )
     }
 
