@@ -72,7 +72,6 @@ class AndroidKeystoreSecureCredentialStorage(
 
     override fun clearCredential() {
         synchronized(lock) {
-            inMemoryTestKey = null
             prefs.edit().remove(KEY_ENCRYPTED_CREDENTIAL).apply()
             try {
                 val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER)
@@ -153,33 +152,7 @@ class AndroidKeystoreSecureCredentialStorage(
             keyGenerator.init(parameterSpec)
             keyGenerator.generateKey()
         } catch (e: Throwable) {
-            if (isRobolectricOrUnitTest()) {
-                getInMemoryTestKey()
-            } else {
-                throw SecurityException("AndroidKeyStore hardware encryption unavailable or key generation failed", e)
-            }
-        }
-    }
-
-    @Volatile
-    private var inMemoryTestKey: SecretKey? = null
-
-    private fun getInMemoryTestKey(): SecretKey {
-        return inMemoryTestKey ?: synchronized(lock) {
-            inMemoryTestKey ?: run {
-                val randomBytes = ByteArray(32)
-                java.security.SecureRandom().nextBytes(randomBytes)
-                SecretKeySpec(randomBytes, "AES").also { inMemoryTestKey = it }
-            }
-        }
-    }
-
-    private fun isRobolectricOrUnitTest(): Boolean {
-        return try {
-            android.os.Build.FINGERPRINT.contains("robolectric", ignoreCase = true) ||
-                System.getProperty("java.vm.name")?.contains("Robolectric", ignoreCase = true) == true
-        } catch (_: Throwable) {
-            true
+            throw SecurityException("AndroidKeyStore hardware encryption unavailable or key generation failed", e)
         }
     }
 
@@ -202,28 +175,6 @@ class AndroidKeystoreSecureCredentialStorage(
     }
 }
 
-/**
- * In-memory test implementation of [SecureCredentialStorage] for unit tests.
- */
-class InMemorySecureCredentialStorage(
-    initialCredential: String? = null
-) : SecureCredentialStorage {
-    private var storedCredential: String? = initialCredential?.trim()?.takeIf { it.isNotEmpty() }
-
-    override fun saveCredential(credential: String) {
-        storedCredential = credential.trim().takeIf { it.isNotEmpty() }
-    }
-
-    override fun getCredential(): String? = storedCredential
-
-    override fun clearCredential() {
-        storedCredential = null
-    }
-
-    override fun hasCredential(): Boolean = !storedCredential.isNullOrBlank()
-
-    override fun getMaskedCredential(): String = storedCredential?.let { AndroidKeystoreSecureCredentialStorage.mask(it) } ?: ""
-}
 
 /**
  * Global accessor / locator for [SecureCredentialStorage].

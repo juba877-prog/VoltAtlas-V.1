@@ -122,29 +122,18 @@ class ByokGeminiProviderTest {
     }
 
     @Test
-    fun androidKeystoreSecureCredentialStorage_persistsAndEncryptsKeyAtRest() {
+    fun androidKeystoreSecureCredentialStorage_failsLoudWhenHardwareKeystoreUnavailable() {
         val storage = AndroidKeystoreSecureCredentialStorage(context)
-        storage.clearCredential()
-        assertFalse(storage.hasCredential())
+        val ex = assertThrows(SecurityException::class.java) {
+            storage.saveCredential("AIzaSyD-SecretUserKey9876543210ZYX")
+        }
+        assertTrue(ex.message!!.contains("AndroidKeyStore hardware encryption unavailable"))
 
-        val secretKey = "AIzaSyD-SecretUserKey9876543210ZYX"
-        storage.saveCredential(secretKey)
-
-        assertTrue(storage.hasCredential())
-        assertEquals(secretKey, storage.getCredential())
-        assertTrue(storage.getMaskedCredential().endsWith("0ZYX"))
-
-        // Verify key is encrypted at rest (not stored in plaintext in SharedPreferences)
+        // Verify that NOTHING was written to SharedPreferences (neither fallback key nor ciphertext)
         val rawPrefs = context.getSharedPreferences("voltatlas_ai_secure_keystore", Context.MODE_PRIVATE)
-        val rawEncrypted = rawPrefs.getString("enc_gemini_api_key", null)
-        assertNotNull("Encrypted string must exist in prefs", rawEncrypted)
-        assertFalse("Raw prefs must NOT contain plaintext key", rawEncrypted!!.contains(secretKey))
-        assertFalse("Raw prefs must NEVER store software fallback key (C1)", rawPrefs.contains("software_fallback_key"))
-        assertEquals("Prefs must only contain the encrypted ciphertext and no fallback key", setOf("enc_gemini_api_key"), rawPrefs.all.keys)
-
-        storage.clearCredential()
-        assertFalse(storage.hasCredential())
-        assertNull(storage.getCredential())
+        assertFalse(rawPrefs.contains("software_fallback_key"))
+        assertFalse(rawPrefs.contains("enc_gemini_api_key"))
+        assertTrue(rawPrefs.all.isEmpty())
     }
 
     // =========================================================================
