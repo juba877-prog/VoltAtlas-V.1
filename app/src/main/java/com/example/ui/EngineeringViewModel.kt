@@ -30,6 +30,66 @@ import kotlinx.coroutines.withContext
 
 class EngineeringViewModel(application: Application) : AndroidViewModel(application) {
 
+    companion object {
+        /**
+         * Result of aggregating the localized short-circuit Isc over the circuits that feed an ATS.
+         *
+         * @param maxResolvedIsc highest usable Isc among circuits with a real computed value.
+         * @param incomplete     true when at least one ATS-feeding circuit could NOT be resolved
+         *                       (missing result, DATA MISSING, or non-positive/NaN Isc). When true,
+         *                       [maxResolvedIsc] is a PARTIAL maximum and must not be treated as the
+         *                       governing fault level.
+         * @param missingCircuitIds ids of the unresolved circuits, for diagnostics.
+         */
+        data class AtsIscAggregation(
+            val maxResolvedIsc: Double,
+            val incomplete: Boolean,
+            val missingCircuitIds: List<Int>
+        )
+
+        /**
+         * Aggregates the ATS-feeding circuit fault currents WITHOUT ever emitting a partial
+         * maximum as if it were complete.
+         *
+         * A DATA MISSING result carries iscKA = 0.0 by design, so it is never counted as a fault
+         * level. Equally important, a partial max must not be used as the governing Isc: an
+         * unresolved circuit's true Isc may be the highest in the group, which would understate
+         * the ATS required short-time withstand Icw. Callers must therefore consult
+         * [AtsIscAggregation.incomplete] and substitute a conservative upper bound (the
+         * transformer-terminal Isc) when it is true.
+         */
+        fun aggregateAtsIsc(
+            circuits: List<com.example.data.CircuitEntity>,
+            shortCircuitResults: Map<Int, com.example.engine.ShortCircuitResult>
+        ): AtsIscAggregation {
+            var maxResolved = 0.0
+            val missing = mutableListOf<Int>()
+            for (c in circuits) {
+                if (!c.atsIncluded && c.assignedAtsId == null) continue
+                val res = shortCircuitResults[c.id]
+                if (res == null) {
+                    missing.add(c.id)
+                    continue
+                }
+                if (res.status == "DATA MISSING") {
+                    missing.add(c.id)
+                    continue
+                }
+                val ka = res.iscKA
+                if (ka <= 0.0 || ka.isNaN()) {
+                    missing.add(c.id)
+                    continue
+                }
+                if (ka > maxResolved) maxResolved = ka
+            }
+            return AtsIscAggregation(
+                maxResolvedIsc = maxResolved,
+                incomplete = missing.isNotEmpty(),
+                missingCircuitIds = missing
+            )
+        }
+    }
+
     val preferences = com.example.data.GlobalPreferences.getInstance(application)
 
     private val _showGlobalSettings = MutableStateFlow(false)
@@ -629,21 +689,26 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
             )
 
             // Look up the localized short-circuit current at the ATS-included circuits.
-            // DATA MISSING rows carry iscKA = 0.0 by design. They must be EXCLUDED: otherwise a
-            // fully-unresolved ATS group yields maxOrNull() == 0.0 (non-null), the transformer
-            // fallback below is skipped, and the ATS is sized against requiredIcw = 0.0 kA —
-            // silently understating the required short-circuit withstand.
-            val atsCandidateIsc = mutableListOf<Double>()
-            for (c in resolvedList) {
-                if (!c.atsIncluded && c.assignedAtsId == null) continue
-                val res = shortCircuitResults[c.id] ?: continue
-                if (res.status == "DATA MISSING") continue
-                val ka = res.iscKA
-                if (ka <= 0.0 || ka.isNaN()) continue
-                atsCandidateIsc.add(ka)
+            //
+            // A DATA MISSING row carries iscKA = 0.0 by design, so it must never be averaged or
+            // maxed in as a real fault level. But a PARTIAL max is also wrong in the other
+            // direction: the unresolved circuit's true Isc may be the highest of the group, so
+            // maxing only the resolved rows understates requiredIcw / requiredIcm.
+            //
+            // Rule (conservative upper bound): if ANY ATS-feeding circuit is unresolved, fall back
+            // to the transformer-terminal 3-phase Isc, which is the maximum available fault level
+            // at the ATS busbar. Sizing against a possibly-too-high Icw is non-conservative for
+            // cost but SAFE for withstand; sizing against a too-low Icw is not.
+            val atsAggregation = aggregateAtsIsc(resolvedList, shortCircuitResults)
+            val atsCircuitIsc = if (atsAggregation.incomplete) {
+                // Prefer the transformer terminal Isc. If that is also unavailable, fall back to
+                // the partial max rather than 0.0, and let the caller see incomplete == true.
+                (transformerResults.values.firstOrNull()?.isc3Phase ?: 0.0)
+                    .takeIf { it > 0.0 }
+                    ?: atsAggregation.maxResolvedIsc
+            } else {
+                atsAggregation.maxResolvedIsc
             }
-            val atsCircuitIsc = atsCandidateIsc.maxOrNull()
-                ?: (transformerResults.values.firstOrNull()?.isc3Phase ?: 0.0)
 
             val transformerFLC = transformerResults.values.firstOrNull()?.flc ?: 0.0
             val generatorSizesMap = generatorResults.mapValues { it.value.finalSize ?: 0.0 }

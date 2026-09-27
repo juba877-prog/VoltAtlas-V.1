@@ -646,6 +646,29 @@ fun getStatusPillColors(status: String): Triple<Color, Color, Color> {
     }
 }
 
+/**
+ * Formats the "Highest Isc" summary KPI.
+ *
+ * A DATA MISSING result carries iscKA = 0.0 by design. Taking a plain maximum across all rows is
+ * wrong in two different ways: the 0.0 must not be treated as a fault level, and excluding it
+ * yields only a PARTIAL maximum that may understate the true governing fault level. So when any
+ * row is unresolved the KPI is explicitly marked incomplete instead of showing a bare number.
+ */
+fun formatHighestIscKpi(
+    results: List<com.example.engine.ShortCircuitResult>,
+    hasMissingIsc: Boolean
+): String {
+    val resolved = results.filter { it.status != "DATA MISSING" && it.iscKA > 0.0 }
+    val maxResolved = resolved.maxOfOrNull { it.iscKA }
+    return when {
+        hasMissingIsc && maxResolved == null -> "DATA MISSING"
+        hasMissingIsc -> String.format(
+            java.util.Locale.US, ">=%.2f kA", maxResolved
+        ) + " (INCOMPLETE - ${results.count { it.status == "DATA MISSING" }} circuit(s) unresolved)"
+        else -> String.format(java.util.Locale.US, "%.2f kA", maxResolved ?: 0.0)
+    }
+}
+
 @Composable
 fun ShortCircuitPanel(state: UiState.Success) {
     val results = state.shortCircuitResults.values.toList()
@@ -656,10 +679,12 @@ fun ShortCircuitPanel(state: UiState.Success) {
     val fails = results.count { it.status == "FAIL" }
     
     val passRate = if (total > 0) ((passes.toDouble() / total) * 100).roundToInt() else 0
-    // DATA MISSING rows carry iscKA = 0.0 by design; they must not be counted as a real
-    // fault level when summarizing the project.
-    val highestIsc = results.filter { it.status != "DATA MISSING" && it.iscKA > 0.0 }
-        .maxOfOrNull { it.iscKA } ?: 0.0
+    // DATA MISSING rows carry iscKA = 0.0 by design. Excluding them from the maximum is correct,
+    // but the resulting number is then only a PARTIAL maximum: an unresolved circuit's true Isc
+    // may be higher. The KPI must therefore never present that partial value as if it were the
+    // project-wide governing fault level.
+    val hasMissingIsc = results.any { it.status == "DATA MISSING" }
+    val highestIscSummary = formatHighestIscKpi(results, hasMissingIsc)
     val validMargins = results.filter { it.status != "DATA MISSING" }.map { calculateCircuitMarginPct(it) }
     val lowestMargin = if (validMargins.isNotEmpty()) validMargins.minOrNull() ?: 0.0 else 0.0
 
@@ -736,7 +761,7 @@ fun ShortCircuitPanel(state: UiState.Success) {
             )
             KpiTile(
                 label = "Highest Isc",
-                value = "${String.format(java.util.Locale.US, "%.2f", highestIsc)} kA",
+                value = highestIscSummary,
                 modifier = Modifier.weight(1f)
             )
             KpiTile(
