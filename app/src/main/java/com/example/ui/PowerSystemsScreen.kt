@@ -66,6 +66,17 @@ private fun formatRatingVal(value: Double): String {
     return if (value % 1.0 == 0.0) value.toInt().toString() else "%.1f".format(value)
 }
 
+/**
+ * Formats an ATS withstand KPI (Icw / Icm).
+ *
+ * A DATA MISSING ATS carries requiredIcw = requiredIcm = 0.0 by design, so a bare "0.00 kA" would
+ * read as a satisfied requirement — the same PASS-on-missing-data defect this task closes. The
+ * value must be shown as missing, never as a number.
+ */
+fun formatAtsWithstandKpi(status: String, valueKA: Double): String =
+    if (status == "DATA MISSING") "DATA MISSING"
+    else String.format(java.util.Locale.US, "%.2f", valueKA)
+
 @Composable
 private fun CompactKpiTile(
     label: String,
@@ -1082,14 +1093,14 @@ fun AtsSettingsPanel(
                             Row(horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
                                 CompactKpiTile(
                                     label = "Required Icw",
-                                    value = String.format("%.2f", result.requiredIcw),
-                                    unit = "kA",
+                                    value = formatAtsWithstandKpi(result.status, result.requiredIcw),
+                                    unit = if (result.status == "DATA MISSING") "" else "kA",
                                     modifier = Modifier.weight(1f)
                                 )
                                 CompactKpiTile(
                                     label = "Required Icm",
-                                    value = String.format("%.2f", result.requiredIcm),
-                                    unit = "kA",
+                                    value = formatAtsWithstandKpi(result.status, result.requiredIcm),
+                                    unit = if (result.status == "DATA MISSING") "" else "kA",
                                     modifier = Modifier.weight(1f)
                                 )
                             }

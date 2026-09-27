@@ -201,7 +201,8 @@ object AtsEngine {
         generatorSelectedSizes: Map<String, Double> = emptyMap(),
         transformerFLC: Double = 0.0,
         isc3PhaseAtTransformer: Double = 0.0,
-        totalConnectedLoad: Double = 0.0
+        totalConnectedLoad: Double = 0.0,
+        isc3PhaseByAtsId: Map<String, Double> = emptyMap()
     ): Map<String, AtsResult> {
         if (atsList.isEmpty()) return emptyMap()
 
@@ -214,13 +215,16 @@ object AtsEngine {
                 circ.assignedAtsId != null && circ.assignedAtsId == ats.atsId
             }
             val essentialLoadKVA = atsCircuits.sumOf { it.loadKVA }
+            // Per-instance fault level wins when supplied: a shared scalar would size every ATS
+            // against an arbitrary instance's source in a multi-transformer project.
+            val iscForThisAts = isc3PhaseByAtsId[ats.atsId] ?: isc3PhaseAtTransformer
             val res = calculate(
                 settings = ats,
                 totalConnectedLoad = totalConnectedLoad,
                 essentialLoadKVA = essentialLoadKVA,
                 generatorSelectedSize = genSize,
                 transformerFLC = transformerFLC,
-                isc3PhaseAtTransformer = isc3PhaseAtTransformer,
+                isc3PhaseAtTransformer = iscForThisAts,
                 circuits = circuits
             )
             ats.atsId to res

@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
+import com.example.engine.AtsIscDecision
 import com.example.engine.BoqEngine
 import com.example.engine.CableSizingEngine
 import com.example.engine.DrumScheduleEngine
@@ -32,62 +33,12 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
 
     companion object {
         /**
-         * Result of aggregating the localized short-circuit Isc over the circuits that feed an ATS.
-         *
-         * @param maxResolvedIsc highest usable Isc among circuits with a real computed value.
-         * @param incomplete     true when at least one ATS-feeding circuit could NOT be resolved
-         *                       (missing result, DATA MISSING, or non-positive/NaN Isc). When true,
-         *                       [maxResolvedIsc] is a PARTIAL maximum and must not be treated as the
-         *                       governing fault level.
-         * @param missingCircuitIds ids of the unresolved circuits, for diagnostics.
+         * States honestly what the transformer-terminal Isc upper bound does and does not include.
+         * The bound is derived from the transformer impedance alone; generator subtransient
+         * contribution and the optional LV motor-group term are NOT added to it.
          */
-        data class AtsIscAggregation(
-            val maxResolvedIsc: Double,
-            val incomplete: Boolean,
-            val missingCircuitIds: List<Int>
-        )
-
-        /**
-         * Aggregates the ATS-feeding circuit fault currents WITHOUT ever emitting a partial
-         * maximum as if it were complete.
-         *
-         * A DATA MISSING result carries iscKA = 0.0 by design, so it is never counted as a fault
-         * level. Equally important, a partial max must not be used as the governing Isc: an
-         * unresolved circuit's true Isc may be the highest in the group, which would understate
-         * the ATS required short-time withstand Icw. Callers must therefore consult
-         * [AtsIscAggregation.incomplete] and substitute a conservative upper bound (the
-         * transformer-terminal Isc) when it is true.
-         */
-        fun aggregateAtsIsc(
-            circuits: List<com.example.data.CircuitEntity>,
-            shortCircuitResults: Map<Int, com.example.engine.ShortCircuitResult>
-        ): AtsIscAggregation {
-            var maxResolved = 0.0
-            val missing = mutableListOf<Int>()
-            for (c in circuits) {
-                if (!c.atsIncluded && c.assignedAtsId == null) continue
-                val res = shortCircuitResults[c.id]
-                if (res == null) {
-                    missing.add(c.id)
-                    continue
-                }
-                if (res.status == "DATA MISSING") {
-                    missing.add(c.id)
-                    continue
-                }
-                val ka = res.iscKA
-                if (ka <= 0.0 || ka.isNaN()) {
-                    missing.add(c.id)
-                    continue
-                }
-                if (ka > maxResolved) maxResolved = ka
-            }
-            return AtsIscAggregation(
-                maxResolvedIsc = maxResolved,
-                incomplete = missing.isNotEmpty(),
-                missingCircuitIds = missing
-            )
-        }
+        const val UPPER_BOUND_SOURCE_NOTE =
+            "utility source only; generator/motor contribution not included"
     }
 
     val preferences = com.example.data.GlobalPreferences.getInstance(application)
@@ -688,26 +639,26 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 generatorResults = generatorResults
             )
 
-            // Look up the localized short-circuit current at the ATS-included circuits.
-            //
-            // A DATA MISSING row carries iscKA = 0.0 by design, so it must never be averaged or
-            // maxed in as a real fault level. But a PARTIAL max is also wrong in the other
-            // direction: the unresolved circuit's true Isc may be the highest of the group, so
-            // maxing only the resolved rows understates requiredIcw / requiredIcm.
-            //
-            // Rule (conservative upper bound): if ANY ATS-feeding circuit is unresolved, fall back
-            // to the transformer-terminal 3-phase Isc, which is the maximum available fault level
-            // at the ATS busbar. Sizing against a possibly-too-high Icw is non-conservative for
-            // cost but SAFE for withstand; sizing against a too-low Icw is not.
-            val atsAggregation = aggregateAtsIsc(resolvedList, shortCircuitResults)
-            val atsCircuitIsc = if (atsAggregation.incomplete) {
-                // Prefer the transformer terminal Isc. If that is also unavailable, fall back to
-                // the partial max rather than 0.0, and let the caller see incomplete == true.
-                (transformerResults.values.firstOrNull()?.isc3Phase ?: 0.0)
-                    .takeIf { it > 0.0 }
-                    ?: atsAggregation.maxResolvedIsc
-            } else {
-                atsAggregation.maxResolvedIsc
+            // Per-ATS fault level. Rules (see decideAtsIsc):
+            //  - Only circuits EXPLICITLY assigned to that ATS are aggregated.
+            //  - The feeding transformer is resolved through the circuit hierarchy, never
+            //    "first transformer in the map" (wrong unit in a multi-instance project).
+            //  - If any assigned circuit is unresolved, a partial max is NOT a defensible basis.
+            //    Use the feeding transformer's terminal Isc as the conservative upper bound.
+            //  - If that is unavailable too, the ATS result is DATA MISSING, not a number.
+            val atsIscById: Map<String, AtsIscDecision> = atsEntitiesList.associate { ats ->
+                val agg = com.example.engine.AtsIscResolver.aggregateFor(
+                    ats.atsId, normalizedCircuits, shortCircuitResults
+                )
+                val feedTxId = com.example.engine.AtsIscResolver.resolveFeedTransformerId(
+                    ats.atsId, normalizedCircuits, circuitParents
+                )
+                val txIsc = feedTxId?.let { transformerResults[it]?.isc3Phase } ?: 0.0
+                ats.atsId to com.example.engine.AtsIscResolver.decide(
+                    agg,
+                    txIsc,
+                    basisNoteSuffix = UPPER_BOUND_SOURCE_NOTE
+                )
             }
 
             val transformerFLC = transformerResults.values.firstOrNull()?.flc ?: 0.0
@@ -717,9 +668,27 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 circuits = normalizedCircuits,
                 generatorSelectedSizes = generatorSizesMap,
                 transformerFLC = transformerFLC,
-                isc3PhaseAtTransformer = atsCircuitIsc,
-                totalConnectedLoad = totalConnectedLoad
+                isc3PhaseAtTransformer = 0.0,
+                totalConnectedLoad = totalConnectedLoad,
+                isc3PhaseByAtsId = atsIscById.mapValues { it.value.iscKA }
             )
+            // Surface an unresolvable ATS basis as DATA MISSING on the result itself rather than
+            // letting a plausible-looking requiredIcw stand.
+            val atsResultsFinal: Map<String, com.example.engine.AtsResult> =
+                atsEntitiesList.mapNotNull { ats ->
+                    val base = atsResults[ats.atsId] ?: return@mapNotNull null
+                    val decision = atsIscById[ats.atsId]
+                    if (decision == null || !decision.dataMissing) {
+                        ats.atsId to base
+                    } else {
+                        ats.atsId to base.copy(
+                            status = "DATA MISSING",
+                            requiredIcw = 0.0,
+                            requiredIcm = 0.0,
+                            messages = base.messages + decision.basis
+                        )
+                    }
+                }.toMap()
             val upsResults = com.example.engine.UpsEngine.calculateAll(upsEntitiesList, normalizedCircuits)
 
             val pfCorrectionResults = com.example.engine.PfCorrectionEngine.calculate(pfGlob, pfTrans, transformers, transformerResults)
@@ -790,7 +759,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 generators = genList,
                 generatorResults = generatorResults,
                 atsList = atsEntitiesList,
-                atsResults = atsResults,
+                atsResults = atsResultsFinal,
                 upsList = upsEntitiesList,
                 upsResults = upsResults,
                 protectionResults = protectionResults,
@@ -829,7 +798,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 panels = panels,
                 generatorResults = generatorResults,
                 generators = genList,
-                atsResults = atsResults,
+                atsResults = atsResultsFinal,
                 atsEntity = atsSetResolved,
                 atsList = atsEntitiesList,
                 upsResults = upsResults,
