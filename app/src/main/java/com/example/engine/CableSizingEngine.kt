@@ -226,29 +226,30 @@ object CableSizingEngine {
         formation: String,
         spacing: String,
         noCircuits: Int
-    ): Double {
-        if (noCircuits <= 1) return 1.0
+    ): Double? {
+        if (noCircuits <= 0) return null
 
-        val data = Catalog.deratingData ?: return 1.0
+        val data = Catalog.deratingData ?: return null
         val factorsObject = data
             .optJSONObject("grouping")
             ?.optJSONObject("factors")
-            ?: return 1.0
+            ?: return null
 
         val normalizedInstallation = installation.trim().lowercase()
         val prefix = when {
-            isDirectBuried(installation) -> "direct_buried"
-            normalizedInstallation.contains("duct") -> "buried_ducts"
+            isDirectBuried(installation) || normalizedInstallation == "buried" -> "Buried"
+            normalizedInstallation.contains("duct") -> "Duct"
             normalizedInstallation.contains("free air") ||
                 normalizedInstallation.contains("tray") ||
-                normalizedInstallation == "air" -> "air_tray"
-            else -> return 1.0
+                normalizedInstallation == "air" -> "Air"
+            else -> return null
         }
 
-        val form = if (formation.trim().lowercase().contains("flat")) {
-            "Flat"
-        } else {
-            "Trefoil"
+        val normalizedFormation = formation.trim().lowercase()
+        val form = when {
+            normalizedFormation.contains("flat") -> "Flat"
+            normalizedFormation.contains("trefoil") || normalizedFormation.isBlank() -> "Trefoil"
+            else -> return null
         }
 
         val normalizedSpacing = spacing.trim().lowercase()
@@ -257,13 +258,16 @@ object CableSizingEngine {
                 normalizedSpacing.contains("30 cm") -> "0.30m"
             normalizedSpacing.contains("0.15") ||
                 normalizedSpacing.contains("15 cm") -> "0.15m"
-            else -> "Touching"
+            normalizedSpacing.contains("touching") || normalizedSpacing.isBlank() -> "Touching"
+            else -> return null
         }
 
         val groupingKey = "${prefix}_${form}_${space}"
-        val factorsArray = factorsObject.optJSONArray(groupingKey) ?: return 1.0
+        val factorsArray = factorsObject.optJSONArray(groupingKey) ?: return null
+        if (noCircuits == 1) return 1.0
         val index = noCircuits.coerceIn(1, 6) - 1
-        return factorsArray.optDouble(index, 1.0)
+        val factor = factorsArray.optDouble(index, -1.0)
+        return if (factor > 0.0) factor else null
     }
 
     // ---------------------------------------------------------------------
@@ -472,6 +476,9 @@ object CableSizingEngine {
             circuit.formation,
             circuit.spacing,
             circuit.noCircuits
+        ) ?: return failedResult(
+            "Grouping derating factor not found for installation '${circuit.installation}', formation '${circuit.formation}', spacing '${circuit.spacing}'.",
+            CableFailureCode.DERATING_INVALID
         )
 
         val cTotalDerating = cTemp * cDepth * cSoil * cGroup
