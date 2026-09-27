@@ -531,7 +531,7 @@ fun QuickCableCalcContent(
                 }
             )
         },
-        containerColor = DarkBackground
+        containerColor = ThemeBackground
     ) { innerPadding ->
         LazyColumn(
             state = listState,
@@ -565,16 +565,16 @@ fun QuickCableCalcContent(
             // 1. Direct Electrical Parameters Card
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = DarkCardBg),
+                    colors = CardDefaults.cardColors(containerColor = ThemeSurface),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, BorderColor),
+                    border = BorderStroke(1.dp, ThemeBorderSubtle),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(ElectricalIcons.Circuits, contentDescription = null, tint = SleekPrimary, modifier = Modifier.size(20.dp))
+                            Icon(ElectricalIcons.Circuits, contentDescription = null, tint = ThemePrimary, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("1. Electrical & Load Inputs", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
+                            Text("1. Electrical & Load Inputs", fontWeight = FontWeight.Bold, color = ThemeTextPrimary, fontSize = 15.sp)
                         }
 
                         CableInputFieldRow(
@@ -674,16 +674,16 @@ fun QuickCableCalcContent(
             // 2. Cable Specification & Installation (Catalog-Driven)
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = DarkCardBg),
+                    colors = CardDefaults.cardColors(containerColor = ThemeSurface),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, BorderColor),
+                    border = BorderStroke(1.dp, ThemeBorderSubtle),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Tune, contentDescription = null, tint = SleekPrimary, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Tune, contentDescription = null, tint = ThemePrimary, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("2. Cable & Installation Method", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
+                            Text("2. Cable & Installation Method", fontWeight = FontWeight.Bold, color = ThemeTextPrimary, fontSize = 15.sp)
                         }
 
                         DropdownSelector(
@@ -813,16 +813,16 @@ fun QuickCableCalcContent(
             // 3. Environmental & Derating Factors
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = DarkCardBg),
+                    colors = CardDefaults.cardColors(containerColor = ThemeSurface),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, BorderColor),
+                    border = BorderStroke(1.dp, ThemeBorderSubtle),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Settings, contentDescription = null, tint = SleekPrimary, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Settings, contentDescription = null, tint = ThemePrimary, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("3. Environmental Derating", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
+                            Text("3. Environmental Derating", fontWeight = FontWeight.Bold, color = ThemeTextPrimary, fontSize = 15.sp)
                         }
 
                         CableInputFieldRow(
@@ -899,9 +899,9 @@ fun QuickCableCalcContent(
             // 4. Manual Overrides (Catalog-Driven Selectors, Expandable)
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = DarkCardBg),
+                    colors = CardDefaults.cardColors(containerColor = ThemeSurface),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, BorderColor),
+                    border = BorderStroke(1.dp, ThemeBorderSubtle),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -913,14 +913,14 @@ fun QuickCableCalcContent(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Tune, contentDescription = null, tint = SleekPrimary, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.Tune, contentDescription = null, tint = ThemePrimary, modifier = Modifier.size(20.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("4. Manual Overrides (Optional Selectors)", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
+                                Text("4. Manual Overrides (Optional Selectors)", fontWeight = FontWeight.Bold, color = ThemeTextPrimary, fontSize = 15.sp)
                             }
                             Icon(
                                 imageVector = if (uiState.showOverrides) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                                 contentDescription = null,
-                                tint = SlateTextSecondary
+                                tint = ThemeTextSecondary
                             )
                         }
 
@@ -1004,9 +1004,9 @@ fun QuickCableCalcContent(
                         contentAlignment = Alignment.Center
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Calculate, contentDescription = null, tint = ThemeTextColor, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Calculate, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Calculate Cable Sizing", color = ThemeTextColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text("Calculate Cable Sizing", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         }
                     }
                 }
@@ -1159,7 +1159,7 @@ private fun QuickCalcResultCard(
 
             // Voltage Drop Breakdown
             Card(
-                colors = CardDefaults.cardColors(containerColor = DarkCardBg),
+                colors = CardDefaults.cardColors(containerColor = ThemeSurfaceElevated),
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -1169,7 +1169,7 @@ private fun QuickCalcResultCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("Voltage Drop (ΔV)", color = SlateTextSecondary, fontSize = 12.sp)
+                        Text("Voltage Drop (ΔV)", color = ThemeTextSecondary, fontSize = 12.sp)
                         Text(
                             text = "${String.format(Locale.US, "%.2f", result.voltDrop_V)} V  (${String.format(Locale.US, "%.2f", result.vdPct)}%)",
                             fontWeight = FontWeight.Bold,
@@ -1180,7 +1180,7 @@ private fun QuickCalcResultCard(
 
                     Text(
                         text = "Limit: ${String.format(Locale.US, "%.1f", circuit.maxVDpct * 100.0)}%",
-                        color = SlateTextSecondary,
+                        color = ThemeTextSecondary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -1203,11 +1203,11 @@ private fun QuickCalcResultCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Total Derating Factor (C_total):", color = SlateTextSecondary, fontSize = 12.sp)
+                Text("Total Derating Factor (C_total):", color = ThemeTextSecondary, fontSize = 12.sp)
                 Text(
                     text = String.format(Locale.US, "%.3f", result.cTotalDerating),
                     fontWeight = FontWeight.Bold,
-                    color = ThemeTextColor,
+                    color = ThemeTextPrimary,
                     fontSize = 13.sp
                 )
             }
@@ -1224,17 +1224,17 @@ private fun ResultMetricBox(
     accentColor: Color = SleekPrimary
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = DarkCardBg),
+        colors = CardDefaults.cardColors(containerColor = ThemeSurface),
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, BorderColor),
+        border = BorderStroke(1.dp, ThemeBorderSubtle),
         modifier = modifier
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(title, color = SlateTextSecondary, fontSize = 11.sp)
+            Text(title, color = ThemeTextSecondary, fontSize = 11.sp)
             Spacer(modifier = Modifier.height(2.dp))
             Text(value, color = accentColor, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(2.dp))
-            Text(subtitle, color = SlateTextSecondary, fontSize = 11.sp)
+            Text(subtitle, color = ThemeTextSecondary, fontSize = 11.sp)
         }
     }
 }
@@ -1246,14 +1246,14 @@ private fun SmallMetricBox(
     modifier: Modifier = Modifier
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = DarkCardBg),
+        colors = CardDefaults.cardColors(containerColor = ThemeSurface),
         shape = RoundedCornerShape(8.dp),
         modifier = modifier
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
             Text(
                 title,
-                color = SlateTextSecondary,
+                color = ThemeTextSecondary,
                 fontSize = 10.sp,
                 // Up to four of these boxes share one row; the title must wrap
                 // (and only then ellipsize) instead of hard-clipping mid-word
@@ -1262,7 +1262,7 @@ private fun SmallMetricBox(
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(2.dp))
-            Text(value, color = ThemeTextColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(value, color = ThemeTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

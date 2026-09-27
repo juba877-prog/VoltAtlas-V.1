@@ -74,7 +74,7 @@ fun ProjectPickerScreen(
     onExportProjectJson: (suspend (String) -> String)? = null,
     onImportProjectJson: (String, (Boolean, String) -> Unit) -> Unit = { _, _ -> },
     onOpenSettings: () -> Unit = {},
-    onOpenQuickCalc: () -> Unit = {},
+    onBackToEntry: (() -> Unit)? = null,
     confirmDestructiveActions: Boolean = true
 ) {
     val brandCyan = BrandCyan
@@ -167,6 +167,9 @@ fun ProjectPickerScreen(
             showImportDialog -> showImportDialog = false
             showExitAppDialog -> showExitAppDialog = false
             searchQuery.isNotBlank() -> searchQuery = ""
+            // With the entry/mode-selection screen as the app root, Back from the picker
+            // returns there instead of terminating the app.
+            onBackToEntry != null -> onBackToEntry()
             else -> showExitAppDialog = true
         }
     }
@@ -432,40 +435,6 @@ fun ProjectPickerScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Quick Engineering Standalone Scratchpad Action Button
-                    OutlinedButton(
-                        onClick = onOpenQuickCalc,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp)
-                            .testTag("quick_calc_btn"),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, BrandGreen),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandGreen),
-                        contentPadding = PaddingValues(horizontal = 12.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Bolt,
-                                contentDescription = "Quick Engineering",
-                                tint = BrandGreen,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Quick Engineering",
-                                color = BrandGreen,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-                    }
-                    
                     Spacer(modifier = Modifier.height(20.dp))
 
 

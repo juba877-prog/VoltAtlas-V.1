@@ -110,6 +110,8 @@ data class CloudLlmRawResponse(
  * Supports both single-turn generation and provider-neutral multi-turn agentic loops.
  */
 interface GeminiClientSeam : MultiTurnGeminiSeam {
+    fun isConfigured(): Boolean = !CloudLlmFeatureGate.getApiKey().isNullOrBlank()
+
     suspend fun generate(
         systemPrompt: String,
         userPrompt: String,
@@ -438,8 +440,9 @@ class CloudLlmConversationEngine(
      */
     private val toolDescriptors: List<EngineeringToolDescriptor> =
         EngineeringToolCatalog.READ_TOOLS + EngineeringToolCatalog.CABLE_TOOLS,
-    private val promptCompiler: (RuntimePromptInputs) -> PromptCompilationResult = { RuntimePromptCompiler.compile(it) },
-    private val orchestrator: AgenticToolLoopOrchestrator? = null
+    private val promptCompiler: (RuntimePromptInputs) -> PromptCompilationResult = { RuntimePromptCompiler.compile(it, maxBudgetCharacters = 24_000) },
+    private val orchestrator: AgenticToolLoopOrchestrator? = null,
+    private val orchestratorProvider: (() -> AgenticToolLoopOrchestrator?)? = null
 ) : ConversationEngine {
 
     override suspend fun evaluateTurn(
@@ -447,11 +450,15 @@ class CloudLlmConversationEngine(
         decisionIdProvider: () -> String
     ): HybridEngineResult {
         // 1. Kill-Switch and Credential Guard
-        if (!CloudLlmFeatureGate.isCloudLlmEnabled() || CloudLlmFeatureGate.getApiKey().isNullOrBlank()) {
+        val isConfigured = clientSeam.isConfigured() || !CloudLlmFeatureGate.getApiKey().isNullOrBlank()
+        val isEnabled = CloudLlmFeatureGate.isCloudLlmEnabled() || clientSeam.isConfigured()
+        if (!isEnabled || !isConfigured) {
+            val reason = CloudDegradationReason.HTTP_OR_PROVIDER_ERROR
+            AiLogger.w("VoltAtlas_AI", "AI_RUNTIME: cloud degraded before dispatch. isEnabled=$isEnabled, isConfigured=$isConfigured, fallbackReason=$reason")
             return buildDegradedResult(
                 input = input,
                 decisionId = decisionIdProvider(),
-                reason = CloudDegradationReason.HTTP_OR_PROVIDER_ERROR
+                reason = reason
             )
         }
 
@@ -544,6 +551,8 @@ class CloudLlmConversationEngine(
 
         val compileResult = promptCompiler(promptInputs)
         if (compileResult !is PromptCompilationResult.Success) {
+            val diag = (compileResult as? PromptCompilationResult.PromptBudgetExceeded)?.diagnostic ?: "Unknown prompt failure"
+            AiLogger.w("VoltAtlas_AI", "AI_RUNTIME: prompt compilation failed: $diag. Falling back to local engine.")
             return buildDegradedResult(
                 input = input,
                 decisionId = decisionIdProvider(),
@@ -554,8 +563,9 @@ class CloudLlmConversationEngine(
         val artifact = compileResult.artifact
 
         // 4. Multi-turn Agentic Loop branch (if orchestrator is present)
-        if (orchestrator != null) {
-            val agenticResult = orchestrator.executeLoop(
+        val activeOrchestrator = orchestrator ?: orchestratorProvider?.invoke()
+        if (activeOrchestrator != null) {
+            val agenticResult = activeOrchestrator.executeLoop(
                 systemPrompt = artifact.systemPrompt,
                 userPrompt = artifact.userPrompt ?: input.userUtterance,
                 projectContext = effectiveProjectContext,

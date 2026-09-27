@@ -25,7 +25,6 @@ fun AssistantBlockingQuestionCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
             .testTag("assistant_blocking_question_card_${card.cardId}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -71,11 +70,6 @@ fun AssistantBlockingQuestionCard(
                     }
                 }
             }
-
-            SuggestedActionsRow(
-                actions = card.suggestedActions,
-                onActionClick = onActionClick
-            )
         }
     }
 }

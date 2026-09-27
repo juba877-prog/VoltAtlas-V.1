@@ -63,12 +63,12 @@ fun QuickCalculatorContainer(
                             text = title,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = ThemeTextColor
+                            color = ThemeTextPrimary
                         )
                         Text(
                             text = subtitle,
                             style = MaterialTheme.typography.labelSmall,
-                            color = SleekPrimary
+                            color = ThemePrimary
                         )
                     }
                 },
@@ -77,7 +77,7 @@ fun QuickCalculatorContainer(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back to Quick Engineering",
-                            tint = ThemeTextColor
+                            tint = ThemeTextPrimary
                         )
                     }
                 },
@@ -87,15 +87,15 @@ fun QuickCalculatorContainer(
                             Icon(
                                 imageVector = Icons.Default.ContentCopy,
                                 contentDescription = "Copy Summary",
-                                tint = SleekPrimary
+                                tint = ThemePrimary
                             )
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkCardBg)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = ThemeSurface)
             )
         },
-        containerColor = DarkBackground
+        containerColor = ThemeBackground
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
@@ -144,7 +144,7 @@ fun QuickResultCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = SurfaceElevated),
+        colors = CardDefaults.cardColors(containerColor = ThemeSurfaceElevated),
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.5.dp, accentColor),
         modifier = Modifier.fillMaxWidth().testTag("result_card")
@@ -153,9 +153,9 @@ fun QuickResultCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(text = title, fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 16.sp)
+                Text(text = title, fontWeight = FontWeight.Bold, color = ThemeTextPrimary, fontSize = 16.sp)
             }
-            HorizontalDivider(color = BorderColor)
+            HorizontalDivider(color = ThemeBorderSubtle)
             content()
         }
     }
@@ -167,7 +167,7 @@ fun QuickMetricRow(
     value: String,
     subtitle: String? = null,
     highlight: Boolean = false,
-    valueColor: Color = ThemeTextColor
+    valueColor: Color = ThemeTextPrimary
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -175,9 +175,9 @@ fun QuickMetricRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = SlateTextSecondary, fontSize = 13.sp)
+            Text(title, color = ThemeTextSecondary, fontSize = 13.sp)
             if (subtitle != null) {
-                Text(subtitle, color = SlateTextSecondary.copy(alpha = 0.7f), fontSize = 11.sp)
+                Text(subtitle, color = ThemeTextSecondary.copy(alpha = 0.7f), fontSize = 11.sp)
             }
         }
         Text(
@@ -192,15 +192,15 @@ fun QuickMetricRow(
 @Composable
 fun QuickFormulaNote(note: String) {
     Surface(
-        color = DarkCardBg,
+        color = ThemeSurface,
         shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, BorderColor),
+        border = BorderStroke(1.dp, ThemeBorderSubtle),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Info, contentDescription = null, tint = SleekPrimary, modifier = Modifier.size(16.dp))
+            Icon(Icons.Default.Info, contentDescription = null, tint = ThemePrimary, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text(note, color = SlateTextSecondary, fontSize = 11.sp)
+            Text(note, color = ThemeTextSecondary, fontSize = 11.sp)
         }
     }
 }
@@ -227,9 +227,9 @@ fun QuickCalculateButton(
             contentAlignment = Alignment.Center
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Calculate, contentDescription = null, tint = ThemeTextColor, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.Calculate, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(text, color = ThemeTextColor, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
         }
     }
@@ -336,13 +336,13 @@ fun QuickVoltageDropScreen(onBack: () -> Unit) {
         }
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = DarkCardBg),
+            colors = CardDefaults.cardColors(containerColor = ThemeSurface),
             shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, BorderColor),
+            border = BorderStroke(1.dp, ThemeBorderSubtle),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Input Parameters", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
+                Text("Input Parameters", fontWeight = FontWeight.Bold, color = ThemeTextPrimary, fontSize = 15.sp)
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     QuickDropdown(
@@ -482,13 +482,13 @@ fun QuickLoadCurrentScreen(onBack: () -> Unit) {
         }
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = DarkCardBg),
+            colors = CardDefaults.cardColors(containerColor = ThemeSurface),
             shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, BorderColor),
+            border = BorderStroke(1.dp, ThemeBorderSubtle),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Calculation Mode", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
+                Text("Calculation Mode", fontWeight = FontWeight.Bold, color = ThemeTextPrimary, fontSize = 15.sp)
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
@@ -620,13 +620,13 @@ fun QuickPowerTriangleScreen(onBack: () -> Unit) {
         }
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = DarkCardBg),
+            colors = CardDefaults.cardColors(containerColor = ThemeSurface),
             shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, BorderColor),
+            border = BorderStroke(1.dp, ThemeBorderSubtle),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Input Mode", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
+                Text("Input Mode", fontWeight = FontWeight.Bold, color = ThemeTextPrimary, fontSize = 15.sp)
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
@@ -747,13 +747,13 @@ fun QuickPfcScreen(onBack: () -> Unit) {
         }
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = DarkCardBg),
+            colors = CardDefaults.cardColors(containerColor = ThemeSurface),
             shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, BorderColor),
+            border = BorderStroke(1.dp, ThemeBorderSubtle),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Load & Power Factor Inputs", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
+                Text("Load & Power Factor Inputs", fontWeight = FontWeight.Bold, color = ThemeTextPrimary, fontSize = 15.sp)
 
                 OutlinedTextField(
                     value = pKwText,
@@ -874,13 +874,13 @@ fun QuickTransformerScreen(onBack: () -> Unit) {
         }
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = DarkCardBg),
+            colors = CardDefaults.cardColors(containerColor = ThemeSurface),
             shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, BorderColor),
+            border = BorderStroke(1.dp, ThemeBorderSubtle),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Design Load Inputs", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
+                Text("Design Load Inputs", fontWeight = FontWeight.Bold, color = ThemeTextPrimary, fontSize = 15.sp)
 
                 OutlinedTextField(
                     value = loadKvaText,
@@ -998,13 +998,13 @@ fun QuickTransformerScScreen(onBack: () -> Unit) {
         }
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = DarkCardBg),
+            colors = CardDefaults.cardColors(containerColor = ThemeSurface),
             shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, BorderColor),
+            border = BorderStroke(1.dp, ThemeBorderSubtle),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Transformer Nameplate Data", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
+                Text("Transformer Nameplate Data", fontWeight = FontWeight.Bold, color = ThemeTextPrimary, fontSize = 15.sp)
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
@@ -1145,13 +1145,13 @@ fun QuickLightingScreen(onBack: () -> Unit) {
         }
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = DarkCardBg),
+            colors = CardDefaults.cardColors(containerColor = ThemeSurface),
             shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, BorderColor),
+            border = BorderStroke(1.dp, ThemeBorderSubtle),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Room Dimensions & Target Lux", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
+                Text("Room Dimensions & Target Lux", fontWeight = FontWeight.Bold, color = ThemeTextPrimary, fontSize = 15.sp)
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
@@ -1201,8 +1201,8 @@ fun QuickLightingScreen(onBack: () -> Unit) {
                     )
                 }
 
-                HorizontalDivider(color = BorderColor)
-                Text("Luminaire Specification", fontWeight = FontWeight.Bold, color = ThemeTextColor, fontSize = 15.sp)
+                HorizontalDivider(color = ThemeBorderSubtle)
+                Text("Luminaire Specification", fontWeight = FontWeight.Bold, color = ThemeTextPrimary, fontSize = 15.sp)
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(

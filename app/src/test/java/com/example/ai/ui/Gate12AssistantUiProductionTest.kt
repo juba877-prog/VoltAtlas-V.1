@@ -104,9 +104,13 @@ class Gate12AssistantUiProductionTest {
         // Context displayed
         composeTestRule.onNodeWithText("Context: circuit Inverter Feeder A").assertExists()
 
-        // Suggested prompts displayed
-        composeTestRule.onNodeWithText("Size and verify the cable for this circuit.", substring = true).assertExists()
-        composeTestRule.onNodeWithText("What if we use a 240 mm² cable?", substring = true).assertExists()
+        // Contextual suggestions render in the dedicated SuggestionsBar (structurally OUTSIDE
+        // the conversation list) with compact labels; the idle landing no longer stacks a
+        // duplicated suggestion block inside the conversation.
+        composeTestRule.onNodeWithTag("assistant_suggestions_bar").assertExists()
+        composeTestRule.onNodeWithTag("assistant_conversation_list").assertExists()
+        composeTestRule.onNodeWithContentDescription("Suggested action: Size cable").assertExists()
+        composeTestRule.onNodeWithContentDescription("Suggested action: What-if").assertExists()
 
         // Assert zero fabricated calculation values exist in idle state
         composeTestRule.onAllNodesWithText("100% COMPLIANT").assertCountEquals(0)

@@ -8,6 +8,9 @@ import com.example.ai.approval.TrustedProposalApprovalGateway
 import com.example.ai.context.revision.ProjectRevisionProvider
 import com.example.ai.hybrid.ConversationEngine
 import com.example.ai.hybrid.ConversationEngineProvider
+import com.example.ai.hybrid.DefaultSecureCredentialStorage
+import com.example.ai.hybrid.SecureCredentialStorage
+import com.example.ai.hybrid.UserAiPreferences
 import com.example.ai.proposal.DurableMutationWorkflow
 import com.example.ai.tools.AssistantToolRuntime
 import com.example.data.AppDatabase
@@ -26,14 +29,18 @@ class EngineeringAssistantViewModelFactory(
     private val approvalGatewayProvider: suspend () -> TrustedProposalApprovalGateway,
     private val proposalCoordinatorProvider: () -> CableProposalPreparationCoordinator,
     private val projectRevisionProvider: ProjectRevisionProvider? = null,
-    private val toolRuntimeProvider: (suspend () -> AssistantToolRuntime?)? = null
+    private val toolRuntimeProvider: (suspend () -> AssistantToolRuntime?)? = null,
+    private val credentialStorage: SecureCredentialStorage? = null,
+    private val userAiPreferences: UserAiPreferences? = null
 ) : ViewModelProvider.Factory {
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(EngineeringAssistantViewModel::class.java)) {
             return EngineeringAssistantViewModel(
-                conversationEngine = conversationEngineProvider(),
+                credentialStorage = credentialStorage,
+                userAiPreferences = userAiPreferences,
+                conversationEngineProvider = conversationEngineProvider,
                 asyncApprovalGatewayProvider = approvalGatewayProvider,
                 proposalPreparationCoordinator = proposalCoordinatorProvider(),
                 projectRevisionProvider = projectRevisionProvider,
@@ -80,8 +87,20 @@ class EngineeringAssistantViewModelFactory(
                     ).also { cachedToolRuntime = it }
                 }
             }
+            val credentialStorage = DefaultSecureCredentialStorage.getInstance(application)
+            val userAiPreferences = UserAiPreferences(application)
+            com.example.ai.hybrid.CloudLlmFeatureGate.setCredentialSupplier { credentialStorage.getCredential() }
             return EngineeringAssistantViewModelFactory(
-                conversationEngineProvider = { ConversationEngineProvider.provideConversationEngine() },
+                credentialStorage = credentialStorage,
+                userAiPreferences = userAiPreferences,
+                conversationEngineProvider = {
+                    ConversationEngineProvider.provideConversationEngine(
+                        context = application,
+                        credentialStorage = credentialStorage,
+                        toolRuntimeProvider = toolRuntimeProvider,
+                        aiProvider = userAiPreferences.getSelectedProvider()
+                    )
+                },
                 approvalGatewayProvider = asyncGatewayProvider,
                 proposalCoordinatorProvider = { proposalCoordinator },
                 projectRevisionProvider = repository,

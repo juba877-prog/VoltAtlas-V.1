@@ -30,7 +30,6 @@ fun AssistantResultCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
             .testTag("verified_result_card")
             .testTag("assistant_result_card_${card.cardId}"),
         shape = RoundedCornerShape(16.dp),
@@ -89,7 +88,6 @@ fun AssistantResultCard(
                 }
             }
 
-            // Summary text
             Text(
                 text = card.summaryText,
                 style = MaterialTheme.typography.bodyMedium,
@@ -134,12 +132,6 @@ fun AssistantResultCard(
                     }
                 }
             }
-
-            // Suggested actions
-            SuggestedActionsRow(
-                actions = card.suggestedActions,
-                onActionClick = onActionClick
-            )
         }
     }
 }

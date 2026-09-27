@@ -22,9 +22,9 @@ object RuntimePromptCompiler {
     const val PROMPT_SCHEMA_VERSION = "1.0.0"
 
     /**
-     * Default conservative character budget (~8,600 chars ~= 2,150 token equivalent).
+     * Default conservative character budget (~24,000 chars ~= 6,000 token equivalent).
      */
-    const val DEFAULT_MAX_BUDGET_CHARACTERS = 8600
+    const val DEFAULT_MAX_BUDGET_CHARACTERS = 24000
 
     private val staticContractText: String by lazy {
         buildStableSystemContract()

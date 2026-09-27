@@ -129,6 +129,9 @@ fun MainLayout(
 
     var showQuickEngineering by rememberSaveable { mutableStateOf(false) }
     var selectedQuickToolId by rememberSaveable { mutableStateOf<String?>(null) }
+    // VoltAtlas entry / mode selection is the app's top-level destination:
+    // App launch -> Mode Selection -> { Projects | Quick Engineering }.
+    var entryModeChosen by rememberSaveable { mutableStateOf(false) }
 
     // SLICE 8B: direction memory for the Project Picker <-> Workspace entry.
     var previousHadActiveProject by rememberSaveable { mutableStateOf(false) }
@@ -148,6 +151,20 @@ fun MainLayout(
             viewModel = viewModel,
             preferences = viewModel.preferences,
             onBack = { viewModel.closeGlobalSettings() }
+        )
+        return
+    }
+
+    // ===== ENTRY / MODE SELECTION SCREEN (first destination, §1) =====
+    if (!entryModeChosen) {
+        VoltAtlasEntryScreen(
+            onOpenProjects = { entryModeChosen = true },
+            onOpenQuickEngineering = {
+                entryModeChosen = true
+                showQuickEngineering = true
+                selectedQuickToolId = null
+            },
+            onOpenSettings = { viewModel.openGlobalSettings() }
         )
         return
     }
@@ -178,6 +195,8 @@ fun MainLayout(
                     onBack = {
                         showQuickEngineering = false
                         selectedQuickToolId = null
+                        // Leaving Quick Engineering returns to the entry screen (app root).
+                        entryModeChosen = false
                     }
                 )
             } else {
@@ -218,10 +237,7 @@ fun MainLayout(
                 onExportProjectJson = { id -> viewModel.exportProjectJson(id) },
                 onImportProjectJson = { jsonStr, callback -> viewModel.importProjectJson(jsonStr, callback) },
                 onOpenSettings = { viewModel.openGlobalSettings() },
-                onOpenQuickCalc = {
-                    showQuickEngineering = true
-                    selectedQuickToolId = null
-                },
+                onBackToEntry = { entryModeChosen = false },
                 confirmDestructiveActions = confirmDestructiveActions
             )
         }

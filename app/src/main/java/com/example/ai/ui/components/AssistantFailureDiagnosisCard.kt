@@ -38,7 +38,6 @@ fun AssistantFailureDiagnosisCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
             .testTag("failure_diagnosis_card")
             .testTag("assistant_failure_diagnosis_card_${card.cardId}"),
         shape = RoundedCornerShape(16.dp),
@@ -201,11 +200,6 @@ fun AssistantFailureDiagnosisCard(
                 }
             }
 
-            // Suggested Action Buttons
-            SuggestedActionsRow(
-                actions = card.suggestedActions,
-                onActionClick = onActionClick
-            )
         }
     }
 }

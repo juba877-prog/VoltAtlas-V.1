@@ -25,7 +25,7 @@ data class AiModelConfig(
         /**
          * Default model identifier: Official Gemini Flash model supported by the Firebase AI Logic SDK.
          */
-        const val DEFAULT_MODEL_NAME = "gemini-2.5-flash"
+        const val DEFAULT_MODEL_NAME = "gemini-3.8-flash"
 
         const val DEFAULT_TEMPERATURE = 0.2f
         const val DEFAULT_TOP_P = 0.95f

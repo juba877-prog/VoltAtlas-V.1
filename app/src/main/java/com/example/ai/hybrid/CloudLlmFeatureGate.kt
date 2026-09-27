@@ -15,7 +15,8 @@ object CloudLlmFeatureGate {
     // Configurable delegate for runtime injection / test overrides
     private var enabledSupplier: () -> Boolean = {
         try {
-            BuildConfig.ENABLE_CLOUD_LLM
+            BuildConfig.ENABLE_CLOUD_LLM ||
+                (System.getProperty("voltatlas.ai.cloud.enabled") ?: System.getenv("ENABLE_CLOUD_LLM"))?.toBoolean() == true
         } catch (_: Throwable) {
             false
         }
@@ -23,37 +24,51 @@ object CloudLlmFeatureGate {
 
     private var apiKeySupplier: () -> String? = {
         try {
-            BuildConfig.GEMINI_API_KEY.takeIf { it.isNotBlank() }
+            BuildConfig.GEMINI_API_KEY.takeIf { it.isNotBlank() && it != "placeholder_for_secrets" }
+                ?: (System.getProperty("voltatlas.ai.api_key") ?: System.getenv("GEMINI_API_KEY"))?.takeIf { it.isNotBlank() && it != "placeholder_for_secrets" }
         } catch (_: Throwable) {
             null
         }
     }
 
+    private var credentialSupplier: (() -> String?)? = null
+
     /**
-     * Returns true if Cloud LLM calls are explicitly authorized by configuration.
+     * Sets a dynamic credential supplier (e.g. from SecureCredentialStorage in BYOK mode).
+     */
+    fun setCredentialSupplier(supplier: (() -> String?)?) {
+        credentialSupplier = supplier
+    }
+
+    /**
+     * Returns true if Cloud LLM calls are explicitly authorized by configuration or active user BYOK credential.
      * Defaults to false.
      */
-    fun isCloudLlmEnabled(): Boolean = enabledSupplier()
+    fun isCloudLlmEnabled(): Boolean = enabledSupplier() || (credentialSupplier?.invoke()?.isNotBlank() == true)
 
     /**
      * Returns the configured Gemini API key if present and non-blank; otherwise null.
      */
-    fun getApiKey(): String? = apiKeySupplier()
+    fun getApiKey(): String? = credentialSupplier?.invoke()?.takeIf { it.isNotBlank() && it != "placeholder_for_secrets" }
+        ?: apiKeySupplier()
 
     /**
      * Resets suppliers to BuildConfig defaults.
      */
     fun resetToDefaults() {
+        credentialSupplier = null
         enabledSupplier = {
             try {
-                BuildConfig.ENABLE_CLOUD_LLM
+                BuildConfig.ENABLE_CLOUD_LLM ||
+                    (System.getProperty("voltatlas.ai.cloud.enabled") ?: System.getenv("ENABLE_CLOUD_LLM"))?.toBoolean() == true
             } catch (_: Throwable) {
                 false
             }
         }
         apiKeySupplier = {
             try {
-                BuildConfig.GEMINI_API_KEY.takeIf { it.isNotBlank() }
+                BuildConfig.GEMINI_API_KEY.takeIf { it.isNotBlank() && it != "placeholder_for_secrets" }
+                    ?: (System.getProperty("voltatlas.ai.api_key") ?: System.getenv("GEMINI_API_KEY"))?.takeIf { it.isNotBlank() && it != "placeholder_for_secrets" }
             } catch (_: Throwable) {
                 null
             }

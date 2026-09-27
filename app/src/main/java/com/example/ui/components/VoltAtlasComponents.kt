@@ -113,10 +113,10 @@ fun VoltAtlasTopBar(
     navigationIcon: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
     colors: TopAppBarColors = TopAppBarDefaults.topAppBarColors(
-        containerColor = DarkCardBg,
-        titleContentColor = ThemeTextColor,
-        navigationIconContentColor = ThemeTextColor,
-        actionIconContentColor = SleekPrimary
+        containerColor = ThemeSurface,
+        titleContentColor = ThemeTextPrimary,
+        navigationIconContentColor = ThemeTextPrimary,
+        actionIconContentColor = ThemePrimary
     )
 ) {
     TopAppBar(
@@ -144,10 +144,10 @@ fun VoltAtlasTopBar(
     backButtonTestTag: String? = null,
     actions: @Composable RowScope.() -> Unit = {},
     colors: TopAppBarColors = TopAppBarDefaults.topAppBarColors(
-        containerColor = DarkCardBg,
-        titleContentColor = ThemeTextColor,
-        navigationIconContentColor = ThemeTextColor,
-        actionIconContentColor = SleekPrimary
+        containerColor = ThemeSurface,
+        titleContentColor = ThemeTextPrimary,
+        navigationIconContentColor = ThemeTextPrimary,
+        actionIconContentColor = ThemePrimary
     )
 ) {
     VoltAtlasTopBar(
@@ -157,7 +157,7 @@ fun VoltAtlasTopBar(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = ThemeTextColor,
+                    color = ThemeTextPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -165,7 +165,7 @@ fun VoltAtlasTopBar(
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.labelSmall,
-                        color = SleekPrimary,
+                        color = ThemePrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -182,7 +182,7 @@ fun VoltAtlasTopBar(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = backDescription,
-                        tint = ThemeTextColor
+                        tint = ThemeTextPrimary
                     )
                 }
             }

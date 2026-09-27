@@ -17,10 +17,17 @@ import com.example.ai.conversation.ConversationActionType
 import com.example.ai.conversation.ConversationLifecycleState
 import com.example.ai.conversation.ConversationTurnInput
 import com.example.ai.hybrid.CloudToolActionMapping
+import com.example.ai.hybrid.AiModelConfig
+import com.example.ai.hybrid.AiProvider
+import com.example.ai.hybrid.AiSettingsState
+import com.example.ai.hybrid.ConnectionTestStatus
 import com.example.ai.hybrid.ConversationEngine
 import com.example.ai.hybrid.ConversationEngineProvider
 import com.example.ai.hybrid.ConversationEngineSource
+import com.example.ai.hybrid.DirectGeminiClientSeam
 import com.example.ai.hybrid.HybridEngineResult
+import com.example.ai.hybrid.SecureCredentialStorage
+import com.example.ai.hybrid.UserAiPreferences
 import com.example.ai.service.AssistantMessage
 import com.example.ai.service.AssistantResponse
 import com.example.ai.service.MessageRole
@@ -34,6 +41,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
+
+import com.example.ai.hybrid.CloudLlmFeatureGate
+import com.example.ai.hybrid.AiLogger
+import com.example.ai.hybrid.DefaultSecureCredentialStorage
 
 /**
  * Entry points for invoking the VoltAtlas Engineering AI Assistant.
@@ -105,7 +116,10 @@ data class AssistantUiState(
  * ViewModel managing Assistant container state, conversations, trusted approval execution, and back-gesture consumption.
  */
 class EngineeringAssistantViewModel(
-    private val conversationEngine: ConversationEngine = ConversationEngineProvider.provideConversationEngine(),
+    private val conversationEngine: ConversationEngine? = null,
+    private val credentialStorage: SecureCredentialStorage? = null,
+    private val userAiPreferences: UserAiPreferences? = null,
+    private val conversationEngineProvider: (() -> ConversationEngine)? = null,
     /** Supplied by the production factory; nullable only to preserve isolated legacy UI tests. */
     approvalGateway: TrustedProposalApprovalGateway? = null,
     private val approvalGatewayProvider: (() -> TrustedProposalApprovalGateway?)? = null,
@@ -126,6 +140,128 @@ class EngineeringAssistantViewModel(
     private val toolRuntimeProvider: (suspend () -> AssistantToolRuntime?)? = null,
     private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO
 ) : ViewModel() {
+
+    private fun getActiveConversationEngine(): ConversationEngine {
+        return conversationEngine
+            ?: conversationEngineProvider?.invoke()
+            ?: ConversationEngineProvider.provideConversationEngine(
+                credentialStorage = credentialStorage,
+                aiProvider = userAiPreferences?.getSelectedProvider(),
+                toolRuntimeProvider = toolRuntimeProvider
+            )
+    }
+
+    private val _aiSettingsState = MutableStateFlow(
+        AiSettingsState(
+            selectedProvider = userAiPreferences?.getSelectedProvider() ?: AiProvider.DIRECT_GEMINI,
+            modelName = userAiPreferences?.getSelectedModel() ?: AiModelConfig.DEFAULT_MODEL_NAME,
+            hasCredential = credentialStorage?.hasCredential() ?: false,
+            maskedCredential = credentialStorage?.getMaskedCredential() ?: "",
+            connectionStatus = ConnectionTestStatus.NOT_CONFIGURED
+        )
+    )
+    val aiSettingsState: StateFlow<AiSettingsState> = _aiSettingsState.asStateFlow()
+
+    fun openAiSettings() {
+        val provider = userAiPreferences?.getSelectedProvider() ?: _aiSettingsState.value.selectedProvider
+        val model = userAiPreferences?.getSelectedModel() ?: _aiSettingsState.value.modelName
+        val hasCred = credentialStorage?.hasCredential() ?: false
+        val masked = credentialStorage?.getMaskedCredential() ?: ""
+        _aiSettingsState.update {
+            it.copy(
+                isOpen = true,
+                selectedProvider = provider,
+                modelName = model,
+                hasCredential = hasCred,
+                maskedCredential = masked,
+                statusMessage = null
+            )
+        }
+    }
+
+    fun closeAiSettings() {
+        _aiSettingsState.update { it.copy(isOpen = false) }
+    }
+
+    fun selectAiProvider(provider: AiProvider) {
+        userAiPreferences?.setSelectedProvider(provider)
+        _aiSettingsState.update { it.copy(selectedProvider = provider) }
+    }
+
+    fun selectAiModel(model: String) {
+        val trimmed = model.trim().ifEmpty { AiModelConfig.DEFAULT_MODEL_NAME }
+        userAiPreferences?.setSelectedModel(trimmed)
+        _aiSettingsState.update { it.copy(modelName = trimmed) }
+    }
+
+    fun saveGeminiCredential(apiKey: String) {
+        val trimmed = apiKey.trim()
+        if (trimmed.isNotBlank()) {
+            credentialStorage?.saveCredential(trimmed)
+            CloudLlmFeatureGate.setCredentialSupplier { credentialStorage?.getCredential() }
+        }
+        val hasCred = credentialStorage?.hasCredential() ?: false
+        val masked = credentialStorage?.getMaskedCredential() ?: ""
+        _aiSettingsState.update {
+            it.copy(
+                hasCredential = hasCred,
+                maskedCredential = masked,
+                connectionStatus = ConnectionTestStatus.NOT_CONFIGURED,
+                statusMessage = if (hasCred) "API key saved securely." else null
+            )
+        }
+    }
+
+    fun removeGeminiCredential() {
+        credentialStorage?.clearCredential()
+        CloudLlmFeatureGate.setCredentialSupplier { null }
+        _aiSettingsState.update {
+            it.copy(
+                hasCredential = false,
+                maskedCredential = "",
+                connectionStatus = ConnectionTestStatus.NOT_CONFIGURED,
+                statusMessage = "API key removed."
+            )
+        }
+    }
+
+    fun testConnection(apiKey: String? = null) {
+        val keyToTest = apiKey?.trim()?.takeIf { it.isNotEmpty() }
+            ?: credentialStorage?.getCredential()
+            ?: CloudLlmFeatureGate.getApiKey().orEmpty()
+
+        if (keyToTest.isEmpty()) {
+            _aiSettingsState.update {
+                it.copy(
+                    connectionStatus = ConnectionTestStatus.NOT_CONFIGURED,
+                    statusMessage = "No API key configured to test."
+                )
+            }
+            return
+        }
+
+        _aiSettingsState.update {
+            it.copy(
+                isTestingConnection = true,
+                connectionStatus = ConnectionTestStatus.TESTING,
+                statusMessage = "Testing connection to Gemini..."
+            )
+        }
+
+        viewModelScope.launch(ioDispatcher) {
+            val result = DirectGeminiClientSeam.testConnection(
+                apiKey = keyToTest,
+                modelName = _aiSettingsState.value.modelName
+            )
+            _aiSettingsState.update {
+                it.copy(
+                    isTestingConnection = false,
+                    connectionStatus = result.status,
+                    statusMessage = result.message
+                )
+            }
+        }
+    }
 
     private var _approvalGateway: TrustedProposalApprovalGateway? = approvalGateway
     internal var approvalGateway: TrustedProposalApprovalGateway?
@@ -307,7 +443,20 @@ class EngineeringAssistantViewModel(
                 priorEvidence = _conversationEvidence.toList()
             )
 
-            val result = conversationEngine.evaluateTurn(input)
+            val activeEngine = getActiveConversationEngine()
+            val provider = userAiPreferences?.getSelectedProvider() ?: _aiSettingsState.value.selectedProvider
+            val credConfigured = credentialStorage?.hasCredential() == true
+            val cloudEnabled = CloudLlmFeatureGate.isCloudLlmEnabled()
+
+            AiLogger.i("VoltAtlas_AI", "AI_RUNTIME: provider=$provider credentialConfigured=$credConfigured engine=${activeEngine.javaClass.simpleName} cloudEnabled=$cloudEnabled fallbackReason=none")
+
+            val result = activeEngine.evaluateTurn(input)
+
+            if (result.source == ConversationEngineSource.LOCAL_RULE_ENGINE && result.cloudDegradationReason != null) {
+                AiLogger.w("VoltAtlas_AI", "AI_RUNTIME: fallback to LOCAL_RULE_ENGINE reason=${result.cloudDegradationReason}")
+            } else if (result.source == ConversationEngineSource.CLOUD_GEMINI) {
+                AiLogger.i("VoltAtlas_AI", "AI_RUNTIME: CLOUD_GEMINI response received hasBackingToolResult=${result.hasBackingToolResult}")
+            }
 
             // Stale/late result protection: ensure user hasn't submitted a newer turn
             if (turnId != currentTurnId) {

@@ -2,10 +2,12 @@
 
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -72,8 +74,9 @@ class ProjectPickerNarrowWidthTest {
         composeTestRule.onNodeWithText("+ New Project").assertIsDisplayed()
         composeTestRule.onNodeWithText("📥 Import Project").assertIsDisplayed()
 
-        // Quick Engineering button
-        composeTestRule.onNodeWithTag("quick_calc_btn").assertIsDisplayed()
+        // Quick Engineering is no longer reachable from the Project Picker: it moved to the
+        // new entry / mode-selection screen (§1 flow).
+        composeTestRule.onAllNodesWithTag("quick_calc_btn").assertCountEquals(0)
 
         // Long title is rendered; scroll if necessary to inspect card
         composeTestRule.onAllNodes(hasScrollAction()).onFirst()
@@ -127,6 +130,6 @@ class ProjectPickerMediumWidthTest {
         composeTestRule.onNodeWithText("📥 Import Project").assertIsDisplayed()
         composeTestRule.onNodeWithText("Commercial Tower Substation").assertIsDisplayed()
         composeTestRule.onNodeWithTag("export_project_PROJ-202").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("quick_calc_btn").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag("quick_calc_btn").assertCountEquals(0)
     }
 }

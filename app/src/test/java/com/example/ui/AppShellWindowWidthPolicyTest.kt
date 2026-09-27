@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
@@ -76,6 +77,10 @@ class AppShellNarrowWindowBottomNavTest {
             }
         }
         composeTestRule.waitForIdle()
+        // The app root is the entry / mode-selection screen; choose "Projects" so the
+        // Project Picker / workspace (and with it the app shell) renders.
+        composeTestRule.onNodeWithTag("entry_projects_card").performClick()
+        composeTestRule.waitForIdle()
     }
 
     private fun openTestProject() {
@@ -136,6 +141,10 @@ class AppShellMediumPortraitRailTest {
                 }
             }
         }
+        composeTestRule.waitForIdle()
+        // The app root is the entry / mode-selection screen; choose "Projects" so the
+        // Project Picker / workspace (and with it the app shell) renders.
+        composeTestRule.onNodeWithTag("entry_projects_card").performClick()
         composeTestRule.waitForIdle()
     }
 

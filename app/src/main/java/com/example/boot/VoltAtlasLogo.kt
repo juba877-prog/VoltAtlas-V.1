@@ -122,31 +122,81 @@ object VoltAtlasLogo {
 fun VoltAtlasLogo(
     modifier: Modifier = Modifier,
     primaryColor: Color = Color(VoltAtlasLogo.BLUE),
-    accentColor: Color = Color(VoltAtlasLogo.GREEN)
+    accentColor: Color = Color(VoltAtlasLogo.GREEN),
+    tightFit: Boolean = false
 ) {
     Canvas(modifier = modifier) {
         val center = Offset(size.width / 2f, size.height / 2f)
-        val scale = min(size.width, size.height) / VoltAtlasLogo.VIEWPORT
-        val strokePx = VoltAtlasLogo.strokeWidthPx(scale)
+        if (tightFit) {
+            // Tight bounding box of the logo mark (mark spans x in [34, 74], y in [38, 72] plus stroke)
+            val contentW = 48f
+            val contentH = 42f
+            val scale = min(size.width / contentW, size.height / contentH)
+            val strokePx = VoltAtlasLogo.strokeWidthPx(scale)
 
-        drawPath(
-            path = VoltAtlasLogo.vPath(center, scale),
-            color = primaryColor,
-            style = Stroke(
-                width = strokePx,
-                cap = StrokeCap.Round,
-                join = StrokeJoin.Round
+            fun mapTight(p: Offset): Offset {
+                return Offset(
+                    center.x + (p.x - 54f) * scale,
+                    center.y + (p.y - 55f) * scale
+                )
+            }
+
+            val vPath = Path().apply {
+                val a = mapTight(Offset(34f, 38f))
+                val b = mapTight(Offset(54f, 72f))
+                val c = mapTight(Offset(74f, 38f))
+                moveTo(a.x, a.y)
+                lineTo(b.x, b.y)
+                lineTo(c.x, c.y)
+            }
+            val barPath = Path().apply {
+                val left = mapTight(Offset(44f, 55f))
+                val right = mapTight(Offset(64f, 55f))
+                moveTo(left.x, left.y)
+                lineTo(right.x, right.y)
+            }
+
+            drawPath(
+                path = vPath,
+                color = primaryColor,
+                style = Stroke(
+                    width = strokePx,
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round
+                )
             )
-        )
-        drawPath(
-            path = VoltAtlasLogo.barPath(center, scale, 1f),
-            color = accentColor,
-            style = Stroke(
-                width = strokePx,
-                cap = StrokeCap.Round,
-                join = StrokeJoin.Round
+            drawPath(
+                path = barPath,
+                color = accentColor,
+                style = Stroke(
+                    width = strokePx,
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round
+                )
             )
-        )
+        } else {
+            val scale = min(size.width, size.height) / VoltAtlasLogo.VIEWPORT
+            val strokePx = VoltAtlasLogo.strokeWidthPx(scale)
+
+            drawPath(
+                path = VoltAtlasLogo.vPath(center, scale),
+                color = primaryColor,
+                style = Stroke(
+                    width = strokePx,
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round
+                )
+            )
+            drawPath(
+                path = VoltAtlasLogo.barPath(center, scale, 1f),
+                color = accentColor,
+                style = Stroke(
+                    width = strokePx,
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round
+                )
+            )
+        }
     }
 }
 

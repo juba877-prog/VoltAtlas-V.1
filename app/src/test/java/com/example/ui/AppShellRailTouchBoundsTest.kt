@@ -77,6 +77,10 @@ class AppShellRailTouchBoundsTest {
             }
         }
         composeTestRule.waitForIdle()
+        // The app root is the entry / mode-selection screen; choose "Projects" so the
+        // Project Picker / workspace (and with it the app shell) renders.
+        composeTestRule.onNodeWithTag("entry_projects_card").performClick()
+        composeTestRule.waitForIdle()
     }
 
     private fun openTestProject() {

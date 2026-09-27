@@ -25,7 +25,6 @@ fun AssistantDirectAnswerCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
             .testTag("assistant_direct_answer_card_${card.cardId}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -43,11 +42,6 @@ fun AssistantDirectAnswerCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
-
-            SuggestedActionsRow(
-                actions = card.suggestedActions,
-                onActionClick = onActionClick
-            )
         }
     }
 }
@@ -64,7 +58,6 @@ fun AssistantComparisonCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
             .testTag("comparison_card")
             .testTag("assistant_comparison_card_${card.cardId}"),
         shape = RoundedCornerShape(16.dp),
@@ -126,10 +119,6 @@ fun AssistantComparisonCard(
                 }
             }
 
-            SuggestedActionsRow(
-                actions = card.suggestedActions,
-                onActionClick = onActionClick
-            )
         }
     }
 }
@@ -146,7 +135,6 @@ fun AssistantApprovalRequiredCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
             .testTag("assistant_approval_required_card_${card.cardId}"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -177,10 +165,6 @@ fun AssistantApprovalRequiredCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            SuggestedActionsRow(
-                actions = card.suggestedActions,
-                onActionClick = onActionClick
-            )
         }
     }
 }

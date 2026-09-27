@@ -19,7 +19,7 @@ class HybridConversationRouter(
     private val cloudEngine: ConversationEngine,
     private val localEngine: ConversationEngine,
     private val connectivityProbe: NetworkConnectivityProbe = DefaultNetworkConnectivityProbe(),
-    private val cloudTimeoutMs: Long = 4_000L,
+    private val cloudTimeoutMs: Long = 15_000L,
     private val nanoEngine: ConversationEngine? = null
 ) : ConversationEngine {
 
@@ -29,6 +29,7 @@ class HybridConversationRouter(
     ): HybridEngineResult {
         // 1. Fast Offline Probe -> try on-device Nano first if present, then local engine
         if (!connectivityProbe.isLikelyOnline()) {
+            AiLogger.w("VoltAtlas_AI", "AI_RUNTIME: connectivity probe reports offline. Falling back to local engine.")
             if (nanoEngine != null) {
                 try {
                     val nanoResult = nanoEngine.evaluateTurn(input, decisionIdProvider)
@@ -56,6 +57,7 @@ class HybridConversationRouter(
 
             // Check if cloud engine itself flagged a degradation reason (e.g. rate limit, safety block)
             if (cloudResult.cloudDegradationReason != null) {
+                AiLogger.w("VoltAtlas_AI", "AI_RUNTIME: cloud degraded with reason=${cloudResult.cloudDegradationReason}. Falling back to local engine.")
                 val localFallback = localEngine.evaluateTurn(input, decisionIdProvider)
                 return localFallback.copy(
                     source = ConversationEngineSource.LOCAL_RULE_ENGINE,
@@ -71,6 +73,7 @@ class HybridConversationRouter(
             )
 
             if (hasFabrication) {
+                AiLogger.w("VoltAtlas_AI", "AI_RUNTIME: unsupported engineering claim detected in cloud text. Falling back to local engine.")
                 val localFallback = localEngine.evaluateTurn(input, decisionIdProvider)
                 localFallback.copy(
                     source = ConversationEngineSource.LOCAL_RULE_ENGINE,
@@ -80,6 +83,7 @@ class HybridConversationRouter(
                 cloudResult.copy(source = ConversationEngineSource.CLOUD_GEMINI)
             }
         } catch (e: TimeoutCancellationException) {
+            AiLogger.w("VoltAtlas_AI", "AI_RUNTIME: cloud timeout after ${cloudTimeoutMs}ms. Falling back to local engine.")
             val localFallback = localEngine.evaluateTurn(input, decisionIdProvider)
             localFallback.copy(
                 source = ConversationEngineSource.LOCAL_RULE_ENGINE,
@@ -89,6 +93,7 @@ class HybridConversationRouter(
             // Genuine external cancellation (e.g. parent job cancelled / user dismissed sheet) must propagate
             throw e
         } catch (e: Exception) {
+            AiLogger.e("VoltAtlas_AI", "AI_RUNTIME: cloud call failed with exception=${e.javaClass.simpleName} message=${e.message}. Falling back to local engine.", e)
             val localFallback = localEngine.evaluateTurn(input, decisionIdProvider)
             localFallback.copy(
                 source = ConversationEngineSource.LOCAL_RULE_ENGINE,

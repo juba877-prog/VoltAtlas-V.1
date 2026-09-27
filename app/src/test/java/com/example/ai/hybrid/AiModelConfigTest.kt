@@ -27,7 +27,7 @@ class AiModelConfigTest {
     fun defaultConfiguration_hasExpectedConstants() {
         val config = AiModelConfig()
 
-        assertEquals("gemini-2.5-flash", config.modelName)
+        assertEquals("gemini-3.8-flash", config.modelName)
         assertEquals(0.2f, config.temperature, 0.001f)
         assertEquals(0.95f, config.topP, 0.001f)
         assertEquals(40, config.topK)
@@ -40,16 +40,16 @@ class AiModelConfigTest {
     fun current_resolvesDefault_whenNoEnvironmentOrPropertySet() {
         val config = AiModelConfig.current()
 
-        assertEquals("gemini-2.5-flash", config.modelName)
+        assertEquals("gemini-3.8-flash", config.modelName)
     }
 
     @Test
     fun current_resolvesSystemPropertyOverride() {
-        System.setProperty("voltatlas.ai.model", "gemini-2.5-pro")
+        System.setProperty("voltatlas.ai.model", "gemini-3.8-pro")
 
         val config = AiModelConfig.current()
 
-        assertEquals("gemini-2.5-pro", config.modelName)
+        assertEquals("gemini-3.8-pro", config.modelName)
     }
 
     @Test
@@ -58,7 +58,7 @@ class AiModelConfigTest {
 
         val config = AiModelConfig.current()
 
-        assertEquals("gemini-2.5-flash", config.modelName)
+        assertEquals("gemini-3.8-flash", config.modelName)
     }
 
     @Test
@@ -75,7 +75,7 @@ class AiModelConfigTest {
         assertEquals(5000L, AiModelConfig.current().timeoutMs)
 
         AiModelConfig.resetToDefaults()
-        assertEquals("gemini-2.5-flash", AiModelConfig.current().modelName)
+        assertEquals("gemini-3.8-flash", AiModelConfig.current().modelName)
     }
 
     @Test

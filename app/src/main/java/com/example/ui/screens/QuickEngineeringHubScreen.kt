@@ -237,9 +237,13 @@ fun QuickEngineeringHubScreen(
         }.toMap()
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(DarkBackground)) {
+    val isDark = LocalThemeIsDark.current
+    val gridColor = if (isDark) SleekPrimary else LightPrimaryBlue
+    val gridAlpha = if (isDark) 0.04f else 0.08f
+
+    Box(modifier = Modifier.fillMaxSize().background(ThemeBackground)) {
         // Faint decorative electrical schematic grid lines
-        Canvas(modifier = Modifier.fillMaxSize().alpha(0.04f)) {
+        Canvas(modifier = Modifier.fillMaxSize().alpha(gridAlpha)) {
             val width = size.width
             val height = size.height
             val stepX = width / 12f
@@ -247,7 +251,7 @@ fun QuickEngineeringHubScreen(
 
             for (i in 1..11) {
                 drawLine(
-                    color = SleekPrimary,
+                    color = gridColor,
                     start = Offset(i * stepX, 0f),
                     end = Offset(i * stepX, height),
                     strokeWidth = 1.dp.toPx()
@@ -255,7 +259,7 @@ fun QuickEngineeringHubScreen(
             }
             for (i in 1..19) {
                 drawLine(
-                    color = SleekPrimary,
+                    color = gridColor,
                     start = Offset(0f, i * stepY),
                     end = Offset(width, i * stepY),
                     strokeWidth = 1.dp.toPx()
@@ -272,12 +276,12 @@ fun QuickEngineeringHubScreen(
                                 text = "Quick Engineering",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = ThemeTextColor
+                                color = ThemeTextPrimary
                             )
                             Text(
                                 text = "Fast standalone calculations (In-Memory Scratchpad)",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = SleekPrimary
+                                color = ThemePrimary
                             )
                         }
                     },
@@ -286,11 +290,11 @@ fun QuickEngineeringHubScreen(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back to Home",
-                                tint = ThemeTextColor
+                                tint = ThemeTextPrimary
                             )
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkCardBg)
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = ThemeSurface)
                 )
             },
             containerColor = Color.Transparent
@@ -313,25 +317,25 @@ fun QuickEngineeringHubScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("quick_hub_search_field"),
-                        placeholder = { Text("Search calculations...", color = SlateTextSecondary) },
+                        placeholder = { Text("Search calculations...", color = ThemeTextSecondary) },
                         leadingIcon = {
-                            Icon(Icons.Default.Search, contentDescription = "Search", tint = SleekPrimary)
+                            Icon(Icons.Default.Search, contentDescription = "Search", tint = ThemePrimary)
                         },
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
                                 IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear", tint = SlateTextSecondary)
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear", tint = ThemeTextSecondary)
                                 }
                             }
                         },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = DarkCardBg,
-                            unfocusedContainerColor = DarkCardBg,
-                            focusedTextColor = ThemeTextColor,
-                            unfocusedTextColor = ThemeTextColor,
-                            cursorColor = SleekPrimary,
-                            focusedBorderColor = SleekPrimary,
-                            unfocusedBorderColor = BorderColor
+                            focusedContainerColor = ThemeSurface,
+                            unfocusedContainerColor = ThemeSurface,
+                            focusedTextColor = ThemeTextPrimary,
+                            unfocusedTextColor = ThemeTextPrimary,
+                            cursorColor = ThemePrimary,
+                            focusedBorderColor = ThemePrimary,
+                            unfocusedBorderColor = ThemeBorderSubtle
                         ),
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true
@@ -387,7 +391,7 @@ fun QuickEngineeringHubScreen(
                                     text = categoryName,
                                     style = SectionTitle.copy(fontSize = 14.sp),
                                     fontWeight = FontWeight.Bold,
-                                    color = ThemeTextColor
+                                    color = ThemeTextPrimary
                                 )
                             }
                         }
@@ -418,6 +422,7 @@ private fun QuickToolCard(
     tool: QuickToolItem,
     onClick: () -> Unit
 ) {
+    val isDark = LocalThemeIsDark.current
     VoltAtlasCard(
         onClick = onClick,
         modifier = Modifier
@@ -435,7 +440,7 @@ private fun QuickToolCard(
                 modifier = Modifier
                     .size(46.dp)
                     .background(
-                        tool.iconTint.copy(alpha = 0.12f),
+                        tool.iconTint.copy(alpha = if (isDark) 0.12f else 0.10f),
                         shape = RoundedCornerShape(10.dp)
                     ),
                 contentAlignment = Alignment.Center
@@ -455,14 +460,14 @@ private fun QuickToolCard(
                     text = tool.title,
                     style = CardTitle.copy(fontSize = 15.sp),
                     fontWeight = FontWeight.Bold,
-                    color = ThemeTextColor,
+                    color = ThemeTextPrimary,
                     maxLines = 1
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = tool.description,
                     style = Caption.copy(fontSize = 12.sp),
-                    color = SlateTextSecondary,
+                    color = ThemeTextSecondary,
                     maxLines = 2
                 )
             }
@@ -472,7 +477,7 @@ private fun QuickToolCard(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                 contentDescription = "Open ${tool.title}",
-                tint = SlateTextSecondary,
+                tint = ThemeTextSecondary,
                 modifier = Modifier.size(18.dp)
             )
         }

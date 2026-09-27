@@ -31,6 +31,10 @@
     @com.squareup.moshi.Json <fields>;
 }
 -keep class com.example.ai.proposal.** { *; }
+-keep class com.example.ai.contracts.** { *; }
+-keep class com.example.ai.tools.** { *; }
+-keep class com.example.ai.hybrid.** { *; }
+-keep class com.example.ai.orchestrator.** { *; }
 -keep class com.example.ai.appfunctions.** { *; }
 -keep class com.example.camera.nameplate.NameplateScanResult { *; }
 -keep class com.example.camera.nameplate.NameplateEquipmentType { *; }

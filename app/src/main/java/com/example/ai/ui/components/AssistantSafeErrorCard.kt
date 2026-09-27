@@ -23,7 +23,6 @@ fun AssistantSafeErrorCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
             .testTag("safe_error_card")
             .testTag("assistant_safe_error_card_${card.cardId}"),
         shape = RoundedCornerShape(16.dp),
@@ -57,10 +56,6 @@ fun AssistantSafeErrorCard(
                 )
             }
 
-            SuggestedActionsRow(
-                actions = card.suggestedActions,
-                onActionClick = onActionClick
-            )
         }
     }
 }

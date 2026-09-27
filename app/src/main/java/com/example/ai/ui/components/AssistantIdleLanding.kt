@@ -189,38 +189,5 @@ fun AssistantIdleLanding(
             }
         }
 
-        // Suggested Prompt Chips
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "SUGGESTED ACTIONS",
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                ),
-                color = MaterialTheme.colorScheme.primary
-            )
-
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                capabilities.forEach { cap ->
-                    SuggestionChip(
-                        onClick = { onPromptClick(cap.prompt) },
-                        label = {
-                            Text(
-                                text = cap.prompt,
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp)
-                            )
-                        }
-                    )
-                }
-            }
-        }
     }
 }

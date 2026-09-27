@@ -36,7 +36,6 @@ fun AssistantApprovalConfirmationCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
             .testTag("approval_confirmation_card")
             .testTag("assistant_approval_confirmation_card"),
         shape = RoundedCornerShape(16.dp),

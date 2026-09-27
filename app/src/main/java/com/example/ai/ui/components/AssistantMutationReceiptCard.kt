@@ -34,7 +34,6 @@ fun AssistantMutationReceiptCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
             .testTag("mutation_receipt")
             .testTag("assistant_mutation_receipt_card_$receiptId"),
         shape = RoundedCornerShape(16.dp),
