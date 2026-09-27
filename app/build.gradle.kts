@@ -64,23 +64,9 @@ android {
         keyAlias = propKeyAlias
         keyPassword = propKeyPass
       } else {
-        println("[SIGNING RESOLUTION] ---> WARNING: FALLING BACK TO DEBUG KEYSTORE (Reason: fileExists=$fileExists, validPassword=$hasValidPassword)")
+        println("[SIGNING RESOLUTION] ---> NO VALID RELEASE KEYSTORE FOUND (fileExists=$fileExists, validPassword=$hasValidPassword)")
         println("==================================================")
-        val debugKs = rootProject.file("debug.keystore")
-        val androidDebugKs = File(System.getProperty("user.home"), ".android${File.separator}debug.keystore")
-        val fallbackKs = when {
-          debugKs.exists() -> debugKs
-          androidDebugKs.exists() -> androidDebugKs
-          else -> null
-        }
-        if (fallbackKs != null) {
-          storeFile = fallbackKs
-          storePassword = "android"
-          keyAlias = "androiddebugkey"
-          keyPassword = "android"
-        } else {
-          println("[SIGNING RESOLUTION] ---> ERROR: No debug keystore found. Release build will fail at packaging.")
-        }
+        storeFile = null
       }
     }
     create("debugConfig") {
@@ -115,6 +101,39 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true; isReturnDefaultValues = true } }
+}
+
+// Hard fail if release packaging is attempted without valid upload keystore credentials
+gradle.taskGraph.whenReady {
+  val hasReleasePackagingTask = allTasks.any { task ->
+    task.project == project && (
+      task.name.startsWith("packageRelease") ||
+      task.name.startsWith("bundleRelease") ||
+      task.name.startsWith("assembleRelease")
+    )
+  }
+  if (hasReleasePackagingTask) {
+    val ksPropsFile = rootProject.file("keystore.properties")
+    val ksProps = Properties()
+    if (ksPropsFile.exists()) {
+      FileInputStream(ksPropsFile).use { ksProps.load(it) }
+    }
+    val propStoreFile = (ksProps.getProperty("storeFile") ?: System.getenv("KEYSTORE_PATH") ?: "my-upload-key.jks").trim()
+    val propStorePass = (ksProps.getProperty("storePassword") ?: System.getenv("STORE_PASSWORD") ?: "").trim()
+    val resolvedKsFile = when {
+      File(propStoreFile).isAbsolute -> File(propStoreFile)
+      File(rootDir, propStoreFile).exists() -> File(rootDir, propStoreFile)
+      else -> File(projectDir, propStoreFile)
+    }
+    val hasValidPassword = propStorePass.isNotEmpty() && propStorePass != "YOUR_STORE_PASSWORD_HERE"
+    val fileExists = resolvedKsFile.exists()
+
+    if (!fileExists || !hasValidPassword) {
+      throw GradleException(
+        "FATAL: Release packaging cannot proceed. Valid release upload keystore credentials are required (keystore.properties or environment variables KEYSTORE_PATH/STORE_PASSWORD). Reason: fileExists=$fileExists, validPassword=$hasValidPassword"
+      )
+    }
+  }
 }
 
 composeCompiler {
