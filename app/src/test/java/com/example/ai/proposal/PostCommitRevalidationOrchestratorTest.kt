@@ -7,6 +7,7 @@ import com.example.ai.context.revision.ProjectRevisionProvider
 import com.example.ai.context.revision.ProjectRevisionSnapshot
 import com.example.ai.contracts.ExecutionMode
 import com.example.ai.contracts.ExecutionModePolicy
+import com.example.ai.tools.cable.CableEngineeringToolsTest
 import com.example.data.CableCatalogEntry
 import com.example.data.CableType
 import com.example.data.Catalog
@@ -54,12 +55,16 @@ class PostCommitRevalidationOrchestratorTest {
     private var originalCableTypes = Catalog.cableTypes
     private var originalDataSheet = Catalog.dataSheet
     private var originalCableCatalog = Catalog.cableCatalog
+    private var originalDeratingData = Catalog.deratingData
 
     @Before
     fun setUp() {
         originalCableTypes = Catalog.cableTypes
         originalDataSheet = Catalog.dataSheet
         originalCableCatalog = Catalog.cableCatalog
+        originalDeratingData = Catalog.deratingData
+
+        CableEngineeringToolsTest.loadCatalogData()
 
         Catalog.cableTypes = listOf(
             CableType(1, "Cu/XLPE", "Cu", "XLPE", "None", "3C", "0.6/1kV", "IEC", "R_Cu90"),
@@ -139,7 +144,7 @@ class PostCommitRevalidationOrchestratorTest {
             length_m = 20.0,
             cableType = "Cu/XLPE/SWA/PVC",
             manufacturer = "Elsewedy",
-            installation = "In Ground",
+            installation = "Laid Direct in Ground",
             parallelRuns = 1,
             fedFrom = "Transformer",
             transformerId = "TX-01"
@@ -171,7 +176,7 @@ class PostCommitRevalidationOrchestratorTest {
             length_m = 30.0,
             cableType = "Cu/XLPE/SWA/PVC",
             manufacturer = "Elsewedy",
-            installation = "In Conduit / Trunking",
+            installation = "Laid in Ducts",
             parallelRuns = 1
         )
 
@@ -208,6 +213,7 @@ class PostCommitRevalidationOrchestratorTest {
         Catalog.cableTypes = originalCableTypes
         Catalog.dataSheet = originalDataSheet
         Catalog.cableCatalog = originalCableCatalog
+        Catalog.deratingData = originalDeratingData
 
         coordinator.clearCache()
         coordinator.freshnessRegistry.clearProject(projectId)

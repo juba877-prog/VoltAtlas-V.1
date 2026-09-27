@@ -99,7 +99,7 @@ fun QuickVoltageDropScreenV2(
         }
     }
 
-    val availableInstallations = listOf("Laid in Free Air", "Laid in Ducts", "Laid Direct in Ground", "In Conduit", "Cable Tray")
+    val availableInstallations = listOf("Laid in Free Air", "Laid in Ducts", "Laid Direct in Ground", "Cable Tray")
     var selectedInstallation by rememberSaveable { mutableStateOf(availableInstallations.first()) }
 
     // Expert Manual Override

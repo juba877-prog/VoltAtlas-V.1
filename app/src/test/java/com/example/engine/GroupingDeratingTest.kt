@@ -8,6 +8,7 @@ import com.example.engine.coordinator.CableCheckStatus
 import com.example.testing.CatalogStateResetRule
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -265,5 +266,120 @@ class GroupingDeratingTest {
         assertTrue(
             ampacityCheck.message.contains("Grouping derating factor not found")
         )
+    }
+
+    // ---------------------------------------------------------------
+    // A1-R: exact-match installation aliases (D1 -> Duct, D2 -> Buried)
+    // ---------------------------------------------------------------
+
+    private fun circuitWithInstallation(installation: String, id: Int) = CircuitEntity(
+        id = id,
+        circuitName = "C-$id",
+        loadKVA = 500.0,
+        pf = 0.8,
+        phases = "3P+N",
+        voltageV = 400,
+        length_m = 50.0,
+        installation = installation,
+        cableType = "Cu/XLPE/SWA/PVC",
+        manufacturer = "Elsewedy",
+        parallelRuns = 1,
+        noCircuits = 4,
+        formation = "Flat",
+        spacing = "Touching"
+    )
+
+    @Test
+    fun testAlias_d1_producesTheSameFactorsAsLaidInDucts() {
+        // Compared on the derating factor itself, so the assertion isolates the alias rule from
+        // unrelated catalog-resolution outcomes.
+        val ducts = CableSizingEngine.getGroupingDerating("Laid in Ducts", "Flat", "Touching", 4)
+        val d1 = CableSizingEngine.getGroupingDerating("D1", "Flat", "Touching", 4)
+        val d1Lower = CableSizingEngine.getGroupingDerating("  d1  ", "Flat", "Touching", 4)
+
+        assertNotNull("Duct must resolve a grouping factor", ducts)
+        assertNotNull("D1 must be a Duct alias, not a failure", d1)
+        assertEquals("D1 must produce the Duct grouping factor", ducts!!, d1!!, 1e-12)
+        assertEquals("Alias must be case-insensitive and trimmed", ducts, d1Lower!!, 1e-12)
+
+        // And the whole-circuit result must not be a derivation failure caused by the alias.
+        val d1Circuit = CableSizingEngine.sizeCircuit(circuitWithInstallation("D1", 2), 0.0, repository)
+        assertNotEquals(
+            "D1 must not fail as an unsupported installation, reason='${d1Circuit.failReason}'",
+            CableFailureCode.DERATING_INVALID, d1Circuit.primaryFailureCode
+        )
+    }
+
+    @Test
+    fun testAlias_d2_producesTheSameFactorsAsLaidDirectInGround() {
+        val buried = CableSizingEngine.getGroupingDerating("Laid Direct in Ground", "Flat", "Touching", 4)
+        val d2 = CableSizingEngine.getGroupingDerating("D2", "Flat", "Touching", 4)
+
+        assertNotNull("Buried must resolve a grouping factor", buried)
+        assertNotNull("D2 must be a Buried alias, not a failure", d2)
+        assertEquals("D2 must produce the Buried grouping factor", buried!!, d2!!, 1e-12)
+
+        val d2Circuit = CableSizingEngine.sizeCircuit(circuitWithInstallation("D2", 2), 0.0, repository)
+        assertNotEquals(
+            "D2 must not fail as an unsupported installation, reason='${d2Circuit.failReason}'",
+            CableFailureCode.DERATING_INVALID, d2Circuit.primaryFailureCode
+        )
+    }
+
+    // ---------------------------------------------------------------
+    // A1-R: unsupported installation methods fail with a specific message
+    // ---------------------------------------------------------------
+
+    @Test
+    fun testUnsupported_installationMethods_produceSpecificTypedFailureNeverANumber() {
+        val unsupported = listOf(
+            "In Conduit", "In Conduit / Trunking", "A1", "A2", "B1", "B2", "C", "In Ground"
+        )
+        var id = 500
+        for (method in unsupported) {
+            id++
+            val result = CableSizingEngine.sizeCircuit(circuitWithInstallation(method, id), 0.0, repository)
+
+            assertEquals(
+                "'$method' must fail typed as DERATING_INVALID",
+                CableFailureCode.DERATING_INVALID, result.primaryFailureCode
+            )
+            assertEquals(
+                "'$method' must carry the specific message, got: ${result.failReason}",
+                "Installation method '$method' is not supported by the current ampacity catalog " +
+                    "(supported: Duct, Buried, Air/Tray).",
+                result.failReason
+            )
+            assertEquals(
+                "'$method' must never report PASS",
+                com.example.engine.SizingResultStatus.FAIL, result.resultStatus
+            )
+        }
+    }
+
+    @Test
+    fun testUnsupported_blankInstallation_isReportedNotDefaulted() {
+        val result = CableSizingEngine.sizeCircuit(circuitWithInstallation("   ", 700), 0.0, repository)
+
+        assertEquals(CableFailureCode.DERATING_INVALID, result.primaryFailureCode)
+        assertEquals(
+            "Installation method not specified in imported file",
+            result.failReason
+        )
+        assertEquals(com.example.engine.SizingResultStatus.FAIL, result.resultStatus)
+    }
+
+    @Test
+    fun testAlias_matchIsExactNotSubstring() {
+        // A value merely containing a reference-method code must never be reinterpreted as one.
+        assertNull(CableSizingEngine.unsupportedInstallationMessage("D1Laid in Ducts"))
+        assertEquals(
+            "Installation method 'b1' is not supported by the current ampacity catalog " +
+                "(supported: Duct, Buried, Air/Tray).",
+            CableSizingEngine.unsupportedInstallationMessage("  b1  ")
+        )
+        assertNull(CableSizingEngine.unsupportedInstallationMessage("Laid in Ducts"))
+        assertNull(CableSizingEngine.unsupportedInstallationMessage("Laid Direct in Ground"))
+        assertNull(CableSizingEngine.unsupportedInstallationMessage("Cable Tray"))
     }
 }

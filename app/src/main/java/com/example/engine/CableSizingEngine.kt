@@ -236,7 +236,12 @@ object CableSizingEngine {
             ?.optJSONObject("factors")
             ?: return null
 
-        val normalizedInstallation = installation.trim().lowercase()
+        // Exact-match aliases first (D1/D2 -> Duct/Buried), then the existing substring rules.
+        // The alias target is lowercased so it participates in the same case-sensitive substring
+        // checks used by every other branch below.
+        val normalizedInstallation =
+            INSTALLATION_ALIASES[installation.trim().lowercase()]?.lowercase()
+                ?: installation.trim().lowercase()
         val prefix = when {
             isDirectBuried(installation) || normalizedInstallation == "buried" -> "Buried"
             normalizedInstallation.contains("duct") -> "Duct"
@@ -274,6 +279,64 @@ object CableSizingEngine {
     // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
+
+    /**
+     * Exact-match aliases for IEC reference-method codes that map cleanly onto one of the three
+     * ampacity installation families this catalog provides (Duct, Buried, Air).
+     *
+     * Matched case-insensitively against the TRIMMED whole input — never by substring, so a value
+     * that merely contains "d1" is never silently reinterpreted as a reference-method code.
+     */
+    private val INSTALLATION_ALIASES: Map<String, String> = mapOf(
+        "d1" to "Duct",    // cables in ducts in ground
+        "d2" to "Buried"   // cables direct in ground
+    )
+
+    /**
+     * Installation methods with NO valid mapping onto this catalog's families, matched exactly
+     * (case-insensitively) against the trimmed input.
+     *
+     * Conduit, trunking and the wall-mounted / clipped / in-insulated-wall reference methods are
+     * deliberately excluded rather than coerced: mapping them to Air would overstate ampacity, and
+     * mapping them to Duct or Buried would apply ground-installation derating to a cable that is not
+     * in the ground. Both are wrong, in opposite directions.
+     */
+    private val UNSUPPORTED_INSTALLATION_METHODS: Set<String> = setOf(
+        "in conduit",
+        "in conduit / trunking",
+        "a1", "a2",
+        "b1", "b2",
+        "c",
+        "in ground"
+    )
+
+    /**
+     * Resolves the canonical installation method for [installation].
+     *
+     * An exact-match alias (case-insensitive, trimmed) is rewritten to its catalog family so all
+     * downstream derating lookups agree; anything else is returned unchanged. This is deliberately
+     * NOT a substring rule: a value that merely contains "d1" is never reinterpreted.
+     */
+    fun canonicalInstallation(installation: String): String =
+        INSTALLATION_ALIASES[installation.trim().lowercase()] ?: installation
+
+    /**
+     * Returns the specific, user-actionable failure message for an installation method this catalog
+     * cannot compute, or null when the method is supported (or is merely unknown and will fall
+     * through to the generic grouping-derating failure).
+     *
+     * A blank value is reported separately: it means the source record carried no installation at
+     * all (for example an imported file with the key absent) and must never be defaulted silently.
+     */
+    fun unsupportedInstallationMessage(installation: String): String? {
+        val trimmed = installation.trim()
+        if (trimmed.isEmpty()) return "Installation method not specified in imported file"
+        if (trimmed.lowercase() in UNSUPPORTED_INSTALLATION_METHODS) {
+            return "Installation method '$trimmed' is not supported by the current ampacity catalog " +
+                "(supported: Duct, Buried, Air/Tray)."
+        }
+        return null
+    }
 
     private fun isDirectBuried(installation: String): Boolean {
         val value = installation.trim().lowercase()
@@ -449,7 +512,11 @@ object CableSizingEngine {
         val deviceType = baseDeviceType
 
         val isXLPE = circuit.cableType.contains("XLPE", ignoreCase = true)
-        val normalizedInstallation = circuit.installation.trim().lowercase()
+        // Canonical installation method: exact-match aliases (D1 -> Duct, D2 -> Buried) resolve once
+        // here so EVERY derating lookup below sees the same, resolvable method. Applying the alias
+        // in only one derating helper would leave the others reading an unresolvable code.
+        val installation = canonicalInstallation(circuit.installation)
+        val normalizedInstallation = installation.trim().lowercase()
         val relevantTemperature = if (
             normalizedInstallation.contains("free air") ||
             normalizedInstallation.contains("tray")
@@ -459,21 +526,28 @@ object CableSizingEngine {
             circuit.gndTempC
         }
 
+        // Installation methods this catalog cannot model must fail with a specific, actionable
+        // message rather than the generic grouping failure — and a blank value must never be
+        // silently defaulted, since it means the source record carried no installation at all.
+        unsupportedInstallationMessage(circuit.installation)?.let { message ->
+            return failedResult(message, CableFailureCode.DERATING_INVALID)
+        }
+
         val cTemp = getTempDerating(
-            circuit.installation,
+            installation,
             isXLPE,
             relevantTemperature
         )
         val cDepth = getDepthDerating(
-            circuit.installation,
+            installation,
             circuit.burialDepth_m
         )
         val cSoil = getSoilDerating(
-            circuit.installation,
+            installation,
             circuit.soilRes
         )
         val cGroup = getGroupingDerating(
-            circuit.installation,
+            installation,
             circuit.formation,
             circuit.spacing,
             circuit.noCircuits

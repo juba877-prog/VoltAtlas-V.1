@@ -685,6 +685,10 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                             status = "DATA MISSING",
                             requiredIcw = 0.0,
                             requiredIcm = 0.0,
+                            // AtsEngine derives this from requiredIcw > 65.0, so a 0.0 basis
+                            // resolves to the MCCB string. A missing basis must never advertise
+                            // a construction choice as if one had been derived.
+                            construction = "DATA MISSING",
                             messages = base.messages + decision.basis
                         )
                     }

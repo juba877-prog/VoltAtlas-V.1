@@ -533,8 +533,12 @@ object ConversationPolicyEngine {
         // Installation extraction
         if (lower.contains("tray") || lower.contains("تراي") || lower.contains("حامل كابلات")) {
             slots["installation"] = SlotValue("installation", SlotState.USER_PROVIDED, "Perforated Cable Tray", null, ProvenanceLabel.USER_PROVIDED, true, revision)
-        } else if (lower.contains("conduit") || lower.contains("مواسير") || lower.contains("duct")) {
-            slots["installation"] = SlotValue("installation", SlotState.USER_PROVIDED, "In Conduit", null, ProvenanceLabel.USER_PROVIDED, true, revision)
+        } else if (lower.contains("duct")) {
+            // Only the values the ampacity catalog can actually compute are written here.
+            // Conduit wording (english "conduit" / arabic "مواسير") is deliberately NOT mapped:
+            // it would have to become "In Conduit", which the catalog cannot model, so the slot is
+            // left unset and the user is asked for a supported installation method instead.
+            slots["installation"] = SlotValue("installation", SlotState.USER_PROVIDED, "Laid in Ducts", null, ProvenanceLabel.USER_PROVIDED, true, revision)
         } else if (lower.contains("direct buried") || lower.contains("مدفون")) {
             slots["installation"] = SlotValue("installation", SlotState.USER_PROVIDED, "Direct Buried", null, ProvenanceLabel.USER_PROVIDED, true, revision)
         }

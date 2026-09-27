@@ -763,7 +763,7 @@ class EngineeringRepository(
                             safetyFactor = obj.optDouble("safetyFactor", 1.0),
                             manufacturer = obj.optString("manufacturer", "Elsewedy Electric"),
                             cableType = obj.optString("cableType", "CU/XLPE/PVC"),
-                            installation = obj.optString("installation", "B1"),
+                            installation = obj.optString("installation"),
                             airTempC = obj.optInt("airTempC", 40),
                             gndTempC = obj.optInt("gndTempC", 40),
                             burialDepth_m = obj.optDouble("burialDepth_m", 0.6),
@@ -821,6 +821,16 @@ class EngineeringRepository(
                     }
 
                     // Second pass: remap parentId
+                    val missingInstallation = parsedCircuits.filter { it.entity.installation.isBlank() }
+                    if (missingInstallation.isNotEmpty()) {
+                        warnings.add(
+                            "Installation method not specified in imported file for " +
+                                "${missingInstallation.size} circuit(s): " +
+                                missingInstallation.joinToString(", ") {
+                                    "'${it.entity.circuitName}' (source id ${it.sourceId})"
+                                } + "."
+                        )
+                    }
                     for (parsed in parsedCircuits) {
                         val currentEntity = parsed.entity
                         if (version == 2) {

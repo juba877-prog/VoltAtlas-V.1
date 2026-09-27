@@ -697,13 +697,15 @@ class ProjectPersistenceIntegrityTest {
               "id": 10,
               "circuitName": "MDB-Main",
               "fedFrom": "Transformer",
-              "loadKVA": 100.0
+              "loadKVA": 100.0,
+              "installation": "Laid in Ducts"
             },
             {
               "id": 11,
               "circuitName": "DB-Lighting",
               "fedFrom": "MDB-Main",
-              "loadKVA": 20.0
+              "loadKVA": 20.0,
+              "installation": "Laid in Ducts"
             }
           ]
         }
@@ -1007,7 +1009,8 @@ class ProjectPersistenceIntegrityTest {
               "fedFrom": "Transformer",
               "transformerId": "TX-01",
               "panelType": "MDB",
-              "loadKVA": 300.0
+              "loadKVA": 300.0,
+              "installation": "Laid in Ducts"
             },
             {
               "id": 102,
@@ -1016,7 +1019,8 @@ class ProjectPersistenceIntegrityTest {
               "transformerId": "TX-01",
               "parentId": 101,
               "panelType": "SMDB",
-              "loadKVA": 100.0
+              "loadKVA": 100.0,
+              "installation": "Laid in Ducts"
             },
             {
               "id": 103,
@@ -1025,7 +1029,8 @@ class ProjectPersistenceIntegrityTest {
               "transformerId": "TX-01",
               "parentId": 102,
               "panelType": "DB",
-              "loadKVA": 30.0
+              "loadKVA": 30.0,
+              "installation": "Laid in Ducts"
             }
           ],
           "ats": [
@@ -1192,6 +1197,66 @@ class ProjectPersistenceIntegrityTest {
         assertEquals(ImportStatus.SUCCESS, reimportResult.status)
         assertEquals(3, reimportResult.importedCounts.circuits)
         assertTrue(reimportResult.errors.isEmpty())
+    }
+
+    /**
+     * A1-R: an imported circuit with no `installation` key must NOT be given a fabricated default.
+     * It is stored blank, reported in the import warnings, and then fails loudly when sized.
+     */
+    @Test
+    fun testImport_missingInstallationKey_isNotDefaultedAndIsReported() = runBlocking {
+        val projectId = repository.createProject("Missing Install Project", "Client")
+        val circuit = CircuitEntity(
+            circuitName = "MDB-NOINSTALL",
+            projectId = projectId,
+            loadKVA = 120.0,
+            voltageV = 400,
+            length_m = 25.0,
+            cableType = "Cu/XLPE/SWA/PVC",
+            installation = "Laid in Ducts"
+        )
+        database.circuitDao().insertCircuit(circuit).toInt()
+
+        val exported = repository.exportProjectJson(projectId)
+        assertNotNull(exported)
+
+        // Strip the installation key, as an older/foreign exporter that never wrote it would.
+        val root = JSONObject(exported)
+        val circuits = root.getJSONArray("circuits")
+        var stripped = 0
+        for (i in 0 until circuits.length()) {
+            circuits.getJSONObject(i).remove("installation")
+            stripped++
+        }
+        assertEquals(1, stripped)
+
+        val result = repository.importProjectFromJsonDetailed(root.toString())
+        assertEquals(
+            "A missing installation is a warning, not an import error",
+            ImportStatus.SUCCESS_WITH_WARNINGS, result.status
+        )
+        assertTrue("No errors expected: ${result.errors}", result.errors.isEmpty())
+        val newProjectId = result.projectId
+        assertNotNull(newProjectId)
+        val importedProjectId: String = newProjectId!!
+
+        // 1. The import result reports the affected circuit by name and count.
+        val warning = result.warnings.firstOrNull {
+            it.contains("Installation method not specified in imported file")
+        }
+        assertNotNull("Import must warn about the missing installation method", warning)
+        assertTrue("Warning must name the circuit", warning!!.contains("MDB-NOINSTALL"))
+        assertTrue("Warning must carry the source id", warning.contains("source id"))
+        assertTrue("Warning must carry the affected count", warning.contains("1 circuit(s)"))
+
+        // 2. No fabricated value was stored (the pre-A1-R default was "B1").
+        val imported = database.circuitDao()
+            .getCircuitsListForProject(importedProjectId)
+            .first { it.circuitName == "MDB-NOINSTALL" }
+        assertEquals(
+            "Missing installation must be stored blank, never defaulted",
+            "", imported.installation
+        )
     }
 }
 

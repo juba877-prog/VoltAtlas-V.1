@@ -145,7 +145,7 @@ data class CableCalcScreenUiState(
     val errorMessage: String? = null,
     val availableManufacturers: List<String> = emptyList(),
     val availablePhases: List<String> = listOf("3P+N", "1P+N", "3P"),
-    val availableInstallations: List<String> = listOf("Laid in Free Air", "Laid in Ducts", "Laid Direct in Ground", "In Conduit", "Cable Tray"),
+    val availableInstallations: List<String> = listOf("Laid in Free Air", "Laid in Ducts", "Laid Direct in Ground", "Cable Tray"),
     val availableFormations: List<String> = listOf("Flat", "Trefoil"),
     val availableBreakerTypes: List<String> = listOf("Auto", "MCB", "MCCB", "ACB", "Switch-Disconnector"),
     val availableRatings: List<String> = emptyList(),
