@@ -231,6 +231,10 @@ dependencies {
 // TEST EXECUTION PROFILES (AI FREEZE / FAST DEV LOOP)
 // =============================================================================
 tasks.withType<Test>().configureEach {
+  if (name == "testDebugUnitTest") {
+    dependsOn("generateReleaseBuildConfig")
+  }
+
   val rawProfile = (project.findProperty("profile") ?: project.findProperty("testProfile") ?: "fast").toString().trim().lowercase()
 
   when (rawProfile) {
