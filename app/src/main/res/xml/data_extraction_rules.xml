@@ -4,10 +4,12 @@
         <exclude domain="database" path="electrical_engineering_db"/>
         <exclude domain="database" path="electrical_engineering_db-wal"/>
         <exclude domain="database" path="electrical_engineering_db-shm"/>
+        <exclude domain="sharedpref" path="voltatlas_ai_secure_keystore.xml"/>
     </cloud-backup>
     <device-transfer>
         <exclude domain="database" path="electrical_engineering_db"/>
         <exclude domain="database" path="electrical_engineering_db-wal"/>
         <exclude domain="database" path="electrical_engineering_db-shm"/>
+        <exclude domain="sharedpref" path="voltatlas_ai_secure_keystore.xml"/>
     </device-transfer>
 </data-extraction-rules>
