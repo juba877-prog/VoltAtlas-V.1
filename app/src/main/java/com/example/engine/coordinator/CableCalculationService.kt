@@ -162,24 +162,54 @@ object CableCalculationService {
 
         val isEnginePass = engineStatus == SizingResultStatus.PASS && failureCode == null
 
-        val isAmpacityFail = !isEnginePass && (
-            failureCode == CableFailureCode.AMPACITY_FAIL ||
-            failureCode == CableFailureCode.MULTIPLE_CONSTRAINTS ||
-            !result.isAmpacityOk
-        )
-        val isVdFail = !isEnginePass && (
-            failureCode == CableFailureCode.VOLTAGE_DROP_FAIL ||
-            failureCode == CableFailureCode.CUMULATIVE_VOLTAGE_DROP_FAIL ||
-            failureCode == CableFailureCode.MULTIPLE_CONSTRAINTS ||
-            !result.isVoltageDropOk
-        )
+        val effectiveFailureCode = if (!isEnginePass && failureCode == null) {
+            CableFailureCode.INDETERMINATE
+        } else {
+            failureCode
+        }
 
         val maxAllowedVdPct = circuit.maxVDpct * 100.0
 
         val checks = mutableListOf<CableStructuredCheck>()
 
         // 1. Ampacity Check
-        val ampacityStatus = if (isAmpacityFail) CableCheckStatus.FAIL else CableCheckStatus.PASS
+        val ampacityStatus: CableCheckStatus = if (isEnginePass) {
+            CableCheckStatus.PASS
+        } else {
+            when (effectiveFailureCode) {
+                CableFailureCode.AMPACITY_FAIL,
+                CableFailureCode.INDETERMINATE -> CableCheckStatus.FAIL
+
+                CableFailureCode.MULTIPLE_CONSTRAINTS -> {
+                    val isAmpacityPassing = result.capacity_derated_Iz_A > 0.0 &&
+                        result.deviceSize_A > 0.0 &&
+                        (result.capacity_derated_Iz_A >= result.deviceSize_A - 1e-6)
+                    if (isAmpacityPassing) CableCheckStatus.PASS else CableCheckStatus.FAIL
+                }
+
+                CableFailureCode.VOLTAGE_DROP_FAIL,
+                CableFailureCode.CUMULATIVE_VOLTAGE_DROP_FAIL -> CableCheckStatus.PASS
+
+                CableFailureCode.INCOMPLETE_INPUT,
+                CableFailureCode.CATALOG_MISSING,
+                CableFailureCode.DERATING_INVALID -> CableCheckStatus.INCOMPLETE
+
+                null -> throw IllegalStateException("effectiveFailureCode cannot be null when !isEnginePass")
+            }
+        }
+        val ampacityMessage = when (ampacityStatus) {
+            CableCheckStatus.PASS ->
+                "Derated cable capacity (${result.capacity_derated_Iz_A} A) safely protects continuous design current (${result.Ib_A} A) and device rating (${result.deviceSize_A} A)."
+            CableCheckStatus.INCOMPLETE ->
+                "Ampacity evaluation incomplete: ${result.failReason.ifEmpty { "Required data missing." }}"
+            CableCheckStatus.FAIL, CableCheckStatus.WARNING -> {
+                if (result.capacity_derated_Iz_A > 0.0 && result.deviceSize_A > 0.0) {
+                    "Derated cable capacity (${result.capacity_derated_Iz_A} A) does not satisfy protection/ampacity constraint for device rating (${result.deviceSize_A} A)."
+                } else {
+                    "Ampacity constraint could not be verified: ${result.failReason.ifEmpty { "Engineering failure." }}"
+                }
+            }
+        }
         checks.add(
             CableStructuredCheck(
                 checkCode = CableCheckCode.AMPACITY,
@@ -190,17 +220,50 @@ object CableCalculationService {
                 actualDisplay = if (result.capacity_derated_Iz_A > 0.0) "${result.capacity_derated_Iz_A} A" else "N/A",
                 limitDisplay = if (result.deviceSize_A > 0.0) "${result.deviceSize_A} A" else "N/A",
                 unit = "A",
-                message = if (ampacityStatus == CableCheckStatus.PASS) {
-                    "Derated cable capacity (${result.capacity_derated_Iz_A} A) safely protects continuous design current (${result.Ib_A} A) and device rating (${result.deviceSize_A} A)."
-                } else {
-                    "Derated cable capacity (${result.capacity_derated_Iz_A} A) does not satisfy protection/ampacity constraint for device rating (${result.deviceSize_A} A)."
-                }
+                message = ampacityMessage
             )
         )
 
         // 2. Local Voltage Drop Check
-        val isCumulativeOnlyFailure = failureCode == CableFailureCode.CUMULATIVE_VOLTAGE_DROP_FAIL || (isVdFail && parentCumulativeVD > 0.0)
-        val localVdStatus = if (isVdFail && !isCumulativeOnlyFailure) CableCheckStatus.FAIL else CableCheckStatus.PASS
+        val localVdStatus: CableCheckStatus = if (isEnginePass) {
+            CableCheckStatus.PASS
+        } else {
+            when (effectiveFailureCode) {
+                CableFailureCode.VOLTAGE_DROP_FAIL,
+                CableFailureCode.INDETERMINATE -> CableCheckStatus.FAIL
+
+                CableFailureCode.MULTIPLE_CONSTRAINTS -> {
+                    val isLocalVdPassing = maxAllowedVdPct >= result.vdPct - 1e-6
+                    if (isLocalVdPassing) CableCheckStatus.PASS else CableCheckStatus.FAIL
+                }
+
+                CableFailureCode.AMPACITY_FAIL -> CableCheckStatus.PASS
+
+                CableFailureCode.CUMULATIVE_VOLTAGE_DROP_FAIL -> {
+                    val isLocalVdPassing = maxAllowedVdPct >= result.vdPct - 1e-6
+                    if (isLocalVdPassing) CableCheckStatus.PASS else CableCheckStatus.FAIL
+                }
+
+                CableFailureCode.INCOMPLETE_INPUT,
+                CableFailureCode.CATALOG_MISSING,
+                CableFailureCode.DERATING_INVALID -> CableCheckStatus.INCOMPLETE
+
+                null -> throw IllegalStateException("effectiveFailureCode cannot be null when !isEnginePass")
+            }
+        }
+        val localVdMessage = when (localVdStatus) {
+            CableCheckStatus.PASS ->
+                "Local voltage drop (${String.format(Locale.US, "%.2f", result.vdPct)}%) is within limit (${String.format(Locale.US, "%.2f", maxAllowedVdPct)}%)."
+            CableCheckStatus.INCOMPLETE ->
+                "Voltage drop evaluation incomplete: ${result.failReason.ifEmpty { "Required data missing." }}"
+            CableCheckStatus.FAIL, CableCheckStatus.WARNING -> {
+                if (result.vdPct > 0.0) {
+                    "Local voltage drop (${String.format(Locale.US, "%.2f", result.vdPct)}%) exceeds limit (${String.format(Locale.US, "%.2f", maxAllowedVdPct)}%)."
+                } else {
+                    "Voltage drop constraint could not be verified: ${result.failReason.ifEmpty { "Engineering failure." }}"
+                }
+            }
+        }
         checks.add(
             CableStructuredCheck(
                 checkCode = CableCheckCode.VOLTAGE_DROP,
@@ -211,16 +274,50 @@ object CableCalculationService {
                 actualDisplay = String.format(Locale.US, "%.2f%%", result.vdPct),
                 limitDisplay = String.format(Locale.US, "%.2f%%", maxAllowedVdPct),
                 unit = "%",
-                message = if (localVdStatus == CableCheckStatus.PASS) {
-                    "Local voltage drop (${String.format(Locale.US, "%.2f", result.vdPct)}%) is within limit (${String.format(Locale.US, "%.2f", maxAllowedVdPct)}%)."
-                } else {
-                    "Local voltage drop (${String.format(Locale.US, "%.2f", result.vdPct)}%) exceeds limit (${String.format(Locale.US, "%.2f", maxAllowedVdPct)}%)."
-                }
+                message = localVdMessage
             )
         )
 
         // 3. Cumulative Voltage Drop Check
-        val cumulativeVdStatus = if (isVdFail) CableCheckStatus.FAIL else CableCheckStatus.PASS
+        val cumulativeVdStatus: CableCheckStatus = if (isEnginePass) {
+            CableCheckStatus.PASS
+        } else {
+            when (effectiveFailureCode) {
+                CableFailureCode.CUMULATIVE_VOLTAGE_DROP_FAIL,
+                CableFailureCode.INDETERMINATE -> CableCheckStatus.FAIL
+
+                CableFailureCode.VOLTAGE_DROP_FAIL -> {
+                    val isCumulativeVdPassing = maxAllowedVdPct >= result.cumulativeVDpct - 1e-6
+                    if (isCumulativeVdPassing) CableCheckStatus.PASS else CableCheckStatus.FAIL
+                }
+
+                CableFailureCode.MULTIPLE_CONSTRAINTS -> {
+                    val isCumulativeVdPassing = maxAllowedVdPct >= result.cumulativeVDpct - 1e-6
+                    if (isCumulativeVdPassing) CableCheckStatus.PASS else CableCheckStatus.FAIL
+                }
+
+                CableFailureCode.AMPACITY_FAIL -> CableCheckStatus.PASS
+
+                CableFailureCode.INCOMPLETE_INPUT,
+                CableFailureCode.CATALOG_MISSING,
+                CableFailureCode.DERATING_INVALID -> CableCheckStatus.INCOMPLETE
+
+                null -> throw IllegalStateException("effectiveFailureCode cannot be null when !isEnginePass")
+            }
+        }
+        val cumulativeVdMessage = when (cumulativeVdStatus) {
+            CableCheckStatus.PASS ->
+                "Cumulative voltage drop from supply (${String.format(Locale.US, "%.2f", result.cumulativeVDpct)}%) is within limit."
+            CableCheckStatus.INCOMPLETE ->
+                "Cumulative voltage drop evaluation incomplete: ${result.failReason.ifEmpty { "Required data missing." }}"
+            CableCheckStatus.FAIL, CableCheckStatus.WARNING -> {
+                if (result.cumulativeVDpct > 0.0) {
+                    "Cumulative voltage drop (${String.format(Locale.US, "%.2f", result.cumulativeVDpct)}%) exceeds limit (${String.format(Locale.US, "%.2f", maxAllowedVdPct)}%)."
+                } else {
+                    "Cumulative voltage drop constraint could not be verified: ${result.failReason.ifEmpty { "Engineering failure." }}"
+                }
+            }
+        }
         checks.add(
             CableStructuredCheck(
                 checkCode = CableCheckCode.CUMULATIVE_VOLTAGE_DROP,
@@ -231,11 +328,7 @@ object CableCalculationService {
                 actualDisplay = String.format(Locale.US, "%.2f%%", result.cumulativeVDpct),
                 limitDisplay = String.format(Locale.US, "%.2f%%", maxAllowedVdPct),
                 unit = "%",
-                message = if (cumulativeVdStatus == CableCheckStatus.PASS) {
-                    "Cumulative voltage drop from supply (${String.format(Locale.US, "%.2f", result.cumulativeVDpct)}%) is within limit."
-                } else {
-                    "Cumulative voltage drop (${String.format(Locale.US, "%.2f", result.cumulativeVDpct)}%) exceeds limit (${String.format(Locale.US, "%.2f", maxAllowedVdPct)}%)."
-                }
+                message = cumulativeVdMessage
             )
         )
 

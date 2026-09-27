@@ -2838,4 +2838,40 @@ class CableEngineeringToolsTest {
         assertEquals(CableCheckStatus.FAIL, eval.overallStatus)
         assertEquals(CableCheckCode.INDETERMINATE, eval.governingCheckCode)
     }
+
+    @Test
+    fun incompleteInputAndMissingData_doNotFabricateEngineeringConstraintFailures() {
+        val incompleteCircuit = CircuitEntity(
+            id = 10,
+            cableType = "Cu/XLPE/PVC - 4C",
+            voltageV = 0, // Invalid voltage triggers INCOMPLETE_INPUT
+            loadKVA = 50.0,
+            length_m = 25.0,
+            fedFrom = "Main"
+        )
+        val engineResult = CableSizingEngine.sizeCircuit(incompleteCircuit)
+        assertEquals(SizingResultStatus.INCOMPLETE, engineResult.resultStatus)
+        assertEquals(CableFailureCode.INCOMPLETE_INPUT, engineResult.primaryFailureCode)
+
+        val eval = CableCalculationService.evaluateEngineeringChecks(engineResult, incompleteCircuit)
+        assertEquals(CableCheckStatus.INCOMPLETE, eval.overallStatus)
+        assertEquals(CableCheckCode.INCOMPLETE_INPUT, eval.governingCheckCode)
+
+        val ampCheck = eval.checks.first { it.checkCode == CableCheckCode.AMPACITY }
+        val vdCheck = eval.checks.first { it.checkCode == CableCheckCode.VOLTAGE_DROP }
+        val cumVdCheck = eval.checks.first { it.checkCode == CableCheckCode.CUMULATIVE_VOLTAGE_DROP }
+
+        assertEquals(CableCheckStatus.INCOMPLETE, ampCheck.status)
+        assertEquals(CableCheckStatus.INCOMPLETE, vdCheck.status)
+        assertEquals(CableCheckStatus.INCOMPLETE, cumVdCheck.status)
+
+        // Must not fabricate zero-value constraint violations (ENG-29)
+        assertFalse(ampCheck.message.contains("Derated cable capacity (0.0 A)"))
+        assertFalse(vdCheck.message.contains("Local voltage drop (0.00%) exceeds limit"))
+        assertFalse(cumVdCheck.message.contains("Cumulative voltage drop (0.00%) exceeds limit"))
+
+        assertTrue(ampCheck.message.contains("Ampacity evaluation incomplete"))
+        assertTrue(vdCheck.message.contains("Voltage drop evaluation incomplete"))
+        assertTrue(cumVdCheck.message.contains("Cumulative voltage drop evaluation incomplete"))
+    }
 }
