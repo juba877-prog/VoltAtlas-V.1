@@ -6,6 +6,7 @@ import com.example.engine.CableSizingEngine
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.BeforeClass
 import org.junit.Test
 import java.io.File
@@ -224,5 +225,53 @@ class CableSizingEngineTest {
         assertEquals(115.47, result.Ib_A, 0.1)
         assertEquals("✓ PASS", result.status)
         println("[PASSED] EdgeCase4HighSoilResistivity250: Cable=${result.cableSize_mm2}, Status=${result.status}")
+    }
+
+    @Test
+    fun testSizing_pvcAndXlpeSameSizeAndMaterial_haveIdenticalR20() {
+        // r20 is populated by MATERIAL ONLY (Cu -> RCu20), independent of the insulation
+        // column used for the voltage-drop basis (rUsed). So for the same conductor material
+        // and the same conductor size, XLPE and PVC must expose the identical 20 °C value.
+        //
+        // Hand-derived catalog value: Cu 150 mm² -> RCu20 = 0.124 Ω/km
+        //   (RCu_70_est = 0.149 Ω/km = 0.124 x 1.20, the voltage-drop basis for XLPE)
+        val expectedR20 = 0.124
+        val expectedR20XlpeUsed = 0.149
+
+        // Both circuits are forced to 150 mm² so the size-identity comparison is unconditional.
+        val cXlpe = CircuitEntity(
+            id = 704, circuitName = "XLPE-150", loadKVA = 100.0, pf = 0.85,
+            phases = "3P+N", voltageV = 400, length_m = 50.0, installation = "Laid in Ducts",
+            cableType = "Cu/XLPE/STA/PVC - 4C", manufacturer = "Elsewedy",
+            overrideCableSize = "150 mm²"
+        )
+        val cPvc = CircuitEntity(
+            id = 705, circuitName = "PVC-150", loadKVA = 100.0, pf = 0.85,
+            phases = "3P+N", voltageV = 400, length_m = 50.0, installation = "Laid in Ducts",
+            cableType = "Cu/PVC/PVC - 4C", manufacturer = "Elsewedy",
+            overrideCableSize = "150 mm²"
+        )
+        val resXlpe = CableSizingEngine.sizeCircuit(cXlpe, 0.0, repository)
+        val resPvc = CableSizingEngine.sizeCircuit(cPvc, 0.0, repository)
+
+        assertEquals("Both circuits must resolve to the forced 150 mm² size", "150 mm²", resXlpe.cableSize_mm2)
+        assertEquals("Both circuits must resolve to the forced 150 mm² size", "150 mm²", resPvc.cableSize_mm2)
+
+        assertNotNull("XLPE r20 must not be null", resXlpe.r20)
+        assertNotNull("PVC r20 must not be null", resPvc.r20)
+
+        // r20 must equal the catalog 20 °C value for Cu 150 mm² in BOTH circuits.
+        assertEquals("XLPE r20 must equal the catalog 20 °C value", expectedR20, resXlpe.r20!!, 1e-9)
+        assertEquals("PVC r20 must equal the catalog 20 °C value", expectedR20, resPvc.r20!!, 1e-9)
+
+        // Same size + same material => identical 20 °C resistance, regardless of insulation.
+        assertEquals("Same size/material must have identical r20", resPvc.r20!!, resXlpe.r20!!, 0.0)
+
+        // The two r20 must be DISTINCT from the XLPE voltage-drop basis (which is the A3 defect
+        // that understated the max-fault Isc): XLPE rUsed = RCu_70_est = 1.20 x RCu20.
+        assertEquals("XLPE rUsed must remain the 70 °C estimated voltage-drop basis", expectedR20XlpeUsed, resXlpe.rUsed, 1e-9)
+        assertTrue("XLPE r20 must be strictly below its 70 °C rUsed basis", resXlpe.r20!! < resXlpe.rUsed)
+        // PVC uses the 20 °C column for voltage drop, so rUsed == r20 there.
+        assertEquals("PVC rUsed must equal r20 (same 20 °C column)", resPvc.r20!!, resPvc.rUsed, 1e-9)
     }
 }

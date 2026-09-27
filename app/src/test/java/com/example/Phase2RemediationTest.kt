@@ -27,14 +27,14 @@ class Phase2RemediationTest {
         status = "VERIFIED", z0 = 15.2, vectorGroup = "Dyn11", voltage = 400.0
     )
 
-    private fun sizing(inA: Double = 630.0, icu: Double = 50.0, icm: Double = 0.0, r: Double = 0.076, x: Double = 0.073) = SizingResult(
+    private fun sizing(inA: Double = 630.0, icu: Double = 50.0, icm: Double = 0.0, r: Double = 0.076, x: Double = 0.073, r20: Double? = r) = SizingResult(
         Ib_A = 577.0, deviceSize_A = inA, deviceType = "MCCB", cTotalDerating = 1.0,
         iRequired_perCable_A = 577.0, productCode = "P", cableSize_mm2 = "300 mm²",
         ratedI_table_A = 629.0, capacity_derated_Iz_A = 629.0, utilizationPct = 91.7,
         neutral_mm2 = "150 mm²", earthCPC_mm2 = "150 mm²", voltDrop_V = 0.5, vdPct = 0.1,
         cumulativeVDpct = 0.1, status = "✓ PASS", failReason = "", cableMaterial = "Cu",
         cableOD_mm = 62.1, deviceBreakingKA = icu, deviceMakingKA = icm, kFactor = 143.0,
-        clearingTime_s = 0.1, rUsed = r, xUsed = x,
+        clearingTime_s = 0.1, rUsed = r, xUsed = x, r20 = r20,
         resultStatus = SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true,
         primaryFailureCode = null
     )

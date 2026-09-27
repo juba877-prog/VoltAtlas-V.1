@@ -221,6 +221,7 @@ object BuswayEngine {
             earthOD_mm = 0.0,
             rUsed = buswayRes.rMOhmPerM,
             xUsed = buswayRes.xMOhmPerM,
+            r20 = null, // Busway catalog does not declare temperature reference basis (Ground Rule 9)
             clearingTime_s = 1.0,
             odSourceMfg = selected?.mfg ?: "Elsewedy",
             isODApproximated = false,

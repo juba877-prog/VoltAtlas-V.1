@@ -132,15 +132,28 @@ object ShortCircuitEngine {
             }
 
             // Walk the chain from this circuit up to transformer
+            var dataMissing = false
+            var missingNote = ""
             for (nodeId in ancestorPath) {
                 val step = resolvedCircuits.find { it.id == nodeId } ?: continue
                 val stepSizing = sizingResults[step.id]
                 if (stepSizing != null) {
-                    val rSeg = stepSizing.rUsed * step.length_m / (1000.0 * step.parallelRuns)
+                    val r20 = stepSizing.r20
+                    if (r20 == null || r20 <= 0.0) {
+                        dataMissing = true
+                        missingNote = "Missing or invalid 20 °C conductor resistance (r20) on circuit ${step.circuitName}"
+                        break
+                    }
+                    // IEC 60909-0 — maximum short-circuit: line resistance at 20 °C
+                    val rSeg = r20 * step.length_m / (1000.0 * step.parallelRuns)
                     val xSeg = stepSizing.xUsed * step.length_m / (1000.0 * step.parallelRuns)
                     rTotalOhm += rSeg
                     xTotalOhm += xSeg
                 }
+            }
+            if (dataMissing) {
+                results[circuit.id] = buildMissingResult(circuit, "DATA MISSING", missingNote)
+                continue
             }
 
             val zTotalOhm = sqrt(rTotalOhm.pow(2) + xTotalOhm.pow(2))

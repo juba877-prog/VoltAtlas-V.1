@@ -656,7 +656,10 @@ fun ShortCircuitPanel(state: UiState.Success) {
     val fails = results.count { it.status == "FAIL" }
     
     val passRate = if (total > 0) ((passes.toDouble() / total) * 100).roundToInt() else 0
-    val highestIsc = results.maxOfOrNull { it.iscKA } ?: 0.0
+    // DATA MISSING rows carry iscKA = 0.0 by design; they must not be counted as a real
+    // fault level when summarizing the project.
+    val highestIsc = results.filter { it.status != "DATA MISSING" && it.iscKA > 0.0 }
+        .maxOfOrNull { it.iscKA } ?: 0.0
     val validMargins = results.filter { it.status != "DATA MISSING" }.map { calculateCircuitMarginPct(it) }
     val lowestMargin = if (validMargins.isNotEmpty()) validMargins.minOrNull() ?: 0.0 else 0.0
 

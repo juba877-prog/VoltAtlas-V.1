@@ -501,6 +501,7 @@ class EngineeringCalculationCoordinatorTest {
                 status = "PASS",
                 rUsed = 0.098,
                 xUsed = 0.075,
+                r20 = 0.098,
                 cableOD_mm = 52.0,
                 kFactor = 143.0,
                 clearingTime_s = 0.1,

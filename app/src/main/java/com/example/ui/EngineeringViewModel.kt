@@ -628,11 +628,22 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 generatorResults = generatorResults
             )
 
-            // Look up the localized short-circuit current at the ATS-included circuits
-            val atsCircuitIsc = resolvedList
-                .filter { it.atsIncluded || it.assignedAtsId != null }
-                .mapNotNull { shortCircuitResults[it.id]?.iscKA }
-                .maxOrNull() ?: (transformerResults.values.firstOrNull()?.isc3Phase ?: 0.0)
+            // Look up the localized short-circuit current at the ATS-included circuits.
+            // DATA MISSING rows carry iscKA = 0.0 by design. They must be EXCLUDED: otherwise a
+            // fully-unresolved ATS group yields maxOrNull() == 0.0 (non-null), the transformer
+            // fallback below is skipped, and the ATS is sized against requiredIcw = 0.0 kA —
+            // silently understating the required short-circuit withstand.
+            val atsCandidateIsc = mutableListOf<Double>()
+            for (c in resolvedList) {
+                if (!c.atsIncluded && c.assignedAtsId == null) continue
+                val res = shortCircuitResults[c.id] ?: continue
+                if (res.status == "DATA MISSING") continue
+                val ka = res.iscKA
+                if (ka <= 0.0 || ka.isNaN()) continue
+                atsCandidateIsc.add(ka)
+            }
+            val atsCircuitIsc = atsCandidateIsc.maxOrNull()
+                ?: (transformerResults.values.firstOrNull()?.isc3Phase ?: 0.0)
 
             val transformerFLC = transformerResults.values.firstOrNull()?.flc ?: 0.0
             val generatorSizesMap = generatorResults.mapValues { it.value.finalSize ?: 0.0 }

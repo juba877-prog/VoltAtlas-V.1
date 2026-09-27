@@ -180,10 +180,15 @@ object CircuitUiModelMapper {
             true
         }
 
-        val isIscOk = if (shortCircuitResult != null && sizingResult?.deviceBreakingKA != null && !sizingResult.deviceBreakingKA.isNaN()) {
+        val isIscOk = if (shortCircuitResult != null &&
+            shortCircuitResult.status != "DATA MISSING" &&
+            shortCircuitResult.iscKA > 0.0 &&
+            sizingResult?.deviceBreakingKA != null &&
+            !sizingResult.deviceBreakingKA.isNaN()
+        ) {
             shortCircuitResult.iscKA <= sizingResult.deviceBreakingKA
         } else {
-            true
+            false
         }
 
         val phasesDisplay = circuit.phases.ifBlank { "3P+N" }

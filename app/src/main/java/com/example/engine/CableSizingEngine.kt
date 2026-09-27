@@ -62,7 +62,8 @@ data class SizingResult(
     val isDeviceFromCatalog: Boolean = false,
     val breakerOrderingCode: String? = null,
     val conductorAreaMm2: Double? = null,
-    val cpcAreaMm2: Double? = null
+    val cpcAreaMm2: Double? = null,
+    val r20: Double? = null
 ) {
     val phaseConductorAreaMm2: Double? get() = conductorAreaMm2
 }
@@ -498,6 +499,10 @@ object CableSizingEngine {
         val iRequiredPerCableA =
             ibA / (circuit.parallelRuns * cTotalDerating)
 
+        val isCu = circuit.cableType.contains("Cu", ignoreCase = true)
+        val isAl = circuit.cableType.contains("Al", ignoreCase = true)
+        val cableMaterial = if (isAl && !isCu) "Al" else "Cu"
+
         // IMPORTANT: no fallback to typeCode = 1.
         var rColumn = ""
         var selectedTypeCode = 0
@@ -524,9 +529,6 @@ object CableSizingEngine {
             } else null
 
             if (selectedTypeRepo != null) {
-                val isCu = circuit.cableType.contains("Cu", ignoreCase = true)
-                val isAl = circuit.cableType.contains("Al", ignoreCase = true)
-                val cableMaterial = if (isAl && !isCu) "Al" else "Cu"
                 val insulation = if (isXLPE) "XLPE" else "PVC"
                 rColumn = if (cableMaterial == "Cu") {
                     if (insulation == "XLPE") "R_Cu_70_est" else "R_Cu20"
@@ -585,7 +587,8 @@ object CableSizingEngine {
             val ampacityOk: Boolean,
             val voltageDropOk: Boolean,
             val resistance: Double,
-            val reactance: Double
+            val reactance: Double,
+            val r20: Double?
         )
 
         fun checkCandidate(entry: CableCatalogEntry): CandidateCheck? {
@@ -593,33 +596,43 @@ object CableSizingEngine {
             val izDeratedA =
                 ratedCurrentA * circuit.parallelRuns * cTotalDerating * harmonicPhaseFactor
 
-            val rxValues = if (isLegacy) rxValueOf(entry.size, rColumn) else {
+            val rxValuesAndR20 = if (isLegacy) {
+                val sheet = Catalog.dataSheet.firstOrNull {
+                    kotlin.math.abs(it.size - entry.size) <= EPSILON
+                } ?: return null
+
+                val resistance = when (rColumn) {
+                    "R_Cu20", "R_Cu70" -> sheet.R_Cu20
+                    "R_Al20", "R_Al70" -> sheet.R_Al20
+                    "R_Cu_70_est", "R_Cu90" -> sheet.R_Cu_70_est
+                    "R_Al_70_est", "R_Al90" -> sheet.R_Al_70_est
+                    else -> return null
+                }
+                val r20Raw = if (cableMaterial == "Al") sheet.R_Al20 else sheet.R_Cu20
+                val r20 = if (r20Raw > 0.0) r20Raw else null
+                Triple(resistance, sheet.X, r20)
+            } else {
                 val sheet = catalog?.cableTypesData?.firstOrNull {
                     it.typeCode == selectedTypeCode && kotlin.math.abs(it.sizeMm2 - entry.size) <= EPSILON
                 } ?: catalog?.cableTypesData?.firstOrNull {
                     kotlin.math.abs(it.sizeMm2 - entry.size) <= EPSILON
-                }
-                if (sheet == null) null else {
-                    val resistance = when (rColumn) {
-                        "R_Cu20", "R_Cu70" -> sheet.rCu20
-                        "R_Al20", "R_Al70" -> sheet.rAl20
-                        "R_Cu_70_est", "R_Cu90" -> sheet.rCu_70_est
-                        "R_Al_70_est", "R_Al90" -> sheet.rAl_70_est
-                        else -> 0.0
-                    }
-                    if (resistance <= 0.0 || sheet.x <= 0.0) null else Pair(resistance, sheet.x)
-                }
-            } ?: return null
-            val (resistance, reactance) = rxValues
+                } ?: return null
 
-            // TEMPERATURE CONVENTION (single source of truth — see ProtectionEngine tempFactor):
-            // The catalog "R_Cu70/R_Cu90/R_Al70/R_Al90" columns are VERIFIED to contain
-            // IEC 60228 20 °C DC resistance values (e.g. 2.5 mm² Cu = 7.41 Ω/km = R20 exactly).
-            // Voltage drop is therefore evaluated at 20 °C (workbook/QA-parity convention);
-            // the ADS min-fault loop applies its own ×1.20 operating-temperature correction
-            // (ProtectionEngine), and the short-circuit max-fault path uses 20 °C per
-            // IEC 60909 §7.1.2. No additional correction is applied here — do NOT add one
-            // (that would double-count).
+                val resistance = when (rColumn) {
+                    "R_Cu20", "R_Cu70" -> sheet.rCu20
+                    "R_Al20", "R_Al70" -> sheet.rAl20
+                    "R_Cu_70_est", "R_Cu90" -> sheet.rCu_70_est
+                    "R_Al_70_est", "R_Al90" -> sheet.rAl_70_est
+                    else -> 0.0
+                }
+                if (resistance <= 0.0 || sheet.x <= 0.0) return null
+                val r20Raw = if (cableMaterial == "Al") sheet.rAl20 else sheet.rCu20
+                val r20 = if (r20Raw > 0.0) r20Raw else null
+                Triple(resistance, sheet.x, r20)
+            }
+            val (resistance, reactance, candidateR20) = rxValuesAndR20
+
+            // IEC 60909-0 — maximum short-circuit: line resistance at 20 °C.
             val thermalFactor = 1.0
             val rOperating = resistance * thermalFactor
 
@@ -655,7 +668,8 @@ object CableSizingEngine {
                 ampacityOk = ampacityOk,
                 voltageDropOk = voltageDropOk,
                 resistance = resistance,
-                reactance = reactance
+                reactance = reactance,
+                r20 = candidateR20
             )
         }
 
@@ -751,7 +765,6 @@ object CableSizingEngine {
             else -> CableFailureCode.INDETERMINATE
         }
 
-        val cableMaterial = if (circuit.cableType.contains("Al", ignoreCase = true)) "Al" else "Cu"
         val insulation = if (isXLPE) "XLPE" else "PVC"
         val kFactor = when {
             cableMaterial == "Cu" && insulation == "XLPE" -> 143.0
@@ -861,6 +874,7 @@ object CableSizingEngine {
             earthOD_mm = earthOD_mm,
             rUsed = selectedCheck.resistance,
             xUsed = selectedCheck.reactance,
+            r20 = selectedCheck.r20,
             clearingTime_s = clearingTime_s,
             odSourceMfg = dimInfo.sourceMfg,
             isODApproximated = dimInfo.isApproximated,

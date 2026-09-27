@@ -201,7 +201,7 @@ class FuzzStressTest {
                     productCode = "CX1-T104-G12", cableSize_mm2 = "25 mm²", ratedI_table_A = 150.0, capacity_derated_Iz_A = 150.0,
                     utilizationPct = 66.7, neutral_mm2 = "25 mm²", earthCPC_mm2 = "25 mm²", voltDrop_V = 1.0, vdPct = 0.25,
                     cumulativeVDpct = 0.25, status = "✓ PASS", failReason = "", cableMaterial = "Cu", cableOD_mm = 24.3,
-                    deviceBreakingKA = 25.0, kFactor = 143.0, clearingTime_s = 0.1, rUsed = 0.927, xUsed = 0.082
+                    deviceBreakingKA = 25.0, kFactor = 143.0, clearingTime_s = 0.1, rUsed = 0.927, xUsed = 0.082, r20 = 0.927
                 , resultStatus = com.example.engine.SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null)
                 val scResults = ShortCircuitEngine.calculate(
                     resolvedCircuits = listOf(circ),

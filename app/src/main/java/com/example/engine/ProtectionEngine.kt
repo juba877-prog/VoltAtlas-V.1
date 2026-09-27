@@ -279,14 +279,23 @@ object ProtectionEngine {
         val overloadPass = ib <= in_rating + 0.01 && in_rating <= iz + 0.01
         val overloadStatus = if (overloadPass) "PASS" else "FAIL"
 
+        val isIscMissing = shortCircuitResult == null ||
+            shortCircuitResult.status == "DATA MISSING" ||
+            shortCircuitResult.iscKA <= 0.0
+
         // 2. Short-Circuit Breaking Capacity Check: Icu >= Isc
-        val scPass = icu >= isc - 0.001
-        val shortCircuitStatus = if (scPass) "PASS" else "FAIL"
+        val (scPass, shortCircuitStatus) = if (isIscMissing) {
+            false to "DATA MISSING"
+        } else {
+            val pass = icu >= isc - 0.001
+            pass to (if (pass) "PASS" else "FAIL")
+        }
 
         // 3. Cable Thermal Withstand Check (k^2 * S^2 >= Isc^2 * t)
         val s_mm2 = resolveConductorArea(sizingResult)
         val (cableWithstandPass, cableWithstandStatus) = when {
             s_mm2 == null || s_mm2 <= 0.0 -> false to "DATA MISSING"
+            isIscMissing -> false to "DATA MISSING"
             else -> {
                 val k = if (sizingResult.kFactor > 0.0) sizingResult.kFactor
                 else insulationKFactor(sizingResult.cableMaterial, sizingResult.insulation)
@@ -317,18 +326,24 @@ object ProtectionEngine {
             if (ib > in_rating) messages.add("Overload Fail: Design current Ib (%.1f A) > Device rating In (%.1f A)".format(ib, in_rating))
             if (in_rating > iz) messages.add("Overload Fail: Device rating In (%.1f A) > Cable capacity Iz (%.1f A)".format(in_rating, iz))
         }
-        if (!scPass) {
+        if (shortCircuitStatus == "DATA MISSING") {
+            messages.add("Short-Circuit: Fault current Isc data missing or uncalculated (DATA MISSING)")
+        } else if (!scPass) {
             messages.add("Short-Circuit Fail: Fault current Isc (%.2f kA) > Device breaking capacity Icu (%.2f kA)".format(isc, icu))
         }
         if (cableWithstandStatus == "DATA MISSING") {
-            messages.add("Cable Withstand: Conductor size missing, unparseable, or non-cable equipment (DATA MISSING)")
+            if (s_mm2 == null || s_mm2 <= 0.0) {
+                messages.add("Cable Withstand: Conductor size missing, unparseable, or non-cable equipment (DATA MISSING)")
+            } else {
+                messages.add("Cable Withstand: Fault current Isc data missing or uncalculated (DATA MISSING)")
+            }
         } else if (!cableWithstandPass) {
             messages.add("Cable Withstand Fail: Short-circuit energy I²t exceeds cable thermal withstand k²S²")
         }
 
         // 5. Combined Final Status
         val finalStatus = when {
-            cableWithstandStatus == "DATA MISSING" -> "DATA MISSING"
+            cableWithstandStatus == "DATA MISSING" || shortCircuitStatus == "DATA MISSING" -> "DATA MISSING"
             !overloadPass || !scPass || !cableWithstandPass -> "FAIL"
             selectivityStatus == "WARNING" -> "WARNING"
             else -> "PASS"

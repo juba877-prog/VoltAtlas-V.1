@@ -73,7 +73,7 @@ class Phase2BGridFaultAndVoltageTest {
             productCode = "T", cableSize_mm2 = "500 mm²", ratedI_table_A = 780.0, capacity_derated_Iz_A = 780.0,
             utilizationPct = 92.5, neutral_mm2 = "250 mm²", earthCPC_mm2 = "250 mm²", voltDrop_V = 0.1, vdPct = 0.02,
             cumulativeVDpct = 0.02, status = "✓ PASS", failReason = "", cableMaterial = "Cu", cableOD_mm = 80.0,
-            deviceBreakingKA = 50.0, kFactor = 143.0, clearingTime_s = 0.1, rUsed = 0.0306, xUsed = 0.0312,
+            deviceBreakingKA = 50.0, kFactor = 143.0, clearingTime_s = 0.1, rUsed = 0.0306, xUsed = 0.0312, r20 = 0.0306,
             resultStatus = SizingResultStatus.PASS, isAmpacityOk = true, isVoltageDropOk = true, primaryFailureCode = null,
             isDeviceFromCatalog = true
         )
