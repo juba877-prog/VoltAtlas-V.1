@@ -88,6 +88,39 @@ object HierarchyResolver {
         return rootBoards.map { buildSubtree(it) }
     }
 
+    sealed class AncestorResolution {
+        data class Linear(val path: List<Int>) : AncestorResolution()
+        data class CycleDetected(val cycleNodeId: Int, val path: List<Int>) : AncestorResolution()
+    }
+
+    /**
+     * Resolves the linear ancestor path starting from [startId] using [getParentId].
+     * Detects self-parenting and circular references.
+     *
+     * @param startId The circuit ID to traverse upwards from.
+     * @param getParentId Function returning the parent circuit ID, or null if root.
+     * @return [AncestorResolution.Linear] containing the ordered list of IDs [startId, parentId, ...],
+     *         or [AncestorResolution.CycleDetected] if a cycle is encountered.
+     */
+    fun resolveAncestors(startId: Int, getParentId: (Int) -> Int?): AncestorResolution {
+        val path = mutableListOf<Int>()
+        val visited = mutableSetOf<Int>()
+        var current: Int? = startId
+
+        while (current != null) {
+            if (!visited.add(current)) {
+                return AncestorResolution.CycleDetected(current, path)
+            }
+            path.add(current)
+            val parent = getParentId(current)
+            if (parent != null && parent == current) {
+                return AncestorResolution.CycleDetected(parent, path)
+            }
+            current = parent
+        }
+        return AncestorResolution.Linear(path)
+    }
+
     /**
      * Validates board relationships for self-parenting, cycles, non-existent parents, and orphaned nodes.
      */
@@ -107,21 +140,14 @@ object HierarchyResolver {
                 errors.add("Board '${board.circuitName}' references non-existent parent ID ${board.parentId}.")
             }
 
-            // 3. Cycle detection (ancestor traversal)
+            // 3. Cycle detection (ancestor traversal via shared resolveAncestors)
             if (board.parentId != null && board.parentId != board.id) {
-                var currentId: Int? = board.parentId
-                val visited = mutableSetOf(board.id)
-                var hasCycle = false
-
-                while (currentId != null && !hasCycle) {
-                    if (visited.contains(currentId)) {
-                        hasCycle = true
-                        val cycleParentName = boardMap[currentId]?.circuitName ?: currentId.toString()
+                when (val resolution = resolveAncestors(board.id) { boardMap[it]?.parentId }) {
+                    is AncestorResolution.CycleDetected -> {
+                        val cycleParentName = boardMap[resolution.cycleNodeId]?.circuitName ?: resolution.cycleNodeId.toString()
                         errors.add("Circular hierarchy dependency detected between '${board.circuitName}' and '$cycleParentName'.")
-                    } else {
-                        visited.add(currentId)
-                        currentId = boardMap[currentId]?.parentId
                     }
+                    is AncestorResolution.Linear -> { /* valid */ }
                 }
             }
 

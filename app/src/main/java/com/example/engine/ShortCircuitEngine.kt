@@ -1,6 +1,7 @@
 package com.example.engine
 
 import com.example.data.CircuitEntity
+import com.example.hierarchy.HierarchyResolver
 import kotlin.math.sqrt
 import kotlin.math.pow
 import kotlin.math.exp
@@ -59,10 +60,17 @@ object ShortCircuitEngine {
             //                                       is NOT in the impedance path unless a real
             //                                       interposing transformer exists between the
             //                                       generator and the fault point.
+            val ancestorResolution = HierarchyResolver.resolveAncestors(circuit.id) { circuitParents[it] }
+            if (ancestorResolution is HierarchyResolver.AncestorResolution.CycleDetected) {
+                results[circuit.id] = buildMissingResult(circuit, "DATA MISSING", "Circular hierarchy dependency detected in circuit ancestors")
+                continue
+            }
+            val ancestorPath = (ancestorResolution as HierarchyResolver.AncestorResolution.Linear).path
+
             var sourceKind = "transformer"   // "transformer" | "generator"
             var sourceId = ""
-            var curr = circuit
-            while (true) {
+            for (nodeId in ancestorPath) {
+                val curr = resolvedCircuits.find { it.id == nodeId } ?: break
                 val fedLower = curr.fedFrom.trim().lowercase()
                 if (fedLower in listOf("transformer", "ats", "generator", "grid")) {
                     val atsSource = if (fedLower == "ats")
@@ -72,9 +80,6 @@ object ShortCircuitEngine {
                     sourceId = if (sourceKind == "generator") (curr.assignedGeneratorId ?: "") else curr.transformerId
                     break
                 }
-                val parentId = circuitParents[curr.id]
-                if (parentId == null) break
-                curr = resolvedCircuits.find { it.id == parentId } ?: break
             }
 
             val c = 1.05
@@ -127,8 +132,8 @@ object ShortCircuitEngine {
             }
 
             // Walk the chain from this circuit up to transformer
-            var step: CircuitEntity? = circuit
-            while (step != null) {
+            for (nodeId in ancestorPath) {
+                val step = resolvedCircuits.find { it.id == nodeId } ?: continue
                 val stepSizing = sizingResults[step.id]
                 if (stepSizing != null) {
                     val rSeg = stepSizing.rUsed * step.length_m / (1000.0 * step.parallelRuns)
@@ -136,8 +141,6 @@ object ShortCircuitEngine {
                     rTotalOhm += rSeg
                     xTotalOhm += xSeg
                 }
-                val parentId = circuitParents[step.id]
-                step = if (parentId != null) resolvedCircuits.find { it.id == parentId } else null
             }
 
             val zTotalOhm = sqrt(rTotalOhm.pow(2) + xTotalOhm.pow(2))

@@ -400,5 +400,119 @@ class ShortCircuitEngineTest {
         assertEquals("DATA MISSING", res!!.status)
         assertEquals("-", res.cableCheck)
     }
+
+    @Test
+    fun calculate_selfParentedCircuit_terminatesImmediatelyWithDataMissing() {
+        val circuit = CircuitEntity(
+            id = 501,
+            circuitName = "LOOP-FEEDER",
+            fedFrom = "LOOP-FEEDER",
+            parentId = 501
+        )
+        val sizing = SizingResult(
+            Ib_A = 100.0,
+            deviceSize_A = 100.0,
+            deviceType = "MCCB",
+            cTotalDerating = 1.0,
+            iRequired_perCable_A = 100.0,
+            productCode = "Cu/XLPE",
+            cableSize_mm2 = "4x50 mm²",
+            conductorAreaMm2 = 50.0,
+            ratedI_table_A = 150.0,
+            capacity_derated_Iz_A = 150.0,
+            utilizationPct = 66.7,
+            neutral_mm2 = "50",
+            earthCPC_mm2 = "25",
+            voltDrop_V = 1.0,
+            vdPct = 0.25,
+            cumulativeVDpct = 0.25,
+            status = "PASS",
+            failReason = "",
+            cableMaterial = "Cu",
+            insulation = "XLPE",
+            kFactor = 143.0,
+            deviceBreakingKA = 50.0,
+            cableOD_mm = 20.0,
+            rUsed = 0.387,
+            xUsed = 0.08,
+            clearingTime_s = 0.1,
+            resultStatus = SizingResultStatus.PASS,
+            isAmpacityOk = true,
+            isVoltageDropOk = true,
+            primaryFailureCode = null
+        )
+
+        val results = ShortCircuitEngine.calculate(
+            resolvedCircuits = listOf(circuit),
+            circuitParents = mapOf(501 to 501),
+            sizingResults = mapOf(501 to sizing),
+            transformerResults = emptyMap()
+        )
+
+        val res = results[501]
+        assertNotNull(res)
+        assertEquals("DATA MISSING", res!!.status)
+        assertEquals("Circular hierarchy dependency detected in circuit ancestors", res.note)
+        assertEquals(0.0, res.iscKA, 0.0)
+        assertEquals("-", res.deviceCheck)
+        assertEquals("-", res.cableCheck)
+    }
+
+    @Test
+    fun calculate_circularHierarchy_terminatesImmediatelyWithDataMissing() {
+        val circuitA = CircuitEntity(id = 601, circuitName = "Panel-A", fedFrom = "Panel-B", parentId = 602)
+        val circuitB = CircuitEntity(id = 602, circuitName = "Panel-B", fedFrom = "Panel-A", parentId = 601)
+        val sizingA = SizingResult(
+            Ib_A = 100.0,
+            deviceSize_A = 100.0,
+            deviceType = "MCCB",
+            cTotalDerating = 1.0,
+            iRequired_perCable_A = 100.0,
+            productCode = "Cu/XLPE",
+            cableSize_mm2 = "4x50 mm²",
+            conductorAreaMm2 = 50.0,
+            ratedI_table_A = 150.0,
+            capacity_derated_Iz_A = 150.0,
+            utilizationPct = 66.7,
+            neutral_mm2 = "50",
+            earthCPC_mm2 = "25",
+            voltDrop_V = 1.0,
+            vdPct = 0.25,
+            cumulativeVDpct = 0.25,
+            status = "PASS",
+            failReason = "",
+            cableMaterial = "Cu",
+            insulation = "XLPE",
+            kFactor = 143.0,
+            deviceBreakingKA = 50.0,
+            cableOD_mm = 20.0,
+            rUsed = 0.387,
+            xUsed = 0.08,
+            clearingTime_s = 0.1,
+            resultStatus = SizingResultStatus.PASS,
+            isAmpacityOk = true,
+            isVoltageDropOk = true,
+            primaryFailureCode = null
+        )
+        val sizingB = sizingA.copy()
+
+        val results = ShortCircuitEngine.calculate(
+            resolvedCircuits = listOf(circuitA, circuitB),
+            circuitParents = mapOf(601 to 602, 602 to 601),
+            sizingResults = mapOf(601 to sizingA, 602 to sizingB),
+            transformerResults = emptyMap()
+        )
+
+        val resA = results[601]
+        val resB = results[602]
+        assertNotNull(resA)
+        assertNotNull(resB)
+        assertEquals("DATA MISSING", resA!!.status)
+        assertEquals("DATA MISSING", resB!!.status)
+        assertEquals("Circular hierarchy dependency detected in circuit ancestors", resA.note)
+        assertEquals("Circular hierarchy dependency detected in circuit ancestors", resB.note)
+        assertEquals(0.0, resA.iscKA, 0.0)
+        assertEquals(0.0, resB.iscKA, 0.0)
+    }
 }
 
