@@ -180,7 +180,10 @@ object CableSizingEngine {
     }
 
     fun getDepthDerating(installation: String, depth: Double): Double {
-        if (!isDirectBuried(installation)) return 1.0
+        // Gate on the canonical FAMILY (the same boundary the ampacity column and grouping use),
+        // not on the raw 'direct buried' phrase, so canonical 'D2'/'Buried' derives the same
+        // depth factor as 'Laid Direct in Ground' instead of silently skipping it.
+        if (canonicalInstallationFamily(installation) != "Buried") return 1.0
 
         val data = Catalog.deratingData ?: return 1.0
         val factorsObject = data
@@ -201,7 +204,9 @@ object CableSizingEngine {
     }
 
     fun getSoilDerating(installation: String, soilRes: Int): Double {
-        if (!isDirectBuried(installation)) return 1.0
+        // Same canonical-family gate as getDepthDerating, so depth and soil can never disagree
+        // about whether an installation is buried.
+        if (canonicalInstallationFamily(installation) != "Buried") return 1.0
 
         val data = Catalog.deratingData ?: return 1.0
         val factorsObject = data

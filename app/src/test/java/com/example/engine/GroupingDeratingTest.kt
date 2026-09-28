@@ -531,12 +531,13 @@ class GroupingDeratingTest {
             ground.cableSize_mm2, d2.cableSize_mm2
         )
 
-        // Deliberately NOT asserting capacity_derated_Iz_A here. N3 covers the ampacity COLUMN;
-        // the derating product is computed by getDepthDerating/getSoilDerating, which gate on
-        // isDirectBuried(installation) and therefore return 1.0 for the canonical family name
-        // "Buried" while "Laid Direct in Ground" matches on "direct". That gap predates N3
-        // (0.99 depth x 0.91 soil at the default burial/soil inputs), is untouched by this change,
-        // and must be triaged separately rather than folded into the column fix.
+        // Depth and soil derating now resolve through the same canonical family (N6), so the
+        // derated capacity is part of the alias invariant too; it is asserted directly here and
+        // factor-by-factor in testDerating_d2MatchesLaidDirectInGroundForDepthSoilAndDeratedCapacity.
+        n3CheckDouble(
+            "D2 must produce the same derated capacity as 'Laid Direct in Ground'",
+            ground.capacity_derated_Iz_A, d2.capacity_derated_Iz_A
+        )
 
         n3AssertAllCollected("D1/D2 must match their canonical family results")
     }
@@ -555,5 +556,83 @@ class GroupingDeratingTest {
         assertAmpacityColumn("D2", "Buried", 806)
 
         n3AssertAllCollected("All six installation values must follow their canonical family")
+    }
+
+    // ---------------------------------------------------------------------
+    // N6 — depth/soil derating must consume the same canonical family
+    // ---------------------------------------------------------------------
+
+    /**
+     * N6 RED/GREEN proof of the alias invariant on the derating side of the SAME calculation:
+     * `D2` and `Laid Direct in Ground` must be indistinguishable to every installation-dependent
+     * computation the engine performs — depth factor, soil factor, total derating, rated table
+     * current, derated Iz and the selected result — not only to the ampacity column.
+     *
+     * Both sides get identical depth/soil inputs ([CircuitEntity] defaults `burialDepth_m = 0.6 m`,
+     * `soilRes = 125 ohm.m`), so the installation value itself is the only variable.
+     */
+    @Test
+    fun testDerating_d2MatchesLaidDirectInGroundForDepthSoilAndDeratedCapacity() {
+        val depth = 0.6
+        val soil = 125
+
+        val depthRef = CableSizingEngine.getDepthDerating("Laid Direct in Ground", depth)
+        val depthD2 = CableSizingEngine.getDepthDerating("D2", depth)
+        val depthBuried = CableSizingEngine.getDepthDerating("Buried", depth)
+        val soilRef = CableSizingEngine.getSoilDerating("Laid Direct in Ground", soil)
+        val soilD2 = CableSizingEngine.getSoilDerating("D2", soil)
+        val soilBuried = CableSizingEngine.getSoilDerating("Buried", soil)
+
+        println(
+            "N6FACTOR|depth=ref:$depthRef|d2:$depthD2|buried:$depthBuried|" +
+                "soil=ref:$soilRef|d2:$soilD2|buried:$soilBuried"
+        )
+        n3CheckDouble("Depth derating for 'D2' must match 'Laid Direct in Ground'", depthRef, depthD2)
+        n3CheckDouble(
+            "Depth derating for canonical 'Buried' must match 'Laid Direct in Ground'",
+            depthRef, depthBuried
+        )
+        n3CheckDouble("Soil derating for 'D2' must match 'Laid Direct in Ground'", soilRef, soilD2)
+        n3CheckDouble(
+            "Soil derating for canonical 'Buried' must match 'Laid Direct in Ground'",
+            soilRef, soilBuried
+        )
+
+        val ground = CableSizingEngine.sizeCircuit(n3Circuit("Laid Direct in Ground", 819), 0.0, repository)
+        val d2 = CableSizingEngine.sizeCircuit(n3Circuit("D2", 820), 0.0, repository)
+
+        println(
+            "N6PAIR|reference=Laid Direct in Ground|alias=D2|" +
+                "cTotalDerating_ref=${ground.cTotalDerating}|cTotalDerating_alias=${d2.cTotalDerating}|" +
+                "ratedI_ref=${ground.ratedI_table_A}|ratedI_alias=${d2.ratedI_table_A}|" +
+                "Iz_ref=${ground.capacity_derated_Iz_A}|Iz_alias=${d2.capacity_derated_Iz_A}|" +
+                "size_ref=${ground.cableSize_mm2}|size_alias=${d2.cableSize_mm2}|" +
+                "status_ref=${ground.status}|status_alias=${d2.status}"
+        )
+        n3CheckDouble(
+            "Total derating for 'D2' must match 'Laid Direct in Ground'",
+            ground.cTotalDerating, d2.cTotalDerating
+        )
+        n3CheckDouble(
+            "Rated table current for 'D2' must match 'Laid Direct in Ground'",
+            ground.ratedI_table_A, d2.ratedI_table_A
+        )
+        n3CheckDouble(
+            "Derated Iz for 'D2' must match 'Laid Direct in Ground'",
+            ground.capacity_derated_Iz_A, d2.capacity_derated_Iz_A
+        )
+        n3CheckString(
+            "Selected size for 'D2' must match 'Laid Direct in Ground'",
+            ground.cableSize_mm2, d2.cableSize_mm2
+        )
+        n3CheckString(
+            "Sizing status for 'D2' must match 'Laid Direct in Ground'",
+            ground.status, d2.status
+        )
+
+        n3AssertAllCollected(
+            "D2 must be an exact alias of 'Laid Direct in Ground' for every installation-dependent " +
+                "sizing input"
+        )
     }
 }
