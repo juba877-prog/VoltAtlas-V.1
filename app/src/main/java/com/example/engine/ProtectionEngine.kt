@@ -155,9 +155,7 @@ object ProtectionEngine {
      *  - Cu/PVC  1 + 0.00393 × 50 = 1.1965
      *  - Cu/XLPE 1 + 0.00393 × 70 = 1.2751
      *  - Al/PVC  1 + 0.00403 × 50 = 1.2015
-     *  - Al/XLPE 1 + 0.00403 × 70 = 1.2821 by formula; 1.2827 as owner-specified (ENG-30 §12.2-b,
-     *    see closeout report — the two differ by 0.0006, 0.05 %, verdict-identical on every
-     *    bundled fixture).
+     *  - Al/XLPE 1 + 0.00403 × 70 = 1.2821
      *
      * Selected per circuit by [adsTempFactor] from `SizingResult.cableMaterial` + `insulation`.
      * Replaces the former flat `1.20` constant that ignored material and insulation.
@@ -165,7 +163,7 @@ object ProtectionEngine {
     const val TEMP_FACTOR_CU_PVC = 1.1965
     const val TEMP_FACTOR_CU_XLPE = 1.2751
     const val TEMP_FACTOR_AL_PVC = 1.2015
-    const val TEMP_FACTOR_AL_XLPE = 1.2827
+    const val TEMP_FACTOR_AL_XLPE = 1.2821
 
     /**
      * ADS temperature-correction factor for a circuit's conductor material and insulation.
