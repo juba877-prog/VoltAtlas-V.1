@@ -73,7 +73,7 @@ import org.robolectric.annotation.Config
  * Sequence:
  * Turn 1: "راجع الدائرة دي وقولي ليه الكابل فشل"
  *   -> Diagnostic evidence generated -> FailureDiagnosisCard with actual vs limit numbers.
- * Turn 2: "جرب 240" (What-if scenario exploration)
+ * Turn 2: "جرب 400" (What-if scenario exploration)
  *   -> In-memory calculation -> WhatIfResultCard -> Room database remains UNCHANGED.
  * Turn 3: "قارنه بالحالي"
  *   -> Retains both baseline and scenario evidence -> Deterministic comparison -> ComparisonCard.
@@ -255,14 +255,20 @@ class Gate8EndToEndFlowTest {
         assertTrue("Diagnosis text must state actual failure reason", diagCard.diagnosisText.isNotBlank())
         assertTrue("Remediation options must be provided", diagCard.remediationOptions.isNotEmpty())
 
+        // Fixture candidate correction caused by N3: 400 mm² is the smallest engine-authorized
+        // candidate for this seeded circuit when D1 correctly sizes from the canonical Duct column.
+        // 240 mm² was accepted only while D1 wrongly read the free-air ampacity column
+        // (air 532 A -> Iz 505.4 A vs 500 A device rating; duct 445 A -> Iz 422.8 A -> ampacity FAIL).
+        // Gate 8 validates the proposal WORKFLOW, not a fixed 240 mm² engineering requirement:
+        // this is a test-fixture correction exposed by N3, not a new production defect.
         // =========================================================================
-        // TURN 2: "جرب 240" (What-if scenario exploration)
+        // TURN 2: "جرب 400" (What-if scenario exploration)
         // =========================================================================
         val revBeforeTurn2 = repository.getCurrentRevision(projectId).revision
         val circuitBeforeTurn2 = database.circuitDao().getCircuitById(1)!!
 
         val turn2Resolved = ContextResolver.resolve(
-            userUtterance = "جرب 240",
+            userUtterance = "جرب 400",
             projectContext = boundedContext,
             priorState = taskState,
             historicalEvidence = evidenceHistory
@@ -270,7 +276,7 @@ class Gate8EndToEndFlowTest {
 
         assertEquals(AssistantIntent.WHAT_IF, turn2Resolved.updatedTaskState.primaryIntent)
         assertTrue(turn2Resolved.updatedTaskState.isWhatIfBranch)
-        assertEquals(240.0, turn2Resolved.updatedTaskState.typedWhatIfOverrides["targetSize"]?.decimalValue ?: 0.0, 0.001)
+        assertEquals(400.0, turn2Resolved.updatedTaskState.typedWhatIfOverrides["targetSize"]?.decimalValue ?: 0.0, 0.001)
 
         // Execute what-if tool with typed candidate override
         val outcome2 = runtime.dispatcher.execute(
@@ -280,8 +286,8 @@ class Gate8EndToEndFlowTest {
             entityId = "1",
             conversationId = turn2Resolved.updatedTaskState.taskId,
             arguments = mapOf(
-                "overrides" to mapOf("overrideCableSize" to "240"),
-                "overrideCableSize" to "240"
+                "overrides" to mapOf("overrideCableSize" to "400"),
+                "overrideCableSize" to "400"
             )
         )
 
@@ -300,7 +306,7 @@ class Gate8EndToEndFlowTest {
             action = ConversationAction(
                 actionType = ConversationActionType.RUN_WHAT_IF,
                 reasonCode = "RUN_WHAT_IF",
-                candidateParameters = mapOf("overrideCableSize" to "240")
+                candidateParameters = mapOf("overrideCableSize" to "400")
             ),
             updatedState = turn2Resolved.updatedTaskState.copy(
                 evidenceReferences = evidenceHistory.map { it.evidenceId }
@@ -318,7 +324,7 @@ class Gate8EndToEndFlowTest {
         assertTrue("Turn 2 active card must be WhatIfResultCard", turn2Ui.activeCard is AssistantCardUiModel.WhatIfResultCard)
         val whatIfCard = turn2Ui.activeCard as AssistantCardUiModel.WhatIfResultCard
         assertEquals(1L, whatIfCard.baseRevision)
-        assertTrue(whatIfCard.deltaSummary.contains("240 mm²"))
+        assertTrue(whatIfCard.deltaSummary.contains("400 mm²"))
 
         // =========================================================================
         // TURN 3: "قارنه بالحالي"
@@ -346,7 +352,7 @@ class Gate8EndToEndFlowTest {
             arguments = mapOf(
                 "candidates" to listOf(
                     mapOf("candidateId" to "CAND-70", "sizeMm2" to 70.0),
-                    mapOf("candidateId" to "CAND-240", "sizeMm2" to 240.0)
+                    mapOf("candidateId" to "CAND-400", "sizeMm2" to 400.0)
                 )
             )
         )
@@ -394,7 +400,7 @@ class Gate8EndToEndFlowTest {
             action = ConversationAction(
                 actionType = ConversationActionType.CREATE_PROPOSAL,
                 reasonCode = "ADOPT_NEW_SIZE",
-                candidateParameters = mapOf("overrideCableSize" to "240")
+                candidateParameters = mapOf("overrideCableSize" to "400")
             ),
             updatedState = turn4Resolved.updatedTaskState
         )
@@ -410,7 +416,7 @@ class Gate8EndToEndFlowTest {
         assertTrue("Proposal preparation must succeed and be Ready for review", prepResult is CableProposalPreparationCoordinator.Result.Ready)
         val ready = prepResult as CableProposalPreparationCoordinator.Result.Ready
 
-        assertEquals("240", ready.proposal.patch.overrideCableSize?.value)
+        assertEquals("400", ready.proposal.patch.overrideCableSize?.value)
         assertEquals("CIRCUIT", ready.proposal.targetEntityType)
         assertEquals("1", ready.proposal.targetEntityId)
 
