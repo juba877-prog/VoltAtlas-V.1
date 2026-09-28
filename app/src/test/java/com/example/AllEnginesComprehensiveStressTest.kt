@@ -14,14 +14,15 @@ class AllEnginesComprehensiveStressTest {
     @Before
     fun setupDataSheet() {
         originalDataSheet = Catalog.dataSheet
-        if (Catalog.dataSheet.isEmpty()) {
-            Catalog.dataSheet = listOf(
-                DataSheetEntry(16.0, 1.15, 0.082, 1.91, 1.38, 2.29),
-                DataSheetEntry(70.0, 0.268, 0.077, 0.443, 0.322, 0.532),
-                DataSheetEntry(185.0, 0.0991, 0.074, 0.164, 0.119, 0.197),
-                DataSheetEntry(630.0, 0.0283, 0.072, 0.0469, 0.0340, 0.0563)
-            )
-        }
+        // ENG-30 (§12.2-a): installed unconditionally (was: only when empty) so this class's
+        // ADS test is not hostage to whatever global catalog state a previous class left
+        // behind — a resolved size with no row is now DATA MISSING, i.e. r2_ohm_km = null.
+        Catalog.dataSheet = listOf(
+            DataSheetEntry(16.0, 1.15, 0.082, 1.91, 1.38, 2.29),
+            DataSheetEntry(70.0, 0.268, 0.077, 0.443, 0.322, 0.532),
+            DataSheetEntry(185.0, 0.0991, 0.074, 0.164, 0.119, 0.197),
+            DataSheetEntry(630.0, 0.0283, 0.072, 0.0469, 0.0340, 0.0563)
+        )
     }
 
     @After
@@ -112,7 +113,10 @@ class AllEnginesComprehensiveStressTest {
         val adsRes = ProtectionEngine.calculateAds(circuit, sizingResult, ze_ohm = 0.05)
         assertNotNull(adsRes)
         assertFalse("Calculated Zs must not be NaN", adsRes.calculatedZs.isNaN())
-        assertTrue("R2 resistance must be properly calculated", adsRes.r2_ohm_km >= 0.0)
+        // ENG-30 (§12.2-a): r2_ohm_km is Double? — null would mean the resolved size has no
+        // data_sheet row (DATA MISSING), which the fixture above guarantees it does.
+        assertNotNull("R2 resistance must resolve from the data_sheet fixture", adsRes.r2_ohm_km)
+        assertTrue("R2 resistance must be properly calculated", adsRes.r2_ohm_km!! >= 0.0)
         println("ALL ENGINES STRESS: Zs = ${adsRes.calculatedZs} ohm, Max Zs = ${adsRes.maxZsAllowed} ohm, Status = ${adsRes.status}")
     }
 

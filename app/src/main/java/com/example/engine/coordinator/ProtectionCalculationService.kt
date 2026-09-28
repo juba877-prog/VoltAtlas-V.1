@@ -63,6 +63,11 @@ object ProtectionCalculationService {
 
     /**
      * Fallback result when ADS calculation dependencies are missing.
+     *
+     * ENG-30 (§12.2-a): r1/r2 are null, not 0.0 — the sizing result is absent, so there is
+     * no conductor resistance to report. A 0.0 Ω/km here is not a physically meaningful
+     * zero (a real conductor never has zero resistance); it was only ever a placeholder for
+     * "no data", and 0.0 is exactly the value that made a missing-data loop read as a PASS.
      */
     fun buildMissingAdsResult(
         circuit: CircuitEntity,
@@ -76,8 +81,8 @@ object ProtectionCalculationService {
             maxZsAllowed = 0.0,
             status = status,
             disconnectionTime = "> 0.4s",
-            r1_ohm_km = 0.0,
-            r2_ohm_km = 0.0,
+            r1_ohm_km = null,
+            r2_ohm_km = null,
             length_m = circuit.length_m
         )
     }

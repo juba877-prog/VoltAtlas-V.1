@@ -3,6 +3,7 @@ package com.example
 import com.example.data.*
 import com.example.engine.*
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -116,8 +117,13 @@ class EngineFixesTest {
         // R2 of 35mm2 Cu is 0.524 ohm/km (Cu70)
         // Check if correct CPC resistance of 0.524 is used (r2_ohm_km = 0.524)
         // If the parsing was broken, r2 would equal r1 (1.15)
-        assertEquals(0.268, adsResult.r1_ohm_km, 0.001)
-        assertEquals(0.524, adsResult.r2_ohm_km, 0.001)
+        // ENG-30 (§12.2-a): r1_ohm_km/r2_ohm_km are now Double? — null would mean the size
+        // was resolved but has no data_sheet row. This test's fixture has both rows, so the
+        // values below must be present, not merely ">= 0".
+        assertNotNull("R1 must resolve from the data_sheet fixture", adsResult.r1_ohm_km)
+        assertNotNull("R2 must resolve from the data_sheet fixture", adsResult.r2_ohm_km)
+        assertEquals(0.268, adsResult.r1_ohm_km!!, 0.001)
+        assertEquals(0.524, adsResult.r2_ohm_km!!, 0.001)
     }
 
     @Test

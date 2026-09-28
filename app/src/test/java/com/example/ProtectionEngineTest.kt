@@ -1,13 +1,40 @@
 package com.example
 
+import com.example.data.Catalog
 import com.example.data.CircuitEntity
+import com.example.data.DataSheetEntry
 import com.example.engine.ProtectionEngine
 import com.example.engine.ShortCircuitResult
 import com.example.engine.SizingResult
+import org.junit.After
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 
 class ProtectionEngineTest {
+
+    private var originalDataSheet: List<DataSheetEntry> = emptyList()
+
+    /**
+     * ENG-30 (§12.2-a): the ADS tests below assert verdicts and warnings that only hold when
+     * the sizes they resolve (70 / 35 mm²) have data_sheet rows. Installing the fixture
+     * unconditionally removes a pre-existing dependence on whichever catalog state the
+     * previous test class happened to leave behind — a resolved size with no row is now
+     * DATA MISSING rather than a silent 0.0 Ω loop.
+     */
+    @Before
+    fun installDataSheetFixture() {
+        originalDataSheet = Catalog.dataSheet
+        Catalog.dataSheet = listOf(
+            DataSheetEntry(size = 70.0, R_Cu20 = 0.268, X = 0.08, R_Al20 = 0.443, R_Cu_70_est = 0.322, R_Al_70_est = 0.532),
+            DataSheetEntry(size = 35.0, R_Cu20 = 0.524, X = 0.08, R_Al20 = 0.868, R_Cu_70_est = 0.629, R_Al_70_est = 1.042)
+        )
+    }
+
+    @After
+    fun restoreDataSheetFixture() {
+        Catalog.dataSheet = originalDataSheet
+    }
 
     private fun createDummySizing(
         ib: Double = 144.3,
@@ -237,9 +264,15 @@ class ProtectionEngineTest {
     fun testParallelRuns_r1DividedByParallelRuns_r2NotDivided() {
         // 4 parallel runs of 70 mm² Cu cable (r1 = 0.268 ohm/km per run -> r1_eff = 0.067 ohm/km).
         // earthCPC = 35 mm² Cu (r2 = 0.524 ohm/km, NOT divided by parallelRuns).
-        // length = 370 m, tempFactor = 1.20, ze = 0.01 ohm.
-        // Pre-fix: (0.268 + 0.524) * 370 * 1.20 / 1000 + 0.01 = 0.3616 ohm -> rounds to 0.362 ohm > maxZs (0.35) -> false FAIL.
-        // Post-fix: (0.067 + 0.524) * 370 * 1.20 / 1000 + 0.01 = 0.2724 ohm -> rounds to 0.272 ohm <= maxZs (0.35) -> PASS.
+        // length = 370 m, ze = 0.01 ohm.
+        // ENG-30 (§12.2-b): tempFactor is no longer a flat 1.20 — this fixture's SizingResult
+        // defaults to Cu/XLPE, so the factor is 1.2751 (1 + 0.00393 × (90 − 20)).
+        // Pre-factor-fix (old assertion): (0.067 + 0.524) * 370 * 1.20 / 1000 + 0.01
+        //     = 0.272402 -> rounds to 0.272 ohm.
+        // Post-factor-fix:  (0.067 + 0.524) * 370 * 1.2751 / 1000 + 0.01
+        //     = 0.278826 + 0.01 = 0.288826 -> rounds to 0.289 ohm <= maxZs (0.35) -> PASS.
+        // Still catches the r1-division bug: without the /4 the same calc gives
+        //     0.373657 + 0.01 = 0.383657 -> 0.384 ohm > 0.35 -> "✗ FAIL".
         val originalDataSheet = com.example.data.Catalog.dataSheet
         try {
             com.example.data.Catalog.dataSheet = listOf(
@@ -259,7 +292,11 @@ class ProtectionEngineTest {
             val ads = ProtectionEngine.calculateAds(circuit, sizing, ze_ohm = 0.01, isZeResolved = true)
 
             assertEquals("Max Zs for 63 A Curve C from table is 0.35 ohm", 0.35, ads.maxZsAllowed, 0.001)
-            assertEquals("Calculated Zs must divide r1 by 4 but NOT r2: 0.272 ohm", 0.272, ads.calculatedZs, 0.001)
+            assertEquals(
+                "Calculated Zs must divide r1 by 4 but NOT r2, at the Cu/XLPE factor 1.2751: 0.289 ohm",
+                0.289, ads.calculatedZs, 0.0005
+            )
+            assertEquals("Cu/XLPE fixture must use the 1.2751 temperature factor", 1.2751, ads.tempFactor, 1e-9)
             assertEquals("Verdict must PASS with parallel r1 reduction", "✓ PASS", ads.status)
             assertEquals("Disconnection time must be < 0.4s", "< 0.4s", ads.disconnectionTime)
         } finally {

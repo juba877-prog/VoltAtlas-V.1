@@ -1,6 +1,8 @@
 package com.example
 
+import com.example.data.Catalog
 import com.example.data.CircuitEntity
+import com.example.data.DataSheetEntry
 import com.example.engine.GeneratorResult
 import com.example.engine.ProtectionEngine
 import com.example.engine.ShortCircuitEngine
@@ -8,7 +10,9 @@ import com.example.engine.SizingResult
 import com.example.engine.SizingResultStatus
 import com.example.engine.TransformerResult
 import com.example.engine.coordinator.EngineeringCalculationCoordinator
+import org.junit.After
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 
 /**
@@ -18,6 +22,29 @@ import org.junit.Test
  *  - H6: Ze derived from the feeding transformer instead of hardcoded 0.01 Ω
  */
 class Phase2RemediationTest {
+
+    private var originalDataSheet: List<DataSheetEntry> = emptyList()
+
+    /**
+     * ENG-30 (§12.2-a): the ADS test below asserts `calculatedZs == Ze`, which only holds when
+     * the 300 mm² phase and 150 mm² CPC rows exist in data_sheet.json — otherwise the engine
+     * correctly returns DATA MISSING with calculatedZs = 0.0 instead of a loop impedance.
+     * Rows are the bundled IEC 60228 Table 2 values. ShortCircuitEngine (the other tests in
+     * this class) reads no catalog, so this fixture cannot perturb them.
+     */
+    @Before
+    fun installDataSheetFixture() {
+        originalDataSheet = Catalog.dataSheet
+        Catalog.dataSheet = listOf(
+            DataSheetEntry(size = 150.0, R_Cu20 = 0.124, X = 0.075, R_Al20 = 0.206, R_Cu_70_est = 0.149, R_Al_70_est = 0.247),
+            DataSheetEntry(size = 300.0, R_Cu20 = 0.0601, X = 0.073, R_Al20 = 0.1, R_Cu_70_est = 0.0721, R_Al_70_est = 0.12)
+        )
+    }
+
+    @After
+    fun restoreDataSheetFixture() {
+        Catalog.dataSheet = originalDataSheet
+    }
 
     private fun tx(isc3: Double): TransformerResult = TransformerResult(
         connectedLoad = 500.0, circuitsAssigned = 1, realPower = 400.0, demandLoad = 400.0,
