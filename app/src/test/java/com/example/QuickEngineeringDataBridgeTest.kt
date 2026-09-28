@@ -170,6 +170,50 @@ class QuickEngineeringDataBridgeTest {
         assertNull("Non-existent size ampacity must return null", ampacity)
     }
 
+    /**
+     * N1: an unsupported installation method must never silently resolve to the free-air column.
+     *
+     * Fixture is the catalog row already asserted on by
+     * [bridge_resolvesBaseAmpacity_fromCableCatalog]: Elsewedy, "Cu/XLPE/PVC - 4C" (typeCode 15),
+     * 35 mm2 -> air = 154 A, duct = 138 A, gnd = 188 A.
+     */
+    @Test
+    fun bridge_unsupportedInstallation_doesNotFallBackToAir() {
+        val airValue = QuickEngineeringDataBridge.resolveBaseAmpacity(
+            sizeMm2 = 35.0,
+            cableType = "Cu/XLPE/PVC - 4C",
+            manufacturer = "Elsewedy",
+            installation = "Laid in Free Air"
+        )
+        assertEquals("Fixture sanity: catalog Air for this row is 154 A", 154.0, airValue!!, 0.001)
+
+        // N1 regression: "In Conduit" is explicitly unsupported by the ampacity catalog.
+        assertNull(
+            "N1: \"In Conduit\" must not resolve to the Air value (154 A)",
+            QuickEngineeringDataBridge.resolveBaseAmpacity(
+                sizeMm2 = 35.0,
+                cableType = "Cu/XLPE/PVC - 4C",
+                manufacturer = "Elsewedy",
+                installation = "In Conduit"
+            )
+        )
+
+        fun ampFor(installation: String) = QuickEngineeringDataBridge.resolveBaseAmpacity(
+            sizeMm2 = 35.0,
+            cableType = "Cu/XLPE/PVC - 4C",
+            manufacturer = "Elsewedy",
+            installation = installation
+        )
+
+        // Owner-approved mappings that must hold, unchanged:
+        assertEquals("Laid in Free Air must resolve the Air column", 154.0, ampFor("Laid in Free Air")!!, 0.001)
+        assertEquals("Laid in Ducts must resolve the Duct column", 138.0, ampFor("Laid in Ducts")!!, 0.001)
+        assertEquals("Laid Direct in Ground must resolve the Gnd column", 188.0, ampFor("Laid Direct in Ground")!!, 0.001)
+        assertEquals("Cable Tray must resolve the Air column", 154.0, ampFor("Cable Tray")!!, 0.001)
+        assertEquals("D1 alias must resolve the Duct column", 138.0, ampFor("D1")!!, 0.001)
+        assertEquals("D2 alias must resolve the Buried/Gnd column", 188.0, ampFor("D2")!!, 0.001)
+    }
+
     @Test
     fun bridge_manufacturersAndFamilies_matchAuthoritativeCatalog() {
         val mfgs = QuickEngineeringDataBridge.getAvailableManufacturers()

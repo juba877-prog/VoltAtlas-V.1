@@ -2,6 +2,7 @@ package com.example.ui.screens.quick
 
 import androidx.compose.runtime.Immutable
 import com.example.engine.converters.ElectricalConverters
+import com.example.engine.quick.BaseAmpacityResolution
 import com.example.engine.quick.QuickEngineeringDataBridge
 import com.example.engine.quick.ResolvedCableImpedance
 import java.util.Locale
@@ -22,7 +23,10 @@ enum class VoltageDropSystemPhase {
 enum class VoltageDropComplianceStatus {
     PASS,
     FAIL,
-    WARNING
+    WARNING,
+
+    /** The value this check needs could not be resolved, so no PASS/FAIL/WARNING can be asserted. */
+    DATA_MISSING
 }
 
 @Immutable
@@ -143,15 +147,20 @@ object VoltageDropCalculationEngine {
             )
         }
 
-        // 4. Resolve Base Ampacity (Iz) if in catalog mode
-        val baseAmpacity = if (!input.isManualOverride) {
-            bridge.resolveBaseAmpacity(
+        // 4. Resolve Base Ampacity (Iz) if in catalog mode.
+        // Manual override deliberately supplies R/X instead, so no catalog Iz is looked up: a null
+        // resolution here means "not from the catalog" and is already labelled MANUAL OVERRIDE in
+        // dataSource, not that a lookup failed.
+        val ampacityResolution: BaseAmpacityResolution? = if (!input.isManualOverride) {
+            bridge.resolveBaseAmpacityDetailed(
                 sizeMm2 = input.cableSizeMm2,
                 cableType = input.cableType,
                 manufacturer = input.manufacturer,
                 installation = input.installationMethod
             )
         } else null
+
+        val baseAmpacity = (ampacityResolution as? BaseAmpacityResolution.Resolved)?.ampacityA
 
         // 5. Invoke Authoritative Voltage Drop Converter
         // Parallel runs scaling: effective current per run = I / N (or effective R/N, X/N)
@@ -194,21 +203,47 @@ object VoltageDropCalculationEngine {
         )
 
         // B. Conductor Capacity Check
-        val ampacityCheck = baseAmpacity?.let { iz ->
-            val isAmpacityPass = currentPerRun <= iz + 0.0001
-            val loadingPct = (currentPerRun / iz) * 100.0
-            val ampStatus = if (isAmpacityPass) VoltageDropComplianceStatus.PASS else VoltageDropComplianceStatus.WARNING
-            val ampSummary = if (isAmpacityPass) {
-                "Conductor Loading: ${String.format(Locale.US, "%.1f", currentPerRun)} A ≤ ${String.format(Locale.US, "%.1f", iz)} A rating (${String.format(Locale.US, "%.1f", loadingPct)}% loaded)"
-            } else {
-                "Thermal Overload Warning: ${String.format(Locale.US, "%.1f", currentPerRun)} A exceeds ${String.format(Locale.US, "%.1f", iz)} A rating (${String.format(Locale.US, "%.1f", loadingPct)}% loaded)"
+        //
+        // N1: an unresolved base ampacity is surfaced as an explicit non-PASS check instead of
+        // being dropped, so a missing or unsupported installation method can never read as an
+        // implied PASS and never silently removes this check from the result.
+        val ampacityCheck: VoltageDropCheckResult? = when {
+            ampacityResolution == null -> null
+
+            ampacityResolution is BaseAmpacityResolution.Resolved -> {
+                val iz = ampacityResolution.ampacityA
+                val isAmpacityPass = currentPerRun <= iz + 0.0001
+                val loadingPct = (currentPerRun / iz) * 100.0
+                val ampStatus = if (isAmpacityPass) VoltageDropComplianceStatus.PASS else VoltageDropComplianceStatus.WARNING
+                val ampSummary = if (isAmpacityPass) {
+                    "Conductor Loading: ${String.format(Locale.US, "%.1f", currentPerRun)} A ≤ ${String.format(Locale.US, "%.1f", iz)} A rating (${String.format(Locale.US, "%.1f", loadingPct)}% loaded)"
+                } else {
+                    "Thermal Overload Warning: ${String.format(Locale.US, "%.1f", currentPerRun)} A exceeds ${String.format(Locale.US, "%.1f", iz)} A rating (${String.format(Locale.US, "%.1f", loadingPct)}% loaded)"
+                }
+                VoltageDropCheckResult(
+                    title = "Conductor Thermal Rating (Iz)",
+                    status = ampStatus,
+                    summaryText = ampSummary,
+                    detailText = "Source: cable_catalog.json (${input.manufacturer}, ${input.installationMethod})"
+                )
             }
-            VoltageDropCheckResult(
-                title = "Conductor Thermal Rating (Iz)",
-                status = ampStatus,
-                summaryText = ampSummary,
-                detailText = "Source: cable_catalog.json (${input.manufacturer}, ${input.installationMethod})"
-            )
+
+            else -> {
+                val unresolved = ampacityResolution as BaseAmpacityResolution.Unresolved
+                VoltageDropCheckResult(
+                    title = "Conductor Thermal Rating (Iz)",
+                    status = VoltageDropComplianceStatus.DATA_MISSING,
+                    summaryText = when (unresolved.reason) {
+                        BaseAmpacityResolution.Reason.UNSUPPORTED_INSTALLATION ->
+                            "DATA MISSING — base cable ampacity cannot be resolved for installation " +
+                                "method '${input.installationMethod}'."
+                        BaseAmpacityResolution.Reason.CATALOG_MISS ->
+                            "DATA MISSING — base cable ampacity cannot be resolved for " +
+                                "${input.cableSizeMm2} mm2 ${input.cableType} from ${input.manufacturer}."
+                    },
+                    detailText = unresolved.detail
+                )
+            }
         }
 
         // 7. Format Calculation Details & Step-by-Step Mathematical Substitution

@@ -171,6 +171,12 @@ fun QuickStatusBanner(
             Icons.Default.Cancel,
             "FAIL"
         )
+        VoltageDropComplianceStatus.DATA_MISSING -> Tuple4(
+            SleekPrimary.copy(alpha = 0.12f),
+            SleekPrimary,
+            Icons.Default.Info,
+            "DATA MISSING"
+        )
     }
 
     Card(
@@ -270,11 +276,13 @@ fun QuickCheckRow(
         VoltageDropComplianceStatus.PASS -> SleekPass
         VoltageDropComplianceStatus.WARNING -> SleekWarning
         VoltageDropComplianceStatus.FAIL -> SleekFail
+        VoltageDropComplianceStatus.DATA_MISSING -> SleekPrimary
     }
     val icon = when (status) {
         VoltageDropComplianceStatus.PASS -> Icons.Default.CheckCircle
         VoltageDropComplianceStatus.WARNING -> Icons.Default.Warning
         VoltageDropComplianceStatus.FAIL -> Icons.Default.Cancel
+        VoltageDropComplianceStatus.DATA_MISSING -> Icons.Default.Info
     }
 
     Row(

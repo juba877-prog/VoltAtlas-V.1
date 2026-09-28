@@ -249,6 +249,48 @@ class VoltageDropV2CalculationTest {
         assertTrue("Summary must state overload", result.ampacityCheck!!.summaryText.contains("Overload"))
     }
 
+    /**
+     * N1 downstream: an unsupported installation method must surface an explicit non-PASS result.
+     * The check may never be dropped from the result, and no Air/Duct/Buried value may be
+     * fabricated in its place.
+     */
+    @Test
+    fun testAmpacityCheck_unsupportedInstallation_surfacesDataMissing() {
+        val input = VoltageDropInputState(
+            currentA = 100.0,
+            lengthM = 50.0,
+            cableSizeMm2 = 35.0,
+            manufacturer = "Elsewedy",
+            cableType = "Cu/XLPE/PVC - 4C",
+            installationMethod = "In Conduit"
+        )
+
+        val result = VoltageDropCalculationEngine.calculate(input)!!
+        assertNotNull("Ampacity check must never be omitted silently", result.ampacityCheck)
+
+        val check = result.ampacityCheck!!
+        assertEquals(
+            "Unresolved ampacity must be DATA MISSING",
+            VoltageDropComplianceStatus.DATA_MISSING,
+            check.status
+        )
+        assertNotEquals(
+            "Never PASS when the base ampacity is unresolved",
+            VoltageDropComplianceStatus.PASS,
+            check.status
+        )
+        assertTrue(
+            "Summary must carry the DATA MISSING wording",
+            check.summaryText.startsWith("DATA MISSING")
+        )
+        assertTrue(
+            "Summary must name the offending installation method",
+            check.summaryText.contains("'In Conduit'")
+        )
+        assertTrue("Detail must explain the supported bases", check.detailText.isNotBlank())
+        assertNull("No fabricated ampacity value may be published", result.baseAmpacityA)
+    }
+
     @Test
     fun testManualOverride_usesSuppliedImpedanceAndLabelsDataSource() {
         val overrideInput = VoltageDropInputState(
