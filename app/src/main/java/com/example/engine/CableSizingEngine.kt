@@ -321,6 +321,32 @@ object CableSizingEngine {
         INSTALLATION_ALIASES[installation.trim().lowercase()] ?: installation
 
     /**
+     * Resolves the single canonical installation family — `Buried`, `Duct` or `Air` — for
+     * [installation], which is expected to be the output of [canonicalInstallation] (the call is
+     * repeated here because it is idempotent, so the single alias table stays the only
+     * normalization boundary).
+     *
+     * This is the one place an installation becomes an ampacity column selection. It mirrors the
+     * family rules the derating lookups use, so the base rating and the derating can never read
+     * different installation semantics — which is what let `D1`/`D2` reach the free-air column.
+     *
+     * Returns null for anything the catalog has no family for, so an unrecognised installation
+     * yields no numeric ampacity instead of a silently substituted one.
+     */
+    private fun canonicalInstallationFamily(installation: String): String? {
+        val canonical = canonicalInstallation(installation)
+        val normalized = canonical.trim().lowercase()
+        return when {
+            isDirectBuried(canonical) || normalized == "buried" -> "Buried"
+            normalized.contains("duct") -> "Duct"
+            normalized.contains("free air") ||
+                normalized.contains("tray") ||
+                normalized == "air" -> "Air"
+            else -> null
+        }
+    }
+
+    /**
      * Returns the specific, user-actionable failure message for an installation method this catalog
      * cannot compute, or null when the method is supported (or is merely unknown and will fall
      * through to the generic grouping-derating failure).
@@ -344,17 +370,22 @@ object CableSizingEngine {
             (value.contains("ground") || value.contains("buried"))
     }
 
-    private fun ampacityOf(
-        entry: CableCatalogEntry,
-        installation: String
-    ): Double {
-        val value = installation.trim().lowercase()
-        return when {
-            isDirectBuried(installation) -> entry.gnd.toDouble()
-            value.contains("duct") -> entry.duct.toDouble()
-            else -> entry.air.toDouble()
+    /**
+     * Base ampacity for [entry] from the canonical family resolved by
+     * [canonicalInstallationFamily] — never from the raw installation string.
+     *
+     * The families are explicit and exhaustive: `Buried` -> gnd, `Duct` -> duct, `Air` -> air.
+     * There is deliberately no catch-all branch, so an unknown family yields no numeric ampacity
+     * (null) rather than being reported as a free-air rating. `CableCatalogEntry` already stores
+     * these as `Double`, so no conversion is needed.
+     */
+    private fun ampacityOf(entry: CableCatalogEntry, installationFamily: String?): Double? =
+        when (installationFamily) {
+            "Air" -> entry.air
+            "Duct" -> entry.duct
+            "Buried" -> entry.gnd
+            else -> null
         }
-    }
 
     private fun rxValueOf(size: Double, rColumn: String): Pair<Double, Double>? {
         val sheet = Catalog.dataSheet.firstOrNull {
@@ -516,6 +547,9 @@ object CableSizingEngine {
         // here so EVERY derating lookup below sees the same, resolvable method. Applying the alias
         // in only one derating helper would leave the others reading an unresolvable code.
         val installation = canonicalInstallation(circuit.installation)
+        // One canonical family drives the ampacity column too, so the base rating can never be read
+        // from a different installation interpretation than the derating computed from `installation`.
+        val installationFamily = canonicalInstallationFamily(installation)
         val normalizedInstallation = installation.trim().lowercase()
         val relevantTemperature = if (
             normalizedInstallation.contains("free air") ||
@@ -666,7 +700,10 @@ object CableSizingEngine {
         )
 
         fun checkCandidate(entry: CableCatalogEntry): CandidateCheck? {
-            val ratedCurrentA = ampacityOf(entry, circuit.installation)
+            // The upstream grouping-derating lookup already failed the circuit for any family that
+            // does not resolve, so this null is defence in depth: reject the candidate rather than
+            // size it against a substituted column.
+            val ratedCurrentA = ampacityOf(entry, installationFamily) ?: return null
             val izDeratedA =
                 ratedCurrentA * circuit.parallelRuns * cTotalDerating * harmonicPhaseFactor
 

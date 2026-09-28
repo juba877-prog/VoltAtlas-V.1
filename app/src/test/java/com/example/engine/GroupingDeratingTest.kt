@@ -382,4 +382,178 @@ class GroupingDeratingTest {
         assertNull(CableSizingEngine.unsupportedInstallationMessage("Laid Direct in Ground"))
         assertNull(CableSizingEngine.unsupportedInstallationMessage("Cable Tray"))
     }
+
+    // ---------------------------------------------------------------------
+    // N3 — the ampacity COLUMN must follow the canonical installation family
+    // ---------------------------------------------------------------------
+
+    /**
+     * Mismatches collected across a whole test, so a single run reports EVERY alias instead of
+     * aborting on the first one (needed to capture raw RED evidence for both D1 and D2).
+     */
+    private val n3Mismatches = mutableListOf<String>()
+
+    private fun n3CheckDouble(message: String, expected: Double, actual: Double) {
+        if (kotlin.math.abs(expected - actual) > 1e-9) {
+            n3Mismatches += "$message — expected:<$expected> but was:<$actual>"
+        }
+    }
+
+    private fun n3CheckString(message: String, expected: String, actual: String) {
+        if (expected != actual) {
+            n3Mismatches += "$message — expected:<$expected> but was:<$actual>"
+        }
+    }
+
+    private fun n3AssertAllCollected(context: String) {
+        assertTrue(
+            "$context:\n" + n3Mismatches.joinToString("\n"),
+            n3Mismatches.isEmpty()
+        )
+    }
+
+    /**
+     * Fixture that actually resolves in the loaded catalog (`Cu/XLPE/PVC - 4C`, typeCode 15,
+     * 21 Elsewedy rows) so the circuit reaches candidate evaluation.
+     *
+     * The shared [circuitWithInstallation] fixture names a cableType that exists in neither
+     * `cable_types_data.json` nor `cable_types.json`, so it stops at CATALOG_MISSING with
+     * ratedI_table_A = 0.0 and never exercises the ampacity column at all.
+     */
+    private fun n3Circuit(installation: String, id: Int) = CircuitEntity(
+        id = id,
+        circuitName = "N3-$id",
+        loadKVA = 500.0,
+        pf = 0.8,
+        phases = "3P+N",
+        voltageV = 400,
+        length_m = 50.0,
+        installation = installation,
+        cableType = "Cu/XLPE/PVC - 4C",
+        manufacturer = "Elsewedy",
+        parallelRuns = 1,
+        noCircuits = 4,
+        formation = "Flat",
+        spacing = "Touching"
+    )
+
+    /**
+     * Sizes the fixture circuit for [installation] and asserts the raw catalog column that was
+     * actually used, so the mapping is proven through the public [CableSizingEngine.sizeCircuit]
+     * path rather than by reaching into the private selection helper.
+     *
+     * [expectedFamily] names the family the value must collapse to after canonicalisation:
+     * `Air`, `Duct` or `Buried`.
+     */
+    private fun assertAmpacityColumn(installation: String, expectedFamily: String, id: Int) {
+        val result = CableSizingEngine.sizeCircuit(n3Circuit(installation, id), 0.0, repository)
+
+        if (result.ratedI_table_A <= 0.0) {
+            n3Mismatches += "'$installation' must be sized against a catalog column, got status=" +
+                "'${result.status}', failReason='${result.failReason}'"
+            return
+        }
+
+        val selectedSize = result.cableSize_mm2.substringBefore(" ").toDouble()
+        val typeCode = repository.cableTypesData
+            .firstOrNull { it.cableType.trim().equals("Cu/XLPE/PVC - 4C", ignoreCase = true) }
+            ?.typeCode
+            ?: Catalog.cableTypes.first {
+                it.cableType.trim().equals("Cu/XLPE/PVC - 4C", ignoreCase = true)
+            }.code
+        val row = repository.cableProducts.firstOrNull {
+            it.mfg.trim().equals("Elsewedy", ignoreCase = true) &&
+                it.typeCode == typeCode &&
+                it.size == selectedSize
+        } ?: throw AssertionError(
+            "No catalog row for size=${result.cableSize_mm2}, typeCode=$typeCode"
+        )
+
+        val expectedAmpacity = when (expectedFamily) {
+            "Air" -> row.air
+            "Duct" -> row.duct
+            "Buried" -> row.gnd
+            else -> throw AssertionError("Unknown expected family '$expectedFamily'")
+        }
+
+        println(
+            "N3COLUMN|installation=$installation|family=$expectedFamily|size=${result.cableSize_mm2}|" +
+                "ratedI_table_A=${result.ratedI_table_A}|air=${row.air}|duct=${row.duct}|gnd=${row.gnd}|" +
+                "status=${result.status}"
+        )
+
+        n3CheckDouble(
+            "'$installation' must take the $expectedFamily column at size=${result.cableSize_mm2} " +
+                "(air=${row.air}, duct=${row.duct}, gnd=${row.gnd})",
+            expectedAmpacity,
+            result.ratedI_table_A
+        )
+    }
+
+    /**
+     * N3 RED/GREEN proof: the IEC reference-method aliases must produce the identical engineering
+     * verdict as the catalog family they alias, because every derating lookup is already
+     * canonicalised before use.
+     */
+    @Test
+    fun testAmpacityColumn_d1AndD2MatchTheirCanonicalFamilyResults() {
+        val ducts = CableSizingEngine.sizeCircuit(n3Circuit("Laid in Ducts", 811), 0.0, repository)
+        val d1 = CableSizingEngine.sizeCircuit(n3Circuit("D1", 812), 0.0, repository)
+        println(
+            "N3PAIR|reference=Laid in Ducts|alias=D1|ratedI_ref=${ducts.ratedI_table_A}|" +
+                "ratedI_alias=${d1.ratedI_table_A}|size_ref=${ducts.cableSize_mm2}|size_alias=${d1.cableSize_mm2}"
+        )
+        n3CheckDouble(
+            "D1 must take the same ampacity column as 'Laid in Ducts'",
+            ducts.ratedI_table_A, d1.ratedI_table_A
+        )
+        n3CheckString(
+            "D1 must select the same cable size as 'Laid in Ducts'",
+            ducts.cableSize_mm2, d1.cableSize_mm2
+        )
+        n3CheckDouble(
+            "D1 must produce the same derated capacity as 'Laid in Ducts'",
+            ducts.capacity_derated_Iz_A, d1.capacity_derated_Iz_A
+        )
+
+        val ground = CableSizingEngine.sizeCircuit(n3Circuit("Laid Direct in Ground", 813), 0.0, repository)
+        val d2 = CableSizingEngine.sizeCircuit(n3Circuit("D2", 814), 0.0, repository)
+        println(
+            "N3PAIR|reference=Laid Direct in Ground|alias=D2|ratedI_ref=${ground.ratedI_table_A}|" +
+                "ratedI_alias=${d2.ratedI_table_A}|size_ref=${ground.cableSize_mm2}|size_alias=${d2.cableSize_mm2}"
+        )
+        n3CheckDouble(
+            "D2 must take the same ampacity column as 'Laid Direct in Ground'",
+            ground.ratedI_table_A, d2.ratedI_table_A
+        )
+        n3CheckString(
+            "D2 must select the same cable size as 'Laid Direct in Ground'",
+            ground.cableSize_mm2, d2.cableSize_mm2
+        )
+
+        // Deliberately NOT asserting capacity_derated_Iz_A here. N3 covers the ampacity COLUMN;
+        // the derating product is computed by getDepthDerating/getSoilDerating, which gate on
+        // isDirectBuried(installation) and therefore return 1.0 for the canonical family name
+        // "Buried" while "Laid Direct in Ground" matches on "direct". That gap predates N3
+        // (0.99 depth x 0.91 soil at the default burial/soil inputs), is untouched by this change,
+        // and must be triaged separately rather than folded into the column fix.
+
+        n3AssertAllCollected("D1/D2 must match their canonical family results")
+    }
+
+    /**
+     * Explicit canonical-family coverage for all six owner-approved installation values, asserting
+     * the exact catalog column used for each.
+     */
+    @Test
+    fun testAmpacityColumn_sixInstallationValuesFollowThreeCanonicalFamilies() {
+        assertAmpacityColumn("Laid in Free Air", "Air", 801)
+        assertAmpacityColumn("Cable Tray", "Air", 802)
+        assertAmpacityColumn("Laid in Ducts", "Duct", 803)
+        assertAmpacityColumn("D1", "Duct", 804)
+        assertAmpacityColumn("Laid Direct in Ground", "Buried", 805)
+        assertAmpacityColumn("D2", "Buried", 806)
+
+        n3AssertAllCollected("All six installation values must follow their canonical family")
+    }
 }
