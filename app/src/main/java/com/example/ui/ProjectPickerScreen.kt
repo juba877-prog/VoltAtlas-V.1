@@ -159,7 +159,13 @@ fun ProjectPickerScreen(
     
     var searchQuery by rememberSaveable { mutableStateOf("") }
 
-    BackHandler(enabled = true) {
+    // Navigation 3 owns destination-level Back (animated pop back to the Entry root).
+    // This handler only consumes Back while the picker has internal state to unwind:
+    // search text, or the exit prompt when hosted without an entry root (standalone).
+    val hasInternalBackState = showCreateDialog || showRenameDialog != null ||
+        showDeleteConfirm != null || showImportDialog || showExitAppDialog ||
+        searchQuery.isNotBlank() || onBackToEntry == null
+    BackHandler(enabled = hasInternalBackState) {
         when {
             showCreateDialog -> showCreateDialog = false
             showRenameDialog != null -> showRenameDialog = null
@@ -167,9 +173,6 @@ fun ProjectPickerScreen(
             showImportDialog -> showImportDialog = false
             showExitAppDialog -> showExitAppDialog = false
             searchQuery.isNotBlank() -> searchQuery = ""
-            // With the entry/mode-selection screen as the app root, Back from the picker
-            // returns there instead of terminating the app.
-            onBackToEntry != null -> onBackToEntry()
             else -> showExitAppDialog = true
         }
     }

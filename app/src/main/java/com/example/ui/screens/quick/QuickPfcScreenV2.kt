@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
@@ -77,6 +78,8 @@ data class PfcScreenUiState(
 fun QuickPfcScreenV2(
     onBack: () -> Unit
 ) {
+
+
     val context = LocalContext.current
 
     // ── 1. Reactive UI Input States ──

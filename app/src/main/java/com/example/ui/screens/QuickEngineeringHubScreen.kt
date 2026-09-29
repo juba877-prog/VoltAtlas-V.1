@@ -1,6 +1,6 @@
 package com.example.ui.screens
 
-import androidx.activity.compose.BackHandler
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -64,8 +64,7 @@ fun QuickEngineeringHubScreen(
     onSelectTool: (String) -> Unit,
     onBack: () -> Unit
 ) {
-    // Intercept system/hardware/gesture back to return cleanly to Home (ProjectPickerScreen)
-    BackHandler(onBack = onBack)
+
 
     var searchQuery by rememberSaveable { mutableStateOf("") }
 

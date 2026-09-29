@@ -1,8 +1,12 @@
 package com.example.ui
 
-import androidx.activity.BackEventCompat
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.PredictiveBackHandler
+import androidx.navigation3.runtime.NavEntry
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.ui.NavDisplay
+import androidx.navigation3.scene.DialogSceneStrategy
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.graphics.graphicsLayer
@@ -55,6 +59,31 @@ import com.example.ui.components.StatusBadge
 import com.example.ui.theme.*
 import com.example.sld.SldScreen
 import com.example.ui.screens.*
+import com.example.navigation.BoqProcurementKey
+import com.example.navigation.CircuitsKey
+import com.example.navigation.ConduitsKey
+import com.example.navigation.ConversionsKey
+import com.example.navigation.DiagnosticsDialogKey
+import com.example.navigation.EntryKey
+import com.example.navigation.MethodologyKey
+import com.example.navigation.MoreModulesKey
+import com.example.navigation.NewProjectConfirmDialogKey
+import com.example.navigation.PanelScheduleKey
+import com.example.navigation.PowerSystemsKey
+import com.example.navigation.ProjectPickerKey
+import com.example.navigation.ProtectionKey
+import com.example.navigation.QuickHubKey
+import com.example.navigation.QuickToolKey
+import com.example.navigation.SldKey
+import com.example.navigation.TransformersKey
+import com.example.navigation.WorkspaceHomeKey
+import com.example.navigation.WorkspaceNavigator
+import com.example.navigation.WorkspaceListDetailScene
+import com.example.navigation.rememberWorkspaceListDetailSceneStrategy
+import com.example.navigation.WorkspaceSettingsKey
+import com.example.navigation.rememberWorkspaceNavigationState
+import com.example.navigation.toDecoratedEntries
+import com.example.navigation.workspaceTabIndex
 import com.example.ui.dialogs.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -97,7 +126,21 @@ fun MainLayout(
         }
     }
 
-    var currentTab by rememberSaveable { mutableStateOf(0) }
+    // Navigation 3 back stack for the app-level flow (entry / picker / quick engineering).
+    // Hoisted above the workspace branch so the stack survives while a project is open and
+    // the workspace temporarily replaces the NavDisplay.
+    val appBackStack = rememberNavBackStack(EntryKey)
+
+    // Navigation 3 workspace state (multiple back stacks). Hoisted above every branch so the
+    // per-tab stacks survive while the app-level flow (or the welcome sheet) is on screen.
+    val workspaceState = rememberWorkspaceNavigationState()
+    val workspaceNavigator = remember(workspaceState) {
+        WorkspaceNavigator(workspaceState) { viewModel.closeProject() }
+    }
+    // Legacy Int tab index of the visible workspace destination: the shell chrome
+    // (bottom bar / rail selection, module title, assistant context) keeps speaking
+    // the pre-Navigation 3 `currentTab` contract.
+    val currentTabIndex = workspaceState.currentKey.workspaceTabIndex()
 
     val hasCompletedFirstLaunch by viewModel.preferences.hasCompletedFirstLaunch.collectAsState()
     var showWelcomeSheet by remember { mutableStateOf(!hasCompletedFirstLaunch) }
@@ -118,7 +161,7 @@ fun MainLayout(
                 viewModel.preferences.setHasCompletedFirstLaunch(true)
                 showWelcomeSheet = false
                 viewModel.closeGlobalSettings()
-                currentTab = 11
+                workspaceNavigator.navigateToTabIndex(11)
             }
         )
     }
@@ -126,15 +169,6 @@ fun MainLayout(
     var showPdfExportDialog by rememberSaveable { mutableStateOf(false) }
     val pdfScope = rememberCoroutineScope()
     var currentReportOptions by remember { mutableStateOf(com.example.pdf.ReportOptions()) }
-
-    var showQuickEngineering by rememberSaveable { mutableStateOf(false) }
-    var selectedQuickToolId by rememberSaveable { mutableStateOf<String?>(null) }
-    // VoltAtlas entry / mode selection is the app's top-level destination:
-    // App launch -> Mode Selection -> { Projects | Quick Engineering }.
-    var entryModeChosen by rememberSaveable { mutableStateOf(false) }
-
-    // SLICE 8B: direction memory for the Project Picker <-> Workspace entry.
-    var previousHadActiveProject by rememberSaveable { mutableStateOf(false) }
 
     val reduceMotion = com.example.ui.theme.LocalReduceMotion.current
 
@@ -155,107 +189,68 @@ fun MainLayout(
         return
     }
 
-    // ===== ENTRY / MODE SELECTION SCREEN (first destination, §1) =====
-    if (!entryModeChosen) {
-        VoltAtlasEntryScreen(
-            onOpenProjects = { entryModeChosen = true },
-            onOpenQuickEngineering = {
-                entryModeChosen = true
-                showQuickEngineering = true
-                selectedQuickToolId = null
+    // ===== APP-LEVEL FLOW (Navigation 3) =====
+    // Entry -> { Project Picker | Quick Engineering hub -> Quick tool } now lives on a
+    // Navigation 3 back stack. The workspace (project open) keeps the existing state-based
+    // router and temporarily replaces the NavDisplay; the stack is hoisted above so it
+    // survives that period.
+    //
+    // Entry-gate recovery: while the stack root (mode selection) is current, the NavDisplay
+    // owns the frame even if a project is already active (e.g. restored from storage), so a
+    // restored workspace still passes through the entry screen first.
+    val isOnAppRoot = appBackStack.lastOrNull() == EntryKey
+    if (isOnAppRoot || activeId == null) {
+        NavDisplay(
+            backStack = appBackStack,
+            onBack = {
+                // Root destination: the Entry screen owns Back (exit confirmation).
+                if (appBackStack.size > 1) appBackStack.removeLastOrNull()
             },
-            onOpenSettings = { viewModel.openGlobalSettings() }
+            entryProvider = { key ->
+                when (key) {
+                    is EntryKey -> NavEntry(key) {
+                        VoltAtlasEntryScreen(
+                            onOpenProjects = { appBackStack.add(ProjectPickerKey) },
+                            onOpenQuickEngineering = { appBackStack.add(QuickHubKey) },
+                            onOpenSettings = { viewModel.openGlobalSettings() }
+                        )
+                    }
+                    is ProjectPickerKey -> NavEntry(key) {
+                        ProjectPickerScreen(
+                            projects = projects,
+                            onCreateProject = { name -> viewModel.createAndOpenProject(name) },
+                            onOpenProject = { id -> viewModel.openProject(id) },
+                            onRenameProject = { id, newName -> viewModel.renameProject(id, newName) },
+                            onDeleteProject = { id -> viewModel.deleteProject(id) },
+                            onExportProjectJson = { id -> viewModel.exportProjectJson(id) },
+                            onImportProjectJson = { jsonStr, callback -> viewModel.importProjectJson(jsonStr, callback) },
+                            onOpenSettings = { viewModel.openGlobalSettings() },
+                            onBackToEntry = { appBackStack.removeLastOrNull() },
+                            confirmDestructiveActions = confirmDestructiveActions
+                        )
+                    }
+                    is QuickHubKey -> NavEntry(key) {
+                        QuickEngineeringHubScreen(
+                            onSelectTool = { appBackStack.add(QuickToolKey(it)) },
+                            onBack = { appBackStack.removeLastOrNull() }
+                        )
+                    }
+                    is QuickToolKey -> NavEntry(key) {
+                        QuickToolDestination(
+                            toolId = key.toolId,
+                            onBack = { appBackStack.removeLastOrNull() }
+                        )
+                    }
+                    else -> error("Unknown VoltAtlas destination: $key")
+                }
+            }
         )
         return
     }
 
-    if (showQuickEngineering) {
-        val activeToolId = selectedQuickToolId
-        // SLICE 8B: directional shared-axis transition Hub <-> individual tool.
-        // AnimatedContent keeps per-target saved state (scroll position,
-        // entered inputs) so switching does not recreate screen state.
-        androidx.compose.animation.AnimatedContent(
-            targetState = activeToolId,
-            transitionSpec = {
-                val direction = if (targetState == null) {
-                    VoltAtlasMotion.NavigationDirection.Backward
-                } else {
-                    VoltAtlasMotion.NavigationDirection.Forward
-                }
-                VoltAtlasMotion.tabContentTransform(
-                    direction = direction,
-                    reduceMotion = reduceMotion
-                )
-            },
-            label = "QuickToolSwitchAnimation"
-        ) { toolId ->
-            if (toolId == null) {
-                QuickEngineeringHubScreen(
-                    onSelectTool = { selectedQuickToolId = it },
-                    onBack = {
-                        showQuickEngineering = false
-                        selectedQuickToolId = null
-                        // Leaving Quick Engineering returns to the entry screen (app root).
-                        entryModeChosen = false
-                    }
-                )
-            } else {
-                when (toolId) {
-                    "cable_sizing" -> QuickCableCalcScreen(onBack = { selectedQuickToolId = null })
-                    "voltage_drop" -> com.example.ui.screens.quick.QuickVoltageDropScreenV2(onBack = { selectedQuickToolId = null })
-                    "conduit_fill" -> com.example.ui.screens.quick.QuickConduitFillScreen(onBack = { selectedQuickToolId = null })
-                    "load_current" -> com.example.ui.screens.quick.QuickLoadCurrentScreenV2(onBack = { selectedQuickToolId = null })
-                    "power_triangle" -> QuickPowerTriangleScreen(onBack = { selectedQuickToolId = null })
-                    "pfc" -> com.example.ui.screens.quick.QuickPfcScreenV2(onBack = { selectedQuickToolId = null })
-                    "motor_starter" -> com.example.ui.screens.quick.QuickMotorStarterScreen(onBack = { selectedQuickToolId = null })
-                    "breaker_select" -> com.example.ui.screens.quick.QuickBreakerSelectScreen(onBack = { selectedQuickToolId = null })
-                    "earthing" -> com.example.ui.screens.quick.QuickEarthingScreen(onBack = { selectedQuickToolId = null })
-                    "generator_quick" -> com.example.ui.screens.quick.QuickGeneratorScreen(onBack = { selectedQuickToolId = null })
-                    "ups_battery" -> com.example.ui.screens.quick.QuickUpsScreen(onBack = { selectedQuickToolId = null })
-                    "ats_sizing" -> com.example.ui.screens.quick.QuickAtsScreen(onBack = { selectedQuickToolId = null })
-                    "transformer_quick" -> QuickTransformerScreen(onBack = { selectedQuickToolId = null })
-                    "transformer_sc" -> QuickTransformerScScreen(onBack = { selectedQuickToolId = null })
-                    "lighting" -> QuickLightingScreen(onBack = { selectedQuickToolId = null })
-                    else -> QuickCableCalcScreen(onBack = { selectedQuickToolId = null })
-                }
-            }
-        }
-        return
-    }
 
-    if (activeId == null) {
-        // SLICE 8B: Project Picker re-entry after closing a workspace reads as
-        // Backward (mirrors Forward workspace entry). Cold launch plays NO
-        // entrance animation (performance guardrail: no motion on cold start).
-        val pickerContent: @Composable () -> Unit = {
-            ProjectPickerScreen(
-                projects = projects,
-                onCreateProject = { name -> viewModel.createAndOpenProject(name) },
-                onOpenProject = { id -> viewModel.openProject(id) },
-                onRenameProject = { id, newName -> viewModel.renameProject(id, newName) },
-                onDeleteProject = { id -> viewModel.deleteProject(id) },
-                onExportProjectJson = { id -> viewModel.exportProjectJson(id) },
-                onImportProjectJson = { jsonStr, callback -> viewModel.importProjectJson(jsonStr, callback) },
-                onOpenSettings = { viewModel.openGlobalSettings() },
-                onBackToEntry = { entryModeChosen = false },
-                confirmDestructiveActions = confirmDestructiveActions
-            )
-        }
-        if (previousHadActiveProject) {
-            com.example.ui.theme.SharedAxisEnter(
-                direction = com.example.ui.theme.VoltAtlasMotion.NavigationDirection.Backward
-            ) { pickerContent() }
-        } else {
-            pickerContent()
-        }
 
-        LaunchedEffect(Unit) { previousHadActiveProject = false }
-        return
-    }
 
-    // SLICE 8B: remember that a workspace was open so the Picker's next entry
-    // can be direction-aware (Backward) without replaying during recomposition.
-    LaunchedEffect(activeId) { previousHadActiveProject = true }
 
     val activeProject = projects.find { it.projectId == activeId }
     val context = LocalContext.current
@@ -293,17 +288,8 @@ fun MainLayout(
         exportActiveProjectLauncher.launch(defaultFileName)
     }
     val projectName = activeProject?.projectName ?: "VoltAtlas"
-    var panelScheduleReturnTab by rememberSaveable { mutableStateOf(9) }
     var isSldFullscreen by rememberSaveable { mutableStateOf(false) }
     val sldManualPositions = remember(activeProject?.projectId) { androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.geometry.Offset>() }
-    var showNewProjectConfirmation by rememberSaveable { mutableStateOf(false) }
-    var showDiagnosticsDialog by rememberSaveable { mutableStateOf(false) }
-    val tabs = listOf("Dashboard", "Circuits", "Transformers", "Power Systems", "Protection", "SLD", "Conduits", "BOQ / Procurement", "Settings")
-
-    // ── Hierarchical Predictive Back-Button Handler ──
-    // Priority: (0) Assistant sheet → (1) close overlay → (2) Panel Schedule return / More child→More grid → (3) any non-Home→Home → (4) Home→close project (return to Project Picker)
-    var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
-    var isPredictiveBackNav by remember { mutableStateOf(false) }
 
     fun openAssistantWithContext(
         entryPoint: com.example.ai.ui.AssistantEntryPoint,
@@ -323,7 +309,7 @@ fun MainLayout(
             else -> com.example.ai.context.ProjectSummarySnapshot()
         }
         val projectName = activeProject?.projectName ?: "VoltAtlas Project"
-        val currentScreenName = when (currentTab) {
+        val currentScreenName = when (currentTabIndex) {
             0 -> "Dashboard"
             1 -> "Circuits"
             2 -> "Transformers"
@@ -355,7 +341,7 @@ fun MainLayout(
             // Auto-detect: prefer the only circuit, or the selected circuit, or the first circuit on Circuits tab
             val autoCircuit = when {
                 successState?.circuits?.size == 1 -> successState.circuits.first()
-                currentTab == 1 && successState != null -> {
+                workspaceState.currentKey is CircuitsKey && successState != null -> {
                     val selId = viewModel.selectedCircuitId.value
                     if (selId != null) successState.circuits.find { it.id == selId }
                     else successState.circuits.firstOrNull()
@@ -428,50 +414,6 @@ fun MainLayout(
         assistantVm.open(entryPoint, ctx)
     }
 
-    PredictiveBackHandler(enabled = true) { progress: kotlinx.coroutines.flow.Flow<BackEventCompat> ->
-        try {
-            progress.collect { backEvent ->
-                predictiveBackProgress = backEvent.progress
-            }
-            // Gesture Completed -> Execute exact hierarchical navigation logic
-            when {
-                // 1. Close any open overlay / dialog / fullscreen first
-                showPdfExportDialog -> showPdfExportDialog = false
-                showDiagnosticsDialog -> showDiagnosticsDialog = false
-                showNewProjectConfirmation -> showNewProjectConfirmation = false
-                isSldFullscreen -> isSldFullscreen = false
-                // 2. Panel Schedule (12) returns to entry point (Circuits or More grid)
-                currentTab == 12 -> {
-                    isPredictiveBackNav = true
-                    currentTab = panelScheduleReturnTab
-                }
-                // 3. More-children (4,5,6,7,8,10,11) → More grid (9)
-                currentTab in listOf(4, 5, 6, 7, 8, 10, 11) -> {
-                    isPredictiveBackNav = true
-                    currentTab = 9
-                }
-                // 4. More grid (9) or direct nav items (1,2,3) → Home (0)
-                currentTab != 0 -> {
-                    isPredictiveBackNav = true
-                    currentTab = 0
-                }
-                // 5. Already on Home (Dashboard) → close project and return to Project Picker Screen
-                else -> viewModel.closeProject()
-            }
-        } catch (_: kotlinx.coroutines.CancellationException) {
-            predictiveBackProgress = 0f
-        } finally {
-            predictiveBackProgress = 0f
-        }
-    }
-
-    // Deterministically reset isPredictiveBackNav after AnimatedContent evaluates the gesture transition
-    LaunchedEffect(currentTab) {
-        if (isPredictiveBackNav) {
-            isPredictiveBackNav = false
-        }
-    }
-
     // Window-level navigation decision: centralized width policy, NOT
     // orientation. A landscape phone window is still too narrow for a
     // rail-plus-content composition, while a portrait tablet window is wide
@@ -496,7 +438,7 @@ fun MainLayout(
         Triple("More", Icons.Default.MoreHoriz, 9)
     )
 
-    val moduleName = when (currentTab) {
+    val moduleName = when (currentTabIndex) {
         0 -> "Dashboard"
         1 -> "Circuits"
         2 -> "Transformers"
@@ -513,13 +455,7 @@ fun MainLayout(
         else -> "Module"
     }
 
-    // Safety redirection if old saved tab index points to obsolete Panels or Lighting
-    val safeTab = if (currentTab in tabs.indices || currentTab in 9..12) currentTab else 0
-    if (currentTab != safeTab) {
-        currentTab = safeTab
-    }
-
-    if (currentTab == 5 && isSldFullscreen) {
+    if (workspaceState.currentKey is SldKey && isSldFullscreen) {
         val uiStateVal = state
         if (uiStateVal is UiState.Success) {
             SldScreen(
@@ -529,13 +465,23 @@ fun MainLayout(
                 isFullscreen = true,
                 onToggleFullscreen = { isSldFullscreen = it },
                 onBackToProjects = { viewModel.closeProject() },
-                onNavigateToTab = { currentTab = it },
+                onNavigateToTab = { workspaceNavigator.navigateToTabIndex(it) },
                 manualPositions = sldManualPositions,
                 projectRevision = activeProject?.revision,
                 modifier = Modifier.fillMaxSize().statusBarsPadding()
             )
             return
         }
+    }
+
+    // System Back closes an open SLD fullscreen session before the stack pops.
+    BackHandler(enabled = isSldFullscreen) { isSldFullscreen = false }
+
+    // System Back at a top-level base has nothing for NavDisplay to pop, so the explicit
+    // workspace hierarchy runs: non-Home destination -> Home, Home -> close project
+    // (returns to the Project Picker). Deeper pops stay with NavDisplay (animated).
+    BackHandler(enabled = !isSldFullscreen && workspaceState.isAtTopLevelBase) {
+        workspaceNavigator.goBack()
     }
 
     // SLICE 8B: workspace entry is an approved EMPHASIZED moment — restrained
@@ -582,9 +528,9 @@ fun MainLayout(
                 ) {
                     navItemsFull.forEach { (title, icon, targetTab) ->
                         val isSelected = if (targetTab == 9) {
-                            isMoreTabSelected(currentTab)
+                            isMoreTabSelected(currentTabIndex)
                         } else {
-                            currentTab == targetTab
+                            currentTabIndex == targetTab
                         }
                         val isCustomVector = icon == ElectricalIcons.Home ||
                                 icon == ElectricalIcons.Circuits ||
@@ -593,7 +539,7 @@ fun MainLayout(
                         NavigationRailItem(
                             selected = isSelected,
                             onClick = {
-                                currentTab = targetTab
+                                workspaceNavigator.navigateToTabIndex(targetTab)
                             },
                             modifier = Modifier.testTag("rail_dest_$targetTab"),
                             icon = {
@@ -702,7 +648,7 @@ fun MainLayout(
                         ) {
                             if (showAllDirectActions) {
                                 IconButton(
-                                    onClick = { showDiagnosticsDialog = true },
+                                    onClick = { workspaceNavigator.navigate(DiagnosticsDialogKey) },
                                     modifier = Modifier.size(48.dp).testTag("diagnostics_indicator_btn")
                                 ) {
                                     Icon(
@@ -807,7 +753,7 @@ fun MainLayout(
                                             },
                                             onClick = {
                                                 showOverflowMenu = false
-                                                showDiagnosticsDialog = true
+                                                workspaceNavigator.navigate(DiagnosticsDialogKey)
                                             },
                                             modifier = Modifier.testTag("menu_diagnostics_btn")
                                         )
@@ -883,7 +829,7 @@ fun MainLayout(
                                         onClick = {
                                             showOverflowMenu = false
                                             if (confirmDestructiveActions) {
-                                                showNewProjectConfirmation = true
+                                                workspaceNavigator.navigate(NewProjectConfirmDialogKey)
                                             } else {
                                                 viewModel.startNewEmptyProject()
                                             }
@@ -904,9 +850,9 @@ fun MainLayout(
                     ) {
                         navItems.forEach { (title, icon, targetTab) ->
                             val isSelected = if (targetTab == 9) {
-                                isMoreTabSelected(currentTab)
+                                isMoreTabSelected(currentTabIndex)
                             } else {
-                                currentTab == targetTab
+                                currentTabIndex == targetTab
                             }
                             val fullLabel = navItemsFull.find { it.third == targetTab }?.first ?: title
                             val isCustomVector = icon == ElectricalIcons.Home ||
@@ -916,7 +862,7 @@ fun MainLayout(
                             NavigationBarItem(
                                 selected = isSelected,
                                 onClick = {
-                                    currentTab = targetTab
+                                    workspaceNavigator.navigateToTabIndex(targetTab)
                                 },
                                 modifier = Modifier.testTag("bottom_dest_$targetTab"),
                                 icon = {
@@ -983,101 +929,82 @@ fun MainLayout(
                         }
                     }
                     is UiState.Success -> {
-                        val peekBackTarget = remember(currentTab, showPdfExportDialog, showDiagnosticsDialog, showNewProjectConfirmation, isSldFullscreen, panelScheduleReturnTab) {
-                            when {
-                                showPdfExportDialog || showDiagnosticsDialog || showNewProjectConfirmation || isSldFullscreen -> null
-                                currentTab == 12 -> panelScheduleReturnTab
-                                currentTab in listOf(4, 5, 6, 7, 8, 10, 11) -> 9
-                                currentTab != 0 -> 0
-                                else -> null
-                            }
-                        }
-
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            // LAYER 1: Destination Screen Preview (Rendered UNDERNEATH during edge swipe)
-                            if (predictiveBackProgress > 0f && peekBackTarget != null && !reduceMotion) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .graphicsLayer {
-                                            val bgScale = 0.95f + (0.05f * predictiveBackProgress)
-                                            scaleX = bgScale
-                                            scaleY = bgScale
-                                            alpha = 0.5f + (0.5f * predictiveBackProgress)
-                                        }
-                                ) {
-                                    RenderTabContent(
-                                        targetTab = peekBackTarget,
-                                        uiStateVal = uiStateVal,
-                                        viewModel = viewModel,
-                                        panelScheduleReturnTab = panelScheduleReturnTab,
-                                        showNewProjectConfirmation = { showNewProjectConfirmation = it },
-                                        showDiagnosticsDialog = { showDiagnosticsDialog = it },
-                                        onSetPanelScheduleReturnTab = { panelScheduleReturnTab = it },
-                                        onNavigateTab = { currentTab = it },
-                                        onOpenAssistant = { entryPoint, eType, eId, eName ->
-                                            openAssistantWithContext(entryPoint, eType, eId, eName)
-                                        }
-                                    )
+                        val tabEntry: @Composable (Int) -> Unit = { index ->
+                            RenderTabContent(
+                                targetTab = index,
+                                uiStateVal = uiStateVal,
+                                viewModel = viewModel,
+                                onNavigateTab = { tabIndex -> workspaceNavigator.navigateToTabIndex(tabIndex) },
+                                onGoBack = { workspaceNavigator.goBack() },
+                                onOpenNewProjectConfirm = { workspaceNavigator.navigate(NewProjectConfirmDialogKey) },
+                                onOpenDiagnostics = { workspaceNavigator.navigate(DiagnosticsDialogKey) },
+                                onOpenAssistant = { entryPoint, eType, eId, eName ->
+                                    openAssistantWithContext(entryPoint, eType, eId, eName)
                                 }
-                            }
-
-                            // LAYER 2: Active Screen Content (Scales down on TOP with draw-phase deferred transforms)
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer {
-                                        val progress = predictiveBackProgress
-                                        val isReduced = reduceMotion
-
-                                        val scaleFactor = if (isReduced) 1f else (1f - (progress * 0.08f))
-                                        val alphaFactor = if (isReduced) 1f else (1f - (progress * 0.15f))
-                                        val cornerRadiusPx = if (isReduced) 0f else (progress * 16.dp.toPx())
-
-                                        scaleX = scaleFactor
-                                        scaleY = scaleFactor
-                                        alpha = alphaFactor
-
-                                        if (cornerRadiusPx > 0f) {
-                                            shape = RoundedCornerShape(cornerRadiusPx)
-                                            clip = true
-                                        } else {
-                                            clip = false
-                                        }
+                            )
+                        }
+                        val workspaceDialogStrategy = remember { DialogSceneStrategy<NavKey>() }
+                        // Phase 4 adaptive: on windows of at least 600dp the More-modules hub
+                        // becomes the list pane and the selected module the detail pane; phones
+                        // and narrow split-screen windows keep the single-pane layout. The
+                        // breakpoint matches the shell's rail-vs-bottom-bar policy.
+                        val listDetailStrategy = rememberWorkspaceListDetailSceneStrategy<NavKey> {
+                            WorkspaceModulePlaceholder()
+                        }
+                        NavDisplay(
+                            entries = workspaceState.toDecoratedEntries(
+                                entryProvider = entryProvider {
+                                    entry<WorkspaceHomeKey> { tabEntry(0) }
+                                    entry<CircuitsKey> { tabEntry(1) }
+                                    entry<TransformersKey> { tabEntry(2) }
+                                    entry<PowerSystemsKey> { tabEntry(3) }
+                                    entry<MoreModulesKey>(
+                                        metadata = WorkspaceListDetailScene.listPane()
+                                    ) { tabEntry(9) }
+                                    entry<ProtectionKey>(metadata = WorkspaceListDetailScene.detailPane()) { tabEntry(4) }
+                                    entry<SldKey>(metadata = WorkspaceListDetailScene.detailPane()) { tabEntry(5) }
+                                    entry<ConduitsKey>(metadata = WorkspaceListDetailScene.detailPane()) { tabEntry(6) }
+                                    entry<BoqProcurementKey>(metadata = WorkspaceListDetailScene.detailPane()) { tabEntry(7) }
+                                    entry<WorkspaceSettingsKey>(metadata = WorkspaceListDetailScene.detailPane()) { tabEntry(8) }
+                                    entry<ConversionsKey>(metadata = WorkspaceListDetailScene.detailPane()) { tabEntry(10) }
+                                    entry<MethodologyKey>(metadata = WorkspaceListDetailScene.detailPane()) { tabEntry(11) }
+                                    entry<PanelScheduleKey>(metadata = WorkspaceListDetailScene.detailPane()) { tabEntry(12) }
+                                    entry<NewProjectConfirmDialogKey>(
+                                        metadata = DialogSceneStrategy.dialog()
+                                    ) {
+                                        WorkspaceNewProjectDialogContent(
+                                            onConfirm = {
+                                                workspaceNavigator.goBack()
+                                                viewModel.startNewEmptyProject()
+                                            },
+                                            onDismiss = { workspaceNavigator.goBack() }
+                                        )
                                     }
-                            ) {
-                                AnimatedContent(
-                                    targetState = currentTab,
-                                    transitionSpec = {
-                                        if (isPredictiveBackNav) {
-                                            EnterTransition.None togetherWith ExitTransition.None
-                                        } else {
-                                            // SLICE 8B: restrained shared-axis composition —
-                                            // directional short slide + subtle scale + alpha.
-                                            VoltAtlasMotion.tabContentTransform(
-                                                direction = VoltAtlasMotion.navigationDirection(initialState, targetState),
-                                                reduceMotion = reduceMotion
-                                            )
-                                        }
-                                    },
-                                    label = "MainTabSwitchAnimation"
-                                ) { targetTab ->
-                                    RenderTabContent(
-                                        targetTab = targetTab,
-                                        uiStateVal = uiStateVal,
-                                        viewModel = viewModel,
-                                        panelScheduleReturnTab = panelScheduleReturnTab,
-                                        showNewProjectConfirmation = { showNewProjectConfirmation = it },
-                                        showDiagnosticsDialog = { showDiagnosticsDialog = it },
-                                        onSetPanelScheduleReturnTab = { panelScheduleReturnTab = it },
-                                        onNavigateTab = { currentTab = it },
-                                        onOpenAssistant = { entryPoint, eType, eId, eName ->
-                                            openAssistantWithContext(entryPoint, eType, eId, eName)
-                                        }
-                                    )
+                                    entry<DiagnosticsDialogKey>(
+                                        metadata = DialogSceneStrategy.dialog()
+                                    ) {
+                                        WorkspaceDiagnosticsDialogContent(
+                                            state = uiStateVal,
+                                            onDismiss = { workspaceNavigator.goBack() }
+                                        )
+                                    }
                                 }
+                            ),
+                            onBack = { workspaceNavigator.goBack() },
+                            sceneStrategies = listOf(workspaceDialogStrategy, listDetailStrategy),
+                            transitionSpec = {
+                                VoltAtlasMotion.tabContentTransform(
+                                    direction = VoltAtlasMotion.NavigationDirection.Forward,
+                                    reduceMotion = reduceMotion
+                                )
+                            },
+                            popTransitionSpec = {
+                                VoltAtlasMotion.tabContentTransform(
+                                    direction = VoltAtlasMotion.NavigationDirection.Backward,
+                                    reduceMotion = reduceMotion
+                                )
                             }
-                        }
+                        )
                     }
 
                 }
@@ -1087,167 +1014,6 @@ fun MainLayout(
     }
     } // SLICE 8B: close SharedAxisEnter workspace wrapper
 
-    if (showNewProjectConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showNewProjectConfirmation = false },
-            title = { Text("Start New Empty Project?", color = ThemeTextColor) },
-            text = {
-                Text(
-                    "This will delete the current circuits and transformers from Room. This action cannot be undone.",
-                    color = SlateTextSecondary
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showNewProjectConfirmation = false
-                        viewModel.startNewEmptyProject()
-                    }
-                ) {
-                    Text("Delete and Start", color = SleekWarning)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNewProjectConfirmation = false }) {
-                    Text("Cancel", color = ThemeTextColor)
-                }
-            },
-            containerColor = DarkCardBg
-        )
-    }
-
-    if (showDiagnosticsDialog) {
-        val diagnostics = Catalog.getDiagnostics()
-        AlertDialog(
-            onDismissRequest = { showDiagnosticsDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Dns,
-                        contentDescription = "Database Icon",
-                        tint = SleekPrimary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Catalog Diagnostics", color = ThemeTextColor)
-                }
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "Verifying JSON assets and specifications parsed in memory:",
-                        color = SlateTextSecondary,
-                        fontSize = 13.sp
-                    )
-                    
-                    HorizontalDivider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
-                    
-                    DiagnosticRow(label = "cable_types.json", loaded = Catalog.cableTypes.isNotEmpty(), count = Catalog.cableTypes.size)
-                    DiagnosticRow(label = "data_sheet.json", loaded = Catalog.dataSheet.isNotEmpty(), count = Catalog.dataSheet.size)
-                    DiagnosticRow(label = "cable_catalog.json", loaded = Catalog.cableCatalog.isNotEmpty(), count = Catalog.cableCatalog.size)
-                    DiagnosticRow(label = "breaker_catalog.json", loaded = Catalog.breakers.isNotEmpty(), count = Catalog.breakers.size)
-                    DiagnosticRow(label = "accessory_catalog.json", loaded = Catalog.accessories.isNotEmpty(), count = Catalog.accessories.size)
-                    DiagnosticRow(label = "derating_data.json", loaded = Catalog.deratingData != null)
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    HorizontalDivider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
-                    Text("Catalog Integrity Metrics (Status: ${diagnostics.status})", color = SleekPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Text("Defined Families: ${diagnostics.definedFamilies}", color = ThemeTextColor, fontSize = 12.sp)
-                    Text("Supported Families: ${diagnostics.supportedFamilies}", color = ThemeTextColor, fontSize = 12.sp)
-                    Text("Unsupported Families: ${diagnostics.unsupportedFamilies}", color = ThemeTextColor, fontSize = 12.sp)
-                    Text("Cable Records: ${diagnostics.cableRecords}", color = ThemeTextColor, fontSize = 12.sp)
-                    Text("Missing R/X: ${diagnostics.missingRx}", color = ThemeTextColor, fontSize = 12.sp)
-                    Text("Duplicate Keys: ${diagnostics.duplicateKeys}", color = ThemeTextColor, fontSize = 12.sp)
-                    Text("Orphan Type Codes: ${diagnostics.orphanTypeCodes}", color = ThemeTextColor, fontSize = 12.sp)
-                    
-                    val successState = state as? UiState.Success
-                    val shop1Circuit = successState?.circuits?.firstOrNull { it.circuitName.trim().equals("SHOP-1", ignoreCase = true) }
-                    val shop1Result = successState?.sizingResults?.get(shop1Circuit?.id)
-                    
-                    if (successState != null && shop1Circuit != null) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider(color = BorderColor, modifier = Modifier.padding(vertical = 4.dp))
-                        Text("SHOP-1 Diagnostic Trace:", color = SleekPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        
-                        val selectedType = Catalog.cableTypes.firstOrNull {
-                            it.cableType.trim().equals(shop1Circuit.cableType.trim(), ignoreCase = true)
-                        }
-                        val typeCode = selectedType?.code ?: -1
-                        val candidates = Catalog.cableCatalog.filter {
-                            it.mfg.trim().equals(shop1Circuit.manufacturer.trim(), ignoreCase = true) &&
-                            it.typeCode == typeCode
-                        }
-                        val matchingRxCount = Catalog.dataSheet.count { sheet ->
-                            candidates.any { c -> kotlin.math.abs(sheet.size - c.size) <= 1e-9 }
-                        }
-                        
-                        Text("• circuit.id: ${shop1Circuit.id}", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• circuitName: ${shop1Circuit.circuitName}", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• loadKVA: ${shop1Circuit.loadKVA}", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• voltageV: ${shop1Circuit.voltageV}", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• pf: ${shop1Circuit.pf}", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• safetyFactor: ${shop1Circuit.safetyFactor}", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• manufacturer: '[${shop1Circuit.manufacturer}]'", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• cableType: '[${shop1Circuit.cableType}]'", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• installation: ${shop1Circuit.installation}", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• parallelRuns: ${shop1Circuit.parallelRuns}", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• overrideCableSize: ${shop1Circuit.overrideCableSize}", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• overrideDeviceSize: ${shop1Circuit.overrideDeviceSize}", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• resolved CableTypeEntry code: $typeCode", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• number of manufacturer/type candidates: ${candidates.size}", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• matching R/X row count: $matchingRxCount", color = ThemeTextColor, fontSize = 11.sp)
-                        Text("• final failReason: '${shop1Result?.failReason ?: ""}'", color = if (shop1Result?.status?.contains("FAIL") == true) SleekFail else SleekPass, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    if (diagnostics.lastErrorMessage != null) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Last Error Message:", color = SleekWarning, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(SleekFail.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp))
-                                .padding(8.dp)
-                        ) {
-                            Text(
-                                text = diagnostics.lastErrorMessage ?: "",
-                                color = SleekFail,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(SleekPass.copy(alpha = 0.1f), shape = RoundedCornerShape(4.dp))
-                                .padding(8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "✓ ALL ASSETS LOADED SUCCESSFULLY",
-                                color = SleekPass,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showDiagnosticsDialog = false }) {
-                    Text("Dismiss", color = SleekPrimary)
-                }
-            },
-            containerColor = DarkCardBg
-        )
-    }
     if (showPdfExportDialog) {
         val currentProjectId = activeId ?: "DEFAULT_PROJECT"
         val currentProjName = activeProject?.projectName ?: "Project"
@@ -1279,11 +1045,10 @@ private fun RenderTabContent(
     targetTab: Int,
     uiStateVal: UiState.Success,
     viewModel: EngineeringViewModel,
-    panelScheduleReturnTab: Int,
-    showNewProjectConfirmation: (Boolean) -> Unit,
-    showDiagnosticsDialog: (Boolean) -> Unit,
-    onSetPanelScheduleReturnTab: (Int) -> Unit,
     onNavigateTab: (Int) -> Unit,
+    onGoBack: () -> Unit,
+    onOpenNewProjectConfirm: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
     onOpenAssistant: ((com.example.ai.ui.AssistantEntryPoint, String?, String?, String?) -> Unit)? = null
 ) {
     when (targetTab) {
@@ -1295,7 +1060,7 @@ private fun RenderTabContent(
         1 -> CircuitsGridScreen(
             uiStateVal, 
             viewModel, 
-            onNavigateToPanelSchedule = { circId -> viewModel.selectedCircuitId.value = circId; onSetPanelScheduleReturnTab(1); onNavigateTab(12) },
+            onNavigateToPanelSchedule = { circId -> viewModel.selectedCircuitId.value = circId; onNavigateTab(12) },
             onOpenAssistant = { ep, circ -> onOpenAssistant?.invoke(ep, "CIRCUIT", circ.id.toString(), circ.circuitName) }
         )
         2 -> TransformersScreen(uiStateVal, viewModel)
@@ -1363,44 +1128,59 @@ private fun RenderTabContent(
                 onBack = { onNavigateTab(0) }
             )
         }
-        9 -> MoreModulesGrid(onNavigate = { targetTab -> if (targetTab == 12) onSetPanelScheduleReturnTab(9); onNavigateTab(targetTab) })
-        10 -> ConversionsContainerScreen(onBack = { onNavigateTab(9) })
+        9 -> MoreModulesGrid(onNavigate = { targetTab -> onNavigateTab(targetTab) })
+        10 -> ConversionsContainerScreen(onBack = { onGoBack() })
         11 -> FormulasMethodologyScreen()
         12 -> com.example.ui.screens.PanelScheduleScreen(
             viewModel = viewModel,
             uiState = uiStateVal,
-            onBack = { onNavigateTab(panelScheduleReturnTab) }
+            onBack = { onGoBack() }
         )
         else -> DashboardScreen(uiStateVal, onNavigate = onNavigateTab)
     }
 }
+/**
+ * Hosts a single Quick Engineering tool destination on the Navigation 3 back stack.
+ * Tool screens keep their existing top-bar Back wiring; system Back pops the stack.
+ */
 @Composable
-private fun DiagnosticRow(label: String, loaded: Boolean, count: Int? = null) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = if (loaded) Icons.Default.CheckCircle else Icons.Default.Cancel,
-                contentDescription = if (loaded) "Loaded" else "Failed",
-                tint = if (loaded) SleekPass else SleekFail,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(label, color = ThemeTextColor, fontSize = 13.sp)
-        }
-        if (loaded && count != null) {
-            Text("$count records", color = SlateTextSecondary, fontSize = 12.sp)
-        } else {
-            Text(
-                text = if (loaded) "Loaded" else "Failed",
-                color = if (loaded) SleekPass else SleekFail,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
+private fun QuickToolDestination(
+    toolId: String,
+    onBack: () -> Unit
+) {
+    when (toolId) {
+        "cable_sizing" -> QuickCableCalcScreen(onBack = onBack)
+        "voltage_drop" -> com.example.ui.screens.quick.QuickVoltageDropScreenV2(onBack = onBack)
+        "conduit_fill" -> com.example.ui.screens.quick.QuickConduitFillScreen(onBack = onBack)
+        "load_current" -> com.example.ui.screens.quick.QuickLoadCurrentScreenV2(onBack = onBack)
+        "power_triangle" -> QuickPowerTriangleScreen(onBack = onBack)
+        "pfc" -> com.example.ui.screens.quick.QuickPfcScreenV2(onBack = onBack)
+        "motor_starter" -> com.example.ui.screens.quick.QuickMotorStarterScreen(onBack = onBack)
+        "breaker_select" -> com.example.ui.screens.quick.QuickBreakerSelectScreen(onBack = onBack)
+        "earthing" -> com.example.ui.screens.quick.QuickEarthingScreen(onBack = onBack)
+        "generator_quick" -> com.example.ui.screens.quick.QuickGeneratorScreen(onBack = onBack)
+        "ups_battery" -> com.example.ui.screens.quick.QuickUpsScreen(onBack = onBack)
+        "ats_sizing" -> com.example.ui.screens.quick.QuickAtsScreen(onBack = onBack)
+        "transformer_quick" -> QuickTransformerScreen(onBack = onBack)
+        "transformer_sc" -> QuickTransformerScScreen(onBack = onBack)
+        "lighting" -> QuickLightingScreen(onBack = onBack)
+        else -> QuickCableCalcScreen(onBack = onBack)
+    }
+}
+
+/**
+ * Detail-pane placeholder for the adaptive More-modules list-detail scene: on wide
+ * windows the hub occupies the list pane and this guidance fills the detail pane
+ * until a module is selected.
+ */
+@Composable
+private fun WorkspaceModulePlaceholder() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            text = "Select a module to open it here",
+            color = SlateTextSecondary,
+            modifier = Modifier.testTag("workspace_list_detail_placeholder")
+        )
     }
 }
 

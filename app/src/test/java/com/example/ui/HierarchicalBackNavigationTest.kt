@@ -103,7 +103,7 @@ class HierarchicalBackNavigationTest {
 
         // Then Exit Dialog is displayed
         composeTestRule.onNodeWithText("Exit VoltAtlas?").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Are you sure you want to exit the app?").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Are you sure you want to close the app? All local calculations and projects are securely saved.").assertIsDisplayed()
         composeTestRule.onNodeWithText("Cancel").assertIsDisplayed()
         composeTestRule.onNodeWithText("Exit").assertIsDisplayed()
 

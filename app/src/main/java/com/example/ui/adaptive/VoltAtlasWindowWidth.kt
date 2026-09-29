@@ -36,6 +36,23 @@ enum class VoltAtlasWindowWidth {
 }
 
 /**
+ * Window width (dp) at which the shell switches from bottom navigation to a navigation
+ * rail. Shared with the adaptive Navigation 3 scene (More-modules list-detail) so the
+ * navigation chrome and the workspace layout switch at the same breakpoint.
+ */
+const val VoltAtlasNavRailMinWidthDp: Int = 600
+
+/** Window width (dp) at which desktop-like (expanded) compositions start. */
+const val VoltAtlasExpandedMinWidthDp: Int = 840
+
+/** Classifies a raw window width (dp) with the shared [VoltAtlasWindowWidth] policy. */
+fun voltAtlasWindowWidthFor(widthDp: Int): VoltAtlasWindowWidth = when {
+    widthDp >= VoltAtlasExpandedMinWidthDp -> VoltAtlasWindowWidth.Expanded
+    widthDp >= VoltAtlasNavRailMinWidthDp -> VoltAtlasWindowWidth.Medium
+    else -> VoltAtlasWindowWidth.Compact
+}
+
+/**
  * Remembers the current semantic window-width class.
  *
  * Implementation deliberately uses [LocalConfiguration] so it stays
@@ -53,11 +70,6 @@ enum class VoltAtlasWindowWidth {
 fun rememberVoltAtlasWindowWidth(): VoltAtlasWindowWidth {
     val configuration = LocalConfiguration.current
     return remember(configuration) {
-        val widthDp = configuration.screenWidthDp
-        when {
-            widthDp >= 840 -> VoltAtlasWindowWidth.Expanded
-            widthDp >= 600 -> VoltAtlasWindowWidth.Medium
-            else -> VoltAtlasWindowWidth.Compact
-        }
+        voltAtlasWindowWidthFor(configuration.screenWidthDp)
     }
 }

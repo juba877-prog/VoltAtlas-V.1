@@ -1,9 +1,11 @@
 package com.example.ui
 
+import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -32,20 +34,26 @@ import org.robolectric.annotation.GraphicsMode
 class VoltAtlasEntryScreenTest {
 
     @get:Rule
-    val composeTestRule = createComposeRule()
+    val composeTestRule = createAndroidComposeRule<ComponentActivity>()
 
     private var projectsClicks = 0
     private var quickClicks = 0
+    private var exitClicks = 0
 
-    private fun setEntryContent() {
+    private fun setEntryContent(onExitApp: (() -> Unit)? = null) {
         projectsClicks = 0
         quickClicks = 0
+        exitClicks = 0
         composeTestRule.setContent {
             VoltAtlasTheme(darkTheme = true) {
                 VoltAtlasEntryScreen(
                     onOpenProjects = { projectsClicks++ },
                     onOpenQuickEngineering = { quickClicks++ },
-                    onOpenSettings = {}
+                    onOpenSettings = {},
+                    onExitApp = onExitApp ?: {
+                        exitClicks++
+                        Unit
+                    }
                 )
             }
         }
@@ -152,5 +160,67 @@ class VoltAtlasEntryScreenTest {
             .onNodeWithText("Run standalone calculations without creating a project")
             .assertIsDisplayed()
     }
-}
 
+    // --- Exit Confirmation Dialog (Material 3) ----------------------------------------
+
+    @Test
+    fun backPress_showsMaterial3ExitDialog() {
+        setEntryContent()
+
+        // Initially no dialog
+        composeTestRule.onNodeWithTag("exit_app_dialog").assertDoesNotExist()
+
+        // Trigger system back
+        composeTestRule.runOnUiThread {
+            composeTestRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeTestRule.waitForIdle()
+
+        // Exit dialog is displayed with M3 elements
+        composeTestRule.onNodeWithTag("exit_app_dialog").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Exit VoltAtlas?").assertIsDisplayed()
+        composeTestRule
+            .onNodeWithText("Are you sure you want to close the app? All local calculations and projects are securely saved.")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag("exit_cancel_button").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("exit_confirm_button").assertIsDisplayed()
+    }
+
+    @Test
+    fun exitDialog_cancelDismissesDialog() {
+        setEntryContent()
+
+        composeTestRule.runOnUiThread {
+            composeTestRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("exit_app_dialog").assertIsDisplayed()
+
+        // Click cancel
+        composeTestRule.onNodeWithTag("exit_cancel_button").performClick()
+        composeTestRule.waitForIdle()
+
+        // Dialog is dismissed, exit callback not invoked
+        composeTestRule.onNodeWithTag("exit_app_dialog").assertDoesNotExist()
+        assertEquals(0, exitClicks)
+    }
+
+    @Test
+    fun exitDialog_confirmInvokesExitAction() {
+        setEntryContent()
+
+        composeTestRule.runOnUiThread {
+            composeTestRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("exit_app_dialog").assertIsDisplayed()
+
+        // Click exit
+        composeTestRule.onNodeWithTag("exit_confirm_button").performClick()
+        composeTestRule.waitForIdle()
+
+        // Exit callback was invoked and dialog is dismissed
+        assertEquals(1, exitClicks)
+        composeTestRule.onNodeWithTag("exit_app_dialog").assertDoesNotExist()
+    }
+}

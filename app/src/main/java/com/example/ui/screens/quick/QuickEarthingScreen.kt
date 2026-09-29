@@ -4,7 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,7 +38,6 @@ private val CONDUCTOR_OPTIONS = persistentListOf("Cu Bare (159)", "Cu/XLPE (176)
 fun QuickEarthingScreen(
     onBack: () -> Unit
 ) {
-    BackHandler(onBack = onBack)
     val context = LocalContext.current
 
     // State declarations

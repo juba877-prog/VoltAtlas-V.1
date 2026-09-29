@@ -4,7 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -58,7 +58,6 @@ private val VD_PHASE_OPTIONS = persistentListOf("3-Phase (400V)", "1-Phase (230V
 fun QuickVoltageDropScreenV2(
     onBack: () -> Unit
 ) {
-    BackHandler(onBack = onBack)
 
     val context = LocalContext.current
 

@@ -4,7 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
+
 import androidx.compose.animation.AnimatedVisibility
 import com.example.ui.theme.VoltAtlasMotion
 import androidx.compose.foundation.BorderStroke
@@ -166,8 +166,7 @@ fun QuickCableCalcScreen(
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    // Intercept system/hardware/gesture back to return to ProjectPickerScreen
-    BackHandler(onBack = onBack)
+
 
     // Direct Inputs
     var loadKvaText by rememberSaveable { mutableStateOf("50.0") }

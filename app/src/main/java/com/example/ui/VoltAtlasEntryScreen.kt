@@ -1,5 +1,8 @@
 package com.example.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -29,12 +32,16 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,6 +56,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
@@ -94,6 +102,7 @@ fun VoltAtlasEntryScreen(
     onOpenProjects: () -> Unit,
     onOpenQuickEngineering: () -> Unit,
     onOpenSettings: () -> Unit = {},
+    onExitApp: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val reduceMotion = LocalReduceMotion.current
@@ -251,18 +260,95 @@ fun VoltAtlasEntryScreen(
     }
 
     if (showExitDialog) {
+        val context = LocalContext.current
+        val activity = remember(context) { context.findActivity() }
+
         AlertDialog(
             onDismissRequest = { showExitDialog = false },
-            title = { Text("Exit VoltAtlas?") },
-            text = { Text("Are you sure you want to exit the app?") },
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(14.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PowerSettingsNew,
+                        contentDescription = "Exit Application",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "Exit VoltAtlas?",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to close the app? All local calculations and projects are securely saved.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            },
             confirmButton = {
-                TextButton(onClick = { showExitDialog = false }) { Text("Cancel") }
+                Button(
+                    onClick = {
+                        showExitDialog = false
+                        if (onExitApp != null) {
+                            onExitApp()
+                        } else {
+                            activity?.finishAffinity() ?: (context as? Activity)?.finish()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.testTag("exit_confirm_button")
+                ) {
+                    Text(
+                        text = "Exit",
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showExitDialog = false }) { Text("Exit") }
-            }
+                OutlinedButton(
+                    onClick = { showExitDialog = false },
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.testTag("exit_cancel_button")
+                ) {
+                    Text(
+                        text = "Cancel",
+                        fontWeight = FontWeight.Normal
+                    )
+                }
+            },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 6.dp,
+            modifier = Modifier.testTag("exit_app_dialog")
         )
     }
+}
+
+private fun Context.findActivity(): Activity? {
+    var current = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return null
 }
 
 /**
@@ -366,4 +452,3 @@ private fun EntryModeCard(
  * column instead of stretching into a tablet layout (per the responsive contract).
  */
 private val ENTRY_CONTENT_MAX_WIDTH = 480.dp
-
