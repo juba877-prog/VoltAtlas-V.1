@@ -145,4 +145,74 @@ class NameplateParserTest {
         assertNull("CancellationException must not be routed to the non-fatal error logger", loggedThrowable)
         analyzer.close()
     }
+
+    @Test
+    fun testParseWegMotorNameplateAndCalculateQuickStarter() {
+        val sampleWeg = """
+            WEG W22 Premium Efficiency
+            3~ Induction Motor
+            Frame: 180M  IEC 60034-1
+            Power: 22 kW  (30 HP)
+            Voltage: 400 V  50 Hz
+            Current: 40.5 A
+            PF: 0.85  Eff: 93.0%
+            1465 RPM  IP55
+        """.trimIndent()
+
+        val result = NameplateParser.parse(sampleWeg)
+        assertEquals(NameplateEquipmentType.MOTOR, result.equipmentType)
+        assertEquals(22.0, result.powerKw ?: 0.0, 0.01)
+        assertEquals(400.0, result.voltageV ?: 0.0, 0.01)
+        assertEquals(40.5, result.currentAmps ?: 0.0, 0.01)
+        assertEquals(0.85, result.powerFactor ?: 0.0, 0.01)
+        assertEquals(93.0, result.efficiencyPct ?: 0.0, 0.01)
+
+        val starterInput = com.example.ui.screens.quick.MotorStarterQuickInput(
+            motorPowerKW = result.powerKw ?: 15.0,
+            voltageV = result.voltageV ?: 400.0,
+            isThreePhase = (result.voltageV ?: 400.0) >= 380.0,
+            powerFactor = result.powerFactor ?: 0.85,
+            efficiencyPct = result.efficiencyPct ?: 90.0,
+            startingMethod = com.example.ui.screens.quick.MotorStarterType.DOL,
+            tripClass = "Class 10"
+        )
+        val sizingResult = com.example.ui.screens.quick.QuickMotorStarterEngine.calculate(starterInput)
+        assertTrue(sizingResult.fullLoadCurrent_A > 0.0)
+        assertTrue(sizingResult.mainContactorKm1_A > 0.0)
+    }
+
+    @Test
+    fun testParseCrownTritonNemaMotorNameplate() {
+        // Simulates OCR output from a Crown Triton 150HP 460V motor nameplate
+        val crownTritonOcr = """
+            Crown Triton
+            Premium Efficiency AC 3 Phase Motor
+            150HP 6P 460V HHI150-12-447T
+            Model HLS447SR0608 Encl. TEFC Amps 169.5A
+            Frame 447T Duty CONT Code G Hertz 60Hz
+            Type HLS Class F HD-F1 Nom. Eff. 95.8%
+            Bearing Drive NU318 S.F. 1.15 RPM 1185
+            Opp. 6316C3 NEMA B Amb. 40°C
+            3/4 Eff. 96.0%
+            Usable at 50Hz 150HP 380V 208.5A 985rpm S.F.:1.0 Eff.:94.3% Code:F
+        """.trimIndent()
+    
+        val result = NameplateParser.parse(crownTritonOcr)
+    
+        assertEquals(NameplateEquipmentType.MOTOR, result.equipmentType)
+        // 150 HP * 0.7457 = 111.855 kW
+        assertEquals(111.86, result.powerKw ?: 0.0, 0.1)
+        assertEquals(150.0, result.powerHp ?: 0.0, 0.01)
+        assertEquals(460.0, result.voltageV ?: 0.0, 0.01)
+        // Must pick primary 169.5A, NOT secondary 208.5A
+        assertEquals(169.5, result.currentAmps ?: 0.0, 0.01)
+        // Must pick primary Nom. Eff. 95.8%, NOT secondary 94.3%
+        assertEquals(95.8, result.efficiencyPct ?: 0.0, 0.1)
+        assertEquals(60.0, result.frequencyHz ?: 0.0, 0.01)
+        assertEquals(1185, result.rpm)
+        // PF should be auto-calculated: 111.855*1000 / (sqrt(3)*460*169.5*0.958) ≈ 0.86
+        assertNotNull(result.powerFactor)
+        assertEquals(0.86, result.powerFactor ?: 0.0, 0.02)
+        assertTrue(result.confidenceScore >= 0.8f)
+    }
 }

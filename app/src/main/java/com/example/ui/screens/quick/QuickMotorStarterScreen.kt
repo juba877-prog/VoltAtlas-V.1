@@ -1,10 +1,18 @@
 package com.example.ui.screens.quick
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.net.Uri
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,9 +33,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.camera.nameplate.EquipmentNameplateScannerSheet
+import com.example.camera.nameplate.NameplateOcrProcessor
+import com.example.camera.nameplate.NameplateScanResult
 import com.example.ui.components.quick.*
 import com.example.ui.theme.*
 import kotlinx.collections.immutable.persistentListOf
+import java.io.File
 import java.util.Locale
 
 private val PHASE_OPTIONS = persistentListOf("3-Phase (400V)", "1-Phase (230V)")
@@ -39,7 +51,6 @@ private val TRIP_CLASS_OPTIONS = persistentListOf("Class 10 (Standard <10s)", "C
 fun QuickMotorStarterScreen(
     onBack: () -> Unit
 ) {
-    BackHandler(onBack = onBack)
     val context = LocalContext.current
 
     // State declarations
@@ -50,6 +61,115 @@ fun QuickMotorStarterScreen(
     var efficiencyText by rememberSaveable { mutableStateOf("90.0") }
     var starterMethodIndex by rememberSaveable { mutableIntStateOf(0) } // 0=DOL, 1=Y-Δ, 2=Soft, 3=VFD
     var tripClassIndex by rememberSaveable { mutableIntStateOf(0) } // 0=Class 10, 1=Class 20
+
+    var showScannerSheet by rememberSaveable { mutableStateOf(false) }
+    var initialScanResult by remember { mutableStateOf<NameplateScanResult?>(null) }
+    var initialScanImage by remember { mutableStateOf<Bitmap?>(null) }
+
+    val directPickImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            Toast.makeText(context, "Extracting motor plate data with OCR...", Toast.LENGTH_SHORT).show()
+            NameplateOcrProcessor.processUri(
+                context = context,
+                uri = uri,
+                onSuccess = { result, _, loadedBitmap ->
+                    initialScanResult = result
+                    initialScanImage = loadedBitmap
+                    result.powerKw?.let { motorKwText = it.toString() }
+                    result.voltageV?.let {
+                        voltageText = it.toInt().toString()
+                        phaseIndex = if (it >= 380.0) 0 else 1
+                    }
+                    result.powerFactor?.let { powerFactorText = it.toString() }
+                    result.efficiencyPct?.let { efficiencyText = it.toString() }
+                    showScannerSheet = true
+                    Toast.makeText(context, "Motor plate data extracted successfully!", Toast.LENGTH_SHORT).show()
+                },
+                onError = { err ->
+                    Toast.makeText(context, "Failed to read image: ${err.localizedMessage ?: "Unknown error"}", Toast.LENGTH_LONG).show()
+                }
+            )
+        }
+    }
+
+    // Create a stable URI for the full-resolution camera photo via FileProvider
+    var cameraPhotoUri by remember { mutableStateOf<Uri?>(null) }
+
+    fun createCameraPhotoUri(): Uri {
+        val photoFile = File(context.cacheDir, "nameplate_capture_${System.currentTimeMillis()}.jpg")
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            photoFile
+        ).also { cameraPhotoUri = it }
+    }
+
+    // Full-resolution camera capture via TakePicture (saves to FileProvider URI)
+    val directCameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        val uri = cameraPhotoUri
+        if (success && uri != null) {
+            Toast.makeText(context, "Analyzing motor plate photo (high-res)...", Toast.LENGTH_SHORT).show()
+            NameplateOcrProcessor.processUri(
+                context = context,
+                uri = uri,
+                onSuccess = { result, _, loadedBitmap ->
+                    initialScanResult = result
+                    initialScanImage = loadedBitmap
+                    result.powerKw?.let { motorKwText = it.toString() }
+                    result.voltageV?.let {
+                        voltageText = it.toInt().toString()
+                        phaseIndex = if (it >= 380.0) 0 else 1
+                    }
+                    result.powerFactor?.let { powerFactorText = it.toString() }
+                    result.efficiencyPct?.let { efficiencyText = it.toString() }
+                    showScannerSheet = true
+                    Toast.makeText(context, "Motor plate data extracted successfully!", Toast.LENGTH_SHORT).show()
+                },
+                onError = { err ->
+                    Toast.makeText(context, "Failed to analyze photo: ${err.localizedMessage ?: "Unknown error"}", Toast.LENGTH_LONG).show()
+                }
+            )
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            try {
+                directCameraLauncher.launch(createCameraPhotoUri())
+            } catch (e: Exception) {
+                Toast.makeText(context, "Cannot open camera: ${e.localizedMessage ?: "Unknown error"}", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            Toast.makeText(context, "Camera permission is needed to scan plates. You can also use 'Import File' to select a picture.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    val openCameraAction = remember(context) {
+        {
+            val hasPermission = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (hasPermission) {
+                try {
+                    directCameraLauncher.launch(createCameraPhotoUri())
+                } catch (e: SecurityException) {
+                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Cannot open camera: ${e.localizedMessage ?: "Unknown error"}", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            }
+        }
+    }
 
     val starterMethod = MotorStarterType.entries[starterMethodIndex.coerceIn(0, MotorStarterType.entries.size - 1)]
     val tripClass = if (tripClassIndex == 0) "Class 10" else "Class 20"
@@ -139,6 +259,16 @@ fun QuickMotorStarterScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { showScannerSheet = true },
+                        modifier = Modifier.testTag("motor_starter_scan_plate_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = "Scan Motor Plate",
+                            tint = SleekPrimary
+                        )
+                    }
                     IconButton(onClick = copySummaryAction, modifier = Modifier.testTag("motor_starter_copy_btn")) {
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
@@ -164,6 +294,81 @@ fun QuickMotorStarterScreen(
             item {
                 QuickCard {
                     QuickSectionTitle(title = "Motor Nameplate Specifications", accentColor = SleekPrimary, badgeText = "IEC 60034", badgeColor = SleekPrimary)
+
+                    // ── Nameplate Optical Scanner & File Import Action Bar ──
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("motor_nameplate_scanner_card"),
+                        colors = CardDefaults.cardColors(
+                            containerColor = SurfaceElevated
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, SleekPrimary.copy(alpha = 0.35f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CameraAlt,
+                                    contentDescription = null,
+                                    tint = SleekPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Motor Nameplate Auto-Scan",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = ThemeTextColor
+                                    )
+                                    Text(
+                                        text = "Scan with camera or import plate picture from local files",
+                                        fontSize = 11.sp,
+                                        color = SlateTextSecondary
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = openCameraAction,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("motor_plate_camera_scan_btn"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = SleekPrimary),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(vertical = 8.dp)
+                                ) {
+                                    Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Open Camera", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
+
+                                OutlinedButton(
+                                    onClick = { directPickImageLauncher.launch("image/*") },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("motor_plate_import_file_btn"),
+                                    border = BorderStroke(1.dp, SleekPrimary.copy(alpha = 0.7f)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(vertical = 8.dp)
+                                ) {
+                                    Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp), tint = SleekPrimary)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Import File", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = SleekPrimary)
+                                }
+                            }
+                        }
+                    }
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
@@ -351,5 +556,28 @@ fun QuickMotorStarterScreen(
                 )
             }
         }
+    }
+
+    if (showScannerSheet) {
+        EquipmentNameplateScannerSheet(
+            initialScanResult = initialScanResult,
+            initialImage = initialScanImage,
+            onApplyToMotorStarter = { kw, v, pf, eff ->
+                motorKwText = kw.toString()
+                voltageText = v.toInt().toString()
+                powerFactorText = pf.toString()
+                efficiencyText = eff.toString()
+                phaseIndex = if (v >= 380.0) 0 else 1
+                showScannerSheet = false
+                initialScanResult = null
+                initialScanImage = null
+                Toast.makeText(context, "Applied to motor: $kw kW @ ${v.toInt()}V", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = {
+                showScannerSheet = false
+                initialScanResult = null
+                initialScanImage = null
+            }
+        )
     }
 }
