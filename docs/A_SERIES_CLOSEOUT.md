@@ -55,11 +55,56 @@ Status: PARTIAL CLOSEOUT (owner-reviewed 2026-09-28)
 - `EngineFixesTest#testSinglePhaseNeutralSizing` — **pre-existing at `e45c950`, not ENG-30**. Verified
   2026-09-28 with a clean-tree control run: full gate at HEAD = `discovered=2597 failed=1` (this test),
   full gate with ENG-30 = `discovered=2601 failed=1` (same test) → **0 new failures**; isolated at HEAD
-  also FAILS. Root cause (not investigated further, per rule): `CableSizingEngine.getTempDerating:151`
-  returns `1.0` when `Catalog.deratingData == null`, so this test's PASS depends on whether a leaking
-  class ran first — `ProjectContextProviderTest.kt:155` and `ai/tools/cable/CableEngineeringToolsTest.kt:94`
-  assign `Catalog.deratingData` and their `@After tearDown()` never restores it. The closeout baseline
-  (`failed=2`, flaky class) no longer reproduces at HEAD: order-dependent state, not a code regression.
+  also FAILS. Root cause (investigated 2026-09-28 as TST-23): `CableSizingEngine.kt:233`
+  `Catalog.deratingData ?: return null` → `:549-557` `?: return failedResult(...)` → `:418 "✗ FAIL"`,
+  while `EngineFixesTest.kt:74` asserts `"✓ PASS"`. The test's PASS depends on whether a predecessor
+  populated `Catalog.deratingData` — `ProjectContextProviderTest.kt:155` and
+  `ai/tools/cable/CableEngineeringToolsTest.kt:94` assign it and their `@After tearDown()` never
+  restores it. (Supersedes the earlier `getTempDerating:151` hypothesis: `:151 ?: return 1.0` is not
+  on the operative path.) The closeout baseline (`failed=2`, flaky class) no longer reproduces at HEAD:
+  order-dependent state, not a code regression. Full mechanism + fix options under **TST-23** below.
+
+- **TST-23** — global mutable `object Catalog` shared by every test in one JVM → cross-class state
+  leakage. **Test-infra, not blocking, awaiting scheduling.** Options A/B/C proposed, **NONE selected —
+  awaiting owner decision.**
+  *Mechanism:* `Catalog` (`Models.kt:132`) is a process-wide Kotlin `object` singleton; mutable
+  `var cableTypes/dataSheet/cableCatalog/breakers/accessories/conduits/busways` (`:133-139`),
+  `var deratingData: JSONObject?` (`:140`), `var lastError` (`:178`). `app/build.gradle.kts:233-311`
+  configures only profile `filter { include/excludeTestsMatching }` — **no `maxParallelForks`, no
+  `forkEvery`, no explicit ordering** — so all tests run sequentially in one JVM and whatever a writer
+  installs in `@Before`/`@BeforeClass` is visible to every later test. `CatalogStateResetRule`
+  (`:69-93`) is explicitly *"snapshot on entry, restore on exit"*: it hands back exactly the state it
+  found, so it stops leaks **out** but cannot sanitize state inherited **in**. `Catalog.resetForTesting()`
+  (`Models.kt:430-442`) does hard-reset to empty, but only 2 test classes call it.
+  *Scope (recomputed 2026-09-28, case-sensitive `git grep`):* **35 of 270** test classes reference
+  `Catalog.` → **444 of 2662** `@Test` methods. Split: **28 writer** classes (assign a `Catalog.*`
+  field), **6 reader-only**, plus the rule itself; **15** writers are rule-protected; 1 writer has
+  neither `@After` nor the rule (`CatalogLoaderTest`, restores via `finally`).
+  *Proven order-dependent:* `EngineFixesTest#testSinglePhaseNeutralSizing` — virgin-JVM isolation run
+  2026-09-28 11:56 (`--tests com.example.EngineFixesTest` alone, no predecessor): `tests=5 failures=1`,
+  `org.junit.ComparisonFailure at EngineFixesTest.kt:74`, `expected:<[✓ PASS]> but was:<[✗ FAIL]>`,
+  gradle exit=1. Chain: `CableSizingEngine.kt:233` `Catalog.deratingData ?: return null` → `:554
+  failedResult(...)` → `:418 "✗ FAIL"`. The test never writes `deratingData` (only `cableTypes`/
+  `dataSheet`/`cableCatalog`), and `:151 ?: return 1.0` cannot emit a FAIL verdict, so a PASS requires a
+  predecessor to have populated `Catalog.deratingData` — **deduction from the code path; no passing run
+  has been observed.**
+  *Same-shape readers (6 classes install conditionally, `if (Catalog.cableTypes.isEmpty())`, so they
+  silently adopt a predecessor's catalog):* `MasterEngineeringStressTest`,
+  `OperationalFreshnessIntegrationTest`, `CoordinatorInvocationMeasurementTest`,
+  `CoordinatorNonBlockingExecutionTest`, `CoordinatorPassRevisionHoistingTest`, `RevisionCorrectnessTest`.
+  *Options (proposed, none chosen, none implemented):*
+  — **A** — explicit `@Before` install + `@After` reset in every class that writes `Catalog` (28
+  classes). Small, localised, but relies on discipline for every future writer.
+  — **B** — remove the global singleton: inject `Catalog`/pass state into the readers (21 production
+  files, 129 refs in `app/src/main`). Root-cause fix, largest change, touches production signatures.
+  — **C** — one global `TestRule` that snapshots all `Catalog` fields before every test and restores
+  after every test, regardless of class. Single attachment point, no production change, but hides leaks
+  rather than making each test self-contained.
+
+- **TST-24** — `ProtectionScreen.kt:605` / `:599` (§12.2 display remainder): Safety Margin (605) /
+  progress bar (599) render misleadingly on DATA MISSING rows (100%/0% instead of suppressed); NaN% on
+  missing-Ze path pre-existing. **Display-only, no verdict-correctness impact. Logged 2026-09-28, not
+  fixed, no priority assigned yet** (owner will prioritize later).
 
 ## FLAKY — classified 2026-09-28, not a gate blocker
 
