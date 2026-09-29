@@ -22,7 +22,7 @@ Status: PARTIAL CLOSEOUT (owner-reviewed 2026-09-28)
 - A7 — belongsToTx double-count
 - A8 — earthing c-factor basis inconsistency
 
-## OPEN FINDINGS LOGGED (not fixed, not blocking)
+## FINDINGS LOGGED (not all still open — closed entries carry their fix commit)
 
 - ENG-28 — `isZeResolved` computed but never forwarded to `ProtectionEngine.calculateAds`
   (`EngineeringCalculationCoordinator.kt:1154`, `:1286`, `:1849`) → production ADS verdicts can
@@ -31,11 +31,22 @@ Status: PARTIAL CLOSEOUT (owner-reviewed 2026-09-28)
   PASS via 0.0 loop.
 
 - N1 — `QuickEngineeringDataBridge.kt:106-110` — `else -> entry.air`: any unrecognised installation
-  string silently gets free-air ampacity (non-conservative silent default).
+  string silently gets free-air ampacity (non-conservative silent default). **FIXED `8b1531e`**
+  (2026-09-28): unsupported/blank installations are rejected with a typed failure / DATA MISSING and
+  the air fallback no longer exists.
 - N2 — `ContextResolver.kt:591-593` — AI slot still emits `"In Conduit"` (now fails loud, but the AI
   layer still offers an unsupported option).
 - N3 — `CableSizingEngine.kt:347-357` — `ampacityOf(...) else -> entry.air.toDouble()`: same mechanism
   as N1, second site. An unrecognised installation silently takes the air ampacity column.
+  **FIXED `7642b55`** (2026-09-28): the engine resolves the canonical installation family once and
+  `ampacityOf` consumes that family with no Air catch-all; an unresolved family is rejected in
+  `checkCandidate`.
+- N6 — `CableSizingEngine.kt` `getDepthDerating` / `getSoilDerating` — the buried depth/soil gates
+  keyed on the raw `isDirectBuried(...)` phrase while the ampacity column and grouping use the
+  canonical family, so canonical `D2`/`Buried` silently skipped both derating factors
+  (0.99 depth x 0.91 soil at the default inputs; overstating derated ampacity).
+  **FIXED `2ae6a8c`** (2026-09-28): both gates now use the same canonical-family boundary as the rest
+  of the engine. Found while qualifying N3 — it was not part of the original audit.
 - `§12.2` — `ProtectionEngine` `?: 0.0` on R20 (ADS loop understated) — HIGH. **FIXED as ENG-30,
   2026-09-28**: `r1`/`r2` nullable + `DATA MISSING` on catalog miss (§12.2-a), material- and
   insulation-aware ADS temperature factor (§12.2-b). Gate evidence under "Gate at ENG-30" below.
