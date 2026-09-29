@@ -50,14 +50,20 @@ android {
 
       val hasValidPassword = propStorePass.isNotEmpty() && propStorePass != "YOUR_STORE_PASSWORD_HERE"
       val fileExists = resolvedKsFile.exists()
+      // A debug keystore satisfies every existence/password check, yet it signs the release with
+      // the PUBLIC AOSP debug key. Android then accepts an attacker-signed update as this app,
+      // so a debug keystore is never a valid release credential.
+      val isDebugKeystore = resolvedKsFile.name.equals("debug.keystore", ignoreCase = true) ||
+        propKeyAlias.equals("androiddebugkey", ignoreCase = true)
 
       println("==================================================")
       println("[SIGNING DIAGNOSTIC] keystore.properties path : ${ksPropsFile.absolutePath} (exists: ${ksPropsFile.exists()})")
       println("[SIGNING DIAGNOSTIC] Resolved storeFile path  : ${resolvedKsFile.absolutePath} (exists: $fileExists)")
       println("[SIGNING DIAGNOSTIC] keyAlias                 : '$propKeyAlias'")
       println("[SIGNING DIAGNOSTIC] storePassword present    : ${propStorePass.isNotEmpty()}")
+      println("[SIGNING DIAGNOSTIC] debug keystore          : $isDebugKeystore")
 
-      if (fileExists && hasValidPassword) {
+      if (fileExists && hasValidPassword && !isDebugKeystore) {
         println("[SIGNING RESOLUTION] ---> USING RELEASE UPLOAD KEY (${resolvedKsFile.name})")
         println("==================================================")
         storeFile = resolvedKsFile
@@ -65,7 +71,7 @@ android {
         keyAlias = propKeyAlias
         keyPassword = propKeyPass
       } else {
-        println("[SIGNING RESOLUTION] ---> NO VALID RELEASE KEYSTORE FOUND (fileExists=$fileExists, validPassword=$hasValidPassword)")
+        println("[SIGNING RESOLUTION] ---> NO VALID RELEASE KEYSTORE FOUND (fileExists=$fileExists, validPassword=$hasValidPassword, debugKeystore=$isDebugKeystore)")
         println("==================================================")
         storeFile = null
       }
@@ -121,6 +127,7 @@ gradle.taskGraph.whenReady {
     }
     val propStoreFile = (ksProps.getProperty("storeFile") ?: System.getenv("KEYSTORE_PATH") ?: "my-upload-key.jks").trim()
     val propStorePass = (ksProps.getProperty("storePassword") ?: System.getenv("STORE_PASSWORD") ?: "").trim()
+    val propKeyAlias = (ksProps.getProperty("keyAlias") ?: System.getenv("KEY_ALIAS") ?: "upload").trim()
     val resolvedKsFile = when {
       File(propStoreFile).isAbsolute -> File(propStoreFile)
       File(rootDir, propStoreFile).exists() -> File(rootDir, propStoreFile)
@@ -128,10 +135,12 @@ gradle.taskGraph.whenReady {
     }
     val hasValidPassword = propStorePass.isNotEmpty() && propStorePass != "YOUR_STORE_PASSWORD_HERE"
     val fileExists = resolvedKsFile.exists()
+    val isDebugKeystore = resolvedKsFile.name.equals("debug.keystore", ignoreCase = true) ||
+      propKeyAlias.equals("androiddebugkey", ignoreCase = true)
 
-    if (!fileExists || !hasValidPassword) {
+    if (!fileExists || !hasValidPassword || isDebugKeystore) {
       throw GradleException(
-        "FATAL: Release packaging cannot proceed. Valid release upload keystore credentials are required (keystore.properties or environment variables KEYSTORE_PATH/STORE_PASSWORD). Reason: fileExists=$fileExists, validPassword=$hasValidPassword"
+        "FATAL: Release packaging cannot proceed. A valid NON-DEBUG release upload keystore is required (keystore.properties or environment variables KEYSTORE_PATH/STORE_PASSWORD). Reason: fileExists=$fileExists, validPassword=$hasValidPassword, debugKeystore=$isDebugKeystore"
       )
     }
   }
