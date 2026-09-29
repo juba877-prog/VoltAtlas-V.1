@@ -532,7 +532,12 @@ class EngineeringAssistantViewModel(
             current.copy(
                 isThinking = false,
                 typedCards = current.typedCards + AssistantCardUiModel.SafeErrorCard(
-                    cardId = "CTX-BLOCKED-" + System.currentTimeMillis(),
+                    // cardId becomes the conversation LazyColumn key (AssistantConversationOrder:
+                    // "card:$cardId"). A millisecond timestamp collides when two context blocks
+                    // are raised inside the same millisecond, which Compose reports as a duplicate
+                    // key and throws. Match the UUID pattern already used for
+                    // PROPOSAL-PREPARATION-ERROR below so this id is unique per emitted card.
+                    cardId = "CTX-BLOCKED-" + UUID.randomUUID(),
                     userFacingMessage = message,
                     isRecoverable = true,
                     dataUnchangedConfirmed = true,
