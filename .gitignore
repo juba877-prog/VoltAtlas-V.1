@@ -27,6 +27,10 @@ sqlite-3.41.2.2-*
 # Test debug output artifacts (written by unit tests into the working directory)
 app/test_output*.txt
 
+# Local investigation evidence (screenshots, uiautomator dumps, logcat, extracted AARs).
+# Repository-root anchored so no legitimate source folder elsewhere is hidden.
+/build_logs/
+
 # Secrets, Keystores & Environment Credentials
 .env
 .env.*
