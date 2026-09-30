@@ -77,11 +77,15 @@ fun EquipmentNameplateScannerContent(
     var isProcessing by remember { mutableStateOf(false) }
     var scanStatusMessage by remember { mutableStateOf<String?>(null) }
 
-    var editablePowerKw by remember(scanResult) { mutableStateOf(scanResult?.powerKw?.toString() ?: "37.0") }
-    var editableVoltageV by remember(scanResult) { mutableStateOf(scanResult?.voltageV?.toInt()?.toString() ?: "400") }
-    var editableCurrentA by remember(scanResult) { mutableStateOf(scanResult?.currentAmps?.toString() ?: "68.5") }
-    var editablePf by remember(scanResult) { mutableStateOf(scanResult?.powerFactor?.toString() ?: "0.86") }
-    var editableEff by remember(scanResult) { mutableStateOf(scanResult?.efficiencyPct?.toString() ?: "92.4") }
+    // With no scan result the fields start EMPTY. They previously opened on a hardcoded sample
+    // (37.0 kW / 400 V / 68.5 A / 0.86 / 92.4) inside a scanning surface, where it read as a
+    // real nameplate reading, and those values were then applied to the motor-starter and
+    // cable-sizing calculations. A reading now comes only from OCR or from what the engineer types.
+    var editablePowerKw by remember(scanResult) { mutableStateOf(scanResult?.powerKw?.toString() ?: "") }
+    var editableVoltageV by remember(scanResult) { mutableStateOf(scanResult?.voltageV?.toInt()?.toString() ?: "") }
+    var editableCurrentA by remember(scanResult) { mutableStateOf(scanResult?.currentAmps?.toString() ?: "") }
+    var editablePf by remember(scanResult) { mutableStateOf(scanResult?.powerFactor?.toString() ?: "") }
+    var editableEff by remember(scanResult) { mutableStateOf(scanResult?.efficiencyPct?.toString() ?: "") }
 
     // Create a stable URI for the full-resolution camera photo via FileProvider
     var cameraPhotoUri by remember { mutableStateOf<Uri?>(null) }
@@ -426,12 +430,18 @@ fun EquipmentNameplateScannerContent(
         ) {
             Button(
                 onClick = {
-                    val kw = editablePowerKw.toDoubleOrNull() ?: 37.0
-                    val v = editableVoltageV.toDoubleOrNull() ?: 400.0
-                    val pf = editablePf.toDoubleOrNull() ?: 0.86
-                    val eff = editableEff.toDoubleOrNull() ?: 92.4
-                    onApplyToMotorStarter(kw, v, pf, eff)
-                    onClose()
+                    val kw = editablePowerKw.toDoubleOrNull()
+                    val v = editableVoltageV.toDoubleOrNull()
+                    val pf = editablePf.toDoubleOrNull()
+                    val eff = editableEff.toDoubleOrNull()
+                    if (kw == null || v == null || pf == null || eff == null) {
+                        // Never substitute an invented value for a missing nameplate field.
+                        scanStatusMessage = "Scan a nameplate or enter Power, Voltage, pf and " +
+                            "Efficiency before applying to the motor starter."
+                    } else {
+                        onApplyToMotorStarter(kw, v, pf, eff)
+                        onClose()
+                    }
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -442,11 +452,17 @@ fun EquipmentNameplateScannerContent(
 
             OutlinedButton(
                 onClick = {
-                    val amps = editableCurrentA.toDoubleOrNull() ?: 68.5
-                    val v = editableVoltageV.toDoubleOrNull() ?: 400.0
-                    val kw = editablePowerKw.toDoubleOrNull() ?: 37.0
-                    onApplyToCableSizing(amps, v, kw)
-                    onClose()
+                    val amps = editableCurrentA.toDoubleOrNull()
+                    val v = editableVoltageV.toDoubleOrNull()
+                    val kw = editablePowerKw.toDoubleOrNull()
+                    if (amps == null || v == null || kw == null) {
+                        // Never substitute an invented value for a missing nameplate field.
+                        scanStatusMessage = "Scan a nameplate or enter Current, Voltage and Power " +
+                            "before applying to cable sizing."
+                    } else {
+                        onApplyToCableSizing(amps, v, kw)
+                        onClose()
+                    }
                 },
                 modifier = Modifier
                     .weight(1f)
