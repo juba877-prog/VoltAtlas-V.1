@@ -25,6 +25,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -508,8 +509,10 @@ fun QuickCableCalcContent(
     var filterCores by remember(uiState.cableType) { mutableStateOf(initialFamilyInfo.coresConfig) }
     var filterQuery by remember { mutableStateOf("") }
 
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     Scaffold(
-        modifier = modifier,
+        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             VoltAtlasTopBar(
                 title = "Quick Cable Sizing",
@@ -517,6 +520,7 @@ fun QuickCableCalcContent(
                 onBack = onBack,
                 backDescription = "Back",
                 backButtonTestTag = "quick_calc_back_btn",
+                scrollBehavior = scrollBehavior,
                 actions = {
                     if (uiState.calculationResult != null) {
                         IconButton(onClick = onCopySummary, modifier = Modifier.testTag("copy_summary_btn")) {

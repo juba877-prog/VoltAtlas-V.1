@@ -20,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -158,8 +159,11 @@ fun QuickVoltageDropScreenV2(
         }
     }
 
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     // ── 4. Scaffold Layout ──
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             VoltAtlasTopBar(
                 title = "Voltage Drop Calculator",
@@ -167,6 +171,7 @@ fun QuickVoltageDropScreenV2(
                 onBack = onBack,
                 backDescription = "Back to Hub",
                 backButtonTestTag = "voltage_drop_v2_back_btn",
+                scrollBehavior = scrollBehavior,
                 actions = {
                     IconButton(onClick = copySummaryAction, modifier = Modifier.testTag("copy_vd_summary_btn")) {
                         Icon(

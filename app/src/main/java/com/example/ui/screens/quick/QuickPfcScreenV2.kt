@@ -27,6 +27,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -210,8 +211,10 @@ fun QuickPfcContent(
     onCopySummary: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     Scaffold(
-        modifier = modifier,
+        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             VoltAtlasTopBar(
                 title = "Power Factor Correction",
@@ -219,6 +222,7 @@ fun QuickPfcContent(
                 onBack = onBack,
                 backDescription = "Back to Hub",
                 backButtonTestTag = "pfc_v2_back_btn",
+                scrollBehavior = scrollBehavior,
                 actions = {
                     IconButton(onClick = onCopySummary, modifier = Modifier.testTag("copy_pfc_summary_btn")) {
                         Icon(

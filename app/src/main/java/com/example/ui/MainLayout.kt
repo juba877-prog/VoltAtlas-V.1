@@ -7,6 +7,8 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import androidx.navigation3.scene.DialogSceneStrategy
+import com.example.navigation.QuickEngineeringListDetailScene
+import com.example.navigation.rememberQuickEngineeringListDetailSceneStrategy
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.graphics.graphicsLayer
@@ -200,12 +202,14 @@ fun MainLayout(
     // restored workspace still passes through the entry screen first.
     val isOnAppRoot = appBackStack.lastOrNull() == EntryKey
     if (isOnAppRoot || activeId == null) {
+        val quickListDetailStrategy = rememberQuickEngineeringListDetailSceneStrategy<NavKey>()
         NavDisplay(
             backStack = appBackStack,
             onBack = {
                 // Root destination: the Entry screen owns Back (exit confirmation).
                 if (appBackStack.size > 1) appBackStack.removeLastOrNull()
             },
+            sceneStrategies = listOf(quickListDetailStrategy),
             entryProvider = { key ->
                 when (key) {
                     is EntryKey -> NavEntry(key) {
@@ -229,13 +233,28 @@ fun MainLayout(
                             confirmDestructiveActions = confirmDestructiveActions
                         )
                     }
-                    is QuickHubKey -> NavEntry(key) {
+                    is QuickHubKey -> NavEntry(
+                        key = key,
+                        metadata = QuickEngineeringListDetailScene.listPane()
+                    ) {
                         QuickEngineeringHubScreen(
-                            onSelectTool = { appBackStack.add(QuickToolKey(it)) },
-                            onBack = { appBackStack.removeLastOrNull() }
+                            onSelectTool = { toolId ->
+                                if (appBackStack.lastOrNull() is QuickToolKey) {
+                                    appBackStack.removeLastOrNull()
+                                }
+                                appBackStack.add(QuickToolKey(toolId))
+                            },
+                            onBack = {
+                                while (appBackStack.lastOrNull() is QuickToolKey || appBackStack.lastOrNull() is QuickHubKey) {
+                                    appBackStack.removeLastOrNull()
+                                }
+                            }
                         )
                     }
-                    is QuickToolKey -> NavEntry(key) {
+                    is QuickToolKey -> NavEntry(
+                        key = key,
+                        metadata = QuickEngineeringListDetailScene.detailPane()
+                    ) {
                         QuickToolDestination(
                             toolId = key.toolId,
                             onBack = { appBackStack.removeLastOrNull() }

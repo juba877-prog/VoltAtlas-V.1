@@ -9,8 +9,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
@@ -139,15 +141,18 @@ fun CircuitsGridScreen(
         color = MaterialTheme.colorScheme.background
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            LazyColumn(
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 320.dp),
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = DsSpacing.md),
+                    .padding(horizontal = DsSpacing.md)
+                    .testTag("circuits_lazy_grid"),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(top = DsSpacing.xs, bottom = 88.dp)
             ) {
                 // 1. Search Bar
-                item(key = "circuit_search_bar") {
+                item(key = "circuit_search_bar", span = { GridItemSpan(maxLineSpan) }) {
                     OutlinedTextField(
                         value = query,
                         onValueChange = { viewModel.circuitSearchQuery.value = it },
@@ -200,7 +205,7 @@ fun CircuitsGridScreen(
                 }
 
                 // 2. Compact Selectors (Level & Status Dropdown Selectors)
-                item(key = "circuit_filter_selectors") {
+                item(key = "circuit_filter_selectors", span = { GridItemSpan(maxLineSpan) }) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -246,7 +251,7 @@ fun CircuitsGridScreen(
                 }
 
                 // 3. Whole-Project Health Summary Strip
-                item(key = "circuit_summary_strip") {
+                item(key = "circuit_summary_strip", span = { GridItemSpan(maxLineSpan) }) {
                     CircuitsSummaryStrip(
                         summary = summary,
                         modifier = Modifier.testTag("circuits_summary_strip")
@@ -254,7 +259,7 @@ fun CircuitsGridScreen(
                 }
 
                 // 4. Visible Count Header and Compact Sort Selector Row
-                item(key = "circuit_count_sort_header") {
+                item(key = "circuit_count_sort_header", span = { GridItemSpan(maxLineSpan) }) {
                     val totalCount = state.circuits.size
                     val visibleCount = visibleCircuits.size
                     val countHeaderText = if (visibleCount == totalCount) {
@@ -291,9 +296,9 @@ fun CircuitsGridScreen(
                     }
                 }
 
-                // 5. Horizontal Grid/List of circuits
+                // 5. Grid/List of circuits
                 if (state.circuits.isEmpty()) {
-                    item(key = "empty_circuits_state") {
+                    item(key = "empty_circuits_state", span = { GridItemSpan(maxLineSpan) }) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -309,7 +314,7 @@ fun CircuitsGridScreen(
                         }
                     }
                 } else if (visibleCircuits.isEmpty()) {
-                    item(key = "no_matching_circuits_state") {
+                    item(key = "no_matching_circuits_state", span = { GridItemSpan(maxLineSpan) }) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -358,7 +363,7 @@ fun CircuitsGridScreen(
                     )
                 }
                 if (visibleCircuits.size > 50) {
-                    item(key = "circuits_footer_count") {
+                    item(key = "circuits_footer_count", span = { GridItemSpan(maxLineSpan) }) {
                         Text(
                             "Showing all ${visibleCircuits.size} matching circuits.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

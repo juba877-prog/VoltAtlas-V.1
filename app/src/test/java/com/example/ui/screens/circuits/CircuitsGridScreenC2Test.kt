@@ -463,4 +463,35 @@ class CircuitsGridScreenC2Test {
         composeTestRule.onNodeWithTag("filter_status_selector").assertExists().assertIsDisplayed()
         composeTestRule.onNodeWithTag("circuit_card_MDB-1").assertExists().assertIsDisplayed()
     }
+
+    @Test
+    @Config(qualifiers = "w840dp-h1024dp-xhdpi")
+    fun test16_adaptive_wide840dp_tablet_rendersMultiColumnGrid() {
+        val c1 = createCircuit(id = 1, name = "MDB-1")
+        val c2 = createCircuit(id = 2, name = "MDB-2")
+        val state = createSuccessState(
+            circuits = listOf(c1, c2),
+            sizingResults = mapOf(
+                1 to createSizing(SizingResultStatus.PASS, vdPct = 1.2),
+                2 to createSizing(SizingResultStatus.PASS, vdPct = 1.8)
+            )
+        )
+
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = false) {
+                CircuitsGridScreen(
+                    state = state,
+                    viewModel = viewModel
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag("circuits_summary_strip").assertExists().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("search_circuits_input").assertExists().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("filter_level_selector").assertExists().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("filter_status_selector").assertExists().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuits_lazy_grid").assertExists().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_card_MDB-1").assertExists().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("circuit_card_MDB-2").assertExists().assertIsDisplayed()
+    }
 }

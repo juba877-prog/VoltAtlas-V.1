@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -115,8 +116,11 @@ fun QuickLoadCurrentScreenV2(
         }
     }
 
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     // ── 4. Scaffold Layout ──
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = {
@@ -152,7 +156,8 @@ fun QuickLoadCurrentScreenV2(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkCardBg)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkCardBg),
+                scrollBehavior = scrollBehavior
             )
         },
         containerColor = DarkBackground

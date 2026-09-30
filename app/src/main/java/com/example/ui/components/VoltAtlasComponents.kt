@@ -117,7 +117,8 @@ fun VoltAtlasTopBar(
         titleContentColor = ThemeTextPrimary,
         navigationIconContentColor = ThemeTextPrimary,
         actionIconContentColor = ThemePrimary
-    )
+    ),
+    scrollBehavior: TopAppBarScrollBehavior? = null
 ) {
     TopAppBar(
         modifier = modifier,
@@ -126,7 +127,8 @@ fun VoltAtlasTopBar(
             navigationIcon?.invoke()
         },
         actions = actions,
-        colors = colors
+        colors = colors,
+        scrollBehavior = scrollBehavior
     )
 }
 
@@ -148,7 +150,8 @@ fun VoltAtlasTopBar(
         titleContentColor = ThemeTextPrimary,
         navigationIconContentColor = ThemeTextPrimary,
         actionIconContentColor = ThemePrimary
-    )
+    ),
+    scrollBehavior: TopAppBarScrollBehavior? = null
 ) {
     VoltAtlasTopBar(
         titleContent = {
@@ -188,7 +191,8 @@ fun VoltAtlasTopBar(
             }
         } else null,
         actions = actions,
-        colors = colors
+        colors = colors,
+        scrollBehavior = scrollBehavior
     )
 }
 

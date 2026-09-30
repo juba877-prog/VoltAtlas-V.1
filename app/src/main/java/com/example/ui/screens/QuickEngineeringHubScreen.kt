@@ -26,6 +26,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -266,7 +267,10 @@ fun QuickEngineeringHubScreen(
             }
         }
 
+        val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
         Scaffold(
+            modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
             topBar = {
                 TopAppBar(
                     title = {
@@ -293,7 +297,8 @@ fun QuickEngineeringHubScreen(
                             )
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = ThemeSurface)
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = ThemeSurface),
+                    scrollBehavior = scrollBehavior
                 )
             },
             containerColor = Color.Transparent

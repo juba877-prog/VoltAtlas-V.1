@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -53,7 +54,10 @@ fun QuickCalculatorContainer(
 ) {
 
 
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = {
@@ -91,7 +95,8 @@ fun QuickCalculatorContainer(
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = ThemeSurface)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = ThemeSurface),
+                scrollBehavior = scrollBehavior
             )
         },
         containerColor = ThemeBackground

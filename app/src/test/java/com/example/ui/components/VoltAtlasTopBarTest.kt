@@ -87,4 +87,26 @@ class VoltAtlasTopBarTest {
         composeTestRule.onNodeWithTag("slot_title").assertIsDisplayed()
         composeTestRule.onNodeWithTag("nav_slot").assertIsDisplayed()
     }
+
+    @Test
+    fun structuredOverload_supportsScrollBehavior() {
+        var scrollBehavior: androidx.compose.material3.TopAppBarScrollBehavior? = null
+        composeTestRule.setContent {
+            VoltAtlasTheme {
+                val behavior = androidx.compose.material3.TopAppBarDefaults.enterAlwaysScrollBehavior()
+                scrollBehavior = behavior
+                VoltAtlasTopBar(
+                    title = "Quick Cable Sizing",
+                    scrollBehavior = behavior,
+                    modifier = Modifier.testTag("scrollable_top_bar")
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("scrollable_top_bar").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Quick Cable Sizing").assertIsDisplayed()
+        org.junit.Assert.assertNotNull("scrollBehavior must be non-null", scrollBehavior)
+        org.junit.Assert.assertNotNull("nestedScrollConnection must be non-null", scrollBehavior?.nestedScrollConnection)
+    }
 }
