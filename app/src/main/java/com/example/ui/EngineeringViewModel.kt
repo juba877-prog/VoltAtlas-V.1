@@ -64,6 +64,17 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
     private val _activeProjectId = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     val activeProjectId: kotlinx.coroutines.flow.StateFlow<String?> = _activeProjectId
 
+    /**
+     * Single write path for the active project id. P0-13 (F-02, O-01): every project
+     * transition (startup / open / create / close / delete / import) also drops the
+     * project-scoped auto-design cache so project A's electrode layout can never render —
+     * or reach the PDF — under project B.
+     */
+    private fun switchActiveProject(id: String?) {
+        _activeProjectId.value = id
+        _autoDesignResultState.value = null
+    }
+
     val selectedTransformerId = MutableStateFlow("")
     val selectedCircuitId = MutableStateFlow<Int?>(null)
 
@@ -147,7 +158,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
 
     fun loadInitialState() = viewModelScope.launch {
         // Force the ProjectPicker on startup
-        _activeProjectId.value = null
+        switchActiveProject(null)
     }
 
     fun createAndOpenProject(name: String) = viewModelScope.launch {
@@ -159,7 +170,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
         circuitSearchQuery.value = ""
         circuitStatusFilter.value = "All"
         circuitParentFilter.value = "All"
-        _activeProjectId.value = id
+        switchActiveProject(id)
         recalculate()
     }
 
@@ -171,14 +182,14 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
         circuitSearchQuery.value = ""
         circuitStatusFilter.value = "All"
         circuitParentFilter.value = "All"
-        _activeProjectId.value = id
+        switchActiveProject(id)
         recalculate()
     }
 
     fun closeProject() = viewModelScope.launch {
         repository.setActiveProject(null)
         preferences.setLastOpenedProjectId(null)
-        _activeProjectId.value = null
+        switchActiveProject(null)
         selectedCircuitId.value = null
         selectedTransformerId.value = ""
         circuitSearchQuery.value = ""
@@ -195,7 +206,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
             repository.deleteProject(id)
         }
         if (_activeProjectId.value == id) {
-            _activeProjectId.value = null
+            switchActiveProject(null)
             selectedCircuitId.value = null
             selectedTransformerId.value = ""
             circuitSearchQuery.value = ""
@@ -210,7 +221,17 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
 
     /** R2a: true once the catalog load attempt has finished (success or failure). */
     val catalogReady = MutableStateFlow(false)
-    private val _autoDesignResultState = MutableStateFlow<com.example.engine.EarthingAutoDesignResult?>(null)
+
+    // P0-13 (F-02, O-01): the auto-design recommendation is project-scoped transient state.
+    // It is (a) keyed by the projectId that produced it — the read side can only ever serve
+    // the active project — and (b) dropped by switchActiveProject on every project transition
+    // (startup / open / create / close / delete / import). Project A's electrode layout must
+    // never render — or reach the PDF — under project B.
+    private data class ScopedAutoDesignResult(
+        val projectId: String?,
+        val result: com.example.engine.EarthingAutoDesignResult
+    )
+    private val _autoDesignResultState = MutableStateFlow<ScopedAutoDesignResult?>(null)
 
     init {
         retryStartup()
@@ -280,7 +301,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
 
     private suspend fun initializeNewInstallationIfRequired() {
         try {
-            _activeProjectId.value = null // Never auto-open project on startup
+            switchActiveProject(null) // Never auto-open project on startup
 
             preferences.awaitLoaded()
 
@@ -312,7 +333,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 circuitSearchQuery.value = ""
                 circuitStatusFilter.value = "All"
                 circuitParentFilter.value = "All"
-                _activeProjectId.value = newProjectId
+                switchActiveProject(newProjectId)
                 recalculate()
                 val message = if (result.warnings.isNotEmpty()) {
                     "Imported with ${result.warnings.size} warning(s)"
@@ -751,7 +772,12 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 totalConnectedKVA = totalConnectedLoad
             )
 
-            val autoDesignRes = if (earthingEntityVal.isAutoDesignEnabled) _autoDesignResultState.value else null
+            // P0-13 (F-02, O-01): serve the cached auto-design result only when it was
+            // produced for the ACTIVE project — a stale result from another project can
+            // never reach this result, its UI, or the PDF.
+            val autoDesignRes = if (earthingEntityVal.isAutoDesignEnabled) {
+                _autoDesignResultState.value?.takeIf { it.projectId == activeProjId }?.result
+            } else null
 
             val earthingResult = EarthingInputBasis.applyToResult(
                 base = com.example.engine.EarthingEngine.calculate(earthingInput, effectiveTarget),
@@ -1171,7 +1197,9 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
             ringConductor_mm2 = earthingEntityVal.ringConductor_mm2,
             ringBurialDepth_m = earthingEntityVal.ringBurialDepth_m
         )
-        _autoDesignResultState.value = res
+        // P0-13: cache keyed by the project it was computed for (null = no project open,
+        // which can never match the active-project guard on read).
+        _autoDesignResultState.value = ScopedAutoDesignResult(_activeProjectId.value, res)
         recalculate()
     }
 

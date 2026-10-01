@@ -1055,6 +1055,19 @@ fun MainLayout(
 
     if (isAssistantInitialized) {
         val assistantVm = resolveAssistantViewModel()
+        // P0-14 (O-02, S-11): the assistant ViewModel outlives project switches. Reset its
+        // project-scoped surface automatically whenever the active project changes and, when
+        // the sheet is open, re-open it against the new project's context — project A's
+        // conversation/cards must never render under project B. Gated on
+        // isAssistantInitialized so the lazily-created assistant ViewModel is still only
+        // created on first assistant use.
+        LaunchedEffect(activeId, assistantVm) {
+            val wasOpen = assistantVm.uiState.value.isOpen
+            assistantVm.onProjectChanged(activeId)
+            if (wasOpen) {
+                openAssistantWithContext(assistantVm.uiState.value.entryPoint)
+            }
+        }
         com.example.ai.ui.EngineeringAssistantSheet(viewModel = assistantVm)
     }
 }

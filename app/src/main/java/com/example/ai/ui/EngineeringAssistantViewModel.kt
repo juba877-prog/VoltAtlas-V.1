@@ -312,13 +312,49 @@ class EngineeringAssistantViewModel(
         }
     }
 
-    fun open(entryPoint: AssistantEntryPoint, context: EngineeringContext) {
-        // Project isolation: if switching projects, reset conversation state and evidence
-        if (context.projectId != activeConversationState?.projectId) {
-            activeConversationState = null
-            _lastToolOutcome.value = null
-            _conversationEvidence.clear()
+    /** P0-14 (O-02, S-11): project the assistant surface currently belongs to (null = none). */
+    private var lastOpenedProjectId: String? = null
+
+    /**
+     * P0-14 (O-02, S-11): drops ALL project-scoped assistant state when [projectId] differs
+     * from the one the surface was last opened for. Called from [open] on every open, and
+     * automatically by MainLayout whenever the active project changes (LaunchedEffect on
+     * activeProjectId).
+     *
+     * Conversation messages, typed cards, header, approval/proposal state, the in-flight
+     * turn, tool outcome and evidence never survive a project switch — project A's
+     * assistant surface can never render under project B. Same project ⇒ no-op (the
+     * conversation is preserved across close/reopen).
+     */
+    fun onProjectChanged(projectId: String?) {
+        if (projectId == lastOpenedProjectId) return
+        lastOpenedProjectId = projectId
+        // Invalidate any in-flight turn so a late response from the old project is dropped.
+        currentTurnId++
+        activeTurnJob?.cancel()
+        activeTurnJob = null
+        activeConversationState = null
+        activeProposalReview = null
+        _lastToolOutcome.value = null
+        _conversationEvidence.clear()
+        _uiState.update { current ->
+            current.copy(
+                messages = emptyList(),
+                typedCards = emptyList(),
+                header = ContextHeaderUiModel(),
+                approvalExecutionState = ApprovalExecutionUiState.Idle,
+                inputText = "",
+                isThinking = false,
+                errorMessage = null
+            )
         }
+    }
+
+    fun open(entryPoint: AssistantEntryPoint, context: EngineeringContext) {
+        // P0-14 (O-02, S-11): project-scoped reset on switch (same-project reopen keeps the
+        // conversation); MainLayout additionally calls onProjectChanged automatically when
+        // the active project changes while the sheet is in use.
+        onProjectChanged(context.projectId)
 
         val initialGreeting = when (entryPoint) {
             AssistantEntryPoint.CONTEXTUAL_CIRCUIT -> 
