@@ -81,6 +81,7 @@ class SldScreenScreenshotTest {
             VoltAtlasTheme(darkTheme = true) {
                 com.example.ui.SldScreen(
                     circuits = circuits,
+                    activeProjectId = "proj_1",
                     transformers = transformers,
                     generators = listOf(com.example.data.GeneratorEntity(projectId = "proj_1", generatorId = "GEN-01", generatorName = "Generator 1", manualSizeKVA = genResult.finalSize)),
                     generatorResults = mapOf("GEN-01" to genResult),
@@ -104,6 +105,7 @@ class SldScreenScreenshotTest {
             VoltAtlasTheme(darkTheme = false) {
                 com.example.ui.SldScreen(
                     circuits = circuits,
+                    activeProjectId = "proj_1",
                     transformers = transformers,
                     generators = listOf(com.example.data.GeneratorEntity(projectId = "proj_1", generatorId = "GEN-01", generatorName = "Generator 1", manualSizeKVA = genResult.finalSize)),
                     generatorResults = mapOf("GEN-01" to genResult),
@@ -157,6 +159,7 @@ class SldScreenScreenshotTest {
             VoltAtlasTheme(darkTheme = true) {
                 com.example.ui.SldScreen(
                     circuits = circuits,
+                    activeProjectId = "proj_1",
                     transformers = transformers,
                     generators = listOf(com.example.data.GeneratorEntity(projectId = "proj_1", generatorId = "GEN-01", generatorName = "Generator 1", manualSizeKVA = genResult.finalSize)),
                     generatorResults = mapOf("GEN-01" to genResult),
@@ -211,6 +214,7 @@ class SldScreenScreenshotTest {
             VoltAtlasTheme(darkTheme = true) {
                 com.example.ui.SldScreen(
                     circuits = s1Circuits,
+                    activeProjectId = "proj_1",
                     transformers = transformers,
                     generators = singleGenList,
                     atsList = singleAtsList,
@@ -245,6 +249,7 @@ class SldScreenScreenshotTest {
             VoltAtlasTheme(darkTheme = true) {
                 com.example.ui.SldScreen(
                     circuits = s2Circuits,
+                    activeProjectId = "proj_1",
                     transformers = transformers,
                     generators = multiGenList,
                     atsList = multiAtsList,
@@ -272,6 +277,7 @@ class SldScreenScreenshotTest {
             VoltAtlasTheme(darkTheme = true) {
                 com.example.ui.SldScreen(
                     circuits = s3Circuits,
+                    activeProjectId = "proj_1",
                     transformers = transformers,
                     transformerResults = transformerResults
                 )
@@ -300,6 +306,7 @@ class SldScreenScreenshotTest {
             VoltAtlasTheme(darkTheme = true) {
                 com.example.ui.SldScreen(
                     circuits = s4Circuits,
+                    activeProjectId = "proj_1",
                     transformers = transformers,
                     transformerResults = transformerResults
                 )

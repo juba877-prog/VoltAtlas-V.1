@@ -95,8 +95,14 @@ android {
     debug { }
   }
   lint {
+    // Phase 6 P1-6/R-1: config decided AFTER a recorded triage run (see VOLATLAS_LINT_TRIAGE.md),
+    // not blind. Evidence 2026-10-01: lintDebug = 290 warnings / 0 errors / 0 fatal
+    // (SARIF: app/build/reports/lint-results-debug.sarif). abortOnError restored to true so any
+    // future lint ERROR fails the build; current warnings are tracked in the triage doc, not
+    // baselined away. checkReleaseBuilds stays false: release is intentionally blocked by the
+    // debug-keystore signing guard (lint on a variant that must never build adds no signal).
     checkReleaseBuilds = false
-    abortOnError = false
+    abortOnError = true
     checkDependencies = false
   }
   compileOptions {
@@ -296,6 +302,11 @@ tasks.withType<Test>().configureEach {
       // current Robolectric harness. Unlike 'fast', this profile INCLUDES com.example.ai.*, so the
       // mutation-approval security tests and the schema-contract tests (AUDIT-1 V-06) are always
       // exercised. A green dev-loop profile is not a release gate (AUDIT-1 V-13).
+      // MANDATORY-FULL-VERIFICATION: this repo has NO CI configuration (checked 2026-10-01:
+      // no .github/workflows, .gitlab-ci.yml, Jenkinsfile, azure-pipelines.yml, .circleci).
+      // Therefore every verification run that claims completeness MUST execute a fresh
+      // `-Pprofile=gate` (or `-Pprofile=full`) pass — fast/ai alone never prove AI-safety
+      // coverage. ProfileContractTest asserts this profile keeps its ai.* inclusion.
       filter {
         excludeTestsMatching("com.example.ui.dialogs.circuiteditor.LegacyCircuitEditDialogSaveMappingCharacterizationTest")
         excludeTestsMatching("com.example.ui.dialogs.circuiteditor.LegacyCircuitEditDialogVisibilityCharacterizationTest")

@@ -865,6 +865,31 @@ class ProjectPersistenceIntegrityTest {
     }
 
     @Test
+    fun testProjectDeletionPurgesBusTies() = runBlocking {
+        val projectId = repository.createProject("Bus Tie Delete Project")
+        database.busTieDao().insertBusTie(
+            BusTieEntity(
+                projectId = projectId,
+                busTieId = "TIE-01",
+                name = "Main-Tie-Main 1",
+                sourceBoardId = 1L,
+                targetBoardId = 2L
+            )
+        )
+        assertEquals(1, database.busTieDao().getBusTiesForProjectSync(projectId).size)
+
+        repository.deleteProject(projectId)
+
+        // P1-9 (O-06): bus_ties declares no ON DELETE CASCADE and was missing from the
+        // explicit purge list — deleted projects leaked their bus-tie rows (the 12th table).
+        assertTrue(
+            "P1-9 (O-06): deleting a project must purge its bus-tie rows — the table has no " +
+                "cascade, so only the explicit deleteBusTiesForProject call can remove them.",
+            database.busTieDao().getBusTiesForProjectSync(projectId).isEmpty()
+        )
+    }
+
+    @Test
     fun testV2UnresolvedHierarchyRejectionRollback() = runBlocking {
         val initialProjectsCount = repository.getAllProjectsList().size
 

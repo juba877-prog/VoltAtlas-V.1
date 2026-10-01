@@ -76,6 +76,10 @@ class SldZoomControlsA11yTest {
             VoltAtlasTheme(darkTheme = true) {
                 com.example.ui.SldScreen(
                     circuits = circuits,
+                    // P1-11 (E-09): align with the production caller contract — MainLayout
+                    // always passes an AppState-backed activeProjectId; the screen no longer
+                    // guesses from the first entity row when it is blank.
+                    activeProjectId = "proj_1",
                     transformers = transformers,
                     generators = listOf(com.example.data.GeneratorEntity(projectId = "proj_1", generatorId = "GEN-01", generatorName = "Generator 1", manualSizeKVA = genResult.finalSize)),
                     generatorResults = mapOf("GEN-01" to genResult),

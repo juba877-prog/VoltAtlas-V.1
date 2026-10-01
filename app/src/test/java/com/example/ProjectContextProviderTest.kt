@@ -199,6 +199,16 @@ class ProjectContextProviderTest {
         AppDatabase.useTestExecutors = false
         coordinator.clearCache()
         coordinator.freshnessRegistry.clearAll()
+        // Phase 6 Batch 3 fix (test-hygiene, root cause of an order-dependent failure):
+        // EngineeringCalculationCoordinator is a process-wide singleton and
+        // projectRevisionProvider is GLOBAL state. This class assigned it in setUp() to a
+        // repository bound to the in-memory database that tearDown() closes — but never
+        // restored it. Every later test class in the same JVM therefore inherited a
+        // revision provider pointing at a CLOSED database; the coordinator's revision
+        // lookup then threw, which silently stalled EngineeringViewModel.uiState emissions
+        // (observed as ProjectIsolationTest failing only when this class ran first in the
+        // same JVM). Restore the production default (null) so the global never leaks.
+        coordinator.projectRevisionProvider = null
         if (::database.isInitialized && database.isOpen) {
             database.close()
         }

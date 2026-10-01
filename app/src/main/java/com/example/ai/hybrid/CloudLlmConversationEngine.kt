@@ -442,7 +442,7 @@ class CloudLlmConversationEngine(
         EngineeringToolCatalog.READ_TOOLS + EngineeringToolCatalog.CABLE_TOOLS,
     private val promptCompiler: (RuntimePromptInputs) -> PromptCompilationResult = { RuntimePromptCompiler.compile(it, maxBudgetCharacters = 24_000) },
     private val orchestrator: AgenticToolLoopOrchestrator? = null,
-    private val orchestratorProvider: (() -> AgenticToolLoopOrchestrator?)? = null
+    private val orchestratorProvider: (suspend () -> AgenticToolLoopOrchestrator?)? = null
 ) : ConversationEngine {
 
     override suspend fun evaluateTurn(
@@ -724,7 +724,10 @@ class CloudLlmConversationEngine(
             decision = decision,
             source = ConversationEngineSource.CLOUD_GEMINI,
             cloudDegradationReason = null,
-            hasBackingToolResult = false,
+            // P1-5 (J-02): propagate the evidence-backed flag instead of hardcoding false —
+            // a turn backed by prior evidence must survive the router's claim guard rather
+            // than being discarded as an unbacked engineering claim (over-rejection).
+            hasBackingToolResult = hasBackingEvidence,
             evidence = input.priorEvidence,
             groundingResult = GroundingValidationResult.Valid
         )

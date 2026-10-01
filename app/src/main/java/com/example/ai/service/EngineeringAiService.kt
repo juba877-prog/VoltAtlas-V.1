@@ -1,7 +1,5 @@
 package com.example.ai.service
 
-import com.example.ai.context.EngineeringContext
-
 /**
  * Message role in the assistant conversation stream.
  */
@@ -30,15 +28,11 @@ sealed class AssistantResponse {
     data class Error(val message: String) : AssistantResponse()
 }
 
-/**
- * Interface abstraction for AI / LLM orchestration.
- * Strict boundary: The implementation receives an immutable EngineeringContext
- * and delegates deterministic calculations to local engine tools.
- */
-interface EngineeringAiService {
-    suspend fun sendUserMessage(
-        context: EngineeringContext,
-        conversationHistory: List<AssistantMessage>,
-        userText: String
-    ): AssistantResponse
-}
+// P1-3 (M-01..03, DC-1..3): the `EngineeringAiService` interface and its
+// `FirebaseAiServiceImpl` echo implementation (canned "Phase 1 ready" text beside the real
+// pipeline) were deleted here — both were unreachable (ref-search proof: zero references
+// outside themselves across main/test/androidTest and all build files). This file is kept
+// because [MessageRole], [AssistantMessage] and [AssistantResponse] are imported by the live
+// assistant UI (AssistantConversationOrder, EngineeringAssistantSheet,
+// EngineeringAssistantViewModel) and its tests. EchoStubArchitectureGuardTest asserts the
+// echo surfaces never come back.

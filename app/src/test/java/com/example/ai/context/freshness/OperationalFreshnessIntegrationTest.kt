@@ -7,6 +7,7 @@ import com.example.engine.coordinator.EngineeringCalculationCoordinator
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before
+import org.junit.BeforeClass
 import org.junit.Test
 
 /**
@@ -26,6 +27,41 @@ class OperationalFreshnessIntegrationTest {
         @JvmField
         @org.junit.ClassRule
         val catalogStateReset = com.example.testing.CatalogStateResetRule()
+
+        /**
+         * Phase 6 Batch 3 fixture repair (pre-existing failure, NOT a regression — verified by
+         * reproducing it on the untouched B2 baseline with every Batch 3 change stashed).
+         *
+         * Two tests in this class assert that a REAL coordinator cable-sizing call returns
+         * "✓ PASS", but the fixture only seeded `Catalog.cableTypes`, `Catalog.dataSheet` and
+         * `Catalog.cableCatalog`. It never loaded the derating catalog, so
+         * `CableSizingEngine.getGroupingDerating()` hit its
+         * `Catalog.deratingData ?: return null` branch (CableSizingEngine.kt:238) and the
+         * engine correctly refused to invent a derating factor, returning
+         * "✗ FAIL" / DERATING_INVALID ("Grouping derating factor not found ...").
+         *
+         * The engine is PROTECTED under the Phase 6 protected-engine rule and its refusal is
+         * the correct, honest behaviour, so the FIX belongs here in the fixture: load the REAL
+         * shipping asset `derating_data.json` (same approach as `CableSizingEngineTest`), which
+         * supplies genuine grouping factors — `Air_Flat_Touching`, `Duct_Flat_Touching`, ... —
+         * for exactly these circuits (defaults: installation "Laid in Ducts" -> Duct_*,
+         * formation "Flat", spacing "Touching"; and the Free-Air case -> Air_*).
+         * No engineering value is fabricated here: the factors come from the shipped catalog.
+         */
+        @JvmStatic
+        @BeforeClass
+        fun loadDeratingCatalog() {
+            val candidates = listOf(
+                java.io.File("app/src/main/assets/derating_data.json"),
+                java.io.File("src/main/assets/derating_data.json"),
+                java.io.File("../app/src/main/assets/derating_data.json")
+            )
+            val file = candidates.firstOrNull { it.exists() }
+                ?: throw java.io.FileNotFoundException(
+                    "derating_data.json not found — cannot run real cable-sizing assertions"
+                )
+            Catalog.deratingData = org.json.JSONObject(file.readText())
+        }
     }
 
     private val coordinator = EngineeringCalculationCoordinator

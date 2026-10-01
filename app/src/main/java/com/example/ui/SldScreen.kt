@@ -50,6 +50,23 @@ import com.example.sld.SldDetailLevelPolicy
 import com.example.ui.components.*
 import com.example.ui.theme.*
 
+/**
+ * P1-11 (E-09) project-id resolution rule for the SLD screen.
+ *
+ * - A non-blank caller-provided id always wins (production callers pass AppState-backed ids).
+ * - A blank caller id falls back to the persisted active-project store — the single source
+ *   of truth — never to `circuits.firstOrNull()?.projectId` (a cross-project guess that
+ *   rendered another project's diagram) and never to a fabricated `DEFAULT_PROJECT`.
+ * - Neither source resolvable → null: the screen surfaces an explicit
+ *   `PROJECT UNRESOLVED — DATA REQUIRED` state instead of silently guessing.
+ */
+internal fun resolveSldProjectId(activeProjectId: String, storedActiveProjectId: String?): String? =
+    when {
+        activeProjectId.isNotBlank() -> activeProjectId
+        !storedActiveProjectId.isNullOrBlank() -> storedActiveProjectId
+        else -> null
+    }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SldScreen(
@@ -78,7 +95,33 @@ fun SldScreen(
     val scope = rememberCoroutineScope()
     val db = remember { com.example.data.AppDatabase.getDatabase(context) }
     val repository = remember { com.example.data.EngineeringRepository(db) }
-    val effectiveProjId = activeProjectId.ifBlank { circuits.firstOrNull()?.projectId ?: transformers.firstOrNull()?.projectId ?: "DEFAULT_PROJECT" }
+
+    // P1-11 (E-09): resolve the project from the caller or the persisted app-state store —
+    // never from an arbitrary entity row's projectId (that silently rendered another
+    // project's diagram during transitions) and never a fabricated "DEFAULT_PROJECT".
+    val storedActiveProjectId by produceState<String?>(initialValue = null) {
+        value = try {
+            repository.getActiveProjectId()
+        } catch (e: Exception) {
+            null
+        }
+    }
+    val effectiveProjId = resolveSldProjectId(activeProjectId, storedActiveProjectId)
+
+    if (effectiveProjId == null) {
+        // Explicit missing-data surface: no project is resolvable from either source.
+        Box(
+            modifier = Modifier.fillMaxSize().testTag("sld_unresolved_state"),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "PROJECT UNRESOLVED — DATA REQUIRED",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        return
+    }
 
     val projectEntityFromDb by produceState<com.example.data.ProjectEntity?>(initialValue = null, key1 = effectiveProjId) {
         value = try {

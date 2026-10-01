@@ -65,14 +65,25 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
     val activeProjectId: kotlinx.coroutines.flow.StateFlow<String?> = _activeProjectId
 
     /**
+     * Pending equipment-delete confirmation dialog. P1-10 (O-10): transient, project-scoped UI
+     * state — [switchActiveProject] clears it on every project transition so a confirmation
+     * raised against project A can never confirm (and mutate) after a switch to project B.
+     * Declared above the switch helper: the startup path calls [switchActiveProject] during
+     * ViewModel construction, so the property must be initialized before any call can run.
+     */
+    val pendingDeleteConfirmation = MutableStateFlow<EquipmentDeleteConfirmation?>(null)
+
+    /**
      * Single write path for the active project id. P0-13 (F-02, O-01): every project
      * transition (startup / open / create / close / delete / import) also drops the
      * project-scoped auto-design cache so project A's electrode layout can never render —
      * or reach the PDF — under project B.
+     * P1-10 (O-10): the same transitions now drop the pending equipment-delete confirmation.
      */
     private fun switchActiveProject(id: String?) {
         _activeProjectId.value = id
         _autoDesignResultState.value = null
+        pendingDeleteConfirmation.value = null
     }
 
     val selectedTransformerId = MutableStateFlow("")
@@ -979,8 +990,6 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
             repository.createGeneratorAtomic(prj, settings)
         }
     }
-
-    val pendingDeleteConfirmation = MutableStateFlow<EquipmentDeleteConfirmation?>(null)
 
     fun requestDeleteGenerator(generatorId: String) {
         val prj = _activeProjectId.value ?: return

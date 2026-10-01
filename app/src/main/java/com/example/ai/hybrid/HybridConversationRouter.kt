@@ -1,6 +1,7 @@
 package com.example.ai.hybrid
 
 import com.example.ai.conversation.ConversationTurnInput
+import com.example.ai.orchestrator.AgenticSafetyBudget
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
@@ -19,7 +20,14 @@ class HybridConversationRouter(
     private val cloudEngine: ConversationEngine,
     private val localEngine: ConversationEngine,
     private val connectivityProbe: NetworkConnectivityProbe = DefaultNetworkConnectivityProbe(),
-    private val cloudTimeoutMs: Long = 15_000L,
+    /**
+     * Outer timebox for one cloud turn. Derived from [AgenticSafetyBudget] (P1-4 / J-01): it must
+     * strictly exceed the orchestrator's own total budget plus one in-flight iteration, otherwise
+     * this bound cancels the agentic loop first, its budget branch becomes unreachable, and the
+     * structured result + evidence are discarded here as a local NETWORK_TIMEOUT fallback. This
+     * bound remains the last-resort guard, not the primary budget.
+     */
+    private val cloudTimeoutMs: Long = AgenticSafetyBudget().totalTimeoutMs + AgenticSafetyBudget().iterationTimeoutMs,
     private val nanoEngine: ConversationEngine? = null
 ) : ConversationEngine {
 

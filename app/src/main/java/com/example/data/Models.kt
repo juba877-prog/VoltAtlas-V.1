@@ -118,6 +118,7 @@ data class CatalogDiagnostics(
     val isDataSheetLoaded: Boolean,
     val isDeratingDataLoaded: Boolean,
     val isConduitCatalogLoaded: Boolean = false,
+    val isBuswayCatalogLoaded: Boolean = false,
     val lastErrorMessage: String?,
     val status: String,
     val definedFamilies: Int,
@@ -128,6 +129,34 @@ data class CatalogDiagnostics(
     val duplicateKeys: Int,
     val orphanTypeCodes: Int
 )
+
+/**
+ * P1-7 (I-01): single authoritative catalog status rule.
+ *
+ * Every consumed table is validated — conduits and busways included, which the previous
+ * rule silently omitted (a catalog with zero conduit/busway rows still reported COMPLETE).
+ * `hasUnverifiedProvenance` marks rows whose provenance/status parsed as blank: absence of
+ * the JSON keys is surfaced as INVALID instead of being papered over with fabricated
+ * `APPROVED` defaults.
+ */
+internal fun computeCatalogStatus(
+    hasLoadError: Boolean,
+    cableTypesEmpty: Boolean,
+    dataSheetEmpty: Boolean,
+    cableCatalogEmpty: Boolean,
+    breakersEmpty: Boolean,
+    accessoriesEmpty: Boolean,
+    conduitsEmpty: Boolean,
+    buswaysEmpty: Boolean,
+    hasUnverifiedProvenance: Boolean,
+    unsupportedFamilies: Int
+): String = when {
+    hasLoadError || cableTypesEmpty || dataSheetEmpty || cableCatalogEmpty ||
+        breakersEmpty || accessoriesEmpty || conduitsEmpty || buswaysEmpty ||
+        hasUnverifiedProvenance -> "INVALID"
+    unsupportedFamilies > 0 -> "PARTIAL"
+    else -> "COMPLETE"
+}
 
 object Catalog {
     var cableTypes: List<CableType> = emptyList()
@@ -221,12 +250,21 @@ object Catalog {
         val definedTypeCodes = cableTypes.map { it.code }.toSet()
         val orphanTypeCodesVal = cableCatalog.count { it.typeCode !in definedTypeCodes }
         
-        val stat = when {
-            lastError != null || cableTypes.isEmpty() || dataSheet.isEmpty() || cableCatalog.isEmpty() || breakers.isEmpty() || accessories.isEmpty() -> "INVALID"
-            unsupported > 0 -> "PARTIAL"
-            else -> "COMPLETE"
-        }
-        
+        val stat = computeCatalogStatus(
+            hasLoadError = lastError != null,
+            cableTypesEmpty = cableTypes.isEmpty(),
+            dataSheetEmpty = dataSheet.isEmpty(),
+            cableCatalogEmpty = cableCatalog.isEmpty(),
+            breakersEmpty = breakers.isEmpty(),
+            accessoriesEmpty = accessories.isEmpty(),
+            conduitsEmpty = conduits.isEmpty(),
+            buswaysEmpty = busways.isEmpty(),
+            hasUnverifiedProvenance =
+                conduits.any { it.provenance.isBlank() || it.status.isBlank() } ||
+                busways.any { it.provenance.isBlank() },
+            unsupportedFamilies = unsupported
+        )
+
         val result = CatalogDiagnostics(
             isCableCatalogLoaded = cableCatalog.isNotEmpty(),
             isBreakerCatalogLoaded = breakers.isNotEmpty(),
@@ -234,6 +272,7 @@ object Catalog {
             isDataSheetLoaded = dataSheet.isNotEmpty(),
             isDeratingDataLoaded = deratingData != null,
             isConduitCatalogLoaded = conduits.isNotEmpty(),
+            isBuswayCatalogLoaded = busways.isNotEmpty(),
             lastErrorMessage = lastError?.localizedMessage ?: lastError?.message,
             status = stat,
             definedFamilies = defined,
@@ -364,8 +403,10 @@ object Catalog {
                     internalDiameterMm = d,
                     areaTotalMm2 = totalArea,
                     maxFill40PctMm2 = fill40,
-                    provenance = obj.optString("provenance", "EXCEL_REFERENCE"),
-                    status = obj.optString("status", "APPROVED")
+                    // P1-7 (I-01): absence is explicit — a missing key parses to blank and
+                    // computeCatalogStatus() reports INVALID instead of fabricating approval.
+                    provenance = obj.optString("provenance", ""),
+                    status = obj.optString("status", "")
                 )
             }
 
@@ -381,7 +422,10 @@ object Catalog {
                         rMOhmPerM = obj.optDouble("rMOhmPerM", 0.0),
                         xMOhmPerM = obj.optDouble("xMOhmPerM", 0.0),
                         weightKgPerM = obj.optDouble("weightKgPerM", 0.0),
-                        ipRating = obj.optString("ipRating", "IP55")
+                        ipRating = obj.optString("ipRating", "IP55"),
+                        // P1-7 (I-01): provenance was previously dropped during parsing even
+                        // though the asset carries it — explicit now, blank when absent.
+                        provenance = obj.optString("provenance", "")
                     )
                 }
             } catch (e: Exception) {

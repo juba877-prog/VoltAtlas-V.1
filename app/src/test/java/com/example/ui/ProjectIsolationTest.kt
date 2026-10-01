@@ -57,6 +57,13 @@ class ProjectIsolationTest {
         org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
     }
 
+    private fun isTerminalStartup(state: StartupState): Boolean = when (state) {
+        is StartupState.Ready,
+        is StartupState.NoProjects,
+        is StartupState.ReadyWithWarnings -> true
+        else -> false
+    }
+
     @Test
     fun testProjectIsolation() = runBlocking {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
@@ -65,14 +72,26 @@ class ProjectIsolationTest {
 
         val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
 
-        // Wait for VM startup (same pattern as ImportExportTest).
-        for (i in 1..50) {
+        // Wait for VM startup to reach a TERMINAL state before activating any project.
+        // retryStartup()'s initializeNewInstallationIfRequired() executes
+        // switchActiveProject(null) BEFORE the terminal emission; if this test proceeds
+        // while startup is still in flight (full-profile JVMs are slower than isolated
+        // runs — reproduced order-dependent failure at :106), that late switch(null)
+        // clobbers the activation below and the circuits flow — keyed by activeProjectId —
+        // never surfaces the inserted rows. ReadyWithWarnings is terminal as well; the
+        // former loop only accepted Ready/NoProjects and silently fell through otherwise.
+        var startupAttempts = 0
+        while (startupAttempts < 600 && !isTerminalStartup(viewModel.startupState.value)) {
             idle()
-            if (viewModel.startupState.value is com.example.ui.StartupState.Ready ||
-                viewModel.startupState.value is com.example.ui.StartupState.NoProjects
-            ) break
             delay(50)
+            startupAttempts++
         }
+        idle()
+        assertTrue(
+            "startup must reach a terminal state before project activation " +
+                "(was ${viewModel.startupState.value})",
+            isTerminalStartup(viewModel.startupState.value)
+        )
 
         // ---------------- Project A ----------------
         viewModel.createAndOpenProject("ISO_Project_A").join()
@@ -94,7 +113,7 @@ class ProjectIsolationTest {
             )
         )
         var successA: UiState.Success? = null
-        for (i in 1..50) {
+        for (i in 1..200) {
             idle()
             val s = viewModel.uiState.value
             if (s is UiState.Success && s.circuits.any { it.circuitName == "CKT_IN_A" }) {
@@ -103,7 +122,22 @@ class ProjectIsolationTest {
             }
             delay(50)
         }
-        assertNotNull("uiState must surface Project A's circuit", successA)
+        if (successA == null) {
+            // Diagnostic probe (P0-15 harness, added during Phase 6): full-profile JVMs
+            // reproduced an emission failure that isolated runs do not — distinguish
+            // stuck-Loading vs empty-flow vs dead-collector vs missing Room row.
+            val ui = viewModel.uiState.value
+            val roomRows = database.circuitDao().getCircuitsListForProject(projectAId)
+            fail(
+                "uiState must surface Project A's circuit | " +
+                    "activeProjectId=${viewModel.activeProjectId.value} | " +
+                    "startup=${viewModel.startupState.value.javaClass.simpleName} | " +
+                    "uiState=${ui?.javaClass?.simpleName}" +
+                    (ui?.let { if (it is UiState.Success) "(circuits=${it.circuits.map { c -> c.circuitName }})" else "" } ?: "") +
+                    " | roomRows=${roomRows.map { it.circuitName }} | " +
+                    "collectorAlive=${collectJob.isActive}"
+            )
+        }
         assertTrue(
             "every circuit shown while A is active must belong to A",
             successA!!.circuits.all { it.projectId == projectAId }
@@ -132,7 +166,7 @@ class ProjectIsolationTest {
             )
         )
         var successB: UiState.Success? = null
-        for (i in 1..50) {
+        for (i in 1..200) {
             idle()
             val s = viewModel.uiState.value
             if (s is UiState.Success && s.circuits.any { it.circuitName == "CKT_IN_B" }) {
@@ -155,7 +189,7 @@ class ProjectIsolationTest {
         // ---------------- Back to Project A ----------------
         viewModel.openProject(projectAId).join()
         var backOnA: UiState.Success? = null
-        for (i in 1..50) {
+        for (i in 1..200) {
             idle()
             val s = viewModel.uiState.value
             if (s is UiState.Success && s.circuits.any { it.circuitName == "CKT_IN_A" }) {

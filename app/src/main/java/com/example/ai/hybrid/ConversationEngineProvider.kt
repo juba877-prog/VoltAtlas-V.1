@@ -7,8 +7,10 @@ import com.example.ai.conversation.ConversationTurnDecision
 import com.example.ai.conversation.ConversationTurnInput
 import com.example.ai.conversation.ConversationPolicyEngine
 
+import com.example.ai.orchestrator.AgenticSafetyBudget
 import com.example.ai.orchestrator.AgenticToolLoopOrchestrator
 import com.example.ai.tools.AssistantToolRuntime
+import kotlinx.coroutines.CancellationException
 
 /**
  * Inert, zero-dependency engine used when Cloud LLM is disabled by configuration.
@@ -53,7 +55,14 @@ object ConversationEngineProvider {
     fun provideConversationEngine(
         context: android.content.Context? = null,
         connectivityProbe: NetworkConnectivityProbe = DefaultNetworkConnectivityProbe(),
-        cloudTimeoutMs: Long = 15_000L,
+        /**
+         * Outer timebox for one cloud turn. Derived from [AgenticSafetyBudget] (P1-4 / J-01):
+         * it must strictly exceed the orchestrator's own total budget plus one in-flight iteration,
+         * otherwise this outer bound cancels the agentic loop first, its budget branch becomes
+         * unreachable, and the structured result + evidence are discarded on the router's local
+         * fallback. This bound stays as the last-resort guard, not the primary budget.
+         */
+        cloudTimeoutMs: Long = AgenticSafetyBudget().totalTimeoutMs + AgenticSafetyBudget().iterationTimeoutMs,
         clientSeam: GeminiClientSeam? = null,
         toolRuntimeProvider: (suspend () -> AssistantToolRuntime?)? = null,
         cloudEngineFactory: (() -> ConversationEngine)? = null,
@@ -100,17 +109,31 @@ object ConversationEngineProvider {
         val cloudEngine = if (isCloudConfigured && selectedProvider != AiProvider.LOCAL_ONLY) {
             cloudEngineFactory?.invoke() ?: CloudLlmConversationEngine(
                 clientSeam = resolvedSeam,
+                // P1-1 (K-01): suspend-native orchestrator resolution — no runBlocking. The
+                // provider coroutine inherits the caller's context, stays cancellable (turn cancel,
+                // close, withTimeout all reach it) and never parks the calling thread. Failures are
+                // typed and logged; CancellationException is rethrown, never swallowed.
                 orchestratorProvider = {
                     toolRuntimeProvider?.let { provider ->
-                        runCatching {
-                            kotlinx.coroutines.runBlocking { provider() }?.let { rt ->
+                        try {
+                            provider()?.let { rt ->
                                 AgenticToolLoopOrchestrator(
                                     clientSeam = resolvedSeam,
                                     toolDispatcher = rt.dispatcher,
                                     toolRegistry = rt.descriptorRegistry
                                 )
                             }
-                        }.getOrNull()
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (failure: Throwable) {
+                            AiLogger.w(
+                                "VoltAtlas_AI",
+                                "AI_RUNTIME: agentic tool runtime resolution failed; continuing on the single-turn path: " +
+                                    "${failure.javaClass.simpleName}: ${failure.message}",
+                                failure
+                            )
+                            null
+                        }
                     }
                 }
             )
@@ -118,6 +141,11 @@ object ConversationEngineProvider {
             DisabledCloudLlmEngine
         }
 
+        // P1-2 (L-01): the experimental on-device nano engine is deliberately NOT supplied
+        // here — there is no provider/flag/settings surface for it yet, and its seam is a
+        // keyword parser (fail-closed hardware default), not Gemini Nano hardware. The
+        // router's nano branch stays dormant until wiring lands with provider + flag +
+        // settings + tests. See OnDeviceNanoConversationEngine's KDoc.
         return HybridConversationRouter(
             cloudEngine = cloudEngine,
             localEngine = localEngine,

@@ -347,6 +347,9 @@ class EngineeringRepository(
             conduitDao.deleteConduitSettingsForProject(id)
             powerSystemsDao.deleteEarthingForProject(id)
             sldNodePositionDao.clearPositionsForProject(id)
+            // P1-9 (O-06): bus_ties declares no ON DELETE CASCADE and was missing from this
+            // explicit purge list — deleted projects leaked their bus-tie rows.
+            db.busTieDao().deleteBusTiesForProject(id)
             projectDao.deleteProject(id)
             if (appStateDao.getActiveProjectId() == id) {
                 appStateDao.setState(AppStateEntity(0, null))

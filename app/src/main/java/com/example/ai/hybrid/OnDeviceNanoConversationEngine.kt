@@ -9,8 +9,12 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 
 /**
- * Structured electrical engineering intent produced by on-device Gemini Nano inference.
- * Adheres to ML Kit GenAI Prompt API structured output specifications.
+ * Structured electrical engineering intent produced by the on-device seam.
+ *
+ * P1-2 (L-02): this type is populated by [DefaultNanoClientSeam] — a deterministic
+ * keyword/regex parser. There is no Gemini Nano or ML Kit GenAI dependency in this build,
+ * so "on-device inference" claims are deliberately not made here. Field shape follows the
+ * structured-output conventions the future hardware integration is expected to target.
  *
  * Every field is nullable and has no default: the on-device layer only reports what the user
  * actually said. Missing engineering inputs must be requested as blocking questions rather
@@ -60,11 +64,16 @@ interface NanoClientSeam {
 }
 
 /**
- * Default rule/keyword-assisted client seam for on-device execution and testing.
- * Implements deterministic semantic parsing when hardware Gemini Nano is offline or simulated.
+ * Deterministic keyword/regex client seam — the ONLY [NanoClientSeam] implementation in the
+ * build. It performs no hardware inference.
+ *
+ * P1-2 (L-02): [isHardwareAvailable] defaults to FALSE (fail-closed). This build integrates
+ * no Gemini Nano / ML Kit GenAI SDK, so availability must never be claimed by default; a
+ * wiring that gains real probing must pass explicit evidence instead of relying on a baked-in
+ * `true`.
  */
 class DefaultNanoClientSeam(
-    private val isHardwareAvailable: Boolean = true
+    private val isHardwareAvailable: Boolean = false
 ) : NanoClientSeam {
 
     override suspend fun isAvailable(): Boolean = isHardwareAvailable
@@ -147,7 +156,13 @@ class DefaultNanoClientSeam(
 }
 
 /**
- * On-Device Gemini Nano Conversation Engine implementing [ConversationEngine].
+ * EXPERIMENTAL on-device conversation engine — keyword-parser-backed, NOT hardware Gemini Nano.
+ *
+ * P1-2 (L-01): this engine is NOT WIRED into production routing.
+ * [com.example.ai.hybrid.ConversationEngineProvider] never supplies it to
+ * [HybridConversationRouter] (the router's `nanoEngine` parameter stays null), so the offline
+ * nano branch is dormant. Any future wiring must land with a provider, a feature flag, a
+ * settings surface and tests — a wiring plan, not an implicit default.
  *
  * Safety Invariants:
  * - Rule 3 Compliance: NEVER computes electrical math directly in the model.
@@ -160,8 +175,6 @@ class OnDeviceNanoConversationEngine(
 ) : ConversationEngine {
 
     companion object {
-        // Prompt prefix caching threshold (200 words) per official ml-kit-genai-prompt-api skill
-        private const val PREFIX_CACHE_MIN_WORDS = 200
         private val SYSTEM_ELECTRICAL_CONSTRAINTS = """
             You are the VoltAtlas on-device electrical engineering assistant operating strictly under IEC 60364, BS 7671, and IEC 60909 standards.
             All electrical calculations must be executed by deterministic computational engines.

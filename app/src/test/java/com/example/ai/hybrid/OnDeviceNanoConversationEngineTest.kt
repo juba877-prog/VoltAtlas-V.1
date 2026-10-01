@@ -20,7 +20,7 @@ class OnDeviceNanoConversationEngineTest {
 
     @Test
     fun testMotorStarterIntent_evaluatesDeterministically() = runBlocking {
-        val engine = OnDeviceNanoConversationEngine()
+        val engine = OnDeviceNanoConversationEngine(clientSeam = DefaultNanoClientSeam(isHardwareAvailable = true))
         val input = ConversationTurnInput(
             userUtterance = "Size a motor starter for 45 kW 400V 3-phase motor",
             projectContext = sampleContext
@@ -41,7 +41,7 @@ class OnDeviceNanoConversationEngineTest {
 
     @Test
     fun testPowerFactorCorrectionIntent_evaluatesDeterministically() = runBlocking {
-        val engine = OnDeviceNanoConversationEngine()
+        val engine = OnDeviceNanoConversationEngine(clientSeam = DefaultNanoClientSeam(isHardwareAvailable = true))
         val input = ConversationTurnInput(
             userUtterance = "Calculate PFC capacitor for 150 kW load from 0.78 to 0.96",
             projectContext = sampleContext
@@ -59,7 +59,7 @@ class OnDeviceNanoConversationEngineTest {
 
     @Test
     fun testTransformerFaultIntent_evaluatesDeterministically() = runBlocking {
-        val engine = OnDeviceNanoConversationEngine()
+        val engine = OnDeviceNanoConversationEngine(clientSeam = DefaultNanoClientSeam(isHardwareAvailable = true))
         val input = ConversationTurnInput(
             userUtterance = "What is the short circuit fault level for a 1600 kVA transformer with 6% Z?",
             projectContext = sampleContext
@@ -77,7 +77,7 @@ class OnDeviceNanoConversationEngineTest {
 
     @Test
     fun testCableSizingIntent_evaluatesDeterministically() = runBlocking {
-        val engine = OnDeviceNanoConversationEngine()
+        val engine = OnDeviceNanoConversationEngine(clientSeam = DefaultNanoClientSeam(isHardwareAvailable = true))
         val input = ConversationTurnInput(
             userUtterance = "Size a 3-phase cable for 30 kW over 50 meters at 400V",
             projectContext = sampleContext
@@ -103,6 +103,26 @@ class OnDeviceNanoConversationEngineTest {
         )
 
         val result = engine.evaluateTurn(input) { "DEC-TEST-005" }
+
+        assertEquals(ConversationEngineSource.ON_DEVICE_GEMINI_NANO, result.source)
+        assertNotNull(result.cloudDegradationReason)
+        assertTrue(result.decision.explanationSummary.orEmpty().contains("not available"))
+    }
+
+    @Test
+    fun defaultClientSeamFailsClosed_hardwareIsNeverClaimedByDefault() = runBlocking {
+        // P1-2 (L-02): DefaultNanoClientSeam.isHardwareAvailable now defaults to FALSE —
+        // this build integrates no Gemini Nano / ML Kit SDK, so DEFAULT construction must
+        // degrade with "not available" instead of claiming hardware that does not exist.
+        // The parser tests above pass `isHardwareAvailable = true` explicitly because their
+        // subject is parsing, not availability.
+        val engine = OnDeviceNanoConversationEngine()
+        val input = ConversationTurnInput(
+            userUtterance = "Size a cable for 30 kW",
+            projectContext = sampleContext
+        )
+
+        val result = engine.evaluateTurn(input) { "DEC-DEFAULT-SEAM" }
 
         assertEquals(ConversationEngineSource.ON_DEVICE_GEMINI_NANO, result.source)
         assertNotNull(result.cloudDegradationReason)
@@ -139,7 +159,7 @@ class OnDeviceNanoConversationEngineTest {
                 )
             }
         }
-        val nanoEngine = OnDeviceNanoConversationEngine()
+        val nanoEngine = OnDeviceNanoConversationEngine(clientSeam = DefaultNanoClientSeam(isHardwareAvailable = true))
 
         val router = HybridConversationRouter(
             cloudEngine = cloudEngine,
