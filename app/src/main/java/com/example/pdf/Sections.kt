@@ -520,7 +520,12 @@ class EarthingSection : ReportSectionProvider {
             "Prospective / Corrected Fault" to "%.2f A / %.2f A".format(earthing.prospectiveFault_A, earthing.correctedFault_A),
             "Earth Conductor (Exact → Std)" to "%.2f mm² → ${earthing.earthConductorStandard_mm2.toInt()} mm²".format(earthing.earthConductorExact_mm2),
             "Equipotential Bonding" to "${earthing.equipotentialBonding_mm2.toInt()} mm²",
-            "Earth Loop Zs / Zs_max" to "%.4f Ω / %.4f Ω".format(earthing.zs_ohm, earthing.zsMax_ohm),
+            "Earth Loop Zs / Zs_max" to if (earthing.loopCheck == "DATA MISSING") {
+                // P0-10: no main-breaker basis ⇒ Zs_max is withheld, never a fabricated number.
+                "%.4f Ω / DATA MISSING".format(earthing.zs_ohm)
+            } else {
+                "%.4f Ω / %.4f Ω".format(earthing.zs_ohm, earthing.zsMax_ohm)
+            },
             "Loop Check" to earthing.loopCheck
         )
 

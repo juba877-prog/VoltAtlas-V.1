@@ -126,7 +126,13 @@ fun SldScreen(
         sizingResults.mapValues { (_, res) -> res.utilizationPct }
     }
     
-    val engineResult = remember(circuits, effectiveProjId, transformers, sizingResults, transformerResults, generators, generatorResults, atsList, atsResults, upsList, upsResults, protectionResults, adsResults, manualPositions.toMap()) {
+    // P0-8: bus ties must actually reach the layout engine (previously the parameter was
+    // never supplied, so bus-tie synthesis/validation was dead in production).
+    val busTies by remember(effectiveProjId) {
+        db.busTieDao().getBusTiesForProject(effectiveProjId)
+    }.collectAsState(initial = emptyList())
+
+    val engineResult = remember(circuits, effectiveProjId, transformers, sizingResults, transformerResults, generators, generatorResults, atsList, atsResults, upsList, upsResults, protectionResults, adsResults, manualPositions.toMap(), busTies) {
         try {
             SldLayoutEngine.calculateLayout(
                 activeProjectId = effectiveProjId,
@@ -143,7 +149,8 @@ fun SldScreen(
                 upsResults = upsResults,
                 protectionResults = protectionResults,
                 adsResults = adsResults,
-                manualPositions = manualPositions
+                manualPositions = manualPositions,
+                busTies = busTies
             )
         } catch (e: Throwable) {
             e.printStackTrace()
@@ -740,13 +747,21 @@ private fun PositionedSldNode.toSldNode(projectId: String): com.example.sld.SldN
         "DB" -> com.example.sld.SldNodeType.DB
         else -> if (isSource) com.example.sld.SldNodeType.UTILITY_SOURCE else com.example.sld.SldNodeType.FINAL_CIRCUIT
     }
+    // D-13: derive Ib from the stored entity values with the correct topology — kVA → A is
+    // S/(√3·V) for 3-phase and S/V for single-phase (pf is irrelevant: inputs are kVA).
     val calculatedIb = if (circuit != null && circuit.voltageV > 0) {
-        String.format(java.util.Locale.US, "%.1f A", (circuit.loadKVA * 1000.0) / (kotlin.math.sqrt(3.0) * circuit.voltageV))
+        val amps = if (circuit.phases.contains("3")) {
+            (circuit.loadKVA * 1000.0) / (kotlin.math.sqrt(3.0) * circuit.voltageV)
+        } else {
+            (circuit.loadKVA * 1000.0) / circuit.voltageV
+        }
+        if (amps.isFinite()) String.format(java.util.Locale.US, "%.1f A", amps) else null
     } else null
 
+    // D-13: never emit a literal 400 V default; missing voltage is an explicit state.
     val nodeVoltage = dataBlock?.voltage?.takeIf { it.isNotBlank() }
-        ?: circuit?.let { "${it.voltageV} V (${if (it.phases.contains("3")) "3P+N" else "1P+N"})" }
-        ?: "400 V (3P+N)"
+        ?: circuit?.takeIf { it.voltageV > 0 }?.let { "${it.voltageV} V (${if (it.phases.contains("3")) "3P+N" else "1P+N"})" }
+        ?: "DATA REQUIRED"
 
     return com.example.sld.SldNode(
         id = id,

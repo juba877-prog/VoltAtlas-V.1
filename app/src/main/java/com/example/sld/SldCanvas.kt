@@ -39,6 +39,26 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.ui.graphics.PathEffect
 
+/**
+ * P0-6 — the SINGLE source of truth for the per-circuit voltage-drop verdict.
+ *
+ * Compares the actual per-circuit voltage drop ([voltageDropPct], formatted like `"0.85%"`)
+ * against the circuit's own stored limit ([voltageDropLimitPct], surfaced from
+ * `CircuitEntity.maxVDpct`, formatted like `"3.00%"`).
+ *
+ * Returns `"PASS"` when actual ≤ limit, `"FAIL"` when actual > limit, and `null` when the
+ * basis is incomplete (missing/unparseable value or limit) — callers MUST render that as
+ * "DATA REQUIRED" instead of asserting any verdict. Both the callout TEXT and its COLOR
+ * derive from this one value; no separate threshold exists anywhere in the canvas.
+ */
+internal fun computeVdVerdict(voltageDropPct: String?, voltageDropLimitPct: String?): String? {
+    val actual = voltageDropPct?.takeIf { it.isNotBlank() }
+        ?.replace("%", "")?.trim()?.toFloatOrNull() ?: return null
+    val limit = voltageDropLimitPct?.takeIf { it.isNotBlank() }
+        ?.replace("%", "")?.trim()?.toFloatOrNull() ?: return null
+    return if (actual <= limit) "PASS" else "FAIL"
+}
+
 @Composable
 fun SldCanvas(
     engineResult: SldEngineResult,
@@ -277,10 +297,19 @@ fun SldCanvas(
                     val cumVdVal = childNode?.dataBlock?.cumulativeVdPct?.replace("%", "")?.toFloatOrNull()
                         ?: childNode?.dataBlock?.voltageDropPct?.replace("%", "")?.toFloatOrNull() ?: 0f
 
-                    val vdStatusColor = when {
-                        cumVdVal > 5.0f -> palette.invalidStatus
-                        cumVdVal > 3.0f -> palette.warningStatus
-                        else -> palette.validStatus
+                    // P0-6: ONE verdict source for the feeder callout text AND its color —
+                    // actual per-circuit VD vs the circuit's stored limit (CircuitEntity.maxVDpct
+                    // surfaced as voltageDropLimitPct). Missing basis ⇒ no verdict is asserted
+                    // (DATA REQUIRED), never a literal "PASS".
+                    val vdVerdict: String? = computeVdVerdict(
+                        childNode?.dataBlock?.voltageDropPct,
+                        childNode?.dataBlock?.voltageDropLimitPct
+                    )
+
+                    val vdStatusColor = when (vdVerdict) {
+                        "PASS" -> palette.validStatus
+                        "FAIL" -> palette.invalidStatus
+                        else -> palette.warningStatus // basis missing — DATA REQUIRED
                     }
 
                     val rawIk3 = childNode?.dataBlock?.faultLevelKa.orEmpty()
@@ -417,8 +446,14 @@ fun SldCanvas(
                         if (calloutPolicy.modeMetricLine) {
                             when (displayMode) {
                                 DisplayMode.OVERVIEW -> {
-                                    val vdStatusStr = if (vdText.isNotBlank()) "$vdText PASS" else childNode.dataBlock.statusText
-                                    val statusTextColor = if (childNode.status == SldValidationStatus.INVALID) palette.invalidStatus else palette.validStatus
+                                    // P0-6: verdict-computed text + color from the SAME verdict.
+                                    val (vdStatusStr, statusTextColor) = when {
+                                        vdText.isBlank() -> (childNode.dataBlock.statusText) to
+                                            if (childNode.status == SldValidationStatus.INVALID) palette.invalidStatus else palette.validStatus
+                                        vdVerdict == "PASS" -> ("$vdText PASS") to palette.validStatus
+                                        vdVerdict == "FAIL" -> ("$vdText FAIL") to palette.invalidStatus
+                                        else -> ("$vdText DATA REQUIRED") to palette.warningStatus
+                                    }
                                     linesToDraw.add(Pair(vdStatusStr, TextStyle(color = statusTextColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)))
                                 }
                                 DisplayMode.CABLES -> {

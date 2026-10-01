@@ -449,7 +449,14 @@ fun EarthingPanel(
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Earth Loop Zs: ${String.format("%.4f", result.zs_ohm)} Ω", color = ThemeTextColor, fontSize = 13.sp)
-                        Text("Max Zs Allowed: ${String.format("%.4f", result.zsMax_ohm)} Ω", color = ThemeTextColor, fontSize = 13.sp)
+                        // P0-10: without a main-breaker basis Zs_max has no defensible value —
+                        // express absence instead of the engine's assumed-630 A number.
+                        Text(
+                            if (result.loopCheck == "DATA MISSING") "Max Zs Allowed: DATA MISSING"
+                            else "Max Zs Allowed: ${String.format("%.4f", result.zsMax_ohm)} Ω",
+                            color = ThemeTextColor,
+                            fontSize = 13.sp
+                        )
                     }
                     Text("Loop Check: ${result.loopCheck}", color = statusColor(result.loopCheck), fontWeight = FontWeight.Bold, fontSize = 13.sp)
 

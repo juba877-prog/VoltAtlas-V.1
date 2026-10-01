@@ -359,13 +359,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
         loadType: String = "Normal"
     ): CircuitEntity {
         val v3p = preferences.defaultVoltage3Phase.value
-        val voltage = if (phases == "3P+N" || phases == "3P") v3p else when (v3p) {
-            380 -> 220
-            400 -> 230
-            415 -> 240
-            480 -> 277
-            else -> (v3p / 1.732).toInt()
-        }
+        val voltage = if (phases == "3P+N" || phases == "3P") v3p else EarthingInputBasis.phaseNeutralVoltageOf(v3p)
         val cond = preferences.defaultConductorMaterial.value
         val ins = preferences.defaultInsulation.value
         val maxVd = if (loadType.equals("Lighting", ignoreCase = true)) {
@@ -722,7 +716,17 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
             val activeProjId = activeProjectId.value ?: "DEFAULT_PROJECT"
             val earthingEntityVal = settings.earthing ?: com.example.data.EarthingEntity(projectId = activeProjId)
             val maxIsc = shortCircuitResults.values.maxOfOrNull { it.iscKA } ?: (transformerResults.values.firstOrNull()?.isc3Phase ?: 0.0)
-            val mainBreaker = transformerResults.values.firstOrNull()?.flc ?: 630.0
+
+            // P0-9 / P0-10 / P0-11: one explicit, project-derived earthing basis —
+            //   U0 and system voltage come from the project's stored voltages (was: forced
+            //   230 V / 400 V), and the main breaker comes from a UNIQUE transformer basis
+            //   or is reported as DATA MISSING (was: map-order first FLC ?: silent 630 A).
+            //   Engine remains unchanged; inputs and the result verdict are caller-side.
+            val earthingBasis = EarthingInputBasis.compute(
+                transformerResults = transformerResults,
+                circuits = circuits,
+                defaultSystemVoltage_V = preferences.defaultVoltage3Phase.value
+            )
 
             val defaultTarget = if (earthingEntityVal.projectType.equals("Villa", ignoreCase = true)) 5.0 else 2.0
             val effectiveTarget = earthingEntityVal.targetResistanceOverride_ohm?.takeIf { it > 0.0 } ?: defaultTarget
@@ -737,17 +741,23 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 kFactor = earthingEntityVal.kFactor,
                 projectType = earthingEntityVal.projectType,
                 faultCurrent_kA = maxIsc,
-                systemVoltage_V = 400.0,
-                mainBreakerRating_A = mainBreaker,
+                systemVoltage_V = earthingBasis.systemVoltage_V,
+                // 0.0 = no basis: the engine's internal 630 A fallback is disclosed via
+                // applyToResult and never drives a displayed verdict (P0-10).
+                mainBreakerRating_A = earthingBasis.mainBreakerRating_A ?: 0.0,
                 earthFaultCurrent_kA = transformerResults.values.maxOfOrNull { it.isc1Phase } ?: 0.0,
                 disconnectionTime_s = earthingEntityVal.disconnectionTime_s,
+                u0_V = earthingBasis.u0_V,
                 totalConnectedKVA = totalConnectedLoad
             )
 
             val autoDesignRes = if (earthingEntityVal.isAutoDesignEnabled) _autoDesignResultState.value else null
 
-            val earthingResult = com.example.engine.EarthingEngine.calculate(earthingInput, effectiveTarget)
-                .copy(autoDesignResult = autoDesignRes)
+            val earthingResult = EarthingInputBasis.applyToResult(
+                base = com.example.engine.EarthingEngine.calculate(earthingInput, effectiveTarget),
+                basis = earthingBasis,
+                autoDesign = autoDesignRes
+            )
 
             val graph = com.example.sld.ElectricalNetworkGraphBuilder.buildGraph(
                 activeProjectId = activeProjId,

@@ -131,15 +131,19 @@ object ElectricalNetworkGraphBuilder {
                 val txRes = transformerResults[tx.transformerId]
                 val ratedKvaVal = txRes?.selectedSize?.takeIf { it > 0.0 } ?: tx.kVA
                 val ratedKvaStr = if (ratedKvaVal > 0) "${ratedKvaVal.toInt()} kVA" else "DATA REQUIRED"
-                // G5: the LV secondary voltage is the real `tx.voltage` column — never a fabricated 400 V.
-                val realSecondaryVoltage = if (tx.voltage in 100..1000) tx.voltage.toDouble() else 400.0
-                val secondaryVoltage = realSecondaryVoltage
-                val fallbackFlc = (ratedKvaVal * 1000) / (Math.sqrt(3.0) * secondaryVoltage)
-                val ibAmpStr = txRes?.flc?.let { "%.0f A".format(it) } ?: "%.0f A".format(fallbackFlc)
+                // G5: the LV secondary voltage is the real `tx.voltage` column.
+                // P0-4: an out-of-range/invalid secondary voltage is an explicit
+                // DATA REQUIRED state — never a fabricated 400 V basis for FLC.
+                val realSecondaryVoltage: Double? = tx.voltage.toDouble().takeIf { it in 100.0..1000.0 }
+                val fallbackFlc = realSecondaryVoltage?.let { (ratedKvaVal * 1000) / (Math.sqrt(3.0) * it) }
+                val ibAmpStr = txRes?.flc?.let { "%.0f A".format(it) }
+                    ?: fallbackFlc?.let { "%.0f A".format(it) }
+                    ?: "DATA REQUIRED"
                 val loadingStr = txRes?.loadingPct?.let { "%.1f%%".format(it) } ?: ""
                 val iscKaStr = txRes?.isc3Phase?.let { "%.2f kA".format(it) } ?: ""
-                val secondaryVoltageStr = if (secondaryVoltage == secondaryVoltage.toLong().toDouble())
-                    "${secondaryVoltage.toLong()} V" else "$secondaryVoltage V"
+                val secondaryVoltageStr = realSecondaryVoltage?.let { v ->
+                    if (v == v.toLong().toDouble()) "${v.toLong()} V" else "$v V"
+                } ?: "DATA REQUIRED"
                 val txCombinedVoltageStr = if (primaryVoltageStr != null) "$primaryVoltageStr / $secondaryVoltageStr" else secondaryVoltageStr
 
                 nodes.add(
@@ -189,25 +193,43 @@ object ElectricalNetworkGraphBuilder {
 
         val effectiveGenResults: Map<String, GeneratorResult> = generatorResults
 
+        // P0-4: derived genset voltages are reused by the sync-bus node (single derivation
+        // point — the sync bus may not invent its own voltage).
+        val genVoltageByGenId = mutableMapOf<String, Int?>()
+
         projGenerators.forEach { gen ->
             val genId = gen.generatorId.ifBlank { "1" }
             val genNodeId = "gen_$genId"
             val genRes = effectiveGenResults[genId]
             val genRatedKva = genRes?.finalSize?.takeIf { it > 0.0 } ?: gen.manualSizeKVA ?: 0.0
             val genRatedKvaStr = if (genRatedKva > 0.0) "${genRatedKva.toInt()} kVA" else "DATA REQUIRED"
-            val sysVoltage = 400
-            val sysV = 400.0
-            val genIbAmp = "%.0f A".format((genRatedKva * 1000) / (Math.sqrt(3.0) * sysV))
+            // P0-4 (deviation-aware): GeneratorEntity has NO voltage column, so no migration is
+            // introduced. The authoritative voltage for a genset is the system voltage of the ATS
+            // it feeds (AtsEntity.systemVoltage — the SAME relationship used for frequency).
+            // No linked ATS / unresolved disagreement ⇒ DATA REQUIRED, never a silent 400 V.
+            val linkedAtsVoltages = atsList
+                ?.filter { it.projectId == effectiveProjectId || it.projectId == "DEFAULT_PROJECT" }
+                ?.filter { it.emergencySourceId?.uppercase() == genId.uppercase() }
+                ?.mapNotNull { it.systemVoltage.takeIf { v -> v > 0 } }
+                ?.distinct()
+                ?: emptyList()
+            val genVoltageV: Int? = linkedAtsVoltages.singleOrNull()
+            genVoltageByGenId[gen.generatorId] = genVoltageV
+            val genVoltageStr = genVoltageV?.let { "$it V" } ?: "DATA REQUIRED"
+            val genIbAmp = genVoltageV?.let {
+                "%.0f A".format((genRatedKva * 1000) / (Math.sqrt(3.0) * it.toDouble()))
+            }
             val genLoadingPct = genRes?.loadingPct?.let { "%.1f%%".format(it) } ?: ""
             val genName = gen.generatorName.ifBlank { "Generator $genId" }
             val genStatusText = if (genRes?.status?.isNotBlank() == true) genRes.status else "EMERGENCY GENERATOR"
-            // Real output frequency: derive from the ATS whose emergency source is this generator
-            // (AtsEntity.systemFrequency is a stored column, default 50). Never fabricated.
+            // Real output frequency: derive ONLY from project-scoped ATS instances whose
+            // emergency source is this generator (AtsEntity.systemFrequency, stored column).
+            // P0-7: the former `?: atsList?.firstOrNull()` tail could stamp a foreign-project
+            // frequency — removed; no linked ATS ⇒ frequency stays absent.
             val genFreq = atsList
                 ?.filter { it.projectId == effectiveProjectId || it.projectId == "DEFAULT_PROJECT" }
                 ?.firstOrNull { it.emergencySourceId?.uppercase() == genId.uppercase() }
                 ?.systemFrequency
-                ?: atsList?.firstOrNull()?.systemFrequency
 
             nodes.add(
                 SldNode(
@@ -215,10 +237,10 @@ object ElectricalNetworkGraphBuilder {
                     projectId = effectiveProjectId,
                     type = SldNodeType.GENERATOR,
                     displayName = "$genName ($genRatedKvaStr)",
-                    voltage = "$sysVoltage V",
+                    voltage = genVoltageStr,
                     dataBlock = SldDataBlock(
                         ratedKva = genRatedKvaStr,
-                        voltage = "$sysVoltage V",
+                        voltage = genVoltageStr,
                         ibAmp = genIbAmp,
                         loadingPct = genLoadingPct,
                         generatorMotorStartingKva = genRes?.motorStartingKVA?.takeIf { it > 0.0 }?.let { "%.0f kVA".format(it) },
@@ -251,16 +273,22 @@ object ElectricalNetworkGraphBuilder {
                 val syncNodeId = "sync_$groupKey"
                 val groupKva = groupGens.sumOf { (it.manualSizeKVA ?: 0.0) }
                 val groupKvaStr = if (groupKva > 0.0) " %.0f kVA total".format(groupKva) else ""
+                // P0-4: sync-bus voltage follows its member gensets (which follow their ATS).
+                // Any unknown member voltage or disagreement ⇒ DATA REQUIRED, never "400 V".
+                val memberVoltages = groupGens.map { genVoltageByGenId[it.generatorId] }
+                val syncVoltageStr = if (memberVoltages.isNotEmpty() &&
+                    memberVoltages.all { it != null } && memberVoltages.distinct().size == 1
+                ) "${memberVoltages.first()} V" else "DATA REQUIRED"
                 nodes.add(
                     SldNode(
                         id = syncNodeId,
                         projectId = effectiveProjectId,
                         type = SldNodeType.SYNC_BUS,
                         displayName = "Sync Bus $groupKey",
-                        voltage = "400 V",
+                        voltage = syncVoltageStr,
                         dataBlock = SldDataBlock(
                             ratedKva = if (groupKva > 0.0) "${groupKva.toInt()} kVA" else null,
-                            voltage = "400 V",
+                            voltage = syncVoltageStr,
                             statusText = "SYNCHRONIZING BUS (${groupGens.size} GENERATORS)$groupKvaStr"
                         ),
                         status = SldValidationStatus.VALID,
@@ -413,21 +441,45 @@ object ElectricalNetworkGraphBuilder {
                     }
                 }
             } else {
-                // Unassigned normal source fallback: check for single upstream MDB or single transformer
-                val mdbCircuit = projCircuits.firstOrNull { circ ->
+                // Unassigned normal source fallback: P0-7 — require a UNIQUE upstream MDB
+                // candidate; multiple MDB-looking circuits are ambiguous (no instance #1),
+                // falling through to the single-transformer case or the explicit
+                // ATS_NORMAL_SOURCE_REQUIRED state handled downstream.
+                // The ATS's own downstream board is excluded (fedFrom == this ATS name) —
+                // an ATS cannot be normal-fed from the board it supplies (circular path),
+                // same intent as the assignedAtsId exclusion below.
+                val mdbCandidates = projCircuits.filter { circ ->
                     (atsOutputBoardId == null || circ.id != atsOutputBoardId) &&
                     circ.assignedAtsId != atsId &&
+                    !circ.fedFrom.trim().equals(atsName, ignoreCase = true) &&
                     ((circ.panelType != null && circ.panelType.lowercase().contains("mdb")) ||
                     circ.circuitName.lowercase().contains("mdb") ||
                     circ.fedFrom.trim().lowercase().startsWith("trans") ||
                     circ.fedFrom.trim().lowercase().startsWith("tx"))
                 }
-                normalSourceNodeId = if (mdbCircuit != null) {
-                    "circ_${mdbCircuit.id}"
-                } else if (projTransformers.size == 1) {
-                    "tx_${projTransformers.single().transformerId}"
-                } else {
-                    null
+                when {
+                    mdbCandidates.size == 1 -> {
+                        normalSourceNodeId = "circ_${mdbCandidates.single().id}"
+                    }
+                    mdbCandidates.size > 1 -> {
+                        // P0-7: two or more upstream MDB candidates are genuinely ambiguous —
+                        // refuse to assert any of them as the normal source.
+                        normalSourceErrorIssue = SldValidationIssue(
+                            affectedNodeId = atsNodeId,
+                            componentName = atsName,
+                            failedCondition = "Ambiguous ATS Normal Source: ${mdbCandidates.size} upstream MDB candidates exist (IDs: ${mdbCandidates.joinToString { it.id.toString() }})",
+                            issueCode = "AMBIGUOUS_SOURCE_INSTANCE",
+                            severity = SldValidationStatus.INVALID,
+                            recommendedCorrection = "Select the upstream MDB explicitly via output board or transformer assignment"
+                        )
+                        normalSourceNodeId = null
+                    }
+                    projTransformers.size == 1 -> {
+                        normalSourceNodeId = "tx_${projTransformers.single().transformerId}"
+                    }
+                    else -> {
+                        normalSourceNodeId = null
+                    }
                 }
             }
 
@@ -695,13 +747,24 @@ object ElectricalNetworkGraphBuilder {
             val tieNodeId = "tie_${tie.busTieId}"
             val srcNodeId = "circ_$srcBoardId"
             val dstNodeId = "circ_$dstBoardId"
+            // P0-4: tie voltage derives from the two endpoint boards (CircuitEntity.voltageV) —
+            // never a "400 V" literal. Endpoint disagreement is surfaced, not papered over.
+            val srcTieVoltage = projCircuits.firstOrNull { it.id.toLong() == srcBoardId }?.voltageV?.takeIf { it > 0 }
+            val dstTieVoltage = projCircuits.firstOrNull { it.id.toLong() == dstBoardId }?.voltageV?.takeIf { it > 0 }
+            val tieVoltageStr = when {
+                srcTieVoltage != null && dstTieVoltage != null && srcTieVoltage == dstTieVoltage -> "$srcTieVoltage V"
+                srcTieVoltage != null && dstTieVoltage != null -> "$srcTieVoltage V / $dstTieVoltage V"
+                srcTieVoltage != null -> "$srcTieVoltage V"
+                dstTieVoltage != null -> "$dstTieVoltage V"
+                else -> "DATA REQUIRED"
+            }
             nodes.add(
                 SldNode(
                     id = tieNodeId,
                     projectId = effectiveProjectId,
                     type = SldNodeType.BUS_TIE,
                     displayName = tie.name,
-                    voltage = "400 V",
+                    voltage = tieVoltageStr,
                     dataBlock = SldDataBlock(
                         deviceTypeAndRating = tie.breakerRatingA?.takeIf { it > 0.0 }?.let { "%.0f A".format(it) },
                         statusText = "BUS TIE (${tie.interlockScheme}) — ${tie.normalStatus}"
@@ -745,33 +808,39 @@ object ElectricalNetworkGraphBuilder {
             val upsRes = effectiveUpsResults[upsId]
             val upsRatedKva = upsRes?.recommendedSize?.takeIf { it > 0.0 } ?: upsRes?.designUpsKVA?.takeIf { it > 0.0 } ?: ups.manualSizeKVA ?: 0.0
             val upsRatedKvaStr = if (upsRatedKva > 0.0) "${upsRatedKva.toInt()} kVA" else "DATA REQUIRED"
-            val upsSysV = if (ups.systemVoltage > 0) "${ups.systemVoltage} V" else "400 V"
-            val sysVDbl = (ups.systemVoltage.takeIf { it > 0 } ?: 400).toDouble()
-            val upsIbAmp = if (upsRatedKva > 0.0) "%.0f A".format((upsRatedKva * 1000) / (Math.sqrt(3.0) * sysVDbl)) else "DATA REQUIRED"
+            // P0-4: UpsEntity.systemVoltage is the authoritative stored value; missing ⇒
+            // explicit DATA REQUIRED (label) and no fabricated current basis.
+            val upsVoltageV: Int? = ups.systemVoltage.takeIf { it > 0 }
+            val upsSysV = upsVoltageV?.let { "$it V" } ?: "DATA REQUIRED"
+            val upsIbAmp = if (upsRatedKva > 0.0 && upsVoltageV != null) {
+                "%.0f A".format((upsRatedKva * 1000) / (Math.sqrt(3.0) * upsVoltageV.toDouble()))
+            } else "DATA REQUIRED"
             val upsName = ups.upsName.ifBlank { "UPS $upsId" }
 
-            // Resolve upstream source for UPS (from assigned panel, ATS output, transformer, or utility)
-            val fedCircuit = projCircuits.firstOrNull {
+            // P0-7: unique exact matches only — no instance #1 of many.
+            val fedCircuit = projCircuits.filter {
                 it.assignedUpsId.equals(upsId, ignoreCase = true) ||
                     it.fedFrom.trim().equals(upsName, ignoreCase = true)
-            }
+            }.singleOrNull()
             val fedParentName = fedCircuit?.fedFrom?.trim()?.lowercase()
             val upstreamPanel = if (!fedParentName.isNullOrBlank()) {
-                projCircuits.firstOrNull { it.circuitName.trim().lowercase() == fedParentName }
+                projCircuits.singleOrNull { it.circuitName.trim().lowercase() == fedParentName }
             } else null
 
             val matchedAts = if (!fedParentName.isNullOrBlank()) {
-                projAtsList.firstOrNull { it.atsName.trim().lowercase() == fedParentName || it.atsId.trim().lowercase() == fedParentName }
+                projAtsList.singleOrNull { it.atsName.trim().lowercase() == fedParentName || it.atsId.trim().lowercase() == fedParentName }
             } else null
 
             val matchedTx = if (!fedParentName.isNullOrBlank()) {
-                projTransformers.firstOrNull { it.transformerId.trim().lowercase() == fedParentName }
+                projTransformers.singleOrNull { it.transformerId.trim().lowercase() == fedParentName }
             } else null
 
-            val fallbackPanel = nodes.find { it.type == SldNodeType.MDB }?.id
-            val fallbackAts = projAtsList.firstOrNull()?.let { "ats_${it.atsId.ifBlank { "1" }}" }
-            val fallbackTx = projTransformers.firstOrNull()?.let { "tx_${it.transformerId}" }
-            val fallbackGrid = nodes.find { it.type == SldNodeType.UTILITY_SOURCE }?.id
+            // Explicit relationships first; last-resort sources only when each candidate set
+            // holds EXACTLY ONE member (0 or ≥2 ⇒ unresolved ⇒ DATA_REQUIRED status below).
+            val fallbackPanel = nodes.filter { it.type == SldNodeType.MDB }.singleOrNull()?.id
+            val fallbackAts = projAtsList.singleOrNull()?.let { "ats_${it.atsId.ifBlank { "1" }}" }
+            val fallbackTx = projTransformers.singleOrNull()?.let { "tx_${it.transformerId}" }
+            val fallbackGrid = nodes.filter { it.type == SldNodeType.UTILITY_SOURCE }.singleOrNull()?.id
 
             val upstreamSourceId = when {
                 upstreamPanel != null -> "circ_${upstreamPanel.id}"
@@ -947,7 +1016,10 @@ object ElectricalNetworkGraphBuilder {
             } else "${circ.loadKVA.toInt()} kVA"
 
             val cableDesc = sizingRes?.cableSize_mm2 ?: circ.overrideCableSize ?: circ.cableType
-            val ibStr = sizingRes?.Ib_A?.let { "%.1f A".format(it) } ?: if (sizingRes == null) "DATA REQUIRED" else "${(circ.loadKVA * 1.44).toInt()} A"
+            // P0-5: no fabricated Ib. SizingResult.Ib_A is the only authoritative source;
+            // when it is absent (including when sizing ran without a usable design current)
+            // the node reports DATA REQUIRED instead of a 1.44-assumption estimate.
+            val ibStr = sizingRes?.Ib_A?.let { "%.1f A".format(it) } ?: "DATA REQUIRED"
             val izStr = sizingRes?.capacity_derated_Iz_A?.let { "%.1f A".format(it) } ?: if (sizingRes == null) "DATA REQUIRED" else ""
             val vdStr = sizingRes?.vdPct?.let { "%.2f%%".format(it) } ?: if (sizingRes == null) "DATA REQUIRED" else ""
             val cumVdStr = sizingRes?.cumulativeVDpct?.let { "%.2f%%".format(it) } ?: ""
@@ -972,28 +1044,33 @@ object ElectricalNetworkGraphBuilder {
             } else {
                 val parentIdFromMap = effectiveParents[circ.id]
                 val parentByMap = if (parentIdFromMap != null) circuitMapById[parentIdFromMap] else null
-                val parentByName = if (!isExplicitSourceKeyword) circuitMapByName[fedLower]?.firstOrNull { it.id != circ.id } else null
+                // P0-7: duplicate board names are ambiguous — require a unique non-self match.
+                val sameNameParents = if (!isExplicitSourceKeyword) circuitMapByName[fedLower]?.filter { it.id != circ.id } else null
+                val parentByName = sameNameParents?.singleOrNull()
                 val parentCirc = parentByMap ?: parentByName
 
                 // Determine resolvedParentNodeId (using outer scope variables)
 
                 // Determine resolvedParentNodeId (using multi-instance ATS / Generator mappings)
+                // P0-7 (E-07): explicit IDs resolve on the unique per-project key; the
+                // fallback matches require a UNIQUE result — two ATS/Gen/UPS instances claiming
+                // the same output board or name are ambiguous (never instance #1).
                 val matchedAts = if (!circ.assignedAtsId.isNullOrBlank()) {
-                    projAtsList.firstOrNull { it.atsId.equals(circ.assignedAtsId, ignoreCase = true) }
+                    projAtsList.singleOrNull { it.atsId.equals(circ.assignedAtsId, ignoreCase = true) }
                 } else {
-                    projAtsList.firstOrNull { it.outputBoardId == circ.id || it.atsName.equals(circ.fedFrom.trim(), ignoreCase = true) || it.atsId.equals(circ.fedFrom.trim(), ignoreCase = true) }
+                    projAtsList.singleOrNull { it.outputBoardId == circ.id || it.atsName.equals(circ.fedFrom.trim(), ignoreCase = true) || it.atsId.equals(circ.fedFrom.trim(), ignoreCase = true) }
                 }
 
                 val matchedGen = if (!circ.assignedGeneratorId.isNullOrBlank()) {
-                    projGenerators.firstOrNull { it.generatorId.equals(circ.assignedGeneratorId, ignoreCase = true) }
+                    projGenerators.singleOrNull { it.generatorId.equals(circ.assignedGeneratorId, ignoreCase = true) }
                 } else {
-                    projGenerators.firstOrNull { it.generatorName.equals(circ.fedFrom.trim(), ignoreCase = true) || it.generatorId.equals(circ.fedFrom.trim(), ignoreCase = true) }
+                    projGenerators.singleOrNull { it.generatorName.equals(circ.fedFrom.trim(), ignoreCase = true) || it.generatorId.equals(circ.fedFrom.trim(), ignoreCase = true) }
                 }
 
                 val matchedUps = if (!circ.assignedUpsId.isNullOrBlank()) {
-                    projUpsList.firstOrNull { it.upsId.equals(circ.assignedUpsId, ignoreCase = true) }
+                    projUpsList.singleOrNull { it.upsId.equals(circ.assignedUpsId, ignoreCase = true) }
                 } else {
-                    projUpsList.firstOrNull { it.upsName.equals(circ.fedFrom.trim(), ignoreCase = true) || it.upsId.equals(circ.fedFrom.trim(), ignoreCase = true) }
+                    projUpsList.singleOrNull { it.upsName.equals(circ.fedFrom.trim(), ignoreCase = true) || it.upsId.equals(circ.fedFrom.trim(), ignoreCase = true) }
                 }
 
                 if (circ.upsBacked && circ.assignedUpsId.isNullOrBlank() && matchedUps == null) {
@@ -1050,33 +1127,134 @@ object ElectricalNetworkGraphBuilder {
                     provenance = SldProvenance.VERIFIED_FORMULA
                 } else if (!isExplicitSourceKeyword) {
                     isDisconnected = true
+                    val isAmbiguousName = sameNameParents != null && sameNameParents.size > 1
                     validationIssues.add(
                         SldValidationIssue(
                             affectedNodeId = circNodeId,
                             componentName = circ.circuitName,
-                            failedCondition = "Parent equipment '$fedLower' not found in project network",
-                            issueCode = "MISSING_PARENT",
+                            failedCondition = if (isAmbiguousName)
+                                "Ambiguous parent equipment '$fedLower': ${sameNameParents.size} circuits share this name"
+                            else "Parent equipment '$fedLower' not found in project network",
+                            issueCode = if (isAmbiguousName) "AMBIGUOUS_SOURCE_INSTANCE" else "MISSING_PARENT",
                             severity = SldValidationStatus.DISCONNECTED,
-                            recommendedCorrection = "Verify fedFrom board name"
+                            recommendedCorrection = if (isAmbiguousName)
+                                "Rename duplicate boards or use an explicit parent relationship"
+                            else "Verify fedFrom board name"
                         )
                     )
                 } else {
                     // fedFrom is a source keyword (Transformer / Utility / Grid / ATS / Generator)
+                    // P0-7: resolve only via a UNIQUE candidate. A generic keyword must never
+                    // silently select instance #1 of many — ambiguity becomes an explicit
+                    // AMBIGUOUS_SOURCE_INSTANCE issue (disconnected), no match becomes
+                    // MISSING_PARENT (disconnected).
+                    fun resolveUpstreamSourceNodes(): Pair<String?, SldValidationIssue?> {
+                        val txNodes = nodes.filter { it.type == SldNodeType.TRANSFORMER }
+                        val gridNodes = nodes.filter { it.type == SldNodeType.UTILITY_SOURCE }
+                        return when {
+                            txNodes.size == 1 -> txNodes.single().id to null
+                            txNodes.isEmpty() && gridNodes.size == 1 -> gridNodes.single().id to null
+                            txNodes.size > 1 || gridNodes.size > 1 ->
+                                null to SldValidationIssue(
+                                    affectedNodeId = circNodeId,
+                                    componentName = circ.circuitName,
+                                    failedCondition = "Ambiguous upstream source for '$fedLower': multiple source instances exist and no explicit transformerId is assigned",
+                                    issueCode = "AMBIGUOUS_SOURCE_INSTANCE",
+                                    severity = SldValidationStatus.INVALID,
+                                    recommendedCorrection = "Assign an explicit transformerId or a unique source name"
+                                )
+                            else ->
+                                null to SldValidationIssue(
+                                    affectedNodeId = circNodeId,
+                                    componentName = circ.circuitName,
+                                    failedCondition = "No upstream source instance matches '$fedLower' in project network",
+                                    issueCode = "MISSING_PARENT",
+                                    severity = SldValidationStatus.DISCONNECTED,
+                                    recommendedCorrection = "Configure transformer/utility source in project"
+                                )
+                        }
+                    }
+
                     if (fedLower.contains("ats")) {
-                        val fallbackAts = projAtsList.firstOrNull { fedLower.contains(it.atsName.lowercase()) } ?: projAtsList.firstOrNull()
-                        if (fallbackAts != null) {
-                            resolvedParentNodeId = "ats_${fallbackAts.atsId.ifBlank { "1" }}"
-                            provenance = SldProvenance.APPROVED_STANDARD
-                        } else {
-                            resolvedParentNodeId = nodes.find { it.type == SldNodeType.TRANSFORMER }?.id ?: nodes.find { it.type == SldNodeType.UTILITY_SOURCE }?.id
+                        val atsNameMatches = projAtsList.filter {
+                            (it.atsName.isNotBlank() && fedLower.contains(it.atsName.trim().lowercase())) ||
+                                (it.atsId.isNotBlank() && fedLower == it.atsId.trim().lowercase())
+                        }
+                        val fallbackAts = when {
+                            atsNameMatches.size == 1 -> atsNameMatches.single()
+                            atsNameMatches.isEmpty() && projAtsList.size == 1 -> projAtsList.single()
+                            else -> null
+                        }
+                        when {
+                            fallbackAts != null -> {
+                                resolvedParentNodeId = "ats_${fallbackAts.atsId.ifBlank { "1" }}"
+                                provenance = SldProvenance.APPROVED_STANDARD
+                            }
+                            projAtsList.isEmpty() -> {
+                                // No ATS exists in the project at all — the keyword is generic.
+                                val (upstreamId, upstreamIssue) = resolveUpstreamSourceNodes()
+                                resolvedParentNodeId = upstreamId
+                                if (upstreamId != null) {
+                                    provenance = SldProvenance.APPROVED_STANDARD
+                                } else {
+                                    isDisconnected = true
+                                    upstreamIssue?.let { validationIssues.add(it) }
+                                }
+                            }
+                            else -> {
+                                // P0-7: ≥2 ATS instances claim this reference (or a generic
+                                // keyword with multiple instances) — ambiguous, never #1.
+                                isDisconnected = true
+                                validationIssues.add(
+                                    SldValidationIssue(
+                                        affectedNodeId = circNodeId,
+                                        componentName = circ.circuitName,
+                                        failedCondition = "Ambiguous ATS reference '$fedLower': ${atsNameMatches.size} matching / ${projAtsList.size} total ATS instances exist",
+                                        issueCode = "AMBIGUOUS_SOURCE_INSTANCE",
+                                        severity = SldValidationStatus.INVALID,
+                                        recommendedCorrection = "Assign a unique ATS name/id or use assignedAtsId"
+                                    )
+                                )
+                            }
                         }
                     } else if (fedLower.contains("generator") || fedLower.contains("gen")) {
-                        val fallbackGen = projGenerators.firstOrNull { fedLower.contains(it.generatorName.lowercase()) } ?: projGenerators.firstOrNull()
-                        if (fallbackGen != null) {
-                            resolvedParentNodeId = "gen_${fallbackGen.generatorId.ifBlank { "1" }}"
-                            provenance = SldProvenance.APPROVED_STANDARD
-                        } else {
-                            resolvedParentNodeId = nodes.find { it.type == SldNodeType.TRANSFORMER }?.id ?: nodes.find { it.type == SldNodeType.UTILITY_SOURCE }?.id
+                        val genNameMatches = projGenerators.filter {
+                            (it.generatorName.isNotBlank() && fedLower.contains(it.generatorName.trim().lowercase())) ||
+                                (it.generatorId.isNotBlank() && fedLower == it.generatorId.trim().lowercase())
+                        }
+                        val fallbackGen = when {
+                            genNameMatches.size == 1 -> genNameMatches.single()
+                            genNameMatches.isEmpty() && projGenerators.size == 1 -> projGenerators.single()
+                            else -> null
+                        }
+                        when {
+                            fallbackGen != null -> {
+                                resolvedParentNodeId = "gen_${fallbackGen.generatorId.ifBlank { "1" }}"
+                                provenance = SldProvenance.APPROVED_STANDARD
+                            }
+                            projGenerators.isEmpty() -> {
+                                val (upstreamId, upstreamIssue) = resolveUpstreamSourceNodes()
+                                resolvedParentNodeId = upstreamId
+                                if (upstreamId != null) {
+                                    provenance = SldProvenance.APPROVED_STANDARD
+                                } else {
+                                    isDisconnected = true
+                                    upstreamIssue?.let { validationIssues.add(it) }
+                                }
+                            }
+                            else -> {
+                                isDisconnected = true
+                                validationIssues.add(
+                                    SldValidationIssue(
+                                        affectedNodeId = circNodeId,
+                                        componentName = circ.circuitName,
+                                        failedCondition = "Ambiguous generator reference '$fedLower': ${genNameMatches.size} matching / ${projGenerators.size} total generator instances exist",
+                                        issueCode = "AMBIGUOUS_SOURCE_INSTANCE",
+                                        severity = SldValidationStatus.INVALID,
+                                        recommendedCorrection = "Assign a unique generator name/id or use assignedGeneratorId"
+                                    )
+                                )
+                            }
                         }
                     } else if (!circ.transformerId.isNullOrBlank()) {
                         val matchedTx = txMap[circ.transformerId.lowercase()]
@@ -1113,15 +1291,47 @@ object ElectricalNetworkGraphBuilder {
                             )
                         }
                     } else {
-                        val availableTx = projTransformers.firstOrNull()
-                        if (availableTx != null) {
-                            resolvedParentNodeId = "tx_${availableTx.transformerId}"
-                            provenance = SldProvenance.APPROVED_STANDARD
-                        } else if (nodes.any { it.type == SldNodeType.UTILITY_SOURCE }) {
-                            resolvedParentNodeId = nodes.find { it.type == SldNodeType.UTILITY_SOURCE }?.id
-                            provenance = SldProvenance.APPROVED_STANDARD
-                        } else {
-                            isDisconnected = true
+                        // P0-7 (E-01): generic source keyword with NO transformerId — resolve
+                        // ONLY a unique transformer. Multiple transformers are AMBIGUOUS (never
+                        // instance #1). Utility fallback likewise requires exactly one node
+                        // (0 transformers ⇒ the single grid_default; ≥2 ⇒ ambiguous).
+                        val availableTx = projTransformers.singleOrNull()
+                        val utilityNodes = nodes.filter { it.type == SldNodeType.UTILITY_SOURCE }
+                        when {
+                            availableTx != null -> {
+                                resolvedParentNodeId = "tx_${availableTx.transformerId}"
+                                provenance = SldProvenance.APPROVED_STANDARD
+                            }
+                            projTransformers.isEmpty() && utilityNodes.size == 1 -> {
+                                resolvedParentNodeId = utilityNodes.single().id
+                                provenance = SldProvenance.APPROVED_STANDARD
+                            }
+                            projTransformers.size > 1 || utilityNodes.size > 1 -> {
+                                isDisconnected = true
+                                validationIssues.add(
+                                    SldValidationIssue(
+                                        affectedNodeId = circNodeId,
+                                        componentName = circ.circuitName,
+                                        failedCondition = "Ambiguous upstream source: ${projTransformers.size} transformer(s) / ${utilityNodes.size} source node(s) exist in project and no transformerId is assigned",
+                                        issueCode = "AMBIGUOUS_SOURCE_INSTANCE",
+                                        severity = SldValidationStatus.INVALID,
+                                        recommendedCorrection = "Assign an explicit transformerId to this circuit"
+                                    )
+                                )
+                            }
+                            else -> {
+                                isDisconnected = true
+                                validationIssues.add(
+                                    SldValidationIssue(
+                                        affectedNodeId = circNodeId,
+                                        componentName = circ.circuitName,
+                                        failedCondition = "No upstream source instance found for '${circ.fedFrom}'",
+                                        issueCode = "MISSING_PARENT",
+                                        severity = SldValidationStatus.DISCONNECTED,
+                                        recommendedCorrection = "Configure transformer/utility source in project"
+                                    )
+                                )
+                            }
                         }
                     }
                 }
@@ -1178,11 +1388,14 @@ object ElectricalNetworkGraphBuilder {
             } else emptyMap()
 
             val boardIsThreePhase = circ.phases.contains("3")
-            val diversityRes = if (nodeType in BOARD_ROLLUP_NODE_TYPES && directChildren.isNotEmpty()) {
+            // P0-5: diversity is only computed from a valid stored voltage; a missing/invalid
+            // voltage must not be replaced by a silent 400 V basis (rollup falls back to
+            // entity loads instead, which is deterministic project data).
+            val diversityRes = if (nodeType in BOARD_ROLLUP_NODE_TYPES && directChildren.isNotEmpty() && circ.voltageV > 0) {
                 com.example.engine.DiversityCalculationEngine.calculateBoardDiversity(
                     circuits = directChildren,
                     subPanelLoads = subPanelLoads,
-                    boardVoltageV = if (circ.voltageV > 0) circ.voltageV.toDouble() else 400.0,
+                    boardVoltageV = circ.voltageV.toDouble(),
                     isThreePhase = boardIsThreePhase
                 )
             } else null
@@ -1211,10 +1424,13 @@ object ElectricalNetworkGraphBuilder {
                 boardTclKva * boardDf
             }
 
-            val boardCurrentA = if (boardTdlKva > 0.0) {
+            // P0-5: guard every voltage division — non-finite currents must never reach
+            // downstream sizing (BusbarSizingEngine) or be rendered as facts.
+            val boardCurrentA = if (boardTdlKva > 0.0 && circ.voltageV > 0) {
                 // Real stored board voltage (CircuitEntity.voltageV) — never a hardcoded default.
-                if (boardIsThreePhase) boardTdlKva * 1000.0 / (kotlin.math.sqrt(3.0) * circ.voltageV)
+                val current = if (boardIsThreePhase) boardTdlKva * 1000.0 / (kotlin.math.sqrt(3.0) * circ.voltageV)
                 else boardTdlKva * 1000.0 / circ.voltageV
+                if (current.isFinite()) current else 0.0
             } else 0.0
             val boardTclStr = if (boardTclKva > 0.0) "%.1f kVA".format(boardTclKva) else null
             val boardTdlStr = if (boardTdlKva > 0.0) "%.1f kVA".format(boardTdlKva) else null
@@ -1225,7 +1441,9 @@ object ElectricalNetworkGraphBuilder {
                 ?.let { "%.1f%%".format(it.unbalancePct) }
 
             // Phase 3A: Busbar Sizing Engine (IEC 61439-1 / DIN 43671 / IEC 60865)
-            val busbarSizing = if (nodeType in BOARD_ROLLUP_NODE_TYPES) {
+            // P0-5: only sized from a valid stored voltage; missing voltage → no busbar
+            // computation (fields fall back to explicit entity inputs or stay absent).
+            val busbarSizing = if (nodeType in BOARD_ROLLUP_NODE_TYPES && circ.voltageV > 0) {
                 val scKaAtBoard = scRes?.iscKA ?: 0.0
                 val incRating = sizingRes?.deviceSize_A?.takeIf { it > 0.0 } ?: circ.overrideDeviceSize
                 com.example.engine.BusbarSizingEngine.sizeBusbar(
@@ -1233,7 +1451,7 @@ object ElectricalNetworkGraphBuilder {
                     incomerRatingA = incRating,
                     faultLevelKa = scKaAtBoard,
                     faultDurationS = 1.0,
-                    voltageV = if (circ.voltageV > 0) circ.voltageV.toDouble() else 400.0,
+                    voltageV = circ.voltageV.toDouble(),
                     material = com.example.engine.BusbarMaterial.COPPER,
                     finish = com.example.engine.BusbarFinish.BARE,
                     ipRating = circ.ipRating ?: "IP54",
@@ -1266,15 +1484,24 @@ object ElectricalNetworkGraphBuilder {
             val busbarPeStr = busbarSizing?.peProfile
             val busbarMaterialStr = busbarSizing?.material?.displayName
 
+            // P0-3: voltage label derives from the SAME stored value (CircuitEntity.voltageV)
+            // used by the current calculation — never from phase count. Invalid/missing →
+            // explicit DATA REQUIRED instead of a 400 V / 230 V guess.
+            val circuitVoltageLabel = if (circ.voltageV > 0) {
+                "${circ.voltageV} V (${if (boardIsThreePhase) "3Ph" else "1Ph"})"
+            } else {
+                "DATA REQUIRED"
+            }
+
             val node = SldNode(
                 id = circNodeId,
                 projectId = effectiveProjectId,
                 type = nodeType,
                 displayName = circ.circuitName,
                 parentSourceId = resolvedParentNodeId,
-                voltage = if (circ.phases.contains("3")) "400 V (3Ph)" else "230 V (1Ph)",
+                voltage = circuitVoltageLabel,
                 dataBlock = SldDataBlock(
-                    voltage = if (circ.phases.contains("3")) "400 V (3Ph)" else "230 V (1Ph)",
+                    voltage = circuitVoltageLabel,
                     deviceTypeAndRating = cbDesc,
                     cableDescription = cableDesc,
                     parallelRuns = circ.parallelRuns,

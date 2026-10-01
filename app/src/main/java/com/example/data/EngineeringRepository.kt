@@ -759,10 +759,16 @@ class EngineeringRepository(
                             loadType = obj.optString("loadType", "Normal"),
                             phases = obj.optString("phases", "3P+N"),
                             voltageV = obj.optInt("voltageV", 400),
-                            pf = obj.optDouble("pf", 0.85),
-                            safetyFactor = obj.optDouble("safetyFactor", 1.0),
-                            manufacturer = obj.optString("manufacturer", "Elsewedy Electric"),
-                            cableType = obj.optString("cableType", "CU/XLPE/PVC"),
+                            // P0-12 (C-06): fallbacks must equal the CircuitEntity schema defaults —
+                            // the old values (pf .85, "Elsewedy Electric", "CU/XLPE/PVC") silently
+                            // changed sizing/verdicts for legacy exports. Absent fields emit
+                            // DEFAULTED_BY_SCHEMA notices after insert.
+                            // installation stays BLANK when absent by design (A1-R): no fabricated
+                            // default — the import warning + loud sizing failure ARE the disclosure.
+                            pf = obj.optDouble("pf", 0.8),
+                            safetyFactor = obj.optDouble("safetyFactor", 1.25),
+                            manufacturer = obj.optString("manufacturer", "Elsewedy"),
+                            cableType = obj.optString("cableType", "Cu/XLPE/SWA/PVC"),
                             installation = obj.optString("installation"),
                             airTempC = obj.optInt("airTempC", 40),
                             gndTempC = obj.optInt("gndTempC", 40),
@@ -773,7 +779,7 @@ class EngineeringRepository(
                             spacing = obj.optString("spacing", "Touching"),
                             parallelRuns = obj.optInt("parallelRuns", 1),
                             length_m = obj.optDouble("length_m", 50.0),
-                            maxVDpct = obj.optDouble("maxVDpct", 0.05),
+                            maxVDpct = obj.optDouble("maxVDpct", 0.03),
                             overrideDeviceType = obj.optString("overrideDeviceType").takeIf { !it.isNullOrBlank() },
                             overrideDeviceSize = if (obj.has("overrideDeviceSize") && !obj.isNull("overrideDeviceSize") && obj.optDouble("overrideDeviceSize") > 0) obj.optDouble("overrideDeviceSize") else null,
                             overrideCableSize = obj.optString("overrideCableSize").takeIf { !it.isNullOrBlank() },
@@ -816,6 +822,14 @@ class EngineeringRepository(
 
                         val generatedId = circuitDao.insertCircuit(c).toInt()
                         circuitIdMap[sourceId] = generatedId
+
+                        // P0-12 (C-06): disclose every schema default applied where the legacy
+                        // export carried no value (notice pattern: transformer vectorGroup).
+                        if (!obj.has("pf")) notices.add(MigrationNotice("Circuit", c.circuitName, "pf", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted pf to 0.8 (CircuitEntity default)."))
+                        if (!obj.has("safetyFactor")) notices.add(MigrationNotice("Circuit", c.circuitName, "safetyFactor", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted safetyFactor to 1.25 (CircuitEntity default)."))
+                        if (!obj.has("manufacturer")) notices.add(MigrationNotice("Circuit", c.circuitName, "manufacturer", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted manufacturer to \"Elsewedy\" (CircuitEntity default)."))
+                        if (!obj.has("cableType")) notices.add(MigrationNotice("Circuit", c.circuitName, "cableType", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted cableType to \"Cu/XLPE/SWA/PVC\" (CircuitEntity default)."))
+                        if (!obj.has("maxVDpct")) notices.add(MigrationNotice("Circuit", c.circuitName, "maxVDpct", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted maxVDpct to 0.03 (CircuitEntity default)."))
                         parsedCircuits.add(ParsedCircuitWithSourceId(sourceId, c.copy(id = generatedId), originalParentId, fedFrom))
                         importedCircuitCount++
                     }
@@ -1060,19 +1074,28 @@ class EngineeringRepository(
                 // 7. PF Global
                 if (root.has("pfGlobal")) {
                     val obj = root.getJSONObject("pfGlobal")
+                    // P0-12 (C-06): fallbacks must equal the PfGlobalEntity schema defaults —
+                    // the old values (0.95 / 25 kvar / 8760 h / 0.12 / 15.0 / 5.0) diverged from
+                    // every in-app default and changed PF-correction verdicts for legacy exports.
                     val pfGlobal = PfGlobalEntity(
                         projectId = newProjectId,
                         id = 1,
-                        targetPf = obj.optDouble("targetPf", 0.95),
-                        kvarStepSize = obj.optDouble("kvarStepSize", 25.0),
+                        targetPf = obj.optDouble("targetPf", 0.97),
+                        kvarStepSize = obj.optDouble("kvarStepSize", 50.0),
                         systemVoltage = obj.optInt("systemVoltage", 400),
-                        annualOperatingHours = obj.optInt("annualOperatingHours", 8760),
-                        energyCost = obj.optDouble("energyCost", 0.12),
-                        lossReductionPct = obj.optDouble("lossReductionPct", 15.0),
-                        unityToleranceKvar = obj.optDouble("unityToleranceKvar", 5.0)
+                        annualOperatingHours = obj.optInt("annualOperatingHours", 6000),
+                        energyCost = obj.optDouble("energyCost", 1.5),
+                        lossReductionPct = obj.optDouble("lossReductionPct", 0.03),
+                        unityToleranceKvar = obj.optDouble("unityToleranceKvar", 0.5)
                     )
                     powerSystemsDao.savePfGlobalSettings(pfGlobal)
                     importedPfGlobalCount++
+                    if (!obj.has("targetPf")) notices.add(MigrationNotice("PfGlobal", newProjectId, "targetPf", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted targetPf to 0.97 (PfGlobalEntity default)."))
+                    if (!obj.has("kvarStepSize")) notices.add(MigrationNotice("PfGlobal", newProjectId, "kvarStepSize", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted kvarStepSize to 50.0 (PfGlobalEntity default)."))
+                    if (!obj.has("annualOperatingHours")) notices.add(MigrationNotice("PfGlobal", newProjectId, "annualOperatingHours", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted annualOperatingHours to 6000 (PfGlobalEntity default)."))
+                    if (!obj.has("energyCost")) notices.add(MigrationNotice("PfGlobal", newProjectId, "energyCost", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted energyCost to 1.5 (PfGlobalEntity default)."))
+                    if (!obj.has("lossReductionPct")) notices.add(MigrationNotice("PfGlobal", newProjectId, "lossReductionPct", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted lossReductionPct to 0.03 (PfGlobalEntity default)."))
+                    if (!obj.has("unityToleranceKvar")) notices.add(MigrationNotice("PfGlobal", newProjectId, "unityToleranceKvar", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted unityToleranceKvar to 0.5 (PfGlobalEntity default)."))
                 }
 
                 // 8. PF Transformers
@@ -1123,21 +1146,29 @@ class EngineeringRepository(
                 // 10. Earthing Settings
                 if (root.has("earthingSettings")) {
                     val obj = root.getJSONObject("earthingSettings")
+                    // P0-12 (C-04): fallbacks must equal the EarthingEntity schema defaults — the
+                    // old kFactor=1.0 inflated earth-conductor S ~159× vs the copper default 159.0.
+                    // Only the documented LEGACY token "DEFAULT_TABLE" (introduced by the old
+                    // importer fallback) is mapped to ASSUMED so the engine's assumed-soil
+                    // disclosure fires; every other carried value is preserved verbatim — explicit
+                    // values are never rewritten on round-trip.
+                    val rawSoilSource = obj.optString("soilResistivitySource", "ASSUMED")
+                    val soilSource = if (rawSoilSource.trim().equals("DEFAULT_TABLE", ignoreCase = true)) "ASSUMED" else rawSoilSource
                     val earthing = EarthingEntity(
                         projectId = newProjectId,
                         id = 1,
-                        soilResistivity_ohmM = obj.optDouble("soilResistivity_ohmM", 100.0),
+                        soilResistivity_ohmM = obj.optDouble("soilResistivity_ohmM", 50.0),
                         rodLength_m = obj.optDouble("rodLength_m", 3.0),
-                        rodDiameter_mm = obj.optDouble("rodDiameter_mm", 16.0),
-                        rodSpacing_m = obj.optDouble("rodSpacing_m", 6.0),
-                        ringConductor_mm2 = obj.optDouble("ringConductor_mm2", 70.0),
-                        ringBurialDepth_m = obj.optDouble("ringBurialDepth_m", 0.8),
-                        kFactor = obj.optDouble("kFactor", 1.0),
+                        rodDiameter_mm = obj.optDouble("rodDiameter_mm", 17.0),
+                        rodSpacing_m = obj.optDouble("rodSpacing_m", 5.0),
+                        ringConductor_mm2 = obj.optDouble("ringConductor_mm2", 25.0),
+                        ringBurialDepth_m = obj.optDouble("ringBurialDepth_m", 0.6),
+                        kFactor = obj.optDouble("kFactor", 159.0),
                         projectType = obj.optString("projectType", "Commercial"),
                         disconnectionTime_s = obj.optDouble("disconnectionTime_s", 0.4),
                         targetResistanceOverride_ohm = if (obj.has("targetResistanceOverride_ohm") && !obj.isNull("targetResistanceOverride_ohm")) obj.optDouble("targetResistanceOverride_ohm") else null,
-                        soilResistivitySource = obj.optString("soilResistivitySource", "DEFAULT_TABLE"),
-                        designMarginPct = obj.optDouble("designMarginPct", 20.0),
+                        soilResistivitySource = soilSource,
+                        designMarginPct = obj.optDouble("designMarginPct", 10.0),
                         isAutoDesignEnabled = obj.optBoolean("isAutoDesignEnabled", false),
                         siteLength_m = if (obj.has("siteLength_m") && !obj.isNull("siteLength_m")) obj.optDouble("siteLength_m") else null,
                         siteWidth_m = if (obj.has("siteWidth_m") && !obj.isNull("siteWidth_m")) obj.optDouble("siteWidth_m") else null,
@@ -1145,6 +1176,20 @@ class EngineeringRepository(
                     )
                     powerSystemsDao.saveEarthingSettings(earthing)
                     importedEarthingCount++
+                    // P0-12 (C-04): disclose each schema default applied to a field the legacy
+                    // export did not carry, and the legacy soil-source token migration.
+                    if (!obj.has("soilResistivity_ohmM")) notices.add(MigrationNotice("Earthing", newProjectId, "soilResistivity_ohmM", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted soilResistivity_ohmM to 50.0 (EarthingEntity default)."))
+                    if (!obj.has("rodDiameter_mm")) notices.add(MigrationNotice("Earthing", newProjectId, "rodDiameter_mm", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted rodDiameter_mm to 17.0 (EarthingEntity default)."))
+                    if (!obj.has("rodSpacing_m")) notices.add(MigrationNotice("Earthing", newProjectId, "rodSpacing_m", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted rodSpacing_m to 5.0 (EarthingEntity default)."))
+                    if (!obj.has("ringConductor_mm2")) notices.add(MigrationNotice("Earthing", newProjectId, "ringConductor_mm2", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted ringConductor_mm2 to 25.0 (EarthingEntity default)."))
+                    if (!obj.has("ringBurialDepth_m")) notices.add(MigrationNotice("Earthing", newProjectId, "ringBurialDepth_m", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted ringBurialDepth_m to 0.6 (EarthingEntity default)."))
+                    if (!obj.has("kFactor")) notices.add(MigrationNotice("Earthing", newProjectId, "kFactor", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted kFactor to 159.0 (EarthingEntity default); legacy fallback 1.0 inflated S ~159×."))
+                    if (!obj.has("designMarginPct")) notices.add(MigrationNotice("Earthing", newProjectId, "designMarginPct", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted designMarginPct to 10.0 (EarthingEntity default)."))
+                    if (!obj.has("soilResistivitySource")) {
+                        notices.add(MigrationNotice("Earthing", newProjectId, "soilResistivitySource", MigrationFieldClassification.DEFAULTED_BY_SCHEMA, "Defaulted soilResistivitySource to ASSUMED (EarthingEntity default)."))
+                    } else if (soilSource != rawSoilSource) {
+                        notices.add(MigrationNotice("Earthing", newProjectId, "soilResistivitySource", MigrationFieldClassification.MIGRATED, "Migrated legacy soilResistivitySource '$rawSoilSource' to 'ASSUMED' (legacy token; valid sources: MEASURED, SOIL_REPORT, ASSUMED)."))
+                    }
                 }
 
                 // 11. SLD Node Positions

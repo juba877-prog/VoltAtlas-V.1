@@ -260,65 +260,98 @@ data class BreakerSelectQuickInput(
     val upstreamRating_A: Double? = 100.0
 )
 
+/**
+ * Result of quick breaker selection.
+ *
+ * Absence of a real catalog-backed breaker is expressed IN THE MODEL: every breaker-specific
+ * value is null when [selectedBreaker] is null. Callers must render explicit
+ * "DATA MISSING" / "DATA REQUIRED" states instead of substituting any number.
+ *
+ * @property status PASS when a catalog row was selected; CATALOG_MISSING when the breaker
+ *   catalog is not loaded; NO_EXACT_CATALOG_MATCH when the catalog is loaded but no row
+ *   satisfies the request. Never contains a fabricated rating or capacity.
+ */
 @Immutable
 data class BreakerSelectQuickResult(
     val selectedBreaker: BreakerEntry?,
-    val continuousRating_A: Double,
-    val breakingCapacityIcu_kA: Double,
-    val serviceCapacityIcs_kA: Double,
-    val makingCapacityIcm_kA: Double,
-    val breakingMarginPct: Double,
-    val frameDescription: String,
-    val tripUnit: String,
-    val orderingCode: String,
+    val continuousRating_A: Double?,
+    val breakingCapacityIcu_kA: Double?,
+    val serviceCapacityIcs_kA: Double?,
+    val makingCapacityIcm_kA: Double?,
+    val breakingMarginPct: Double?,
+    val frameDescription: String?,
+    val tripUnit: String?,
+    val orderingCode: String?,
     val thermalSelectivityRatio: Double?,
     val magneticSelectivityRatio: Double?,
-    val isThermalSelectivityOk: Boolean,
-    val isMagneticSelectivityOk: Boolean,
+    val isThermalSelectivityOk: Boolean?,
+    val isMagneticSelectivityOk: Boolean?,
     val status: String
-)
+) {
+    val isCatalogMissing: Boolean get() = status == "CATALOG_MISSING"
+    val hasSelection: Boolean get() = selectedBreaker != null
+}
 
 object QuickBreakerSelectEngine {
-    val FALLBACK_BREAKERS = listOf(
-        BreakerEntry(mfg = "Schneider", type = "MCB", series = "Acti9 iC60N", frame = "63A Frame", version = "Curve C", rating_A = 16.0, poles = 3, icu_kA = 10.0, ics_kA = 7.5, icm_kA = 17.0, tripUnit = "Thermal-Magnetic", orderingCode = "A9F74316"),
-        BreakerEntry(mfg = "Schneider", type = "MCB", series = "Acti9 iC60N", frame = "63A Frame", version = "Curve C", rating_A = 32.0, poles = 3, icu_kA = 10.0, ics_kA = 7.5, icm_kA = 17.0, tripUnit = "Thermal-Magnetic", orderingCode = "A9F74332"),
-        BreakerEntry(mfg = "Schneider", type = "MCB", series = "Acti9 iC60N", frame = "63A Frame", version = "Curve C", rating_A = 63.0, poles = 3, icu_kA = 10.0, ics_kA = 7.5, icm_kA = 17.0, tripUnit = "Thermal-Magnetic", orderingCode = "A9F74363"),
-        BreakerEntry(mfg = "Schneider", type = "MCCB", series = "ComPacT NSX100F", frame = "NSX100", version = "TM-D", rating_A = 50.0, poles = 3, icu_kA = 36.0, ics_kA = 36.0, icm_kA = 75.6, tripUnit = "Thermal-Magnetic", orderingCode = "LV429630"),
-        BreakerEntry(mfg = "Schneider", type = "MCCB", series = "ComPacT NSX100F", frame = "NSX100", version = "TM-D", rating_A = 63.0, poles = 3, icu_kA = 36.0, ics_kA = 36.0, icm_kA = 75.6, tripUnit = "Thermal-Magnetic", orderingCode = "LV429631"),
-        BreakerEntry(mfg = "Schneider", type = "MCCB", series = "ComPacT NSX100F", frame = "NSX100", version = "TM-D", rating_A = 100.0, poles = 3, icu_kA = 36.0, ics_kA = 36.0, icm_kA = 75.6, tripUnit = "Thermal-Magnetic", orderingCode = "LV429632"),
-        BreakerEntry(mfg = "Schneider", type = "MCCB", series = "ComPacT NSX160F", frame = "NSX160", version = "TM-D", rating_A = 160.0, poles = 3, icu_kA = 36.0, ics_kA = 36.0, icm_kA = 75.6, tripUnit = "Thermal-Magnetic", orderingCode = "LV430630"),
-        BreakerEntry(mfg = "Schneider", type = "MCCB", series = "ComPacT NSX250F", frame = "NSX250", version = "TM-D", rating_A = 250.0, poles = 3, icu_kA = 36.0, ics_kA = 36.0, icm_kA = 75.6, tripUnit = "Thermal-Magnetic", orderingCode = "LV431630"),
-        BreakerEntry(mfg = "Schneider", type = "MCCB", series = "ComPacT NSX400F", frame = "NSX400", version = "Micrologic 2.3", rating_A = 400.0, poles = 3, icu_kA = 36.0, ics_kA = 36.0, icm_kA = 75.6, tripUnit = "Electronic", orderingCode = "LV432676"),
-        BreakerEntry(mfg = "Schneider", type = "MCCB", series = "ComPacT NSX630F", frame = "NSX630", version = "Micrologic 2.3", rating_A = 630.0, poles = 3, icu_kA = 36.0, ics_kA = 36.0, icm_kA = 75.6, tripUnit = "Electronic", orderingCode = "LV432876"),
-        BreakerEntry(mfg = "Schneider", type = "ACB", series = "MasterPact MTZ1", frame = "MTZ1 08", version = "Micrologic 5.0X", rating_A = 800.0, poles = 3, icu_kA = 42.0, ics_kA = 42.0, icm_kA = 88.2, tripUnit = "MicroLogic", orderingCode = "LV847110"),
-        BreakerEntry(mfg = "Schneider", type = "ACB", series = "MasterPact MTZ2", frame = "MTZ2 16", version = "Micrologic 5.0X", rating_A = 1600.0, poles = 3, icu_kA = 65.0, ics_kA = 65.0, icm_kA = 143.0, tripUnit = "MicroLogic", orderingCode = "LV847210"),
-        BreakerEntry(mfg = "Schneider", type = "ACB", series = "MasterPact MTZ2", frame = "MTZ2 25", version = "Micrologic 5.0X", rating_A = 2500.0, poles = 3, icu_kA = 65.0, ics_kA = 65.0, icm_kA = 143.0, tripUnit = "MicroLogic", orderingCode = "LV847310")
+    /**
+     * Breaker selection reads ONLY the canonical breaker catalog (`assets/breaker_catalog.json`
+     * via [Catalog.breakers]). There is deliberately no in-code fallback table: a fallback that
+     * cannot be proven equal to the canonical asset was the source of fabricated Icu/Ics/Icm
+     * values (audit A-01/A-05). When the catalog is not loaded the result reports
+     * `CATALOG_MISSING` with every breaker-specific field null.
+     */
+
+    /** Result expressing total absence of a selectable breaker. All engineering fields null. */
+    private fun noSelection(status: String) = BreakerSelectQuickResult(
+        selectedBreaker = null,
+        continuousRating_A = null,
+        breakingCapacityIcu_kA = null,
+        serviceCapacityIcs_kA = null,
+        makingCapacityIcm_kA = null,
+        breakingMarginPct = null,
+        frameDescription = null,
+        tripUnit = null,
+        orderingCode = null,
+        thermalSelectivityRatio = null,
+        magneticSelectivityRatio = null,
+        isThermalSelectivityOk = null,
+        isMagneticSelectivityOk = null,
+        status = status
     )
 
     fun calculate(input: BreakerSelectQuickInput): BreakerSelectQuickResult {
+        // Catalog not loaded => explicit missing state, never a fabricated default breaker.
+        if (Catalog.breakers.isEmpty()) return noSelection("CATALOG_MISSING")
+
         val ib = max(input.loadCurrent_A, 0.1)
         val isc = max(input.prospectiveFault_kA, 0.1)
-        val activeCatalog = if (Catalog.breakers.isNotEmpty()) Catalog.breakers else FALLBACK_BREAKERS
 
-        val filtered = activeCatalog.filter { b ->
-            (input.poles == 0 || b.poles == input.poles || b.poles == 3) &&
+        // Pole policy: exact pole match only (0 = unspecified request ⇒ any poles).
+        // A 3P row must never satisfy a 4P or 1P request (audit A-04).
+        val poleMatches: (Int) -> Boolean = { poles -> input.poles <= 0 || poles == input.poles }
+
+        val filtered = Catalog.breakers.filter { b ->
+            poleMatches(b.poles) &&
             (input.deviceTypeFilter == "AUTO" || b.type.equals(input.deviceTypeFilter, ignoreCase = true)) &&
             b.ratingA >= ib &&
             b.icuKa >= isc
         }.sortedWith(compareBy({ it.ratingA }, { it.icuKa }))
 
         val chosen = filtered.firstOrNull()
+            ?: return noSelection("NO_EXACT_CATALOG_MATCH")
 
-        val inDown = chosen?.ratingA ?: ib
-        val icu = chosen?.icuKa ?: 36.0
-        val ics = chosen?.ics_kA ?: icu
-        val icm = chosen?.icm_kA ?: (icu * 2.1)
+        // Selectivity screening is only computable against a REAL selected device.
+        val inDown = chosen.ratingA
+        val icu = chosen.icuKa
+        val ics = chosen.ics_kA
+        val icm = chosen.icm_kA
         val margin = if (isc > 0) ((icu - isc) / isc) * 100.0 else 0.0
 
-        val inUp = input.upstreamRating_A
-        val thermalRatio = if (inUp != null && inDown > 0) inUp / inDown else null
-        val isThermalOk = thermalRatio == null || thermalRatio >= 1.6
-        val isMagOk = thermalRatio == null || thermalRatio >= 2.0
+        val thermalRatio = input.upstreamRating_A
+            ?.takeIf { inDown > 0 }
+            ?.let { it / inDown }
+        val isThermalOk = thermalRatio?.let { it >= 1.6 }
+        val isMagOk = thermalRatio?.let { it >= 2.0 }
 
         return BreakerSelectQuickResult(
             selectedBreaker = chosen,
@@ -327,14 +360,14 @@ object QuickBreakerSelectEngine {
             serviceCapacityIcs_kA = ics,
             makingCapacityIcm_kA = icm,
             breakingMarginPct = round(margin * 10.0) / 10.0,
-            frameDescription = chosen?.let { "${it.mfg} ${it.series} (${it.frame})" } ?: "Generic Breaker",
-            tripUnit = chosen?.tripUnit ?: "Thermal-Magnetic",
-            orderingCode = chosen?.orderingCode ?: "N/A",
+            frameDescription = "${chosen.mfg} ${chosen.series} (${chosen.frame})",
+            tripUnit = chosen.tripUnit,
+            orderingCode = chosen.orderingCode,
             thermalSelectivityRatio = thermalRatio?.let { round(it * 100.0) / 100.0 },
             magneticSelectivityRatio = thermalRatio?.let { round(it * 100.0) / 100.0 },
             isThermalSelectivityOk = isThermalOk,
             isMagneticSelectivityOk = isMagOk,
-            status = if (chosen != null) "PASS" else "NO_EXACT_CATALOG_MATCH"
+            status = "PASS"
         )
     }
 }

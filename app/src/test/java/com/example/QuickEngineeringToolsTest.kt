@@ -101,39 +101,176 @@ class QuickEngineeringToolsTest {
     // =========================================================================
     // 3. BREAKER SELECTION & SELECTIVITY TESTS
     // =========================================================================
+
+    /**
+     * Loads the CANONICAL breaker catalog (`assets/breaker_catalog.json`) using the same
+     * field mapping as production `Catalog.loadAll`, and returns a restorer so global
+     * catalog state never leaks between tests.
+     */
+    private fun loadRealBreakerCatalog(): () -> Unit {
+        val previous = com.example.data.Catalog.breakers
+        val dir = listOf(
+            java.io.File("src/main/assets"),
+            java.io.File("app/src/main/assets"),
+            java.io.File("../app/src/main/assets")
+        ).firstOrNull { it.isDirectory } ?: error("assets directory not found from ${java.io.File(".").absolutePath}")
+        val array = org.json.JSONArray(java.io.File(dir, "breaker_catalog.json").readText(Charsets.UTF_8))
+        val parsed = (0 until array.length()).map { i ->
+            val obj = array.getJSONObject(i)
+            com.example.data.BreakerEntry(
+                mfg = obj.optString("mfg", obj.optString("Source", "Generic")),
+                type = obj.optString("type", "MCCB"),
+                series = obj.optString("series", obj.optString("Series", "")),
+                frame = if (obj.has("frameA")) obj.optString("frameA", "") else obj.optString("frame", obj.optString("Frame", "")),
+                version = obj.optString("version", obj.optString("Version", "")),
+                rating_A = com.example.data.catalog.BreakerParser.parseRating(obj.opt("ratingA") ?: obj.opt("rating_A") ?: obj.opt("In (A)")),
+                poles = com.example.data.catalog.BreakerParser.parsePoles(obj.opt("poles") ?: obj.opt("Poles")),
+                icu_kA = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("icuKa") ?: obj.opt("icu_kA") ?: obj.opt("Icu@415V (kA)")),
+                ics_kA = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("icsKa") ?: obj.opt("ics_kA") ?: obj.opt("Ics@415V (kA)")),
+                icm_kA = com.example.data.catalog.BreakerParser.parseDouble(obj.opt("icmKa") ?: obj.opt("icm_kA") ?: obj.opt("Icm@415V (kA)")),
+                tripUnit = obj.optString("tripUnit", obj.optString("Trip Unit", "Thermal-Magnetic")),
+                orderingCode = obj.optString("orderingCode", obj.optString("Ordering Code", ""))
+            )
+        }
+        assertTrue("canonical breaker catalog must not be empty", parsed.isNotEmpty())
+        com.example.data.Catalog.breakers = parsed
+        return { com.example.data.Catalog.breakers = previous }
+    }
+
     @Test
     fun testQuickBreakerSelectionAndSelectivityRatios() {
-        val input = BreakerSelectQuickInput(
-            loadCurrent_A = 75.0,
-            prospectiveFault_kA = 25.0,
-            poles = 3,
-            deviceTypeFilter = "MCCB",
-            upstreamRating_A = 250.0
-        )
+        val restore = loadRealBreakerCatalog()
+        try {
+            val input = BreakerSelectQuickInput(
+                loadCurrent_A = 75.0,
+                prospectiveFault_kA = 25.0,
+                poles = 3,
+                deviceTypeFilter = "MCCB",
+                upstreamRating_A = 250.0
+            )
 
-        val result = QuickBreakerSelectEngine.calculate(input)
+            val result = QuickBreakerSelectEngine.calculate(input)
 
-        assertNotNull(result.selectedBreaker)
-        assertTrue("Rating should be >= 75A, was ${result.continuousRating_A}", result.continuousRating_A >= 75.0)
-        assertTrue("Icu should be >= 25kA, was ${result.breakingCapacityIcu_kA}", result.breakingCapacityIcu_kA >= 25.0)
+            assertNotNull(result.selectedBreaker)
+            val icu = result.breakingCapacityIcu_kA
+            val rating = result.continuousRating_A
+            assertNotNull("Icu must be present when a breaker was selected", icu)
+            assertNotNull("rating must be present when a breaker was selected", rating)
+            assertTrue("Rating should be >= 75A, was $rating", rating!! >= 75.0)
+            assertTrue("Icu should be >= 25kA, was $icu", icu!! >= 25.0)
+            assertEquals(3, result.selectedBreaker!!.poles)
 
-        // Chosen is 100A -> ratio = 250 / 100 = 2.5 (Thermal pass >= 1.6, Magnetic pass >= 2.0)
-        assertNotNull(result.thermalSelectivityRatio)
-        assertTrue(result.isThermalSelectivityOk)
-        assertTrue(result.isMagneticSelectivityOk)
-        assertEquals("PASS", result.status)
+            // Chosen is first 3P MCCB >= 75A with Icu >= 25kA (real catalog row) -> ratio 250/In
+            assertNotNull(result.thermalSelectivityRatio)
+            assertEquals(true, result.isThermalSelectivityOk)
+            assertEquals(true, result.isMagneticSelectivityOk)
+            assertEquals("PASS", result.status)
 
-        // Also test partial coordination where ratio is between 1.6 and 2.0 (e.g. 160A upstream / 100A downstream = 1.6)
-        val inputPartial = BreakerSelectQuickInput(
-            loadCurrent_A = 75.0,
-            prospectiveFault_kA = 25.0,
-            poles = 3,
-            deviceTypeFilter = "MCCB",
-            upstreamRating_A = 160.0
-        )
-        val resultPartial = QuickBreakerSelectEngine.calculate(inputPartial)
-        assertTrue("Thermal selectivity should pass at ratio 1.6", resultPartial.isThermalSelectivityOk)
-        assertFalse("Magnetic selectivity should be false at ratio 1.6 (< 2.0)", resultPartial.isMagneticSelectivityOk)
+            // Partial coordination: ratio exactly 1.6 passes thermal but fails magnetic (>=2.0)
+            val inputPartial = BreakerSelectQuickInput(
+                loadCurrent_A = 75.0,
+                prospectiveFault_kA = 25.0,
+                poles = 3,
+                deviceTypeFilter = "MCCB",
+                upstreamRating_A = 160.0
+            )
+            val resultPartial = QuickBreakerSelectEngine.calculate(inputPartial)
+            assertEquals("Thermal selectivity should pass at ratio 1.6", true, resultPartial.isThermalSelectivityOk)
+            assertEquals("Magnetic selectivity should be false at ratio 1.6 (< 2.0)", false, resultPartial.isMagneticSelectivityOk)
+        } finally {
+            restore()
+        }
+    }
+
+    // --- P0-1 regression: no fabrication when no breaker can be selected -------------
+    @Test
+    fun testP0_1_noFabricatedValuesWhenNoMatch() {
+        val restore = loadRealBreakerCatalog()
+        try {
+            // Impossible request: rating & fault far beyond any catalog row
+            val result = QuickBreakerSelectEngine.calculate(
+                BreakerSelectQuickInput(loadCurrent_A = 99999.0, prospectiveFault_kA = 250.0, poles = 3)
+            )
+
+            assertNull("no breaker may be selected", result.selectedBreaker)
+            assertEquals("NO_EXACT_CATALOG_MATCH", result.status)
+            assertNull(result.continuousRating_A)
+            assertNull(result.breakingCapacityIcu_kA)
+            assertNull(result.serviceCapacityIcs_kA)
+            assertNull(result.makingCapacityIcm_kA)
+            assertNull(result.breakingMarginPct)
+            assertNull(result.frameDescription)
+            assertNull(result.tripUnit)
+            assertNull(result.orderingCode)
+            assertNull(result.thermalSelectivityRatio)
+            assertNull(result.isThermalSelectivityOk)
+            assertNull(result.isMagneticSelectivityOk)
+
+            // The former defect fabricated exactly these values — assert they are gone.
+            assertNotEquals("fabricated 36.0 Icu must never reappear", 36.0, result.breakingCapacityIcu_kA ?: -1.0, 0.0)
+            assertNotEquals("fabricated 75.6 Icm must never reappear", 75.6, result.makingCapacityIcm_kA ?: -1.0, 0.0)
+            assertNotEquals("generic identity must never reappear", "Generic Breaker", result.frameDescription)
+        } finally {
+            restore()
+        }
+    }
+
+    @Test
+    fun testP0_1_emptyCatalogIsExplicitDataMissing() {
+        val previous = com.example.data.Catalog.breakers
+        try {
+            com.example.data.Catalog.breakers = emptyList()
+            val result = QuickBreakerSelectEngine.calculate(
+                BreakerSelectQuickInput(loadCurrent_A = 45.0, prospectiveFault_kA = 16.0, poles = 3)
+            )
+            assertNull(result.selectedBreaker)
+            assertEquals("CATALOG_MISSING", result.status)
+            assertTrue(result.isCatalogMissing)
+            assertFalse(result.hasSelection)
+            assertNull(result.breakingCapacityIcu_kA)
+            assertNull(result.frameDescription)
+        } finally {
+            com.example.data.Catalog.breakers = previous
+        }
+    }
+
+    // --- P0-2 regression: exact pole matching, never a silent 3P downgrade ------------
+    @Test
+    fun testP0_2_exactPoleMatching() {
+        val restore = loadRealBreakerCatalog()
+        try {
+            // 4P request must never be satisfied by a 3P row
+            val r4 = QuickBreakerSelectEngine.calculate(
+                BreakerSelectQuickInput(loadCurrent_A = 45.0, prospectiveFault_kA = 16.0, poles = 4)
+            )
+            if (r4.selectedBreaker != null) {
+                assertEquals("4P request must resolve to a 4P breaker", 4, r4.selectedBreaker!!.poles)
+            } else {
+                assertTrue(
+                    "4P miss must be an explicit state, was ${r4.status}",
+                    r4.status == "NO_EXACT_CATALOG_MATCH" || r4.status == "CATALOG_MISSING"
+                )
+            }
+
+            // 1P request must never be satisfied by a 3P row
+            val r1 = QuickBreakerSelectEngine.calculate(
+                BreakerSelectQuickInput(loadCurrent_A = 16.0, prospectiveFault_kA = 10.0, poles = 1)
+            )
+            if (r1.selectedBreaker != null) {
+                assertEquals("1P request must resolve to a 1P breaker", 1, r1.selectedBreaker!!.poles)
+            } else {
+                assertTrue(r1.status == "NO_EXACT_CATALOG_MATCH" || r1.status == "CATALOG_MISSING")
+            }
+
+            // 3P request resolves to 3P (canonical rows are predominantly 3P)
+            val r3 = QuickBreakerSelectEngine.calculate(
+                BreakerSelectQuickInput(loadCurrent_A = 45.0, prospectiveFault_kA = 16.0, poles = 3)
+            )
+            assertNotNull(r3.selectedBreaker)
+            assertEquals(3, r3.selectedBreaker!!.poles)
+        } finally {
+            restore()
+        }
     }
 
     // =========================================================================

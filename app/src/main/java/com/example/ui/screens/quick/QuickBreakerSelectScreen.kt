@@ -77,16 +77,18 @@ fun QuickBreakerSelectScreen(
 
     val copySummaryAction = remember(input, result, context) {
         {
+            val ratingStr = result.continuousRating_A?.let { "${it.toInt()}A" } ?: "DATA MISSING"
+            val icuStr = result.breakingCapacityIcu_kA?.let { "$it kA" } ?: "DATA MISSING"
             val summary = """
                 ⚡ VoltAtlas Circuit Breaker Selection & Selectivity Summary (IEC 60947-2)
                 • Load Current (Ib): ${input.loadCurrent_A} A
                 • Prospective Fault (Isc): ${input.prospectiveFault_kA} kA
-                • Selected Breaker: ${result.frameDescription} (${result.continuousRating_A.toInt()}A, ${result.breakingCapacityIcu_kA} kA)
-                • Trip Unit: ${result.tripUnit} • Ordering Code: ${result.orderingCode}
-                • Breaking Margin: ${result.breakingMarginPct}% (Icu ${result.breakingCapacityIcu_kA} kA vs Isc ${input.prospectiveFault_kA} kA)
-                • Service Breaking (Ics): ${result.serviceCapacityIcs_kA} kA • Making Capacity (Icm): ${result.makingCapacityIcm_kA} kA
-                • Thermal Selectivity (≥1.6): ${result.thermalSelectivityRatio?.let { "$it (${if (result.isThermalSelectivityOk) "PASS" else "FAIL"})" } ?: "N/A"}
-                • Magnetic Selectivity (≥2.0): ${result.magneticSelectivityRatio?.let { "$it (${if (result.isMagneticSelectivityOk) "PASS" else "WARNING"})" } ?: "N/A"}
+                • Selected Breaker: ${result.frameDescription ?: "DATA MISSING (no catalog match)"} ($ratingStr, $icuStr)
+                • Trip Unit: ${result.tripUnit ?: "unavailable"} • Ordering Code: ${result.orderingCode ?: "unavailable"}
+                • Breaking Margin: ${result.breakingMarginPct?.let { "$it%" } ?: "DATA MISSING"} (Icu $icuStr vs Isc ${input.prospectiveFault_kA} kA)
+                • Service Breaking (Ics): ${result.serviceCapacityIcs_kA?.let { "$it kA" } ?: "DATA MISSING"} • Making Capacity (Icm): ${result.makingCapacityIcm_kA?.let { "$it kA" } ?: "DATA MISSING"}
+                • Thermal Selectivity (≥1.6): ${result.thermalSelectivityRatio?.let { "$it (${if (result.isThermalSelectivityOk == true) "PASS" else "FAIL"})" } ?: "N/A — no breaker selected"}
+                • Magnetic Selectivity (≥2.0): ${result.magneticSelectivityRatio?.let { "$it (${if (result.isMagneticSelectivityOk == true) "PASS" else "WARNING"})" } ?: "N/A — no breaker selected"}
                 • Status: ${result.status}
             """.trimIndent()
 
@@ -97,15 +99,39 @@ fun QuickBreakerSelectScreen(
     }
 
     val provenanceItems = remember(input, result) {
-        persistentListOf(
-            ProvenanceDetailItem("Selected Breaker Frame:", "${result.frameDescription} (${result.continuousRating_A.toInt()} A)"),
-            ProvenanceDetailItem("Ultimate Breaking Capacity (Icu):", "${result.breakingCapacityIcu_kA} kA @ 400V (Margin: +${result.breakingMarginPct}%)"),
-            ProvenanceDetailItem("Service Breaking Capacity (Ics):", "${result.serviceCapacityIcs_kA} kA (${if (result.breakingCapacityIcu_kA > 0) ((result.serviceCapacityIcs_kA / result.breakingCapacityIcu_kA) * 100).toInt() else 100}% Icu)"),
-            ProvenanceDetailItem("Rated Making Capacity (Icm):", "${result.makingCapacityIcm_kA} kA peak"),
-            ProvenanceDetailItem("Thermal Selectivity Screening:", result.thermalSelectivityRatio?.let { "Ratio $it:1 (${if (result.isThermalSelectivityOk) "Pass ≥1.6" else "Fail <1.6"})" } ?: "N/A"),
-            ProvenanceDetailItem("Magnetic Selectivity Screening:", result.magneticSelectivityRatio?.let { "Ratio $it:1 (${if (result.isMagneticSelectivityOk) "Pass ≥2.0" else "Warning <2.0"})" } ?: "N/A"),
-            ProvenanceDetailItem("Catalog Ordering Code:", result.orderingCode, isPrimary = true)
-        )
+        val baseItems =
+            if (result.selectedBreaker == null) {
+                persistentListOf(
+                    ProvenanceDetailItem(
+                        "Selected Breaker Frame:",
+                        if (result.isCatalogMissing) "DATA MISSING — breaker catalog not loaded" else "DATA MISSING — no catalog row matches ${input.loadCurrent_A} A / ${input.poles}P / Isc ${input.prospectiveFault_kA} kA"
+                    ),
+                    ProvenanceDetailItem("Ultimate Breaking Capacity (Icu):", "DATA MISSING — not asserted without a selected breaker"),
+                    ProvenanceDetailItem("Service Breaking Capacity (Ics):", "DATA MISSING — not asserted without a selected breaker"),
+                    ProvenanceDetailItem("Rated Making Capacity (Icm):", "DATA MISSING — not asserted without a selected breaker")
+                )
+            } else {
+                persistentListOf(
+                    ProvenanceDetailItem("Selected Breaker Frame:", "${result.frameDescription} (${result.continuousRating_A?.toInt()} A)"),
+                    ProvenanceDetailItem("Ultimate Breaking Capacity (Icu):", "${result.breakingCapacityIcu_kA} kA @ 400V (Margin: +${result.breakingMarginPct}%)"),
+                    ProvenanceDetailItem("Service Breaking Capacity (Ics):", "${result.serviceCapacityIcs_kA} kA (${if ((result.breakingCapacityIcu_kA ?: 0.0) > 0) ((result.serviceCapacityIcs_kA ?: 0.0) / result.breakingCapacityIcu_kA!! * 100).toInt() else 100}% Icu)"),
+                    ProvenanceDetailItem("Rated Making Capacity (Icm):", "${result.makingCapacityIcm_kA} kA peak")
+                )
+            }
+        baseItems
+            .add(
+                ProvenanceDetailItem(
+                    "Thermal Selectivity Screening:",
+                    result.thermalSelectivityRatio?.let { "Ratio $it:1 (${if (result.isThermalSelectivityOk == true) "Pass ≥1.6" else "Fail <1.6"})" } ?: "DATA MISSING — no breaker selected"
+                )
+            )
+            .add(
+                ProvenanceDetailItem(
+                    "Magnetic Selectivity Screening:",
+                    result.magneticSelectivityRatio?.let { "Ratio $it:1 (${if (result.isMagneticSelectivityOk == true) "Pass ≥2.0" else "Warning <2.0"})" } ?: "DATA MISSING — no breaker selected"
+                )
+            )
+            .add(ProvenanceDetailItem("Catalog Ordering Code:", result.orderingCode ?: "unavailable", isPrimary = true))
     }
 
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
@@ -246,13 +272,23 @@ fun QuickBreakerSelectScreen(
             // ── 4. Status Banner ──
             item {
                 val bannerStatus = when {
-                    result.selectedBreaker == null -> VoltageDropComplianceStatus.FAIL
-                    result.thermalSelectivityRatio != null && !result.isThermalSelectivityOk -> VoltageDropComplianceStatus.FAIL
-                    result.thermalSelectivityRatio != null && !result.isMagneticSelectivityOk -> VoltageDropComplianceStatus.WARNING
+                    result.selectedBreaker == null -> VoltageDropComplianceStatus.DATA_MISSING
+                    result.thermalSelectivityRatio != null && result.isThermalSelectivityOk == false -> VoltageDropComplianceStatus.FAIL
+                    result.thermalSelectivityRatio != null && result.isMagneticSelectivityOk == false -> VoltageDropComplianceStatus.WARNING
                     else -> VoltageDropComplianceStatus.PASS
                 }
-                val headline = if (result.selectedBreaker != null) "Selected: ${result.frameDescription} (${result.continuousRating_A.toInt()}A)" else "No Matching Breaker in Catalog"
-                val subText = "Breaking Capacity: ${result.breakingCapacityIcu_kA} kA (Margin: +${result.breakingMarginPct}%) • Part No: ${result.orderingCode}"
+                val headline = if (result.selectedBreaker != null) {
+                    "Selected: ${result.frameDescription} (${result.continuousRating_A?.toInt()}A)"
+                } else if (result.isCatalogMissing) {
+                    "Catalog Not Loaded"
+                } else {
+                    "No Matching Breaker in Catalog"
+                }
+                val subText = if (result.selectedBreaker != null) {
+                    "Breaking Capacity: ${result.breakingCapacityIcu_kA} kA (Margin: +${result.breakingMarginPct}%) • Part No: ${result.orderingCode}"
+                } else {
+                    "DATA MISSING — no breaker selected; no Icu/Ics/Icm asserted • Ib ${input.loadCurrent_A} A • ${input.poles}P • Isc ${input.prospectiveFault_kA} kA"
+                }
                 QuickStatusBanner(status = bannerStatus, headline = headline, subText = subText)
             }
 
@@ -262,31 +298,45 @@ fun QuickBreakerSelectScreen(
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         QuickMetricHero(
                             title = "RATING (In)",
-                            value = "${result.continuousRating_A.toInt()} A",
-                            subtitle = "Load Ib = ${input.loadCurrent_A} A",
+                            value = result.continuousRating_A?.let { "${it.toInt()} A" } ?: "DATA MISSING",
+                            subtitle = if (result.selectedBreaker != null) "Load Ib = ${input.loadCurrent_A} A" else "No catalog selection",
                             modifier = Modifier.weight(1f),
-                            accentColor = SleekPass
+                            accentColor = if (result.selectedBreaker != null) SleekPass else SleekPrimary
                         )
                         QuickMetricHero(
                             title = "BREAKING CAPACITY (Icu)",
-                            value = "${result.breakingCapacityIcu_kA} kA",
-                            subtitle = "Ics = ${result.serviceCapacityIcs_kA} kA (+${result.breakingMarginPct}%)",
+                            value = result.breakingCapacityIcu_kA?.let { "$it kA" } ?: "DATA MISSING",
+                            subtitle = if (result.selectedBreaker != null) {
+                                "Ics = ${result.serviceCapacityIcs_kA} kA (+${result.breakingMarginPct}%)"
+                            } else {
+                                "Not asserted without selection"
+                            },
                             modifier = Modifier.weight(1f),
-                            accentColor = if (result.breakingCapacityIcu_kA >= input.prospectiveFault_kA) SleekPass else SleekFail
+                            accentColor = if (result.selectedBreaker != null && result.breakingCapacityIcu_kA != null &&
+                                result.breakingCapacityIcu_kA >= input.prospectiveFault_kA
+                            ) SleekPass else SleekPrimary
                         )
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         QuickMetricHero(
                             title = "THERMAL SELECTIVITY",
-                            value = result.thermalSelectivityRatio?.let { "Ratio $it:1" } ?: "N/A",
-                            subtitle = if (result.isThermalSelectivityOk) "Pass (≥1.6)" else "Fail (<1.6)",
+                            value = result.thermalSelectivityRatio?.let { "Ratio $it:1" } ?: "DATA MISSING",
+                            subtitle = when {
+                                result.thermalSelectivityRatio == null -> "No breaker selected"
+                                result.isThermalSelectivityOk == true -> "Pass (≥1.6)"
+                                else -> "Fail (<1.6)"
+                            },
                             modifier = Modifier.weight(1f),
-                            accentColor = if (result.isThermalSelectivityOk) SleekPass else SleekFail
+                            accentColor = when {
+                                result.thermalSelectivityRatio == null -> SleekPrimary
+                                result.isThermalSelectivityOk == true -> SleekPass
+                                else -> SleekFail
+                            }
                         )
                         QuickMetricHero(
                             title = "ORDERING CODE",
-                            value = result.orderingCode,
-                            subtitle = result.tripUnit,
+                            value = result.orderingCode ?: "unavailable",
+                            subtitle = result.tripUnit ?: "No breaker selected",
                             modifier = Modifier.weight(1f),
                             accentColor = SleekPrimary
                         )
@@ -297,16 +347,25 @@ fun QuickBreakerSelectScreen(
             // ── 6. Calculation Details Accordion ──
             item {
                 val thermalRatioStr = result.thermalSelectivityRatio?.toString() ?: "N/A"
+                val substitution = if (result.selectedBreaker == null) {
+                    "In = DATA MISSING ≥ ${input.loadCurrent_A}A (no catalog match)  |  Icu = DATA MISSING vs Isc ${input.prospectiveFault_kA}kA  |  Selectivity not screened without a selected breaker"
+                } else {
+                    "In = ${result.continuousRating_A?.toInt()}A ≥ ${input.loadCurrent_A}A  |  Icu = ${result.breakingCapacityIcu_kA}kA ≥ ${input.prospectiveFault_kA}kA (Margin: ${result.breakingMarginPct}%)\nSelectivity Ratio = ${input.upstreamRating_A ?: 0}A / ${result.continuousRating_A?.toInt()}A = $thermalRatioStr:1"
+                }
                 QuickCalculationDetailsAccordion(
                     formula = "In ≥ Ib  |  Icu ≥ Isc  |  Thermal Ratio = In,up / In,down ≥ 1.6  |  Magnetic Ratio ≥ 2.0",
-                    substitution = "In = ${result.continuousRating_A.toInt()}A ≥ ${input.loadCurrent_A}A  |  Icu = ${result.breakingCapacityIcu_kA}kA ≥ ${input.prospectiveFault_kA}kA (Margin: ${result.breakingMarginPct}%)\nSelectivity Ratio = ${input.upstreamRating_A ?: 0}A / ${result.continuousRating_A.toInt()}A = $thermalRatioStr:1"
+                    substitution = substitution
                 )
             }
 
             // ── 7. Provenance Footer ──
             item {
                 QuickProvenanceFooter(
-                    dataSource = "Schneider Acti9 & ComPacT NSX / Siemens Sentron / ABB Smax Catalog",
+                    dataSource = if (result.selectedBreaker != null) {
+                        "Schneider Acti9 & ComPacT NSX / Siemens Sentron / ABB Smax Catalog"
+                    } else {
+                        "Canonical breaker catalog (${if (result.isCatalogMissing) "not loaded" else "no matching row"}) — DATA MISSING"
+                    },
                     citation = "IEC 60947-2 (Low-voltage switchgear and controlgear - Circuit-breakers) & IEC 60898-1.",
                     items = provenanceItems
                 )
