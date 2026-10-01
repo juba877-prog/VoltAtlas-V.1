@@ -2,6 +2,7 @@ package com.example.ai.ui.components
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.example.ai.ui.EngineeringDisplayFormatter
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -43,7 +44,9 @@ fun AssistantSafeErrorCard(
             )
 
             Text(
-                text = card.userFacingMessage,
+                // Phase 6 R-1: tool error copy is deterministic but may quote a user/LLM
+                // fragment; normalize so a failure reason never displays markup artifacts.
+                text = EngineeringDisplayFormatter.normalizeDisplayText(card.userFacingMessage),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )

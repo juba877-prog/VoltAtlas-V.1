@@ -50,6 +50,12 @@ object AssistantResponseMapper {
         status: EngineeringStatusUiModel? = null
     ): EngineeringMetricUiModel? {
         val value = raw?.takeIf { it.isNotBlank() } ?: return null
+        // R-1: `value` stays byte-identical to the authoritative tool string. The model
+        // carries the raw value AND the declared unit, so a renderer that appends the
+        // unit can double it. The single fix lives in the display join
+        // (EngineeringDisplayFormatter.joinValueAndUnit), which the cards call; keeping the
+        // model faithful here preserves the grounding contract that a metric's value is
+        // exactly what the deterministic engine returned.
         return EngineeringMetricUiModel(
             label = label,
             value = value,
@@ -246,12 +252,12 @@ object AssistantResponseMapper {
                         metrics = metrics,
                         provenance = if (summary == UNAVAILABLE) ProvenanceLabel.UNAVAILABLE
                                      else ProvenanceLabel.CALCULATED_BY_VOLTATLAS,
-                        suggestedActions = listOfNotNull(
-                            SuggestedActionUiModel(ConversationActionType.EVALUATE_CANDIDATE, "Evaluate a candidate"),
-                            SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "Run what-if"),
-                            conductorVal?.let {
-                                SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Propose $it mm²", isPrimary = true)
-                            }
+                        suggestedActions = listOf(
+                            // R-3: no "propose the current size" chip. The current size is
+                            // already persisted, so proposing it can only ever be rejected as
+                            // a no-op by the preparation coordinator - a dead action.
+                            SuggestedActionUiModel(ConversationActionType.EVALUATE_CANDIDATE, "Evaluate size"),
+                            SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "What-if")
                         )
                     )
                 }
@@ -299,9 +305,9 @@ object AssistantResponseMapper {
                         comparisonSummary = summary,
                         suggestedActions = listOfNotNull(
                             bestSize?.let {
-                                SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Propose $it", isPrimary = true)
+                                SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Use $it mm\u00b2", isPrimary = true)
                             },
-                            SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "Run what-if scenario"),
+                            SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "What-if"),
                             SuggestedActionUiModel(ConversationActionType.CANCEL_TASK, "Dismiss")
                         )
                     )
@@ -349,8 +355,8 @@ object AssistantResponseMapper {
                         candidateMetrics = candidateMetrics,
                         comparisonSummary = summary,
                         suggestedActions = listOfNotNull(
-                            SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Propose ${whatIfResult.scenarioSize} mm²", isPrimary = true),
-                            SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "Modify Scenario"),
+                            SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Use ${whatIfResult.scenarioSize} mm²", isPrimary = true),
+                            SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "Change scenario"),
                             SuggestedActionUiModel(ConversationActionType.CANCEL_TASK, "Dismiss")
                         )
                     )
@@ -399,9 +405,9 @@ object AssistantResponseMapper {
                         comparisonSummary = summary,
                         suggestedActions = listOfNotNull(
                             candidateSize?.let {
-                                SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Propose $it mm²", isPrimary = true)
+                                SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Use $it mm²", isPrimary = true)
                             },
-                            SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "Run what-if")
+                            SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "What-if")
                         )
                     )
                 }
@@ -439,7 +445,7 @@ object AssistantResponseMapper {
                         metrics = scenarioMetrics,
                         suggestedActions = listOfNotNull(
                             SuggestedActionUiModel(ConversationActionType.COMPARE_CANDIDATES, "Compare with current"),
-                            SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Propose ${whatIfResult.scenarioSize} mm²", isPrimary = true),
+                            SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Use ${whatIfResult.scenarioSize} mm²", isPrimary = true),
                             SuggestedActionUiModel(ConversationActionType.CANCEL_TASK, "Exit Scenario")
                         )
                     )
@@ -460,7 +466,7 @@ object AssistantResponseMapper {
                         deltaSummary = "Simulated with ${action.candidateParameters}. Baseline project state remains unchanged.",
                         metrics = scenarioMetrics,
                         suggestedActions = listOf(
-                            SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Propose This Size"),
+                            SuggestedActionUiModel(ConversationActionType.CREATE_PROPOSAL, "Use this size"),
                             SuggestedActionUiModel(ConversationActionType.CANCEL_TASK, "Exit Scenario")
                         )
                     )
@@ -501,7 +507,7 @@ object AssistantResponseMapper {
                         governingReason = governingReason,
                         tradeOffsSummary = "Proposed change prepared for review. Nothing has been applied.",
                         suggestedActions = listOf(
-                            SuggestedActionUiModel(ConversationActionType.SHOW_APPROVAL_REQUIRED_NON_EXECUTABLE, "Review & Apply", isPrimary = true),
+                            SuggestedActionUiModel(ConversationActionType.SHOW_APPROVAL_REQUIRED_NON_EXECUTABLE, "Review & apply", isPrimary = true),
                             SuggestedActionUiModel(ConversationActionType.CANCEL_TASK, "Discard")
                         )
                     )
@@ -605,8 +611,8 @@ object AssistantResponseMapper {
                         diagnosisText = diagnosisText,
                         remediationOptions = remediation.distinct(),
                         suggestedActions = listOf(
-                            SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "Try what-if scenario", isPrimary = true),
-                            SuggestedActionUiModel(ConversationActionType.COMPARE_CANDIDATES, "Compare candidate sizes"),
+                            SuggestedActionUiModel(ConversationActionType.RUN_WHAT_IF, "What-if", isPrimary = true),
+                            SuggestedActionUiModel(ConversationActionType.COMPARE_CANDIDATES, "Compare sizes"),
                             SuggestedActionUiModel(ConversationActionType.CANCEL_TASK, "Dismiss")
                         )
                     )

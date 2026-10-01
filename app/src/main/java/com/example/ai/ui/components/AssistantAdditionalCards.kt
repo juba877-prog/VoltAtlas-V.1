@@ -2,6 +2,7 @@ package com.example.ai.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import com.example.ai.ui.EngineeringDisplayFormatter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -107,8 +108,11 @@ fun AssistantComparisonCard(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            val displayValue = if (metric.unit != null) "${metric.value} ${metric.unit}" else metric.value
-                            val limitText = if (metric.limit != null) " (Limit: ${metric.limit})" else ""
+                            // Phase 6 R-1: see AssistantResultCard - single deterministic value/unit join.
+                            val displayValue = EngineeringDisplayFormatter.joinValueAndUnit(metric.value, metric.unit)
+                            val limitText = if (metric.limit != null) {
+                                " (Limit: ${EngineeringDisplayFormatter.normalizeDisplayText(metric.limit)})"
+                            } else ""
                             Text(
                                 text = "$displayValue$limitText",
                                 style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),

@@ -1,5 +1,6 @@
 package com.example.ai.ui.components
 
+import com.example.ai.ui.EngineeringDisplayFormatter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -89,14 +90,16 @@ fun AssistantResultCard(
             }
 
             Text(
-                text = card.summaryText,
+                // Phase 6 R-1: summary prose can originate from the language layer, so it
+                // passes through the same deterministic normalizer as the chat bubble.
+                text = EngineeringDisplayFormatter.normalizeDisplayText(card.summaryText),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             // Governing Criterion
             Text(
-                text = "Governing Check: ${card.governingCriterion}",
+                text = "Governing Check: ${EngineeringDisplayFormatter.normalizeDisplayText(card.governingCriterion)}",
                 style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.primary
             )
@@ -121,8 +124,13 @@ fun AssistantResultCard(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            val displayValue = if (metric.unit != null) "${metric.value} ${metric.unit}" else metric.value
-                            val limitText = if (metric.limit != null) " (Limit: ${metric.limit})" else ""
+                            // Phase 6 R-1: the card renderer is plain Text, so the value/unit join
+                            // is the last chance to avoid "70 mm² mm²" when an authoritative tool
+                            // result already carries its unit inside the value string.
+                            val displayValue = EngineeringDisplayFormatter.joinValueAndUnit(metric.value, metric.unit)
+                            val limitText = if (metric.limit != null) {
+                                " (Limit: ${EngineeringDisplayFormatter.normalizeDisplayText(metric.limit)})"
+                            } else ""
                             Text(
                                 text = "$displayValue$limitText",
                                 style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),

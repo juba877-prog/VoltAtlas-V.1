@@ -92,7 +92,22 @@ android {
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
-    debug { }
+    // Phase 6 R-2 (release upgrade path): debug builds install as
+    // com.voltatlas.app.v1.debug, so they can never collide with the production package.
+    //
+    // PROVEN CAUSE of the reported release upgrade failure: before this change BOTH
+    // variants claimed com.voltatlas.app.v1 while being signed by DIFFERENT certificates
+    // (debug = the public AOSP debug key; release = the upload key). Android refuses to
+    // replace an app signed by a different certificate with the same package name
+    // (INSTALL_FAILED_UPDATE_INCOMPATIBLE, surfaced to the user as a "package conflict"),
+    // and the only remedy is a manual uninstall that destroys project data.
+    //
+    // applicationId itself is deliberately NOT changed - that would create a brand new
+    // application rather than repair the upgrade path. versionCode stays shared because a
+    // distinct package identity makes cross-variant version comparison irrelevant.
+    debug {
+      applicationIdSuffix = ".debug"
+    }
   }
   lint {
     // Phase 6 P1-6/R-1: config decided AFTER a recorded triage run (see VOLATLAS_LINT_TRIAGE.md),
@@ -114,6 +129,73 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true; isReturnDefaultValues = true } }
+}
+
+/**
+ * Phase 6 R-2: reproducible release identity verification.
+ *
+ * Reports applicationId, versionCode, versionName and the SIGNING CERTIFICATE SHA-256
+ * fingerprint for a built APK, without printing passwords, key aliases or any private key
+ * material. Run after assembling:
+ *
+ *   gradlew :app:verifyApkIdentity -PapkPath=app/build/outputs/apk/release/app-release.apk
+ *
+ * Certificate continuity is the only thing that decides whether Android will accept an
+ * install over an existing one, so it is verified rather than assumed.
+ */
+tasks.register("verifyApkIdentity") {
+  group = "verification"
+  description = "Prints APK identity + signing certificate SHA-256 (no secrets)."
+  val apkPath: String? = (project.findProperty("apkPath") as String?)
+  // Captured at configuration time: the android extension is not resolvable inside doLast.
+  // SDK location is resolved the same way AGP does (local.properties, then env var).
+  val sdkDir: File = run {
+    val props = Properties()
+    val localProps = rootProject.file("local.properties")
+    if (localProps.exists()) localProps.inputStream().use { props.load(it) }
+    val dir = props.getProperty("sdk.dir")
+      ?: System.getenv("ANDROID_HOME")
+      ?: System.getenv("ANDROID_SDK_ROOT")
+    requireNotNull(dir) { "Android SDK not found: set sdk.dir in local.properties or ANDROID_HOME." }
+    File(dir)
+  }
+  val buildDirProvider = layout.buildDirectory
+  doLast {
+    val isWindows = System.getProperty("os.name").startsWith("Windows")
+    val toolName = if (isWindows) "apksigner.bat" else "apksigner"
+    val buildToolsRoot = File(sdkDir, "build-tools")
+    val newest = buildToolsRoot.listFiles()
+      ?.filter { File(it, toolName).exists() }
+      ?.sortedByDescending { it.name }
+      ?.firstOrNull()
+      ?: error("No build-tools with $toolName found under $buildToolsRoot")
+    val apksigner = File(newest, toolName)
+
+    val targets: List<File> = if (apkPath != null) {
+      listOf(File(apkPath))
+    } else {
+      buildDirProvider.dir("outputs/apk").get().asFile
+        .listFiles().orEmpty().sortedBy { it.name }
+        .flatMap { dir -> dir.listFiles().orEmpty().filter { it.extension == "apk" } }
+    }
+    require(targets.isNotEmpty()) { "No APK found. Build first or pass -PapkPath=<file>." }
+
+    targets.forEach { apk ->
+      println("==================================================")
+      println("[APK IDENTITY] ${apk.name}")
+      println("[APK IDENTITY] path: ${apk.absolutePath}")
+      println("[APK IDENTITY] size: ${apk.length()} bytes")
+      // apksigner prints only the certificate DN and digests; no private key material.
+      val proc = ProcessBuilder(apksigner.absolutePath, "verify", "--print-certs", apk.absolutePath)
+        .redirectErrorStream(true).start()
+      proc.inputStream.bufferedReader().forEachLine { println("[APK SIGNING] $it") }
+      proc.waitFor()
+    }
+    println("==================================================")
+    println("[APK IDENTITY] Compare the SHA-256 digests above: identical digest across")
+    println("[APK IDENTITY] two builds of the SAME variant means Android will accept the")
+    println("[APK IDENTITY] install as an in-place update, preserving app data.")
+  }
 }
 
 // Hard fail if release packaging is attempted without valid upload keystore credentials

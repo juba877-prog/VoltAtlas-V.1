@@ -654,7 +654,16 @@ class EngineeringAssistantViewModel(
             ?: (sheetUiState.activeCard as? AssistantCardUiModel.ResultSummaryCard)?.summaryText
             ?: (sheetUiState.activeCard as? AssistantCardUiModel.DirectAnswerCard)?.text
             ?: "Turn processed."
-        val replyMsg = AssistantMessage(role = MessageRole.ASSISTANT, text = replyText)
+        // Phase 6 R-1: normalize ONCE, here, at the single point where an assistant turn
+        // becomes the displayed message. The renderer is plain Compose Text (no Markdown or
+        // LaTeX library in the module), so raw math delimiters and `**bold**` used to reach
+        // the screen literally. Normalizing before the message enters UI state means the
+        // normalized text is exactly what is displayed and exactly what conversation history
+        // would replay - display and storage can never diverge.
+        val replyMsg = AssistantMessage(
+            role = MessageRole.ASSISTANT,
+            text = EngineeringDisplayFormatter.normalizeDisplayText(replyText)
+        )
 
         _uiState.update { current ->
             current.copy(
