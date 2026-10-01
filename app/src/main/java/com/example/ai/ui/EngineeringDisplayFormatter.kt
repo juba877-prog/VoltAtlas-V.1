@@ -148,6 +148,12 @@ object EngineeringDisplayFormatter {
             NEVER_MATCHES
         }
 
+    // BLOCK_MATH / INLINE_MATH strip the math delimiters so their content becomes ordinary
+    // text. Mutation testing shows both are EQUIVALENT MUTANTS: deleting them leaves every
+    // observable output unchanged, because the later passes (TEXT_CMD, FRAC, SQRT, the symbol
+    // table, the residual '$' strip) already operate on the whole string. They are kept as
+    // defence in depth - they make the intent explicit and they would matter if a future pass
+    // were made delimiter-aware - but no test can distinguish them, and none is claimed.
     private val BLOCK_MATH = regexOrNever("""\$\$(.+?)\$\$""", RegexOption.DOT_MATCHES_ALL)
     private val INLINE_MATH = regexOrNever("""(?<!\$)\$([^$\n]+?)\$(?!\$)""", RegexOption.DOT_MATCHES_ALL)
     private val BRACKET_MATH = regexOrNever("""\\\[(.+?)\\\]""", RegexOption.DOT_MATCHES_ALL)

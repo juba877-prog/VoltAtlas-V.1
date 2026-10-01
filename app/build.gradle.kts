@@ -21,7 +21,11 @@ android {
 
     minSdk = 24
     targetSdk = 36
-    versionCode = 2
+    // Monotonically increasing. 3 supersedes the versionCode 2 build that was distributed with
+    // the DEBUG certificate under the production applicationId (pre-.debug-suffix), so it is
+    // the first versionCode that can be cleanly upgraded to by a device holding a real
+    // release install.
+    versionCode = 3
     versionName = "1.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

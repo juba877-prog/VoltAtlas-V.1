@@ -92,10 +92,33 @@ class EngineeringDisplayFormatterTest {
 
     @Test
     fun `a value ending in a letter is not mistaken for a unit`() {
-        // "CABLE" ends with "A" but the trailing letter is preceded by a letter, so the
-        // unit-aware strip must decline. This is the type/field-aware guarantee.
-        assertEquals("CABLE", EngineeringDisplayFormatter.normalizeMetricValue("CABLE", "A"))
+        // "DATA" ends with "A" but that A is preceded by a LETTER, so the unit-aware
+        // strip must decline and leave the identifier intact. Stripping it would corrupt an
+        // engineering identifier into "DAT".
+        //
+        // NOTE: an earlier version of this test used "CABLE", which ends with E. It never
+        // reached the guard at all and passed vacuously - found by mutation testing.
+        assertEquals("DATA", EngineeringDisplayFormatter.normalizeMetricValue("DATA", "A"))
+        assertEquals("PANEL_A", EngineeringDisplayFormatter.normalizeMetricValue("PANEL_A", "A"))
+        // Control: a digit before the unit IS a delimiter, so stripping must happen.
         assertEquals("70", EngineeringDisplayFormatter.normalizeMetricValue("70A", "A"))
+        assertEquals("70", EngineeringDisplayFormatter.normalizeMetricValue("70 A", "A"))
+        // Control: a value not ending in a unit-like token is untouched either way.
+        assertEquals("CABLE", EngineeringDisplayFormatter.normalizeMetricValue("CABLE", "A"))
+    }
+
+    @Test
+    fun `an unrecognized latex command is removed rather than shown to the user`() {
+        // \mathbb is neither in the SYMBOLS table nor a text-wrapper command, so only the
+        // residual-command sweep can clear it. Without that sweep the raw command leaks.
+        val out = norm("\\mathbb{R}")
+        assertTrue("command leaked: $out", !out.contains("mathbb"))
+        assertTrue("backslash leaked: $out", !out.contains("\\"))
+
+        for (sample in listOf("\\qquad x", "\\displaystyle y", "\\!", "\\,")) {
+            val r = norm(sample)
+            assertTrue("residual command in '$r'", !r.contains("\\"))
+        }
     }
 
     // --- 3. Unicode engineering symbols render correctly ----------------------
