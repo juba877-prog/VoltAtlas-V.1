@@ -65,10 +65,19 @@ class DirectGeminiClientSeam(
     ): CloudLlmClientResponse {
         val apiKey = apiKeyProvider()?.trim()
         if (apiKey.isNullOrEmpty() || apiKey == "placeholder_for_secrets") {
+            AiDiagnostics.stage(
+                AiDiagnostics.Stage.CONFIGURATION,
+                "result" to "FAIL", "reason" to "KEY_NOT_CONFIGURED", "model" to config.modelName
+            )
             return CloudLlmClientResponse.ProviderError(
                 message = "Gemini API personal credential not configured. Please add your API key in AI Settings."
             )
         }
+        // A stored credential proves CONFIGURED only. It does NOT yet prove authentication.
+        AiDiagnostics.stage(
+            AiDiagnostics.Stage.CONFIGURATION,
+            "result" to "OK", "model" to config.modelName, "credentialPresent" to true
+        )
 
         if (customCallHandler != null) {
             return customCallHandler.invoke(systemPrompt, userPrompt, conversationHistory, tools)
@@ -93,6 +102,14 @@ class DirectGeminiClientSeam(
                     // Phase 6 Batch 4 / G-5-observability: enough metadata to identify exactly which
                     // protocol stage failed. Deliberately records NO credential, NO Authorization
                     // header, and NO conversation content — only counts, names and timings.
+                    AiDiagnostics.stage(
+                        AiDiagnostics.Stage.NETWORK,
+                        "result" to "OK",
+                        "model" to config.modelName,
+                        "toolCount" to tools.size,
+                        "isSecondTurn" to conversationHistory.any { it is AgenticTurnItem.ExecutedTools },
+                        "turnIndex" to (conversationHistory.count { it is AgenticTurnItem.ExecutedTools } + 1)
+                    )
                     AiLogger.i(
                         "VoltAtlas_AI",
                         "DIRECT_GEMINI_REQUEST model=${config.modelName} " +
@@ -111,9 +128,31 @@ class DirectGeminiClientSeam(
                     val responseCode = response.code
 
                     AiLogger.i("VoltAtlas_AI", "DIRECT_GEMINI_RESPONSE httpStatus=$responseCode latencyMs=$latencyMs")
+                    AiDiagnostics.stage(
+                        AiDiagnostics.Stage.HTTP_STATUS,
+                        "result" to if (response.isSuccessful) "OK" else "FAIL",
+                        "httpStatus" to responseCode,
+                        "latencyMs" to latencyMs
+                    )
 
                     if (response.isSuccessful) {
                         val parsed = parseGeminiResponse(responseBody)
+                        AiDiagnostics.stage(
+                            AiDiagnostics.Stage.MODEL_RESPONSE,
+                            "result" to "OK",
+                            "outcome" to parsed::class.simpleName,
+                            "httpStatus" to responseCode
+                        )
+                        val isToolCall = parsed is CloudLlmClientResponse.ToolCallRequest
+                        AiDiagnostics.stage(
+                            AiDiagnostics.Stage.FUNCTION_CALL,
+                            "result" to if (isToolCall) "RECEIVED" else "NONE",
+                            "toolCount" to ((parsed as? CloudLlmClientResponse.ToolCallRequest)?.calls?.size ?: 0),
+                            "toolNames" to ((parsed as? CloudLlmClientResponse.ToolCallRequest)
+                                ?.calls?.joinToString(",") { it.toolName }.orEmpty()),
+                            "signatureCount" to ((parsed as? CloudLlmClientResponse.ToolCallRequest)
+                                ?.calls?.count { !it.thoughtSignature.isNullOrBlank() } ?: 0)
+                        )
                         // Record the parser outcome so a silent protocol break is visible in logs.
                         AiLogger.i(
                             "VoltAtlas_AI",

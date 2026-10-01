@@ -38,6 +38,11 @@ class HybridConversationRouter(
         // 1. Fast Offline Probe -> try on-device Nano first if present, then local engine
         if (!connectivityProbe.isLikelyOnline()) {
             AiLogger.w("VoltAtlas_AI", "AI_RUNTIME: connectivity probe reports offline. Falling back to local engine.")
+            AiDiagnostics.failure(
+                AiDiagnostics.Stage.NETWORK,
+                CloudDegradationReason.OFFLINE_PROBE_FAILED,
+                "trigger" to "OFFLINE_PROBE_FAILED"
+            )
             if (nanoEngine != null) {
                 try {
                     val nanoResult = nanoEngine.evaluateTurn(input, decisionIdProvider)
@@ -59,13 +64,31 @@ class HybridConversationRouter(
 
         // 2. Cloud Path with Timebox & Fallback
         return try {
+            AiDiagnostics.stage(
+                AiDiagnostics.Stage.NETWORK,
+                "result" to "OK",
+                "probe" to "ONLINE",
+                "cloudTimeoutMs" to cloudTimeoutMs
+            )
             val cloudResult = withTimeout(cloudTimeoutMs) {
                 cloudEngine.evaluateTurn(input, decisionIdProvider)
             }
+            // Cloud returned without a provider error: a usable (text or tool-derived) response.
+            AiDiagnostics.stage(
+                AiDiagnostics.Stage.FINAL_RESPONSE,
+                "result" to "OK",
+                "source" to cloudResult.source,
+                "hasBackingToolResult" to cloudResult.hasBackingToolResult
+            )
 
             // Check if cloud engine itself flagged a degradation reason (e.g. rate limit, safety block)
             if (cloudResult.cloudDegradationReason != null) {
                 AiLogger.w("VoltAtlas_AI", "AI_RUNTIME: cloud degraded with reason=${cloudResult.cloudDegradationReason}. Falling back to local engine.")
+                AiDiagnostics.failure(
+                    AiDiagnostics.Stage.FALLBACK,
+                    cloudResult.cloudDegradationReason,
+                    "trigger" to "CLOUD_DEGRADED"
+                )
                 val localFallback = localEngine.evaluateTurn(input, decisionIdProvider)
                 return localFallback.copy(
                     source = ConversationEngineSource.LOCAL_RULE_ENGINE,
@@ -82,6 +105,12 @@ class HybridConversationRouter(
 
             if (hasFabrication) {
                 AiLogger.w("VoltAtlas_AI", "AI_RUNTIME: unsupported engineering claim detected in cloud text. Falling back to local engine.")
+                // Grounding rejection is a SAFETY outcome, never reported as a network failure.
+                AiDiagnostics.failure(
+                    AiDiagnostics.Stage.GROUNDING,
+                    CloudDegradationReason.UNSUPPORTED_ENGINEERING_CLAIM,
+                    "trigger" to "UNBACKED_ENGINEERING_CLAIM"
+                )
                 val localFallback = localEngine.evaluateTurn(input, decisionIdProvider)
                 localFallback.copy(
                     source = ConversationEngineSource.LOCAL_RULE_ENGINE,
@@ -92,6 +121,12 @@ class HybridConversationRouter(
             }
         } catch (e: TimeoutCancellationException) {
             AiLogger.w("VoltAtlas_AI", "AI_RUNTIME: cloud timeout after ${cloudTimeoutMs}ms. Falling back to local engine.")
+            AiDiagnostics.failure(
+                AiDiagnostics.Stage.FALLBACK,
+                CloudDegradationReason.NETWORK_TIMEOUT,
+                "trigger" to "CLOUD_TIMEOUT",
+                "cloudTimeoutMs" to cloudTimeoutMs
+            )
             val localFallback = localEngine.evaluateTurn(input, decisionIdProvider)
             localFallback.copy(
                 source = ConversationEngineSource.LOCAL_RULE_ENGINE,
@@ -102,6 +137,12 @@ class HybridConversationRouter(
             throw e
         } catch (e: Exception) {
             AiLogger.e("VoltAtlas_AI", "AI_RUNTIME: cloud call failed with exception=${e.javaClass.simpleName} message=${e.message}. Falling back to local engine.", e)
+            AiDiagnostics.failure(
+                AiDiagnostics.Stage.FALLBACK,
+                CloudDegradationReason.HTTP_OR_PROVIDER_ERROR,
+                "trigger" to "CLOUD_EXCEPTION",
+                "exception" to e.javaClass.simpleName
+            )
             val localFallback = localEngine.evaluateTurn(input, decisionIdProvider)
             localFallback.copy(
                 source = ConversationEngineSource.LOCAL_RULE_ENGINE,

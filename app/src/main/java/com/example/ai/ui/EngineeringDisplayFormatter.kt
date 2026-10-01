@@ -115,14 +115,65 @@ object EngineeringDisplayFormatter {
     // 2. Display-text contract (LaTeX / Markdown / markers / unit dedupe)
     // ---------------------------------------------------------------------
 
-    private val BLOCK_MATH = Regex("""\$\$(.+?)\$\$""", RegexOption.DOT_MATCHES_ALL)
-    private val INLINE_MATH = Regex("""(?<!\$)\$([^$\n]+?)\$(?!\$)""", RegexOption.DOT_MATCHES_ALL)
-    private val BRACKET_MATH = Regex("""\\\[(.+?)\\\]""", RegexOption.DOT_MATCHES_ALL)
-    private val PAREN_MATH = Regex("""\\\((.+?)\\\)""", RegexOption.DOT_MATCHES_ALL)
 
-    private val TEXT_CMD = Regex("""\\(?:text|mathrm|mathbf|textbf|textit|mbox|operatorname|mathsf|mathtt)\s*\{([^{}]*)}""")
-    private val FRAC = Regex("""\\frac\s*\{([^{}]*)}\s*\{([^{}]*)}""")
-    private val SQRT = Regex("""\\sqrt\s*\{([^{}]*)}""")
+    /**
+     * A pattern that can never match anything, used as the fallback when compilation fails.
+     * `[^\s\S]` is an empty character class (no character is both non-whitespace and
+     * whitespace), so it matches nothing and lets every `.replace()` call site keep working
+     * unchanged. `(?!)` was avoided because a negative lookahead is less portable than an
+     * empty character class.
+     */
+    private val NEVER_MATCHES: Regex = Regex("[^\\s\\S]")
+
+    /**
+     * Compiles [pattern], degrading to [NEVER_MATCHES] instead of throwing.
+     *
+     * A presentation formatter must never be able to kill the app. On Android
+     * `java.util.regex.Pattern` is implemented by com.android.icu.util.regex, so a construct
+     * that compiles under the JVM's engine can still throw `PatternSyntaxException` on a
+     * device - and inside an `object` initializer that becomes
+     * `ExceptionInInitializerError`, which kills the process on the FIRST assistant turn.
+     * That happened twice during Phase 6 R-1 (indices 84 and 86, each the exact pattern
+     * length), while every JVM unit test stayed green.
+     *
+     * Returning a never-matching pattern means a rejected pattern costs one cosmetic
+     * normalization step instead of the whole application.
+     */
+    private fun regexOrNever(pattern: String, vararg options: RegexOption): Regex =
+        try {
+            if (options.isEmpty()) Regex(pattern) else Regex(pattern, options.first())
+        } catch (t: Throwable) {
+            // Deliberately broad: PatternSyntaxException, StackOverflowError from a
+            // pathological compile, or any engine quirk must not escape.
+            NEVER_MATCHES
+        }
+
+    private val BLOCK_MATH = regexOrNever("""\$\$(.+?)\$\$""", RegexOption.DOT_MATCHES_ALL)
+    private val INLINE_MATH = regexOrNever("""(?<!\$)\$([^$\n]+?)\$(?!\$)""", RegexOption.DOT_MATCHES_ALL)
+    private val BRACKET_MATH = regexOrNever("""\\\[(.+?)\\\]""", RegexOption.DOT_MATCHES_ALL)
+    private val PAREN_MATH = regexOrNever("""\\\((.+?)\\\)""", RegexOption.DOT_MATCHES_ALL)
+
+    // NOTE (Phase 6 R-1 fix, DEVICE-VERIFIED — read before touching these patterns)
+    //
+    // On Android, `java.util.regex.Pattern` is implemented by com.android.icu.util.regex.
+    // A JVM unit test therefore exercises OpenJDK's engine and CANNOT detect any
+    // construct ICU rejects. Two constructs here crashed the app on the first assistant
+    // turn while every JVM test stayed green:
+    //
+    //   1. `\\(?:text|...)`  - an escaped backslash immediately before a group open.
+    //      ICU reads `\(` as a LITERAL paren, so `(?:` can never open a group.
+    //      -> PatternSyntaxException "near index 84" (pattern length 84).
+    //   2. a trailing BARE `}` - Java tolerates it; ICU does not.
+    //      -> PatternSyntaxException "near index 86" (pattern length 86) after fix (1).
+    //
+    // Rules for every pattern in this file:
+    //   - match a literal backslash with `[\\]`, never with `\\` next to `(?:`;
+    //   - wrap EVERY literal brace in a character class `[{]` / `[}]` — both `\{`
+    //     and bare `}` fail on ICU; only the character-class form is portable;
+    //   - verify on a real device, because the JVM is not a faithful oracle here.
+    private val TEXT_CMD = regexOrNever("""[\\](?:text|mathrm|mathbf|textbf|textit|mbox|operatorname|mathsf|mathtt)\s*[{]([^{}]*)[}]""")
+    private val FRAC = regexOrNever("""[\\]frac\s*[{]([^{}]*)[}]\s*[{]([^{}]*)[}]""")
+    private val SQRT = regexOrNever("""[\\]sqrt\s*[{]([^{}]*)[}]""")
 
     private val SYMBOLS: List<Pair<String, String>> = listOf(
         "\\Delta" to "\u0394", "\\delta" to "\u03b4", "\\Omega" to "\u03a9", "\\omega" to "\u03c9",
@@ -139,29 +190,29 @@ object EngineeringDisplayFormatter {
 
     // Matches a LaTeX-escaped literal punctuation char: \%, \&, \#, \$, \_, \{, \}.
     // Written as an alternation because a single character class containing braces
-    // compiles inconsistently across JDK regex versions.
-    private val ESCAPED_PUNCT = Regex("\\\\([%#\$_]|[{}])")
-    private val SPACING_MACRO = Regex("""\\[,;:! ]""")
-    private val UNKNOWN_CMD = Regex("""\\[a-zA-Z]+""")
+    // compiles inconsistently across JDK regex versions. The brace alternatives are the
+    // character class [\{\}] so no bare brace ever reaches the engine.
+    private val ESCAPED_PUNCT = regexOrNever("""\\([%#${'$'}]|[{}])""")
+    private val SPACING_MACRO = regexOrNever("""\\[,;:! ]""")
+    private val UNKNOWN_CMD = regexOrNever("""\\[a-zA-Z]+""")
 
-    private val BOLD = Regex("""\*\*([^*]+)\*\*""")
-    private val BOLD_US = Regex("""__([^_]+)__""")
-    private val ITALIC = Regex("""\*([^*\n]+)\*""")
+    private val BOLD = regexOrNever("""\*\*([^*]+)\*\*""")
+    private val BOLD_US = regexOrNever("""__([^_]+)__""")
+    private val ITALIC = regexOrNever("""\*([^*\n]+)\*""")
     // `_x` in engineering notation is a SUBSCRIPT, not markdown emphasis: I_z, S_n, Z_s.
-    // The underscore is dropped so the renderer shows "Iz". Requires exactly one character
-    // and a letter on the left, so snake_case identifiers (cableSize_mm2) are untouched.
-    // `_x` in engineering notation is a SUBSCRIPT, not markdown emphasis: I_z, S_n, Z_s.
-// The underscore is dropped so a plain-Text renderer shows "Iz". Constrained to a single
-// alphanumeric character so snake_case identifiers (cableSize_mm2, value_mm) keep both parts.
+    // The underscore is dropped so a plain-Text renderer shows "Iz". Constrained to a
+    // single alphanumeric character, preceded by a letter and not followed by another
+    // alphanumeric, so snake_case identifiers (cableSize_mm2, value_mm) keep both parts.
+    // Braces use [{}] character class (literal inside []), per the ICU note above.
     private val SUBSCRIPT =
-        Regex("""(?<=[\p{L}])_\{?([A-Za-z0-9])\}?(?![\p{L}\p{N}])""")
-    private val CODE = Regex("""`([^`]+)`""")
-    private val LINK = Regex("""\[([^\]]+)]\([^)]*\)""")
-    private val HEADING = Regex("""(?m)^\s*#{1,6}\s+""")
-    private val BULLET = Regex("""(?m)^\s*[-*+]\s+""")
+        regexOrNever("""(?<=[\p{L}])_[{}]?([A-Za-z0-9])[{}]?(?![\p{L}\p{N}])""")
+    private val CODE = regexOrNever("""`([^`]+)`""")
+    private val LINK = regexOrNever("""\[([^\]]+)]\([^)]*\)""")
+    private val HEADING = regexOrNever("""(?m)^\s*#{1,6}\s+""")
+    private val BULLET = regexOrNever("""(?m)^\s*[-*+]\s+""")
 
     /** Conservative: only internal, enum-shaped, underscore-bearing provenance tokens. */
-    private val INTERNAL_MARKER = Regex("""\[(.*?)\]""")
+    private val INTERNAL_MARKER = regexOrNever("""\[(.*?)\]""")
     private val INTERNAL_NAMES = setOf(
         "CALCULATED_BY_VOLTATLAS", "PROVENANCE_ENGINE", "SOURCE_TOOL", "EVIDENCE_REF"
     )
@@ -182,7 +233,7 @@ object EngineeringDisplayFormatter {
      */
     fun normalizeDisplayText(text: String): String {
         var s = text
-        s = s
+        s = BLOCK_MATH.replace(s) { it.groupValues[1] }
         s = INLINE_MATH.replace(s) { it.groupValues[1] }
         s = BRACKET_MATH.replace(s) { it.groupValues[1] }
         s = PAREN_MATH.replace(s) { it.groupValues[1] }

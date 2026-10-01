@@ -7,8 +7,19 @@ package com.example.ai.contracts
 object ExecutionModePolicy {
     /**
      * Determines whether a given execution mode can currently be dispatched.
-     * MUTATION is strictly non-executable in Phase 3 until Phase 7 establishes
-     * EngineeringProposalManager, explicit approval tokens, and EngineeringRevisionGuard.
+     *
+     * PERMANENT INVARIANT (Phase 6 Batch 4 / P2-11, finding J-09 + AU-W-03):
+     * [ExecutionMode.MUTATION] is PERMANENTLY non-executable through this policy.
+     * The previous wording scoped this guard to an early delivery phase and implied a later
+     * phase would silently lift it. That reading was wrong and dangerous: direct mutation would
+     * bypass the trusted proposal/approval/revision pipeline
+     * (AssistantToolRuntime -> EngineeringToolDispatcher -> EngineeringToolRegistry ->
+     * deterministic invoker -> authoritative VoltAtlas tools/repositories/Room).
+     *
+     * MUTATION requests are not "blocked pending a phase". They must be expressed as
+     * [ExecutionMode.PROPOSAL] and executed only through
+     * `TrustedProposalApprovalGateway`, which requires explicit user approval and revision
+     * guarding. Flipping this to `true` would be a safety regression, not a feature.
      */
     fun isCurrentlyExecutable(mode: ExecutionMode): Boolean {
         return when (mode) {
@@ -17,7 +28,9 @@ object ExecutionModePolicy {
             ExecutionMode.WHAT_IF -> true
             ExecutionMode.VALIDATE_ONLY -> true
             ExecutionMode.PROPOSAL -> true // Formulating a proposal for review is executable
-            ExecutionMode.MUTATION -> false // Mutation is strictly non-executable until Phase 7
+            // Permanently non-executable via this policy - see the KDoc above. MUTATION must be
+            // expressed as PROPOSAL and pass the trusted approval gateway instead.
+            ExecutionMode.MUTATION -> false
         }
     }
 

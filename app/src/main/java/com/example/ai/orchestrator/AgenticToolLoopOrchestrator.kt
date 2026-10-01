@@ -5,6 +5,7 @@ import com.example.ai.contracts.ToolResultEnvelope
 import com.example.ai.evidence.EngineeringEvidenceRecord
 import com.example.ai.grounding.GroundedResponseValidator
 import com.example.ai.grounding.GroundingValidationResult
+import com.example.ai.hybrid.AiDiagnostics
 import com.example.ai.hybrid.CloudDegradationReason
 import com.example.ai.hybrid.CloudFunctionDeclaration
 import com.example.ai.hybrid.CloudLlmClientResponse
@@ -76,7 +77,23 @@ class AgenticToolLoopOrchestrator(
         var totalToolCalls = 0
         val startTime = System.currentTimeMillis()
 
+        AiDiagnostics.stage(
+            AiDiagnostics.Stage.START,
+            "result" to "OK",
+            "toolDeclarationCount" to scopedTools.size,
+            "projectScoped" to (projectContext.projectId != null),
+            "iterationBudget" to safetyBudget.maxIterations
+        )
+
         for (iteration in 0 until safetyBudget.maxIterations) {
+            // Iteration 0 is the FIRST turn (no tool results yet). Any later iteration re-sends
+            // the accumulated tool results, i.e. it IS the "second turn" from the provider's view.
+            AiDiagnostics.stage(
+                if (iteration == 0) AiDiagnostics.Stage.MODEL_RESPONSE else AiDiagnostics.Stage.SECOND_TURN,
+                "iteration" to iteration,
+                "historyTurns" to turnHistory.size,
+                "elapsedMs" to (System.currentTimeMillis() - startTime)
+            )
             // Check overall loop timeout
             if (System.currentTimeMillis() - startTime > safetyBudget.totalTimeoutMs) {
                 return AgenticExecutionResult(
@@ -100,6 +117,13 @@ class AgenticToolLoopOrchestrator(
                     )
                 }
             } catch (e: TimeoutCancellationException) {
+                AiDiagnostics.failure(
+                    AiDiagnostics.Stage.SECOND_TURN,
+                    CloudDegradationReason.NETWORK_TIMEOUT,
+                    "reason" to "NETWORK_TIMEOUT",
+                    "iteration" to iteration,
+                    "iterationTimeoutMs" to safetyBudget.iterationTimeoutMs
+                )
                 return AgenticExecutionResult(
                     terminationReason = AgenticLoopTermination.TIMEOUT,
                     turnsExecuted = iteration,
@@ -281,6 +305,27 @@ class AgenticToolLoopOrchestrator(
 
                     val turnOutcomes = executedPairs.map { it.second }
                     allOutcomes.addAll(turnOutcomes)
+
+                    // Phase 6 Batch 4 (continuation): make the deterministic-tool execution and
+                    // the functionResponse handoff observable on a real device. Only tool NAMES and
+                    // outcome STATUS are logged - never arguments, payloads or engineering data.
+                    AiDiagnostics.stage(
+                        AiDiagnostics.Stage.TOOL_EXECUTION,
+                        "result" to "OK",
+                        "iteration" to iteration,
+                        "toolCount" to executedPairs.size,
+                        "mode" to if (allAreReadTools && calls.size > 1) "PARALLEL_READS" else "SEQUENTIAL",
+                        "toolStatuses" to turnOutcomes.joinToString(",") { it.envelope.status.name }
+                    )
+                    AiDiagnostics.stage(
+                        AiDiagnostics.Stage.FUNCTION_RESPONSE,
+                        "result" to "OK",
+                        "iteration" to iteration,
+                        "responseCount" to executedPairs.size,
+                        "names" to executedPairs.joinToString(",") { it.first.toolName },
+                        "idsPresent" to executedPairs.count { it.first.callId.isNotBlank() },
+                        "signaturesReplayed" to calls.count { !it.thoughtSignature.isNullOrBlank() }
+                    )
 
                     // Add turn items to history
                     turnHistory.add(AgenticTurnItem.ModelCalls(calls))
