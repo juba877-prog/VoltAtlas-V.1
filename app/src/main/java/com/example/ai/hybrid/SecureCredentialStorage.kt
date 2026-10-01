@@ -7,10 +7,42 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.security.KeyStore
 import javax.crypto.Cipher
+import kotlinx.coroutines.CancellationException
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+
+/**
+ * Phase 6 Batch 4 / G-5 — outcome of a credential read, distinguishing the failure modes that
+ * were previously all collapsed into `null`.
+ *
+ * `getCredential()` returning null used to mean BOTH "the user never configured a key" AND
+ * "a key exists but could not be decrypted". The UI then reported "Not Configured" for a key
+ * that was actually present, which is actively misleading. These states are now explicit:
+ *
+ * - [KEY_NOT_CONFIGURED] — nothing stored. This is the ONLY state that may report "Not Configured".
+ * - [KEY_READ_FAILED]     — stored value present but unreadable (e.g. corrupted base64/ciphertext).
+ * - [KEY_DECRYPT_FAILED]  — ciphertext present, keystore key unavailable/rejected it (AEAD tag
+ *                           failure, key invalidated by a device change, alias removed).
+ * - [KEY_INVALID]         — key material exists but is unusable/of the wrong shape.
+ *
+ * No secret, ciphertext or key bytes are ever carried in this type.
+ */
+sealed interface CredentialReadResult {
+    /** Secret recovered. The value is never logged. */
+    data class Available(val credential: String) : CredentialReadResult
+
+    data class Unavailable(val reason: KeyReadFailure) : CredentialReadResult
+}
+
+/** The distinct ways a stored credential can fail to be read. */
+enum class KeyReadFailure {
+    KEY_NOT_CONFIGURED,
+    KEY_READ_FAILED,
+    KEY_DECRYPT_FAILED,
+    KEY_INVALID
+}
 
 /**
  * Contract for secure, encrypted-at-rest storage of user credentials.
@@ -19,6 +51,9 @@ import javax.crypto.spec.SecretKeySpec
  * - Credentials must NEVER be stored in plaintext.
  * - Credentials must NEVER be synced to cloud, sent to VoltAtlas servers, or logged.
  * - Masked credential display must never leak the full secret.
+ *
+ * Phase 6 Batch 4 / G-5: [readCredential] exposes the typed failure mode. [getCredential] and
+ * [hasCredential] are retained UNCHANGED so every existing consumer keeps its exact contract.
  */
 interface SecureCredentialStorage {
     fun saveCredential(credential: String)
@@ -26,6 +61,12 @@ interface SecureCredentialStorage {
     fun clearCredential()
     fun hasCredential(): Boolean
     fun getMaskedCredential(): String
+
+    /**
+     * Typed read. Implementations MUST NOT swallow [kotlinx.coroutines.CancellationException]:
+     * cancellation is rethrown so it can never be misreported as a credential problem.
+     */
+    fun readCredential(): CredentialReadResult
 }
 
 /**
@@ -64,10 +105,59 @@ class AndroidKeystoreSecureCredentialStorage(
                 val encryptedBytes = Base64.decode(base64Encrypted, Base64.NO_WRAP)
                 val decryptedBytes = decrypt(encryptedBytes)
                 String(decryptedBytes, Charsets.UTF_8).takeIf { it.isNotBlank() }
+            } catch (e: CancellationException) {
+                // Phase 6 Batch 4 / G-5: cancellation must propagate; swallowing it would make a
+                // cancelled coroutine look like "no key configured".
+                throw e
             } catch (_: Throwable) {
                 null
             }
         }
+    }
+
+    /**
+     * Phase 6 Batch 4 / G-5 — typed read that separates "never configured" from "present but
+     * unreadable/undecryptable", and never swallows cancellation.
+     */
+    override fun readCredential(): CredentialReadResult = synchronized(lock) {
+        val base64Encrypted = prefs.getString(KEY_ENCRYPTED_CREDENTIAL, null)
+            ?: return@synchronized CredentialReadResult.Unavailable(KeyReadFailure.KEY_NOT_CONFIGURED)
+
+        // 1. Stored bytes must be readable at all.
+        val encryptedBytes = try {
+            Base64.decode(base64Encrypted, Base64.NO_WRAP)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            return@synchronized CredentialReadResult.Unavailable(KeyReadFailure.KEY_READ_FAILED)
+        }
+
+        if (encryptedBytes.isEmpty()) {
+            return@synchronized CredentialReadResult.Unavailable(KeyReadFailure.KEY_READ_FAILED)
+        }
+
+        // 2. Ciphertext must decrypt with the keystore key.
+        val plaintext = try {
+            decrypt(encryptedBytes)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: java.security.GeneralSecurityException) {
+            // AEAD tag failure / key invalidated / alias removed — the stored value exists but
+            // this device can no longer decrypt it. Distinct from "not configured".
+            return@synchronized CredentialReadResult.Unavailable(KeyReadFailure.KEY_DECRYPT_FAILED)
+        } catch (e: IllegalArgumentException) {
+            // Corrupt wire framing (bad IV length header) — the payload itself is unusable.
+            return@synchronized CredentialReadResult.Unavailable(KeyReadFailure.KEY_INVALID)
+        } catch (_: Throwable) {
+            return@synchronized CredentialReadResult.Unavailable(KeyReadFailure.KEY_READ_FAILED)
+        }
+
+        // 3. Decrypted material must be a usable credential.
+        val credential = String(plaintext, Charsets.UTF_8)
+        if (credential.isBlank()) {
+            return@synchronized CredentialReadResult.Unavailable(KeyReadFailure.KEY_INVALID)
+        }
+        CredentialReadResult.Available(credential)
     }
 
     override fun clearCredential() {
@@ -86,7 +176,9 @@ class AndroidKeystoreSecureCredentialStorage(
     }
 
     override fun hasCredential(): Boolean {
-        return !getCredential().isNullOrBlank()
+        // Phase 6 Batch 4 / G-5: a stored-but-unreadable credential must NOT report "configured"
+        // any more than an unconfigured one does. Available() is the only success state.
+        return readCredential() is CredentialReadResult.Available
     }
 
     override fun getMaskedCredential(): String {

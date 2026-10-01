@@ -22,8 +22,15 @@ object NameplateOcrProcessor {
         onError: (Throwable) -> Unit
     ) {
         try {
-            // Hardware bitmaps must be converted to software bitmaps for ML Kit processing
-            val softwareBitmap = if (bitmap.config == Bitmap.Config.HARDWARE) {
+            // Hardware bitmaps must be converted to software bitmaps for ML Kit processing.
+            // NEW-1 (Phase 6 Batch 4): Bitmap.Config.HARDWARE was introduced in API 26 while this
+            // app's minSdk is 24, so referencing the constant unconditionally crashes at runtime on
+            // API 24/25 devices (NoSuchFieldError). The comparison is now guarded by an explicit
+            // SDK_INT check. No behaviour change on API 26+; on older devices the constant cannot
+            // exist, so the bitmap is passed through unchanged.
+            val isHardwareBitmap = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                bitmap.config == Bitmap.Config.HARDWARE
+            val softwareBitmap = if (isHardwareBitmap) {
                 bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: bitmap
             } else {
                 bitmap

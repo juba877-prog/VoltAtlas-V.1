@@ -90,7 +90,19 @@ class DirectGeminiClientSeam(
                         .post(requestBody)
                         .build()
 
-                    AiLogger.i("VoltAtlas_AI", "DIRECT_GEMINI_REQUEST model=${config.modelName} endpoint=https://generativelanguage.googleapis.com/v1beta/models/${config.modelName}:generateContent credentialConfigured=${!apiKey.isNullOrBlank()}")
+                    // Phase 6 Batch 4 / G-5-observability: enough metadata to identify exactly which
+                    // protocol stage failed. Deliberately records NO credential, NO Authorization
+                    // header, and NO conversation content — only counts, names and timings.
+                    AiLogger.i(
+                        "VoltAtlas_AI",
+                        "DIRECT_GEMINI_REQUEST model=${config.modelName} " +
+                            "endpointFamily=generativelanguage/v1beta:generateContent " +
+                            "toolCount=${tools.size} " +
+                            "historyTurns=${conversationHistory.size} " +
+                            "turnIndex=${conversationHistory.count { it is AgenticTurnItem.ExecutedTools } + 1} " +
+                            "isSecondTurn=${conversationHistory.any { it is AgenticTurnItem.ExecutedTools }} " +
+                            "credentialConfigured=${!apiKey.isNullOrBlank()}"
+                    )
                     val startTime = System.currentTimeMillis()
 
                     val response = httpClient.newCall(request).execute()
@@ -101,7 +113,18 @@ class DirectGeminiClientSeam(
                     AiLogger.i("VoltAtlas_AI", "DIRECT_GEMINI_RESPONSE httpStatus=$responseCode latencyMs=$latencyMs")
 
                     if (response.isSuccessful) {
-                        parseGeminiResponse(responseBody)
+                        val parsed = parseGeminiResponse(responseBody)
+                        // Record the parser outcome so a silent protocol break is visible in logs.
+                        AiLogger.i(
+                            "VoltAtlas_AI",
+                            "DIRECT_GEMINI_PARSED outcome=${parsed::class.simpleName} " +
+                                "functionCallPresent=${parsed is CloudLlmClientResponse.ToolCallRequest} " +
+                                "toolNames=${(parsed as? CloudLlmClientResponse.ToolCallRequest)
+                                    ?.calls?.joinToString(",") { it.toolName }.orEmpty()} " +
+                                "signaturesPresent=${(parsed as? CloudLlmClientResponse.ToolCallRequest)
+                                    ?.calls?.count { !it.thoughtSignature.isNullOrBlank() } ?: 0}"
+                        )
+                        parsed
                     } else {
                         parseErrorResponse(responseCode, responseBody)
                     }
@@ -114,11 +137,25 @@ class DirectGeminiClientSeam(
         } catch (e: CancellationException) {
             throw e
         } catch (e: UnknownHostException) {
-            CloudLlmClientResponse.ProviderError("Network connection unavailable. Please check your internet connection.", cause = e)
+            // Phase 6 Batch 4 / G-4: a DNS/connectivity failure is NOT a timeout and NOT a
+            // provider fault — it is classified so it can be reported honestly.
+            CloudLlmClientResponse.ProviderError(
+                message = "Network connection unavailable. Please check your internet connection.",
+                cause = e,
+                category = CloudProviderFailureCategory.NETWORK_ERROR
+            )
         } catch (e: IOException) {
-            CloudLlmClientResponse.ProviderError("Network error connecting to Gemini API: ${e.message}", cause = e)
+            CloudLlmClientResponse.ProviderError(
+                message = "Network error connecting to Gemini API: ${e.message}",
+                cause = e,
+                category = CloudProviderFailureCategory.NETWORK_ERROR
+            )
         } catch (e: Throwable) {
-            CloudLlmClientResponse.ProviderError(e.message ?: "Unexpected error during Gemini API call.", cause = e)
+            CloudLlmClientResponse.ProviderError(
+                message = e.message ?: "Unexpected error during Gemini API call.",
+                cause = e,
+                category = CloudProviderFailureCategory.UNKNOWN
+            )
         }
     }
 
@@ -209,9 +246,16 @@ class DirectGeminiClientSeam(
 
                 when {
                     response.isSuccessful -> {
+                        // Phase 6 Batch 4 / G-6: this test performed an authenticated
+                        // generateContent call to the CONFIGURED model using the same endpoint
+                        // family and HTTP stack as production, so it proves connectivity and
+                        // model access — and nothing more. It does NOT run the agentic tool loop,
+                        // so it must not imply the assistant runtime works.
                         ConnectionTestResult(
                             status = ConnectionTestStatus.CONNECTED,
-                            message = "Connected to $modelName successfully"
+                            message = "Connected to $modelName successfully " +
+                                "(connectivity verified; assistant tool loop not exercised by this test)",
+                            verifiedScope = GeminiVerificationScope.CONNECTIVITY_OK
                         )
                     }
                     code == 400 && responseBody.contains("API_KEY_INVALID", ignoreCase = true) -> {
@@ -281,8 +325,21 @@ class DirectGeminiClientSeam(
                                 val funcCall = JSONObject().apply {
                                     put("name", call.toolName)
                                     put("args", JSONObject(call.arguments))
+                                    if (!call.callId.isNullOrBlank()) {
+                                        put("id", call.callId)
+                                    }
                                 }
-                                parts.put(JSONObject().put("functionCall", funcCall))
+                                val part = JSONObject().put("functionCall", funcCall)
+                                // Phase 6 Batch 4 / G-2: replay Gemini 3's thought signature on the
+                                // SAME part that carried the functionCall, byte-identical. Required
+                                // because VoltAtlas manages conversation state manually; omitting
+                                // it breaks Gemini 3 reasoning continuity across tool rounds.
+                                // When the provider sent no signature, nothing is emitted (absence
+                                // is explicit, never fabricated).
+                                call.thoughtSignature?.takeIf { it.isNotBlank() }?.let { sig ->
+                                    part.put("thoughtSignature", sig)
+                                }
+                                parts.put(part)
                             }
                             put("parts", parts)
                         }
@@ -290,7 +347,17 @@ class DirectGeminiClientSeam(
                     }
                     is AgenticTurnItem.ExecutedTools -> {
                         val functionTurn = JSONObject().apply {
-                            put("role", "function")
+                            // Phase 6 Batch 4 / G-1: generateContent's Content.role accepts ONLY
+                            // "user" or "model" (verified against the official schema at
+                            // https://ai.google.dev/api/generate-content -> Content.role:
+                            // "The producer of the content. Must be either 'user' or 'model'.").
+                            // Tool results are therefore returned as a role="user" content whose
+                            // parts carry `functionResponse` — there is no "function" role.
+                            // The previous role="function" made every tool-result turn a
+                            // structurally invalid request (HTTP 400 INVALID_ARGUMENT), which the
+                            // router surfaced to the user as the misleading "OFFLINE" badge even
+                            // though Settings had already reported "Connected".
+                            put("role", "user")
                             val parts = JSONArray()
                             for ((call, outcome) in turn.outcomes) {
                                 val responseObj = JSONObject(ToolResultProviderSerializer.toProviderResponse(outcome).toString())
@@ -426,9 +493,25 @@ class DirectGeminiClientSeam(
                     if (part.has("functionCall")) {
                         val fc = part.getJSONObject("functionCall")
                         val name = fc.getString("name")
+                        // Phase 6 Batch 4 / G-3: the provider's function-call id is preserved
+                        // EXACTLY when supplied. When the provider omits it, the absence is
+                        // represented explicitly as an empty string rather than fabricated with a
+                        // locally generated UUID — a random UUID would falsely imply Google issued
+                        // that identifier. Google's FunctionCall.id is documented as optional:
+                        // "If populated, the client to execute the functionCall and return the
+                        // response with the matching id." An empty id is therefore valid and the
+                        // functionResponse simply omits the `id` field (see buildGeminiContents).
                         val callId = fc.optString("id").takeIf { it.isNotBlank() }
                             ?: fc.optString("call_id").takeIf { it.isNotBlank() }
-                            ?: java.util.UUID.randomUUID().toString()
+                            ?: ""
+                        // Phase 6 Batch 4 / G-2: capture Gemini 3's opaque thought signature
+                        // EXACTLY as received. It is documented on the `Part` (a sibling of
+                        // `functionCall`) and Google's prose also describes signatures "living
+                        // inside functionCall parts", so both locations are read and the
+                        // Part-level value wins. The value is stored verbatim as opaque data:
+                        // never decoded, re-encoded, or regenerated. Absence stays null.
+                        val thoughtSignature = part.optString("thoughtSignature").takeIf { it.isNotBlank() }
+                            ?: fc.optString("thoughtSignature").takeIf { it.isNotBlank() }
                         val argsObj = fc.optJSONObject("args")
                         val argsMap: Map<String, JsonElement> = if (argsObj != null) {
                             runCatching {
@@ -437,7 +520,14 @@ class DirectGeminiClientSeam(
                         } else {
                             emptyMap()
                         }
-                        functionCalls.add(ToolCall(callId = callId, toolName = name, arguments = argsMap))
+                        functionCalls.add(
+                            ToolCall(
+                                callId = callId,
+                                toolName = name,
+                                arguments = argsMap,
+                                thoughtSignature = thoughtSignature
+                            )
+                        )
                     } else if (part.has("text")) {
                         textBuilder.append(part.getString("text"))
                     }
@@ -461,6 +551,13 @@ class DirectGeminiClientSeam(
         }
 
         private fun parseErrorResponse(code: Int, body: String): CloudLlmClientResponse {
+            // Provider error body is read for its `error.status`/`error.message` only. It never
+            // contains the credential, and the credential is never logged.
+            val providerStatus = try {
+                JSONObject(body).optJSONObject("error")?.optString("status").orEmpty()
+            } catch (_: Throwable) {
+                ""
+            }
             val message = try {
                 val json = JSONObject(body)
                 json.optJSONObject("error")?.optString("message") ?: body
@@ -468,18 +565,39 @@ class DirectGeminiClientSeam(
                 body
             }
 
-            val isRateLimited = code == 429 || message.contains("RESOURCE_EXHAUSTED", ignoreCase = true)
+            val isRateLimited = code == 429 ||
+                providerStatus.equals("RESOURCE_EXHAUSTED", ignoreCase = true) ||
+                message.contains("RESOURCE_EXHAUSTED", ignoreCase = true)
+
+            // Phase 6 Batch 4 / G-4: classify from the real evidence (HTTP status + the
+            // provider's own status token) instead of collapsing everything into one
+            // provider error. Order matters: the most specific signal wins.
             val category = when {
-                code == 429 || isRateLimited -> "RATE_LIMITED"
-                code in 401..403 -> "AUTHENTICATION_FAILURE"
-                code == 400 -> "INVALID_REQUEST"
-                code in 500..599 -> "SERVER_ERROR"
-                else -> "PROVIDER_ERROR"
+                isRateLimited -> CloudProviderFailureCategory.RATE_LIMITED
+                code == 401 || code == 403 -> CloudProviderFailureCategory.AUTHENTICATION_FAILURE
+                providerStatus.equals("PERMISSION_DENIED", ignoreCase = true) ||
+                    providerStatus.equals("UNAUTHENTICATED", ignoreCase = true) ->
+                    CloudProviderFailureCategory.AUTHENTICATION_FAILURE
+                code == 404 || providerStatus.equals("NOT_FOUND", ignoreCase = true) ->
+                    CloudProviderFailureCategory.MODEL_UNAVAILABLE
+                code == 400 -> CloudProviderFailureCategory.REQUEST_INVALID
+                code in 500..599 -> CloudProviderFailureCategory.SERVER_ERROR
+                else -> CloudProviderFailureCategory.UNKNOWN
             }
-            AiLogger.e("VoltAtlas_AI", "DIRECT_GEMINI_ERROR: Cloud failure reason=$category, HTTP status=$code, provider error category=$category, sanitized provider message=$message")
+
+            // Sanitized diagnostics: status, category and the provider's message. No credential,
+            // no Authorization header, no conversation content.
+            AiLogger.e(
+                "VoltAtlas_AI",
+                "DIRECT_GEMINI_ERROR category=$category httpStatus=$code " +
+                    "providerStatus=${providerStatus.ifBlank { "n/a" }} message=$message"
+            )
+
             return CloudLlmClientResponse.ProviderError(
                 message = "Gemini API error ($code): $message",
-                isRateLimited = isRateLimited
+                isRateLimited = isRateLimited,
+                category = category,
+                httpStatus = code
             )
         }
     }

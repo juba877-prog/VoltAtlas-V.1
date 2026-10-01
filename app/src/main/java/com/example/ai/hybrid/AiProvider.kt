@@ -20,6 +20,32 @@ enum class AiProvider(val id: String, val displayName: String) {
 }
 
 /**
+ * Phase 6 Batch 4 / G-6 — what a "successful" connection test actually PROVED.
+ *
+ * The settings badge previously said "● Connected" after a tools-free ping, which reads as
+ * "the assistant works". It only proves that a key authenticates and the endpoint is reachable.
+ * This enum records the real scope so the claim cannot silently outrun the evidence.
+ *
+ * The hierarchy is cumulative; each level strictly requires the previous one:
+ *   CONFIGURED           - a key is stored and readable (no network involved at all)
+ *   CONNECTIVITY_OK      - a real authenticated request to the configured model succeeded
+ *   ASSISTANT_RUNTIME_OK - the assistant request shape (system instruction + tools) was accepted
+ *   TOOL_RUNTIME_OK      - Gemini requested a deterministic tool and its result returned cleanly
+ *   GROUNDED_RESPONSE_OK - the final response satisfied the existing evidence/grounding rules
+ *
+ * `testConnection()` deliberately establishes CONNECTIVITY_OK and no more. Claiming a higher
+ * scope without having executed the agentic loop would be exactly the "fake Connected" state
+ * this batch exists to eliminate.
+ */
+enum class GeminiVerificationScope {
+    CONFIGURED,
+    CONNECTIVITY_OK,
+    ASSISTANT_RUNTIME_OK,
+    TOOL_RUNTIME_OK,
+    GROUNDED_RESPONSE_OK
+}
+
+/**
  * Result status for testing provider connectivity.
  */
 enum class ConnectionTestStatus {
@@ -39,7 +65,17 @@ enum class ConnectionTestStatus {
  */
 data class ConnectionTestResult(
     val status: ConnectionTestStatus,
-    val message: String
+    val message: String,
+    /**
+     * Phase 6 Batch 4 / G-6: the strongest statement this test actually established.
+     *
+     * `testConnection()` sets [GeminiVerificationScope.CONNECTIVITY_OK] on success — it performs
+     * a minimal authenticated generateContent call. It deliberately does NOT claim
+     * ASSISTANT_RUNTIME_OK / TOOL_RUNTIME_OK / GROUNDED_RESPONSE_OK, because it does not run the
+     * agentic tool loop. Defaults to [GeminiVerificationScope.CONFIGURED] so every pre-existing
+     * construction site keeps compiling with its previous (weaker, honest) meaning.
+     */
+    val verifiedScope: GeminiVerificationScope = GeminiVerificationScope.CONFIGURED
 )
 
 /**

@@ -3,6 +3,7 @@ package com.example.ui
 import com.example.ui.theme.*
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
@@ -770,7 +771,12 @@ fun ProjectPickerScreen(
 
     // ── Exit Confirmation Dialog (dark-themed, matches app identity) ──
     if (showExitAppDialog) {
-        val activity = LocalContext.current as? android.app.Activity
+        // Phase 6 Batch 4: replaced `LocalContext.current as? Activity` with LocalActivity.
+        // Casting the composition's Context to an Activity is unsound (Context is not always an
+        // Activity — e.g. in previews or a ContextWrapper) and is flagged by lint as
+        // ContextCastToActivity. LocalActivity is the supported API and returns null safely when
+        // no Activity is available, preserving the existing null-safe call site below.
+        val activity = LocalActivity.current
         androidx.compose.ui.window.Dialog(
             onDismissRequest = { showExitAppDialog = false }
         ) {

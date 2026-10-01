@@ -60,6 +60,13 @@ data class CloudLlmRawResponse(
     val toolCallArguments: Map<String, JsonElement> = emptyMap(),
     val isSafetyBlocked: Boolean = false,
     val isRateLimited: Boolean = false,
+    /**
+     * Phase 6 Batch 4 / G-4: the precise provider failure classification, carried through from the
+     * seam so the degradation mapping can distinguish auth / rate-limit / model-unavailable /
+     * request-invalid / server / network failures instead of collapsing them all into
+     * HTTP_OR_PROVIDER_ERROR (which the UI rendered as a single misleading "OFFLINE" badge).
+     */
+    val providerFailureCategory: CloudProviderFailureCategory = CloudProviderFailureCategory.UNKNOWN,
     val responseType: CloudLlmResponseType = when {
         isSafetyBlocked -> CloudLlmResponseType.SAFETY_BLOCK
         isRateLimited -> CloudLlmResponseType.PROVIDER_ERROR
@@ -83,6 +90,7 @@ data class CloudLlmRawResponse(
             is CloudLlmClientResponse.ProviderError -> CloudLlmRawResponse(
                 isRateLimited = response.isRateLimited,
                 errorMessage = response.message,
+                providerFailureCategory = response.category,
                 responseType = CloudLlmResponseType.PROVIDER_ERROR
             )
             is CloudLlmClientResponse.MalformedResponse -> CloudLlmRawResponse(
@@ -628,7 +636,29 @@ class CloudLlmConversationEngine(
                 return buildDegradedResult(input, decisionIdProvider(), CloudDegradationReason.NETWORK_TIMEOUT, resolved.updatedTaskState)
             }
             CloudLlmResponseType.PROVIDER_ERROR -> {
-                val reason = if (rawResponse.isRateLimited) CloudDegradationReason.RATE_LIMITED else CloudDegradationReason.HTTP_OR_PROVIDER_ERROR
+                // Phase 6 Batch 4 / G-4: map the precise provider failure onto the EXISTING
+                // CloudDegradationReason vocabulary (no parallel error system). Ordering matters:
+                // grounding rejection never reaches here, and safety blocks are handled above.
+                val reason = when (rawResponse.providerFailureCategory) {
+                    CloudProviderFailureCategory.AUTHENTICATION_FAILURE -> CloudDegradationReason.AUTHENTICATION_FAILURE
+                    CloudProviderFailureCategory.RATE_LIMITED -> CloudDegradationReason.RATE_LIMITED
+                    // An unavailable model is a configuration problem (wrong model id / no access
+                    // to it), not a transient network fault.
+                    CloudProviderFailureCategory.MODEL_UNAVAILABLE -> CloudDegradationReason.CONFIGURATION_FAILURE
+                    // HTTP 400 means OUR request was rejected (schema/protocol violation) — a
+                    // configuration/protocol defect, distinct from a network failure.
+                    CloudProviderFailureCategory.REQUEST_INVALID -> CloudDegradationReason.CONFIGURATION_FAILURE
+                    CloudProviderFailureCategory.NETWORK_ERROR -> CloudDegradationReason.HTTP_OR_PROVIDER_ERROR
+                    CloudProviderFailureCategory.SERVER_ERROR -> CloudDegradationReason.HTTP_OR_PROVIDER_ERROR
+                    CloudProviderFailureCategory.UNKNOWN ->
+                        if (rawResponse.isRateLimited) CloudDegradationReason.RATE_LIMITED
+                        else CloudDegradationReason.HTTP_OR_PROVIDER_ERROR
+                }
+                AiLogger.e(
+                    "VoltAtlas_AI",
+                    "AI_RUNTIME: provider failure category=${rawResponse.providerFailureCategory} " +
+                        "-> degradation=$reason"
+                )
                 return buildDegradedResult(input, decisionIdProvider(), reason, resolved.updatedTaskState)
             }
             CloudLlmResponseType.MALFORMED_RESPONSE -> {
