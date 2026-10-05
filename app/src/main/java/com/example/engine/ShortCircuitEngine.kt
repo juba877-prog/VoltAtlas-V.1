@@ -22,7 +22,24 @@ data class ShortCircuitResult(
     val ipKA: Double = 0.0,
     val zTotalMOhm: Double = 0.0,
     val rMOhm: Double = 0.0,
-    val xMOhm: Double = 0.0
+    val xMOhm: Double = 0.0,
+    /**
+     * EE-02 — owner decision D2, split fault-location architecture.
+     *
+     * Two physically distinct fault points exist for every feeder:
+     *
+     *  * [iscKA] / [ipKA] / [zTotalMOhm] / [rMOhm] / [xMOhm] describe the **NEAR-END**
+     *    fault at this circuit's ORIGIN — the location where its protective device is
+     *    installed (the outgoing way of the parent board, or the source terminals for a
+     *    root feeder). This circuit's own feeder is DOWNSTREAM of that device and must
+     *    NOT attenuate it. This is the basis used for Icu, Icm/ip and Iw.
+     *  * [iscFarKA] describes the **FAR-END** fault at this circuit's board, i.e. at the
+     *    downstream end of its own feeder, where the feeder impedance DOES participate.
+     *    It is the basis reserved for downstream-fault, minimum-fault and ADS work.
+     *
+     * Defaults to 0.0 so every existing construction site stays source-compatible.
+     */
+    val iscFarKA: Double = 0.0
 )
 
 object ShortCircuitEngine {
@@ -132,6 +149,15 @@ object ShortCircuitEngine {
             }
 
             // Walk the chain from this circuit up to transformer
+            //
+            // EE-02 (D2, split fault-location) — the SAME walk feeds two fault points:
+            //   * rTotalOhm/xTotalOhm = NEAR-END fault at this circuit's ORIGIN, where its
+            //     protective device sits. Source + upstream boards only.
+            //   * rFarOhm/xFarOhm     = FAR-END fault at this circuit's board, i.e. at the
+            //     downstream end of its own feeder. Source + upstream boards + own feeder.
+            // Both start from the resolved source impedance, which is upstream of either.
+            var rFarOhm = rTotalOhm
+            var xFarOhm = xTotalOhm
             var dataMissing = false
             var missingNote = ""
             for (nodeId in ancestorPath) {
@@ -147,8 +173,16 @@ object ShortCircuitEngine {
                     // IEC 60909-0 — maximum short-circuit: line resistance at 20 °C
                     val rSeg = r20 * step.length_m / (1000.0 * step.parallelRuns)
                     val xSeg = stepSizing.xUsed * step.length_m / (1000.0 * step.parallelRuns)
-                    rTotalOhm += rSeg
-                    xTotalOhm += xSeg
+                    // The first element of `ancestorPath` is THIS circuit (HierarchyResolver
+                    // returns [self, parent, ...]). Its feeder runs from the origin — where
+                    // the protective device is installed — down to this circuit's board, so
+                    // it is DOWNSTREAM of that device: it belongs to the far-end fault only.
+                    if (step.id != circuit.id) {
+                        rTotalOhm += rSeg
+                        xTotalOhm += xSeg
+                    }
+                    rFarOhm += rSeg
+                    xFarOhm += xSeg
                 }
             }
             if (dataMissing) {
@@ -158,6 +192,10 @@ object ShortCircuitEngine {
 
             val zTotalOhm = sqrt(rTotalOhm.pow(2) + xTotalOhm.pow(2))
             val iscKA = if (zTotalOhm > 0.0) ((c * un) / (sqrt(3.0) * zTotalOhm)) / 1000.0 else 0.0
+
+            // EE-02 — far-end prospective fault current (downstream end of this feeder).
+            val zFarOhm = sqrt(rFarOhm.pow(2) + xFarOhm.pow(2))
+            val iscFarNetworkKA = if (zFarOhm > 0.0) ((c * un) / (sqrt(3.0) * zFarOhm)) / 1000.0 else 0.0
 
             if (iscKA <= 0.0 || iscKA.isNaN()) {
                 results[circuit.id] = buildMissingResult(circuit, "DATA MISSING", "Isc calculated as zero or NaN")
@@ -171,12 +209,16 @@ object ShortCircuitEngine {
             // superimposed on the network I″k. Gated behind a toggle because motor data is
             // usually assumed; active use is flagged in the result note.
             var iscTotalKA = iscKA
+            var iscFarTotalKA = iscFarNetworkKA
             if (motorContributionEnabled && motorGroupKVA > 0.0) {
                 val iRM_A = motorGroupKVA * 1000.0 / (sqrt(3.0) * un)
                 val zMOhm = (1.0 / motorLoadRatioILR_IR) * (un / (sqrt(3.0) * iRM_A))
                 if (zMOhm > 0.0) {
                     val motorIscKA = (c * un / (sqrt(3.0) * zMOhm)) / 1000.0
                     iscTotalKA = iscKA + motorIscKA
+                    // The motor group is a source behind BOTH fault points: the contribution
+                    // superimposes on the near-end and the far-end prospective current alike.
+                    iscFarTotalKA = iscFarNetworkKA + motorIscKA
                     sourceWarnings.add(
                         "Motor-group contribution ENABLED: +%.2f kA (motor group %.0f kVA, I_LR/I_rM = %.1f) — verify motor data (IEC 60909 §6.10)"
                             .format(motorIscKA, motorGroupKVA, motorLoadRatioILR_IR)
@@ -184,6 +226,9 @@ object ShortCircuitEngine {
                 }
             }
 
+            // EE-02 — every verdict below is taken at the NEAR-END fault point, the physical
+            // location of this circuit's protective device. kappa, Isc, ip, Icu and Iw all
+            // use the same point; the far-end value is carried separately in iscFarKA.
             val ipKA = sqrt(2.0) * kappa * iscTotalKA
 
             // Cable thermal withstand: Iw = (kFactor * S) / sqrt(clearingTime_s) / 1000
@@ -245,6 +290,7 @@ object ShortCircuitEngine {
                 circuitId = circuit.id,
                 sourceName = sourceId,
                 cableMm2 = rawCableStr,
+                // EE-02 — near-end (origin) fault: the point every verdict above was taken at.
                 iscKA = round(iscTotalKA * 100) / 100.0,
                 iwKA = round(iwKA * 100) / 100.0,
                 deviceKA = sizing.deviceBreakingKA,
@@ -256,7 +302,9 @@ object ShortCircuitEngine {
                 ipKA = round(ipKA * 100) / 100.0,
                 zTotalMOhm = round(zTotalOhm * 1000.0 * 100) / 100.0,
                 rMOhm = round(rTotalOhm * 1000.0 * 100) / 100.0,
-                xMOhm = round(xTotalOhm * 1000.0 * 100) / 100.0
+                xMOhm = round(xTotalOhm * 1000.0 * 100) / 100.0,
+                // EE-02 — far-end fault (feeder impedance participates).
+                iscFarKA = round(iscFarTotalKA * 100) / 100.0
             )
         }
         return results

@@ -571,7 +571,22 @@ class ShortCircuitEngineTest {
         )
         val res = scResults[701]
         assertNotNull(res)
-        assertEquals("Maximum short-circuit current must use 20 °C resistance (10.58 kA)", 10.58, res!!.iscKA, 0.02)
+        // EE-02 re-point (D2 split fault-location): this hand calculation sums the
+        // transformer AND the 100 m feeder, so it is the FAR-END fault at the far end of the
+        // feeder — and that is the quantity that now lives in `iscFarKA`. The number
+        // (10.58), the tolerance (0.02) and the R20 intent of this assertion are unchanged;
+        // nothing is weakened. The NEAR-END value is asserted next, as an addition.
+        assertEquals(
+            "Maximum short-circuit current must use 20 °C resistance (10.58 kA)",
+            10.58, res!!.iscFarKA, 0.02
+        )
+        // At the ORIGIN of this feeder the loop is the transformer alone — the feeder is
+        // downstream of its own breaker — so Isc there equals the transformer terminal fault
+        // the fixture itself declares. This is the value every Icu / Icm / Iw verdict uses.
+        assertEquals(
+            "Near-end fault at the feeder origin must equal the transformer terminal fault (23.87 kA)",
+            txResult.isc3Phase, res.iscKA, 0.02
+        )
     }
 
     @Test
