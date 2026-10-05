@@ -135,6 +135,56 @@ android {
   testOptions { unitTests { isIncludeAndroidResources = true; isReturnDefaultValues = true } }
 }
 
+// =============================================================================
+// KT-02: ROOM SCHEMA EXPORT LOCATION
+// =============================================================================
+// `AppDatabase` declares `exportSchema = true`, so the Room KSP processor writes one JSON per
+// schema version into this directory. Those files are the authoritative record of the shipped
+// SQLite schema and MUST be committed to Git: `MigrationTestHelper` loads them to create a
+// database at a historical version and to validate a migrated database against the expected
+// schema.
+//
+// The location is `$projectDir/schemas`, i.e. `app/schemas/<database class>/<version>.json`.
+// It is a source-controlled path, NOT a build directory, so it survives `clean` and is never
+// deleted by a build task.
+ksp {
+  arg("room.schemaLocation", "$projectDir/schemas")
+  // Enables Room's stricter "generated schema drift" diagnostics.
+  arg("room.incremental", "true")
+}
+
+// KT-02: expose the committed schema history to `MigrationTestHelper`.
+//
+// `MigrationTestHelper` loads `<database canonical name>/<version>.json` from the *assets* of the
+// APK under test. Because the KSP output directory is `$projectDir/schemas`, adding it as an asset
+// source reproduces exactly the layout Room expects:
+//
+//     app/schemas/com.example.data.AppDatabase/26.json
+//       -> asset  com.example.data.AppDatabase/26.json
+//
+// Three source sets need it, for two different reasons:
+//
+//  * `androidTest` — the canonical instrumented location.
+//  * `debug`      — Robolectric JVM unit tests do NOT read the `test` source set. AGP points
+//                   Robolectric at the *variant's* merged assets
+//                   (`build/intermediates/assets/<variant>/merge<Variant>Assets`, declared by the
+//                   generated `com.android.tools.test_config.properties` as
+//                   `android_merged_assets`), and those are assembled from the variant source set,
+//                   which is `debug`. Without `debug` here the JVM migration tests cannot load any
+//                   schema JSON. `debug` only: a debug APK is never distributed.
+//  * `test`       — declared for completeness/IDE resolution.
+//
+// The `main`/`release` variants are deliberately NOT given the schema directory: shipping the full
+// schema history inside the production APK adds weight and publishes the internal table layout for
+// no benefit.
+android {
+  sourceSets {
+    getByName("debug") { assets.srcDir("$projectDir/schemas") }
+    getByName("test") { assets.srcDir("$projectDir/schemas") }
+    getByName("androidTest") { assets.srcDir("$projectDir/schemas") }
+  }
+}
+
 /**
  * Phase 6 R-2: reproducible release identity verification.
  *
@@ -292,7 +342,28 @@ dependencies {
   // Immutable Collections & Baseline Profile Installer for Compose Stability
   implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.3.7")
   implementation("androidx.profileinstaller:profileinstaller:1.4.1")
-  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+  // ECT-KT-02-DEP: aligned with androidx.room 2.8.5.
+//
+// `androidx.room:room-migration:2.8.5` declares, in its jvmRuntimeElements-published variant,
+// `org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1`. It is pulled in transitively by
+// `androidx.room:room-testing`, which is what `MigrationTestHelper` uses to deserialize a schema
+// bundle (`androidx.room.migration.bundle.SchemaBundle`).
+//
+// At 1.7.3 the app *downgraded* Room's requirement, and Room's generated deserializers call
+// `GeneratedSerializer.typeParametersSerializers()` — an API added in kotlinx.serialization 1.8.0.
+// On device this surfaced as:
+//
+//   java.lang.AbstractMethodError: abstract method
+//     "kotlinx.serialization.KSerializer[]
+//      kotlinx.serialization.internal.GeneratedSerializer.typeParametersSerializers()"
+//     at androidx.room.migration.bundle.SchemaBundle$Companion.deserialize(SchemaBundle.jvm.kt:56)
+//     at androidx.room.testing.AndroidMigrationTestHelper.loadSchema(MigrationTestHelper.android.kt:408)
+//
+// 1.8.1 is the MINIMUM version that satisfies Room 2.8.5, and it is the exact version Room
+// requests — not a speculative upgrade. `dependencyInsight` confirms nothing else in the graph
+// requests any kotlinx-serialization version, so this is the only constraint in play and the whole
+// serialization graph (core, json, json-io, BOM) moves together.
+implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
 
   // Firebase Auth with Google Sign-In requires all of the following to be uncommented together.
   // If you are using Firebase Auth with other providers (e.g. Email/Password), you may only need
@@ -317,6 +388,10 @@ dependencies {
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation("org.json:json:20231013")
+  // KT-02: provides the REAL androidx.room.testing.MigrationTestHelper. It runs in the JVM unit
+  // test suite (under Robolectric) so migration DDL/DML and Room's own schema validation are
+  // actually executed, rather than asserted against a hand-written approximation.
+  testImplementation(libs.androidx.room.testing)
   testImplementation(libs.robolectric)
   testImplementation(libs.roborazzi)
   testImplementation(libs.roborazzi.compose)
@@ -326,6 +401,7 @@ dependencies {
   androidTestImplementation(libs.androidx.espresso.core)
   androidTestImplementation(libs.androidx.junit)
   androidTestImplementation(libs.androidx.runner)
+  androidTestImplementation(libs.androidx.room.testing)
   debugImplementation(libs.androidx.compose.ui.test.manifest)
   debugImplementation(libs.androidx.compose.ui.tooling)
   "ksp"(libs.androidx.room.compiler)
