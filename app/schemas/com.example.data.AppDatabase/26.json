@@ -1,0 +1,1833 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 26,
+    "identityHash": "e5b3dfbc09fd06682d3f2228c42a654e",
+    "entities": [
+      {
+        "tableName": "circuits",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `circuitName` TEXT NOT NULL, `loadKVA` REAL NOT NULL, `fedFrom` TEXT NOT NULL, `transformerId` TEXT NOT NULL, `loadType` TEXT NOT NULL, `phases` TEXT NOT NULL, `voltageV` INTEGER NOT NULL, `pf` REAL NOT NULL, `safetyFactor` REAL NOT NULL, `manufacturer` TEXT NOT NULL, `cableType` TEXT NOT NULL, `installation` TEXT NOT NULL, `parallelRuns` INTEGER NOT NULL, `airTempC` INTEGER NOT NULL, `gndTempC` INTEGER NOT NULL, `burialDepth_m` REAL NOT NULL, `soilRes` INTEGER NOT NULL, `noCircuits` INTEGER NOT NULL, `formation` TEXT NOT NULL, `spacing` TEXT NOT NULL, `length_m` REAL NOT NULL, `maxVDpct` REAL NOT NULL, `overrideDeviceType` TEXT, `overrideDeviceSize` REAL, `overrideCableSize` TEXT, `overrideNeutralSize` TEXT, `overrideEarthSize` TEXT, `isHarmonic` INTEGER NOT NULL, `assignedPhase` TEXT, `upsBacked` INTEGER NOT NULL DEFAULT 0, `projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT', `demandFactor` REAL NOT NULL DEFAULT 1.0, `diversityGroup` TEXT, `generatorIncluded` INTEGER NOT NULL DEFAULT 0, `atsIncluded` INTEGER NOT NULL DEFAULT 0, `assignedGeneratorId` TEXT, `assignedAtsId` TEXT, `assignedUpsId` TEXT, `loadNature` TEXT NOT NULL DEFAULT 'Static', `startingMethod` TEXT, `startingCurrentMultiplier` REAL, `active` INTEGER NOT NULL DEFAULT 1, `panelType` TEXT, `parentId` INTEGER, `level` INTEGER, `sourceType` TEXT, `directLoadConfirmed` INTEGER, `phaseImbalanceLimitOverridePct` REAL, `loadCategory` TEXT, `busbarRatingA` REAL, `scRatingKA` REAL, `mainIncomingType` TEXT, `mainIncomingCount` INTEGER, `ipRating` TEXT, `panelLocation` TEXT, `cableEntry` TEXT, `feederDescription` TEXT, `numberOfWays` INTEGER, `feederType` TEXT NOT NULL DEFAULT 'Cable', `buswayMfg` TEXT, `buswayModel` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "circuitName",
+            "columnName": "circuitName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "loadKVA",
+            "columnName": "loadKVA",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fedFrom",
+            "columnName": "fedFrom",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transformerId",
+            "columnName": "transformerId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "loadType",
+            "columnName": "loadType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "phases",
+            "columnName": "phases",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "voltageV",
+            "columnName": "voltageV",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pf",
+            "columnName": "pf",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "safetyFactor",
+            "columnName": "safetyFactor",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manufacturer",
+            "columnName": "manufacturer",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cableType",
+            "columnName": "cableType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "installation",
+            "columnName": "installation",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parallelRuns",
+            "columnName": "parallelRuns",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "airTempC",
+            "columnName": "airTempC",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gndTempC",
+            "columnName": "gndTempC",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "burialDepth_m",
+            "columnName": "burialDepth_m",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "soilRes",
+            "columnName": "soilRes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "noCircuits",
+            "columnName": "noCircuits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "formation",
+            "columnName": "formation",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "spacing",
+            "columnName": "spacing",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "length_m",
+            "columnName": "length_m",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "maxVDpct",
+            "columnName": "maxVDpct",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "overrideDeviceType",
+            "columnName": "overrideDeviceType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "overrideDeviceSize",
+            "columnName": "overrideDeviceSize",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "overrideCableSize",
+            "columnName": "overrideCableSize",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "overrideNeutralSize",
+            "columnName": "overrideNeutralSize",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "overrideEarthSize",
+            "columnName": "overrideEarthSize",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "isHarmonic",
+            "columnName": "isHarmonic",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assignedPhase",
+            "columnName": "assignedPhase",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "upsBacked",
+            "columnName": "upsBacked",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'DEFAULT_PROJECT'"
+          },
+          {
+            "fieldPath": "demandFactor",
+            "columnName": "demandFactor",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "1.0"
+          },
+          {
+            "fieldPath": "diversityGroup",
+            "columnName": "diversityGroup",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "generatorIncluded",
+            "columnName": "generatorIncluded",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "atsIncluded",
+            "columnName": "atsIncluded",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "assignedGeneratorId",
+            "columnName": "assignedGeneratorId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "assignedAtsId",
+            "columnName": "assignedAtsId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "assignedUpsId",
+            "columnName": "assignedUpsId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "loadNature",
+            "columnName": "loadNature",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'Static'"
+          },
+          {
+            "fieldPath": "startingMethod",
+            "columnName": "startingMethod",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "startingCurrentMultiplier",
+            "columnName": "startingCurrentMultiplier",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "active",
+            "columnName": "active",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "panelType",
+            "columnName": "panelType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "parentId",
+            "columnName": "parentId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "level",
+            "columnName": "level",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sourceType",
+            "columnName": "sourceType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "directLoadConfirmed",
+            "columnName": "directLoadConfirmed",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "phaseImbalanceLimitOverridePct",
+            "columnName": "phaseImbalanceLimitOverridePct",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "loadCategory",
+            "columnName": "loadCategory",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "busbarRatingA",
+            "columnName": "busbarRatingA",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "scRatingKA",
+            "columnName": "scRatingKA",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "mainIncomingType",
+            "columnName": "mainIncomingType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "mainIncomingCount",
+            "columnName": "mainIncomingCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "ipRating",
+            "columnName": "ipRating",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "panelLocation",
+            "columnName": "panelLocation",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cableEntry",
+            "columnName": "cableEntry",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "feederDescription",
+            "columnName": "feederDescription",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "numberOfWays",
+            "columnName": "numberOfWays",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "feederType",
+            "columnName": "feederType",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'Cable'"
+          },
+          {
+            "fieldPath": "buswayMfg",
+            "columnName": "buswayMfg",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "buswayModel",
+            "columnName": "buswayModel",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "transformers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT', `transformerId` TEXT NOT NULL, `transformerName` TEXT NOT NULL, `kVA` REAL NOT NULL, `voltage` INTEGER NOT NULL, `percentZ` REAL NOT NULL, `xr` REAL NOT NULL, `txType` TEXT NOT NULL, `sourceType` TEXT NOT NULL, `primaryVoltageV` INTEGER, `status` TEXT NOT NULL, `sizeMode` TEXT NOT NULL, `manualKVA` REAL NOT NULL, `demandFactor` REAL NOT NULL, `diversity` REAL NOT NULL, `growth` REAL NOT NULL, `safety` REAL NOT NULL, `vectorGroup` TEXT NOT NULL DEFAULT 'Dyn11', `z0OverZ1` REAL NOT NULL DEFAULT 1.0, `pf` REAL NOT NULL DEFAULT 0.8, `gridFaultMVA` REAL, PRIMARY KEY(`projectId`, `transformerId`))",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'DEFAULT_PROJECT'"
+          },
+          {
+            "fieldPath": "transformerId",
+            "columnName": "transformerId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transformerName",
+            "columnName": "transformerName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kVA",
+            "columnName": "kVA",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "voltage",
+            "columnName": "voltage",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "percentZ",
+            "columnName": "percentZ",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "xr",
+            "columnName": "xr",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "txType",
+            "columnName": "txType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceType",
+            "columnName": "sourceType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "primaryVoltageV",
+            "columnName": "primaryVoltageV",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sizeMode",
+            "columnName": "sizeMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manualKVA",
+            "columnName": "manualKVA",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "demandFactor",
+            "columnName": "demandFactor",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "diversity",
+            "columnName": "diversity",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "growth",
+            "columnName": "growth",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "safety",
+            "columnName": "safety",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "vectorGroup",
+            "columnName": "vectorGroup",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'Dyn11'"
+          },
+          {
+            "fieldPath": "z0OverZ1",
+            "columnName": "z0OverZ1",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "1.0"
+          },
+          {
+            "fieldPath": "pf",
+            "columnName": "pf",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "0.8"
+          },
+          {
+            "fieldPath": "gridFaultMVA",
+            "columnName": "gridFaultMVA",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "projectId",
+            "transformerId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_transformers_projectId",
+            "unique": false,
+            "columnNames": [
+              "projectId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_transformers_projectId` ON `${TABLE_NAME}` (`projectId`)"
+          },
+          {
+            "name": "index_transformers_projectId_transformerId",
+            "unique": true,
+            "columnNames": [
+              "projectId",
+              "transformerId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_transformers_projectId_transformerId` ON `${TABLE_NAME}` (`projectId`, `transformerId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "generator_settings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT', `id` INTEGER NOT NULL, `generatorId` TEXT NOT NULL DEFAULT 'GEN-01', `generatorName` TEXT NOT NULL DEFAULT 'Generator 1', `additionalEssentialLoadKW` REAL NOT NULL, `largestMotorKW` REAL NOT NULL, `motorStartMethod` TEXT NOT NULL, `motorPf` REAL NOT NULL, `generatorPf` REAL NOT NULL, `demandFactor` REAL NOT NULL, `diversityFactor` REAL NOT NULL, `stepLoadPct` REAL NOT NULL, `oversizingFactor` REAL NOT NULL, `enableManualOverride` INTEGER NOT NULL, `manualSizeKVA` REAL, `parallelingGroupId` TEXT DEFAULT NULL, `syncBusId` TEXT DEFAULT NULL, PRIMARY KEY(`projectId`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'DEFAULT_PROJECT'"
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generatorId",
+            "columnName": "generatorId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'GEN-01'"
+          },
+          {
+            "fieldPath": "generatorName",
+            "columnName": "generatorName",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'Generator 1'"
+          },
+          {
+            "fieldPath": "additionalEssentialLoadKW",
+            "columnName": "additionalEssentialLoadKW",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "largestMotorKW",
+            "columnName": "largestMotorKW",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "motorStartMethod",
+            "columnName": "motorStartMethod",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "motorPf",
+            "columnName": "motorPf",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generatorPf",
+            "columnName": "generatorPf",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "demandFactor",
+            "columnName": "demandFactor",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "diversityFactor",
+            "columnName": "diversityFactor",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stepLoadPct",
+            "columnName": "stepLoadPct",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "oversizingFactor",
+            "columnName": "oversizingFactor",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enableManualOverride",
+            "columnName": "enableManualOverride",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manualSizeKVA",
+            "columnName": "manualSizeKVA",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "parallelingGroupId",
+            "columnName": "parallelingGroupId",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "syncBusId",
+            "columnName": "syncBusId",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "projectId",
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "ats_settings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT', `id` INTEGER NOT NULL, `atsId` TEXT NOT NULL DEFAULT 'ATS-01', `atsName` TEXT NOT NULL DEFAULT 'ATS 1', `systemVoltage` INTEGER NOT NULL, `systemFrequency` INTEGER NOT NULL, `numberOfSources` INTEGER NOT NULL, `atsLocation` TEXT NOT NULL, `transferType` TEXT NOT NULL, `utilizationCategory` TEXT NOT NULL, `atsClass` TEXT NOT NULL, `loadCoverage` TEXT NOT NULL, `ambientTemp` INTEGER NOT NULL, `designSafetyFactor` REAL NOT NULL, `futureGrowthFactor` REAL NOT NULL, `approvedManufacturer` TEXT NOT NULL, `mainsFailureDetectionDelay` INTEGER NOT NULL, `generatorStartSignalDelay` INTEGER NOT NULL, `generatorWarmUp` INTEGER NOT NULL, `mainsReturnDetectionDelay` INTEGER NOT NULL, `reTransferDelay` INTEGER NOT NULL, `generatorCooldown` INTEGER NOT NULL, `enclosureIpRating` TEXT NOT NULL, `normalSourceId` TEXT, `emergencySourceId` TEXT, `outputBoardId` INTEGER, `enableManualOverride` INTEGER NOT NULL DEFAULT 0, `manualSizeAmp` REAL, PRIMARY KEY(`projectId`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'DEFAULT_PROJECT'"
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atsId",
+            "columnName": "atsId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'ATS-01'"
+          },
+          {
+            "fieldPath": "atsName",
+            "columnName": "atsName",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'ATS 1'"
+          },
+          {
+            "fieldPath": "systemVoltage",
+            "columnName": "systemVoltage",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "systemFrequency",
+            "columnName": "systemFrequency",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "numberOfSources",
+            "columnName": "numberOfSources",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atsLocation",
+            "columnName": "atsLocation",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transferType",
+            "columnName": "transferType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "utilizationCategory",
+            "columnName": "utilizationCategory",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atsClass",
+            "columnName": "atsClass",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "loadCoverage",
+            "columnName": "loadCoverage",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ambientTemp",
+            "columnName": "ambientTemp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "designSafetyFactor",
+            "columnName": "designSafetyFactor",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "futureGrowthFactor",
+            "columnName": "futureGrowthFactor",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "approvedManufacturer",
+            "columnName": "approvedManufacturer",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mainsFailureDetectionDelay",
+            "columnName": "mainsFailureDetectionDelay",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generatorStartSignalDelay",
+            "columnName": "generatorStartSignalDelay",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generatorWarmUp",
+            "columnName": "generatorWarmUp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mainsReturnDetectionDelay",
+            "columnName": "mainsReturnDetectionDelay",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reTransferDelay",
+            "columnName": "reTransferDelay",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generatorCooldown",
+            "columnName": "generatorCooldown",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enclosureIpRating",
+            "columnName": "enclosureIpRating",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "normalSourceId",
+            "columnName": "normalSourceId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "emergencySourceId",
+            "columnName": "emergencySourceId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "outputBoardId",
+            "columnName": "outputBoardId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "enableManualOverride",
+            "columnName": "enableManualOverride",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "manualSizeAmp",
+            "columnName": "manualSizeAmp",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "projectId",
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "ups_settings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT', `id` INTEGER NOT NULL, `upsId` TEXT NOT NULL DEFAULT 'UPS-01', `upsName` TEXT NOT NULL DEFAULT 'UPS 1', `systemVoltage` INTEGER NOT NULL, `systemFrequency` INTEGER NOT NULL, `upsPf` REAL NOT NULL, `upsEfficiency` REAL NOT NULL, `batteryType` TEXT NOT NULL, `autonomyMinutes` INTEGER NOT NULL, `batteryEodVoltage` REAL NOT NULL, `ambientTemp` INTEGER NOT NULL, `tempDeratingFactor` REAL NOT NULL, `agingFactor` REAL NOT NULL, `designMarginPct` REAL NOT NULL, `enableManualOverride` INTEGER NOT NULL DEFAULT 0, `manualSizeKVA` REAL, PRIMARY KEY(`projectId`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'DEFAULT_PROJECT'"
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "upsId",
+            "columnName": "upsId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'UPS-01'"
+          },
+          {
+            "fieldPath": "upsName",
+            "columnName": "upsName",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'UPS 1'"
+          },
+          {
+            "fieldPath": "systemVoltage",
+            "columnName": "systemVoltage",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "systemFrequency",
+            "columnName": "systemFrequency",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "upsPf",
+            "columnName": "upsPf",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "upsEfficiency",
+            "columnName": "upsEfficiency",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "batteryType",
+            "columnName": "batteryType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "autonomyMinutes",
+            "columnName": "autonomyMinutes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "batteryEodVoltage",
+            "columnName": "batteryEodVoltage",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ambientTemp",
+            "columnName": "ambientTemp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tempDeratingFactor",
+            "columnName": "tempDeratingFactor",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "agingFactor",
+            "columnName": "agingFactor",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "designMarginPct",
+            "columnName": "designMarginPct",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enableManualOverride",
+            "columnName": "enableManualOverride",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "manualSizeKVA",
+            "columnName": "manualSizeKVA",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "projectId",
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "pf_global_settings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT', `id` INTEGER NOT NULL, `targetPf` REAL NOT NULL, `kvarStepSize` REAL NOT NULL, `systemVoltage` INTEGER NOT NULL, `annualOperatingHours` INTEGER NOT NULL, `energyCost` REAL NOT NULL, `lossReductionPct` REAL NOT NULL, `unityToleranceKvar` REAL NOT NULL, PRIMARY KEY(`projectId`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'DEFAULT_PROJECT'"
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetPf",
+            "columnName": "targetPf",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kvarStepSize",
+            "columnName": "kvarStepSize",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "systemVoltage",
+            "columnName": "systemVoltage",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "annualOperatingHours",
+            "columnName": "annualOperatingHours",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "energyCost",
+            "columnName": "energyCost",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lossReductionPct",
+            "columnName": "lossReductionPct",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unityToleranceKvar",
+            "columnName": "unityToleranceKvar",
+            "affinity": "REAL",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "projectId",
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "pf_transformer_settings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT', `transformerId` TEXT NOT NULL, `harmonicFilter` TEXT NOT NULL, `detuningReactor` TEXT NOT NULL, PRIMARY KEY(`projectId`, `transformerId`))",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'DEFAULT_PROJECT'"
+          },
+          {
+            "fieldPath": "transformerId",
+            "columnName": "transformerId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "harmonicFilter",
+            "columnName": "harmonicFilter",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detuningReactor",
+            "columnName": "detuningReactor",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "projectId",
+            "transformerId"
+          ]
+        }
+      },
+      {
+        "tableName": "projects",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`projectId` TEXT NOT NULL, `projectName` TEXT NOT NULL, `projectCode` TEXT, `clientName` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `defaultPhaseImbalanceLimitPct` REAL NOT NULL DEFAULT 20.0, `revision` INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(`projectId`))",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "projectName",
+            "columnName": "projectName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "projectCode",
+            "columnName": "projectCode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "clientName",
+            "columnName": "clientName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "defaultPhaseImbalanceLimitPct",
+            "columnName": "defaultPhaseImbalanceLimitPct",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "20.0"
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "projectId"
+          ]
+        }
+      },
+      {
+        "tableName": "app_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `activeProjectId` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activeProjectId",
+            "columnName": "activeProjectId",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "conduit_settings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT', `circuitId` INTEGER NOT NULL, `routingMode` TEXT NOT NULL DEFAULT 'ONE_PER_CONDUIT', `designProfile` TEXT NOT NULL DEFAULT 'PROJECT_DESIGN', `customFillLimitPct` REAL NOT NULL DEFAULT 40.0, `isDirectBuried` INTEGER NOT NULL DEFAULT 0, `cpcArrangement` TEXT NOT NULL DEFAULT 'INTERNAL_CORE', `manualConduitOverride` TEXT, `manualCpcOD` REAL, PRIMARY KEY(`projectId`, `circuitId`))",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'DEFAULT_PROJECT'"
+          },
+          {
+            "fieldPath": "circuitId",
+            "columnName": "circuitId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "routingMode",
+            "columnName": "routingMode",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'ONE_PER_CONDUIT'"
+          },
+          {
+            "fieldPath": "designProfile",
+            "columnName": "designProfile",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'PROJECT_DESIGN'"
+          },
+          {
+            "fieldPath": "customFillLimitPct",
+            "columnName": "customFillLimitPct",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "40.0"
+          },
+          {
+            "fieldPath": "isDirectBuried",
+            "columnName": "isDirectBuried",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "cpcArrangement",
+            "columnName": "cpcArrangement",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'INTERNAL_CORE'"
+          },
+          {
+            "fieldPath": "manualConduitOverride",
+            "columnName": "manualConduitOverride",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "manualCpcOD",
+            "columnName": "manualCpcOD",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "projectId",
+            "circuitId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_conduit_settings_projectId",
+            "unique": false,
+            "columnNames": [
+              "projectId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_conduit_settings_projectId` ON `${TABLE_NAME}` (`projectId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "earthing_settings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT', `id` INTEGER NOT NULL, `soilResistivity_ohmM` REAL NOT NULL, `rodLength_m` REAL NOT NULL, `rodDiameter_mm` REAL NOT NULL, `rodSpacing_m` REAL NOT NULL, `ringConductor_mm2` REAL NOT NULL, `ringBurialDepth_m` REAL NOT NULL, `kFactor` REAL NOT NULL, `projectType` TEXT NOT NULL, `disconnectionTime_s` REAL NOT NULL, `targetResistanceOverride_ohm` REAL, `soilResistivitySource` TEXT NOT NULL, `designMarginPct` REAL NOT NULL, `isAutoDesignEnabled` INTEGER NOT NULL, `siteLength_m` REAL, `siteWidth_m` REAL, `autoDesignAppliedConfigId` TEXT, PRIMARY KEY(`projectId`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'DEFAULT_PROJECT'"
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "soilResistivity_ohmM",
+            "columnName": "soilResistivity_ohmM",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rodLength_m",
+            "columnName": "rodLength_m",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rodDiameter_mm",
+            "columnName": "rodDiameter_mm",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rodSpacing_m",
+            "columnName": "rodSpacing_m",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ringConductor_mm2",
+            "columnName": "ringConductor_mm2",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ringBurialDepth_m",
+            "columnName": "ringBurialDepth_m",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kFactor",
+            "columnName": "kFactor",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "projectType",
+            "columnName": "projectType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "disconnectionTime_s",
+            "columnName": "disconnectionTime_s",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetResistanceOverride_ohm",
+            "columnName": "targetResistanceOverride_ohm",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "soilResistivitySource",
+            "columnName": "soilResistivitySource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "designMarginPct",
+            "columnName": "designMarginPct",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isAutoDesignEnabled",
+            "columnName": "isAutoDesignEnabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "siteLength_m",
+            "columnName": "siteLength_m",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "siteWidth_m",
+            "columnName": "siteWidth_m",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "autoDesignAppliedConfigId",
+            "columnName": "autoDesignAppliedConfigId",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "projectId",
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "sld_node_positions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT', `nodeId` TEXT NOT NULL, `x` REAL NOT NULL, `y` REAL NOT NULL, `portOverrides` TEXT DEFAULT NULL, PRIMARY KEY(`projectId`, `nodeId`))",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'DEFAULT_PROJECT'"
+          },
+          {
+            "fieldPath": "nodeId",
+            "columnName": "nodeId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "x",
+            "columnName": "x",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "y",
+            "columnName": "y",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "portOverrides",
+            "columnName": "portOverrides",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "projectId",
+            "nodeId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sld_node_positions_projectId",
+            "unique": false,
+            "columnNames": [
+              "projectId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sld_node_positions_projectId` ON `${TABLE_NAME}` (`projectId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "approval_grants",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`approvalId` TEXT NOT NULL, `proposalId` TEXT NOT NULL, `proposalDigest` TEXT NOT NULL, `proposalSemanticKey` TEXT NOT NULL, `activeProposalSemanticKey` TEXT, `projectId` TEXT NOT NULL, `targetEntityType` TEXT NOT NULL, `targetEntityId` TEXT NOT NULL, `baseProjectRevision` INTEGER NOT NULL, `status` TEXT NOT NULL, `issuerType` TEXT NOT NULL, `approvedBy` TEXT NOT NULL, `userActionId` TEXT NOT NULL, `issuedAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL, `consumedAt` INTEGER, `consumedByExecutionId` TEXT, PRIMARY KEY(`approvalId`), FOREIGN KEY(`projectId`) REFERENCES `projects`(`projectId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "approvalId",
+            "columnName": "approvalId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "proposalId",
+            "columnName": "proposalId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "proposalDigest",
+            "columnName": "proposalDigest",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "proposalSemanticKey",
+            "columnName": "proposalSemanticKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activeProposalSemanticKey",
+            "columnName": "activeProposalSemanticKey",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetEntityType",
+            "columnName": "targetEntityType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetEntityId",
+            "columnName": "targetEntityId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "baseProjectRevision",
+            "columnName": "baseProjectRevision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "issuerType",
+            "columnName": "issuerType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "approvedBy",
+            "columnName": "approvedBy",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userActionId",
+            "columnName": "userActionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "issuedAt",
+            "columnName": "issuedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expiresAt",
+            "columnName": "expiresAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "consumedAt",
+            "columnName": "consumedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "consumedByExecutionId",
+            "columnName": "consumedByExecutionId",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "approvalId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_approval_grants_approvalId",
+            "unique": true,
+            "columnNames": [
+              "approvalId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_approval_grants_approvalId` ON `${TABLE_NAME}` (`approvalId`)"
+          },
+          {
+            "name": "index_approval_grants_projectId",
+            "unique": false,
+            "columnNames": [
+              "projectId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_approval_grants_projectId` ON `${TABLE_NAME}` (`projectId`)"
+          },
+          {
+            "name": "index_approval_grants_proposalDigest",
+            "unique": false,
+            "columnNames": [
+              "proposalDigest"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_approval_grants_proposalDigest` ON `${TABLE_NAME}` (`proposalDigest`)"
+          },
+          {
+            "name": "index_approval_grants_proposalSemanticKey",
+            "unique": false,
+            "columnNames": [
+              "proposalSemanticKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_approval_grants_proposalSemanticKey` ON `${TABLE_NAME}` (`proposalSemanticKey`)"
+          },
+          {
+            "name": "index_approval_grants_activeProposalSemanticKey",
+            "unique": true,
+            "columnNames": [
+              "activeProposalSemanticKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_approval_grants_activeProposalSemanticKey` ON `${TABLE_NAME}` (`activeProposalSemanticKey`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "projects",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "projectId"
+            ],
+            "referencedColumns": [
+              "projectId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "mutation_execution_receipts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`executionId` TEXT NOT NULL, `approvalId` TEXT NOT NULL, `proposalId` TEXT NOT NULL, `proposalDigest` TEXT NOT NULL, `proposalSemanticKey` TEXT NOT NULL, `projectId` TEXT NOT NULL, `targetEntityType` TEXT NOT NULL, `targetEntityId` TEXT NOT NULL, `revisionBefore` INTEGER NOT NULL, `revisionAfter` INTEGER NOT NULL, `revalidationStatus` TEXT NOT NULL, `appliedChangesJson` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `committedAt` INTEGER NOT NULL, `attemptCount` INTEGER NOT NULL, `lastAttemptAt` INTEGER, `workflowCompletedAt` INTEGER, `errorCode` TEXT, `messageKey` TEXT, `isRecoverable` INTEGER NOT NULL, `diagnosticRef` TEXT, PRIMARY KEY(`executionId`), FOREIGN KEY(`approvalId`) REFERENCES `approval_grants`(`approvalId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "executionId",
+            "columnName": "executionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "approvalId",
+            "columnName": "approvalId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "proposalId",
+            "columnName": "proposalId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "proposalDigest",
+            "columnName": "proposalDigest",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "proposalSemanticKey",
+            "columnName": "proposalSemanticKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetEntityType",
+            "columnName": "targetEntityType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetEntityId",
+            "columnName": "targetEntityId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revisionBefore",
+            "columnName": "revisionBefore",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revisionAfter",
+            "columnName": "revisionAfter",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revalidationStatus",
+            "columnName": "revalidationStatus",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appliedChangesJson",
+            "columnName": "appliedChangesJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "committedAt",
+            "columnName": "committedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attemptCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastAttemptAt",
+            "columnName": "lastAttemptAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "workflowCompletedAt",
+            "columnName": "workflowCompletedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "errorCode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "messageKey",
+            "columnName": "messageKey",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "isRecoverable",
+            "columnName": "isRecoverable",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "diagnosticRef",
+            "columnName": "diagnosticRef",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "executionId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_mutation_execution_receipts_executionId",
+            "unique": true,
+            "columnNames": [
+              "executionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_mutation_execution_receipts_executionId` ON `${TABLE_NAME}` (`executionId`)"
+          },
+          {
+            "name": "index_mutation_execution_receipts_approvalId",
+            "unique": true,
+            "columnNames": [
+              "approvalId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_mutation_execution_receipts_approvalId` ON `${TABLE_NAME}` (`approvalId`)"
+          },
+          {
+            "name": "index_mutation_execution_receipts_projectId",
+            "unique": false,
+            "columnNames": [
+              "projectId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_mutation_execution_receipts_projectId` ON `${TABLE_NAME}` (`projectId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "approval_grants",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "approvalId"
+            ],
+            "referencedColumns": [
+              "approvalId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "bus_ties",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`projectId` TEXT NOT NULL DEFAULT 'DEFAULT_PROJECT', `id` INTEGER NOT NULL, `busTieId` TEXT NOT NULL DEFAULT 'TIE-01', `name` TEXT NOT NULL, `sourceBoardId` INTEGER, `targetBoardId` INTEGER, `interlockScheme` TEXT NOT NULL DEFAULT 'TWO_OUT_OF_THREE', `normalStatus` TEXT NOT NULL DEFAULT 'OPEN', `breakerRatingA` REAL, PRIMARY KEY(`projectId`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "projectId",
+            "columnName": "projectId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'DEFAULT_PROJECT'"
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "busTieId",
+            "columnName": "busTieId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'TIE-01'"
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceBoardId",
+            "columnName": "sourceBoardId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "targetBoardId",
+            "columnName": "targetBoardId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "interlockScheme",
+            "columnName": "interlockScheme",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'TWO_OUT_OF_THREE'"
+          },
+          {
+            "fieldPath": "normalStatus",
+            "columnName": "normalStatus",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'OPEN'"
+          },
+          {
+            "fieldPath": "breakerRatingA",
+            "columnName": "breakerRatingA",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "projectId",
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_bus_ties_source",
+            "unique": false,
+            "columnNames": [
+              "projectId",
+              "sourceBoardId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_bus_ties_source` ON `${TABLE_NAME}` (`projectId`, `sourceBoardId`)"
+          },
+          {
+            "name": "index_bus_ties_target",
+            "unique": false,
+            "columnNames": [
+              "projectId",
+              "targetBoardId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_bus_ties_target` ON `${TABLE_NAME}` (`projectId`, `targetBoardId`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e5b3dfbc09fd06682d3f2228c42a654e')"
+    ]
+  }
+}
