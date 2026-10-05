@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.CircuitEntity
 import com.example.engine.CableFailureCode
+import com.example.engine.ProtectionResult
 import com.example.engine.ShortCircuitResult
 import com.example.engine.SizingResult
 import com.example.engine.SizingResultStatus
@@ -33,6 +34,27 @@ class CircuitsGridScreenC2Test {
     val composeTestRule = createComposeRule()
 
     private lateinit var viewModel: EngineeringViewModel
+
+    /**
+     * ECT-EE-06 (D5): a circuit is only `PASS` when sizing passes **and** the
+     * authoritative `ProtectionResult` passes. Values are internally consistent
+     * (Ib <= In <= Iz, Icu >= Isc) — they describe a healthy circuit.
+     */
+    private fun passingProtection(circuitId: Int, circuitName: String = "Circuit-$circuitId") =
+        ProtectionResult(
+            circuitId = circuitId,
+            circuitName = circuitName,
+            Ib_A = 10.0,
+            In_A = 16.0,
+            Iz_A = 32.0,
+            iscKA = 3.0,
+            icuKA = 10.0,
+            overloadStatus = "PASS",
+            shortCircuitStatus = "PASS",
+            cableWithstandStatus = "PASS",
+            selectivityStatus = "PASS",
+            finalStatus = "PASS"
+        )
 
     private fun createCircuit(
         id: Int,
@@ -96,12 +118,14 @@ class CircuitsGridScreenC2Test {
     private fun createSuccessState(
         circuits: List<CircuitEntity>,
         sizingResults: Map<Int, SizingResult> = emptyMap(),
-        shortCircuitResults: Map<Int, ShortCircuitResult> = emptyMap()
+        shortCircuitResults: Map<Int, ShortCircuitResult> = emptyMap(),
+        protectionResults: Map<Int, ProtectionResult> = emptyMap()
     ) = UiState.Success(
         circuits = circuits,
         transformers = emptyList(),
         sizingResults = sizingResults,
         shortCircuitResults = shortCircuitResults,
+        protectionResults = protectionResults,
         transformerResults = emptyMap(),
         boq = emptyList(),
         drums = emptyList(),
@@ -132,8 +156,17 @@ class CircuitsGridScreenC2Test {
             3 to createSizing(SizingResultStatus.WARNING, vdPct = 2.8)
         )
 
+        // ECT-EE-06 (D5): an executed protection verdict accompanies each sized
+        // circuit, so circuit 1 (sizing PASS) is counted as PASS rather than
+        // resolving to INCOMPLETE.
+        val protections = mapOf(
+            1 to passingProtection(1, "MDB-Main"),
+            2 to passingProtection(2, "DB-Floor1"),
+            3 to passingProtection(3, "Lighting-1")
+        )
+
         // Pre-filter whole-project summary (WARNING maps to Standby)
-        val baselineSummary = CircuitUiModelMapper.mapToSummaryUiModel(allCircuits, sizings)
+        val baselineSummary = CircuitUiModelMapper.mapToSummaryUiModel(allCircuits, sizings, protections)
         assertEquals(3, baselineSummary.totalCount)
         assertEquals(1, baselineSummary.passCount)
         assertEquals(1, baselineSummary.failCount)
@@ -141,13 +174,39 @@ class CircuitsGridScreenC2Test {
         assertEquals("4.50%", baselineSummary.maxVdDisplay)
 
         // Filter cards by search query "Floor1" (matches only c2)
-        val cards = allCircuits.map { CircuitUiModelMapper.mapToCardUiModel(it, sizings[it.id], null, allCircuits, false) }
+        val cards = allCircuits.map {
+            CircuitUiModelMapper.mapToCardUiModel(it, sizings[it.id], null, allCircuits, false, protections[it.id])
+        }
         val filtered = CircuitUiModelMapper.filterCircuits(cards, "Floor1", CircuitLevelFilter.ALL, CircuitStatusFilter.ALL) { false }
         assertEquals(1, filtered.size)
 
         // Summary must STILL be computed from whole project
-        val postFilterSummary = CircuitUiModelMapper.mapToSummaryUiModel(allCircuits, sizings)
+        val postFilterSummary = CircuitUiModelMapper.mapToSummaryUiModel(allCircuits, sizings, protections)
         assertEquals(baselineSummary, postFilterSummary)
+    }
+
+    /**
+     * ECT-EE-06 (D5): the same three circuits with **no** protection results may not
+     * contribute a PASS — sizing alone can no longer decide the verdict.
+     */
+    @Test
+    fun test1b_summaryWithoutProtectionCountsNoPass() {
+        val allCircuits = listOf(
+            createCircuit(id = 1, name = "MDB-Main"),
+            createCircuit(id = 2, name = "DB-Floor1"),
+            createCircuit(id = 3, name = "Lighting-1")
+        )
+        val sizings = mapOf(
+            1 to createSizing(SizingResultStatus.PASS, vdPct = 1.2),
+            2 to createSizing(SizingResultStatus.FAIL, vdPct = 4.5),
+            3 to createSizing(SizingResultStatus.WARNING, vdPct = 2.8)
+        )
+
+        val summary = CircuitUiModelMapper.mapToSummaryUiModel(allCircuits, sizings)
+        assertEquals(3, summary.totalCount)
+        assertEquals(0, summary.passCount)
+        assertEquals(1, summary.failCount)
+        assertEquals(2, summary.standbyCount)
     }
 
     @Test
@@ -229,7 +288,14 @@ class CircuitsGridScreenC2Test {
             // c3 is null -> STANDBY
         )
 
-        val cards = all.map { CircuitUiModelMapper.mapToCardUiModel(it, sizings[it.id], null, all, false) }
+        // ECT-EE-06 (D5): card1 carries an executed, passing ProtectionResult, so it
+        // is still selected by CircuitStatusFilter.PASS.
+        val cards = all.map {
+            CircuitUiModelMapper.mapToCardUiModel(
+                it, sizings[it.id], null, all, false,
+                if (it.id == 1) passingProtection(1) else null
+            )
+        }
 
         val passCards = CircuitUiModelMapper.filterCircuits(cards, "", CircuitLevelFilter.ALL, CircuitStatusFilter.PASS) { false }
         assertEquals(listOf(1), passCards.map { it.id })
@@ -349,7 +415,10 @@ class CircuitsGridScreenC2Test {
 
         val c1 = createCircuit(id = 1, fedFrom = "Transformer") // Main feeder with PASS result
         val sizings = mapOf(1 to createSizing(SizingResultStatus.PASS))
-        val cards = listOf(CircuitUiModelMapper.mapToCardUiModel(c1, sizings[1], null, listOf(c1), false))
+        // ECT-EE-06 (D5): sizing PASS plus an executed, passing ProtectionResult.
+        val cards = listOf(
+            CircuitUiModelMapper.mapToCardUiModel(c1, sizings[1], null, listOf(c1), false, passingProtection(1))
+        )
 
         val visible = CircuitUiModelMapper.filterCircuits(cards, "", selectedLevel, selectedStatus) { false }
         assertEquals(1, visible.size)
@@ -381,9 +450,12 @@ class CircuitsGridScreenC2Test {
     @Test
     fun test10_accessibility_summaryTilesHaveMergedSemantics() {
         val c1 = createCircuit(id = 1, name = "MDB-1")
+        // ECT-EE-06 (D5): the PASS tile is announced only when an executed protection
+        // verdict also passes — see test10b for the no-protection counterpart.
         val state = createSuccessState(
             circuits = listOf(c1),
-            sizingResults = mapOf(1 to createSizing(SizingResultStatus.PASS, vdPct = 2.1))
+            sizingResults = mapOf(1 to createSizing(SizingResultStatus.PASS, vdPct = 2.1)),
+            protectionResults = mapOf(1 to passingProtection(1, "MDB-1"))
         )
 
         composeTestRule.setContent {
@@ -404,6 +476,36 @@ class CircuitsGridScreenC2Test {
         composeTestRule.onNodeWithContentDescription("Failing circuits: 0").assertExists()
         composeTestRule.onNodeWithContentDescription("Standby circuits: 0").assertExists()
         composeTestRule.onNodeWithContentDescription("Maximum voltage drop: 2.10%").assertExists()
+    }
+
+    /**
+     * ECT-EE-06 (D5) — the accessibility contract of the summary strip without an
+     * executed protection verdict: the screen must announce **zero** passing circuits
+     * rather than a sizing-only PASS, and the circuit is announced as standby.
+     */
+    @Test
+    fun test10b_accessibility_summaryTilesNeverClaimPassWithoutProtection() {
+        val c1 = createCircuit(id = 1, name = "MDB-1")
+        val state = createSuccessState(
+            circuits = listOf(c1),
+            sizingResults = mapOf(1 to createSizing(SizingResultStatus.PASS, vdPct = 2.1))
+            // no protectionResults — Case E
+        )
+
+        composeTestRule.setContent {
+            VoltAtlasTheme(darkTheme = false) {
+                CircuitsGridScreen(
+                    state = state,
+                    viewModel = viewModel
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag("circuits_summary_strip").assertExists()
+        composeTestRule.onNodeWithContentDescription("Total circuits: 1").assertExists()
+        composeTestRule.onNodeWithContentDescription("Passing circuits: 0").assertExists()
+        composeTestRule.onNodeWithContentDescription("Failing circuits: 0").assertExists()
+        composeTestRule.onNodeWithContentDescription("Standby circuits: 1").assertExists()
     }
 
     @Test

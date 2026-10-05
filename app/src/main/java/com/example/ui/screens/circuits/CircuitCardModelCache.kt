@@ -1,6 +1,7 @@
 package com.example.ui.screens.circuits
 
 import com.example.data.CircuitEntity
+import com.example.engine.ProtectionResult
 import com.example.engine.ShortCircuitResult
 import com.example.engine.SizingResult
 
@@ -9,6 +10,11 @@ import com.example.engine.SizingResult
  * Eliminates whole-list recomputation by preserving and reusing previously computed models
  * when a circuit's entity, sizing result, short circuit result, parent breadcrumb, and child status
  * have not changed.
+ *
+ * ECT-EE-06: the [ProtectionResult] is part of the memo key. Without it, a circuit whose
+ * protection verdict changes (e.g. after an Isc or device re-run) would keep serving the
+ * previously computed card, because the sizing result alone is unchanged when only the fault
+ * level moves.
  */
 class CircuitCardModelCache {
     private val cache = mutableMapOf<Int, CachedCardEntry>()
@@ -19,6 +25,7 @@ class CircuitCardModelCache {
         val shortCircuitResult: ShortCircuitResult?,
         val parentName: String?,
         val hasChildren: Boolean,
+        val protectionResult: ProtectionResult?,
         val model: CircuitCardUiModel
     )
 
@@ -30,7 +37,8 @@ class CircuitCardModelCache {
         sizingResult: SizingResult?,
         shortCircuitResult: ShortCircuitResult?,
         parentName: String?,
-        hasChildren: Boolean
+        hasChildren: Boolean,
+        protectionResult: ProtectionResult? = null
     ): CircuitCardUiModel {
         val existing = cache[circuit.id]
         if (existing != null &&
@@ -38,7 +46,8 @@ class CircuitCardModelCache {
             existing.sizingResult == sizingResult &&
             existing.shortCircuitResult == shortCircuitResult &&
             existing.parentName == parentName &&
-            existing.hasChildren == hasChildren
+            existing.hasChildren == hasChildren &&
+            existing.protectionResult == protectionResult
         ) {
             return existing.model
         }
@@ -48,7 +57,8 @@ class CircuitCardModelCache {
             sizingResult = sizingResult,
             shortCircuitResult = shortCircuitResult,
             parentName = parentName,
-            hasChildren = hasChildren
+            hasChildren = hasChildren,
+            protectionResult = protectionResult
         )
         cache[circuit.id] = CachedCardEntry(
             circuit = circuit,
@@ -56,6 +66,7 @@ class CircuitCardModelCache {
             shortCircuitResult = shortCircuitResult,
             parentName = parentName,
             hasChildren = hasChildren,
+            protectionResult = protectionResult,
             model = model
         )
         return model

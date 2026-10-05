@@ -2,6 +2,7 @@ package com.example.ui.screens.circuits
 
 import com.example.data.CircuitEntity
 import com.example.engine.CableFailureCode
+import com.example.engine.ProtectionResult
 import com.example.engine.ShortCircuitResult
 import com.example.engine.SizingResult
 import com.example.engine.SizingResultStatus
@@ -10,6 +11,30 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class CircuitUiModelMapperTest {
+
+    /**
+     * ECT-EE-06 (D5): a circuit is only `PASS` when sizing passes **and** the
+     * authoritative `ProtectionResult` passes. Tests that assert `PASS` therefore
+     * supply one; tests that assert `FAIL`/`INCOMPLETE` supply a failing one or none.
+     *
+     * The values are internally consistent (Ib <= In <= Iz, Icu >= Isc, cable
+     * withstand satisfied) — they describe a healthy circuit, not a fabricated label.
+     */
+    private fun passingProtection(circuitId: Int, circuitName: String = "Circuit-$circuitId") =
+        ProtectionResult(
+            circuitId = circuitId,
+            circuitName = circuitName,
+            Ib_A = 10.0,
+            In_A = 16.0,
+            Iz_A = 32.0,
+            iscKA = 3.0,
+            icuKA = 10.0,
+            overloadStatus = "PASS",
+            shortCircuitStatus = "PASS",
+            cableWithstandStatus = "PASS",
+            selectivityStatus = "PASS",
+            finalStatus = "PASS"
+        )
 
     private fun createCircuit(
         id: Int,
@@ -93,12 +118,72 @@ class CircuitUiModelMapperTest {
 
     @Test
     fun testResolveCircuitStatus_allTypedStatuses() {
-        assertEquals(CircuitUiStatus.PASS, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.PASS)))
-        assertEquals(CircuitUiStatus.WARNING, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.WARNING)))
+        assertEquals(
+            CircuitUiStatus.PASS,
+            CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.PASS), passingProtection(1))
+        )
+        assertEquals(
+            CircuitUiStatus.WARNING,
+            CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.WARNING), passingProtection(1))
+        )
         assertEquals(CircuitUiStatus.FAIL, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.FAIL)))
         assertEquals(CircuitUiStatus.INCOMPLETE, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.INCOMPLETE)))
         assertEquals(CircuitUiStatus.ERROR, CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.ERROR)))
         assertEquals(CircuitUiStatus.STANDBY, CircuitUiModelMapper.resolveCircuitStatus(null))
+    }
+
+    // =========================================================================
+    // 1b. ECT-EE-06 (D5) — PROTECTION-AWARE RESOLUTION
+    //
+    // A sizing result alone is no longer sufficient to claim PASS. The
+    // authoritative ProtectionResult decides whenever it is present, and its
+    // absence resolves to INCOMPLETE — never PASS.
+    // =========================================================================
+
+    @Test
+    fun testResolveCircuitStatus_sizingPassButProtectionFails_isFail() {
+        val failing = passingProtection(1).copy(
+            iscKA = 19.1, icuKA = 10.0,
+            shortCircuitStatus = "FAIL",
+            finalStatus = "FAIL"
+        )
+        assertEquals(
+            "A PASS sizing result must not survive a failing protection verdict",
+            CircuitUiStatus.FAIL,
+            CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.PASS), failing)
+        )
+    }
+
+    @Test
+    fun testResolveCircuitStatus_sizingPassWithoutProtection_isIncomplete() {
+        assertEquals(
+            "With no protection verdict the circuit may not be presented as PASS",
+            CircuitUiStatus.INCOMPLETE,
+            CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.PASS))
+        )
+        assertEquals(
+            "Explicit null protection behaves identically",
+            CircuitUiStatus.INCOMPLETE,
+            CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.PASS), null)
+        )
+    }
+
+    @Test
+    fun testResolveCircuitStatus_sizingFailWinsOverPassingProtection() {
+        assertEquals(
+            "A failing sizing result stays FAIL regardless of protection",
+            CircuitUiStatus.FAIL,
+            CircuitUiModelMapper.resolveCircuitStatus(createSizing(SizingResultStatus.FAIL), passingProtection(1))
+        )
+    }
+
+    @Test
+    fun testResolveCircuitStatus_noSizing_staysStandbyEvenWithProtection() {
+        assertEquals(
+            "A missing sizing result is STANDBY — unchanged by D5",
+            CircuitUiStatus.STANDBY,
+            CircuitUiModelMapper.resolveCircuitStatus(null, passingProtection(1))
+        )
     }
 
     // =========================================================================
@@ -235,14 +320,45 @@ class CircuitUiModelMapperTest {
             // c5 has null sizing (standby)
         )
 
-        val summary = CircuitUiModelMapper.mapToSummaryUiModel(listOf(c1, c2, c3, c4, c5), sizingMap)
+        // ECT-EE-06 (D5): the circuits that have an executed protection verdict are
+        // counted against it. Without them circuit 1 (sizing PASS, no verdict) and
+        // circuit 3 (sizing WARNING, no verdict) both resolve to INCOMPLETE — which
+        // is exactly the D5 behaviour pinned by `ProtectionVerdictTargetTest`.
+        val protectionMap = mapOf(
+            1 to passingProtection(1, "MDB-Main"),
+            2 to passingProtection(2, "Circuit-2"),
+            3 to passingProtection(3, "Circuit-3")
+        )
+
+        val summary = CircuitUiModelMapper.mapToSummaryUiModel(
+            listOf(c1, c2, c3, c4, c5), sizingMap, protectionMap
+        )
 
         assertEquals(5, summary.totalCount)
         assertEquals(1, summary.passCount)
         assertEquals(1, summary.failCount)
+        // c3 (WARNING) still counts as standby — the summary keeps its historical
+        // "WARNING maps to Standby" rule — plus c4 (sizing INCOMPLETE) and c5 (no sizing).
         assertEquals(3, summary.standbyCount)
+        assertEquals(1, summary.warningCount)
         assertEquals("4.20%", summary.maxVdDisplay)
         assertEquals(4.2, summary.rawMaxVdPct!!, 0.001)
+    }
+
+    /**
+     * ECT-EE-06 (D5): the same circuit list with **no** protection results must not
+     * contribute a single PASS — sizing alone can no longer decide.
+     */
+    @Test
+    fun testMapToSummaryUiModel_withoutProtectionCountsNoPass() {
+        val c1 = createCircuit(id = 1)
+        val sizingMap = mapOf(1 to createSizing(SizingResultStatus.PASS, vdPct = 1.8))
+        val summary = CircuitUiModelMapper.mapToSummaryUiModel(listOf(c1), sizingMap)
+
+        assertEquals(1, summary.totalCount)
+        assertEquals(0, summary.passCount)
+        assertEquals(0, summary.failCount)
+        assertEquals(1, summary.standbyCount)
     }
 
     @Test
@@ -266,7 +382,10 @@ class CircuitUiModelMapperTest {
         val c2 = createCircuit(id = 2, name = "DB-Floor1", fedFrom = "MDB-Main", parentId = 1, panelType = "DB", loadType = "HVAC")
         val c3 = createCircuit(id = 3, name = "Lighting-1", fedFrom = "DB-Floor1", parentId = 2, panelType = null, loadType = "Emergency")
 
-        val card1 = CircuitUiModelMapper.mapToCardUiModel(c1, createSizing(SizingResultStatus.PASS), null, listOf(c1, c2, c3), true)
+        // ECT-EE-06 (D5): card1 carries an executed, passing ProtectionResult — a
+        // sizing PASS on its own now resolves to INCOMPLETE and would not be
+        // counted by the `CircuitStatusFilter.PASS` assertions below.
+        val card1 = CircuitUiModelMapper.mapToCardUiModel(c1, createSizing(SizingResultStatus.PASS), null, listOf(c1, c2, c3), true, passingProtection(1, "MDB-Main"))
         val card2 = CircuitUiModelMapper.mapToCardUiModel(c2, createSizing(SizingResultStatus.FAIL), null, listOf(c1, c2, c3), false)
         val card3 = CircuitUiModelMapper.mapToCardUiModel(c3, null, null, listOf(c1, c2, c3), false)
 

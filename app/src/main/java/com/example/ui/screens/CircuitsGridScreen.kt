@@ -93,12 +93,15 @@ fun CircuitsGridScreen(
     }
 
     // 1. Whole-project health summary (strictly computed from whole state.circuits, invariant to filters)
-    val summary = remember(state.circuits, state.sizingResults) {
-        CircuitUiModelMapper.mapToSummaryUiModel(state.circuits, state.sizingResults)
+    // ECT-EE-06 (D5): both the summary and the cards consume the authoritative
+    // ProtectionResult, so they must be memoized on it as well — otherwise a
+    // protection re-run would leave PASS/FAIL counts and cards stale.
+    val summary = remember(state.circuits, state.sizingResults, state.protectionResults) {
+        CircuitUiModelMapper.mapToSummaryUiModel(state.circuits, state.sizingResults, state.protectionResults)
     }
 
     // 2. Authoritative card models map (memoized per-circuit via modelCache)
-    val cardModelsById = remember(state.circuits, state.sizingResults, state.shortCircuitResults, childrenLookup, parentNamesById) {
+    val cardModelsById = remember(state.circuits, state.sizingResults, state.shortCircuitResults, state.protectionResults, childrenLookup, parentNamesById) {
         modelCache.sync(state.circuits)
         state.circuits.associate { circ ->
             val parentName = circ.parentId?.let { pId -> if (pId != circ.id) parentNamesById[pId] else null }
@@ -107,7 +110,8 @@ fun CircuitsGridScreen(
                 sizingResult = state.sizingResults[circ.id],
                 shortCircuitResult = state.shortCircuitResults[circ.id],
                 parentName = parentName,
-                hasChildren = childrenLookup.hasChildren(circ.circuitName)
+                hasChildren = childrenLookup.hasChildren(circ.circuitName),
+                protectionResult = state.protectionResults[circ.id]
             )
             circ.id to model
         }

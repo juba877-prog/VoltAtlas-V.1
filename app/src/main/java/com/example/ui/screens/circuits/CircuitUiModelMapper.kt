@@ -1,9 +1,10 @@
 package com.example.ui.screens.circuits
 
 import com.example.data.CircuitEntity
+import com.example.engine.ProtectionResult
 import com.example.engine.ShortCircuitResult
 import com.example.engine.SizingResult
-import com.example.engine.SizingResultStatus
+import com.example.verdict.CircuitFinalVerdict
 import java.util.Locale
 
 /**
@@ -18,20 +19,33 @@ val PANEL_TYPES: Set<String> = setOf("MDB", "SMDB", "DB", "MCC", "PANEL", "OTHER
 object CircuitUiModelMapper {
 
     /**
-     * Resolves the presentation status NON-LOSSILY from the typed [SizingResult].
-     * Missing sizing result maps to [CircuitUiStatus.STANDBY]. Every engine
-     * status keeps its exact typed label on the card: PASS, WARNING, FAIL,
-     * INCOMPLETE, ERROR. No substring matching, no lossy coercion.
-     * (C2 whole-project summary aggregation is intentionally unaffected.)
+     * Resolves the **final circuit verdict** for presentation.
+     *
+     * ECT-EE-06 (D5): this is now the *combination* of the sizing verdict and the
+     * authoritative protection verdict, delegated to the single canonical source
+     * [CircuitFinalVerdict]. It is deliberately **not** a re-implementation of
+     * `Isc > Icu` — no current, no voltage drop and no fault level is recalculated
+     * here; only the two authoritative statuses are combined.
+     *
+     * Missing sizing result maps to [CircuitUiStatus.STANDBY]. Every engine status
+     * keeps its exact typed label on the card: PASS, WARNING, FAIL, INCOMPLETE,
+     * ERROR. No substring matching, no lossy coercion.
+     *
+     * @param protectionResult the authoritative `ProtectionResult`, or `null` when
+     *   protection evaluation did not run or is unavailable. `null` resolves to
+     *   [CircuitUiStatus.INCOMPLETE] — **never PASS** (D5 Cases D and E).
      */
-    fun resolveCircuitStatus(sizingResult: SizingResult?): CircuitUiStatus {
-        if (sizingResult == null) return CircuitUiStatus.STANDBY
-        return when (sizingResult.resultStatus) {
-            SizingResultStatus.PASS -> CircuitUiStatus.PASS
-            SizingResultStatus.WARNING -> CircuitUiStatus.WARNING
-            SizingResultStatus.FAIL -> CircuitUiStatus.FAIL
-            SizingResultStatus.INCOMPLETE -> CircuitUiStatus.INCOMPLETE
-            SizingResultStatus.ERROR -> CircuitUiStatus.ERROR
+    fun resolveCircuitStatus(
+        sizingResult: SizingResult?,
+        protectionResult: ProtectionResult? = null
+    ): CircuitUiStatus {
+        return when (CircuitFinalVerdict.resolve(sizingResult, protectionResult)) {
+            CircuitFinalVerdict.PASS -> CircuitUiStatus.PASS
+            CircuitFinalVerdict.WARNING -> CircuitUiStatus.WARNING
+            CircuitFinalVerdict.FAIL -> CircuitUiStatus.FAIL
+            CircuitFinalVerdict.INCOMPLETE -> CircuitUiStatus.INCOMPLETE
+            CircuitFinalVerdict.ERROR -> CircuitUiStatus.ERROR
+            CircuitFinalVerdict.STANDBY -> CircuitUiStatus.STANDBY
         }
     }
 
@@ -66,9 +80,10 @@ object CircuitUiModelMapper {
         sizingResult: SizingResult?,
         shortCircuitResult: ShortCircuitResult?,
         parentName: String?,
-        hasChildren: Boolean
+        hasChildren: Boolean,
+        protectionResult: ProtectionResult? = null
     ): CircuitCardUiModel {
-        val status = resolveCircuitStatus(sizingResult)
+        val status = resolveCircuitStatus(sizingResult, protectionResult)
         val isScheduleEligible = (circuit.panelType?.uppercase(Locale.ROOT) in PANEL_TYPES) || hasChildren
 
         // Cable Size
@@ -180,16 +195,7 @@ object CircuitUiModelMapper {
             true
         }
 
-        val isIscOk = if (shortCircuitResult != null &&
-            shortCircuitResult.status != "DATA MISSING" &&
-            shortCircuitResult.iscKA > 0.0 &&
-            sizingResult?.deviceBreakingKA != null &&
-            !sizingResult.deviceBreakingKA.isNaN()
-        ) {
-            shortCircuitResult.iscKA <= sizingResult.deviceBreakingKA
-        } else {
-            false
-        }
+        val isIscOk = protectionResult?.shortCircuitStatus == "PASS"
 
         val phasesDisplay = circuit.phases.ifBlank { "3P+N" }
 
@@ -233,7 +239,8 @@ object CircuitUiModelMapper {
         sizingResult: SizingResult?,
         shortCircuitResult: ShortCircuitResult?,
         allCircuits: List<CircuitEntity>,
-        hasChildren: Boolean
+        hasChildren: Boolean,
+        protectionResult: ProtectionResult? = null
     ): CircuitCardUiModel {
         val parentName = if (circuit.parentId != null) {
             allCircuits.firstOrNull { it.id == circuit.parentId && it.id != circuit.id }?.circuitName
@@ -243,7 +250,8 @@ object CircuitUiModelMapper {
             sizingResult = sizingResult,
             shortCircuitResult = shortCircuitResult,
             parentName = parentName,
-            hasChildren = hasChildren
+            hasChildren = hasChildren,
+            protectionResult = protectionResult
         )
     }
 
@@ -253,7 +261,8 @@ object CircuitUiModelMapper {
      */
     fun mapToSummaryUiModel(
         allCircuits: List<CircuitEntity>,
-        sizingResults: Map<Int, SizingResult>
+        sizingResults: Map<Int, SizingResult>,
+        protectionResults: Map<Int, ProtectionResult> = emptyMap()
     ): CircuitsSummaryUiModel {
         var passCount = 0
         var failCount = 0
@@ -267,15 +276,20 @@ object CircuitUiModelMapper {
             if (sizing == null) {
                 standbyCount++
             } else {
-                when (sizing.resultStatus) {
-                    SizingResultStatus.PASS -> passCount++
-                    SizingResultStatus.FAIL -> failCount++
-                    SizingResultStatus.WARNING -> {
+                // ECT-EE-06 (D5): the whole-project counter reads the SAME canonical
+                // verdict as the card, so a protection FAIL can no longer be counted
+                // as a PASS, and a circuit with no protection result counts as
+                // INCOMPLETE (standby) rather than PASS.
+                when (CircuitFinalVerdict.resolve(sizing, protectionResults[circuit.id])) {
+                    CircuitFinalVerdict.PASS -> passCount++
+                    CircuitFinalVerdict.FAIL -> failCount++
+                    CircuitFinalVerdict.WARNING -> {
                         warningCount++
                         standbyCount++
                     }
-                    SizingResultStatus.INCOMPLETE,
-                    SizingResultStatus.ERROR -> standbyCount++
+                    CircuitFinalVerdict.INCOMPLETE,
+                    CircuitFinalVerdict.ERROR,
+                    CircuitFinalVerdict.STANDBY -> standbyCount++
                 }
 
                 val vd = sizing.cumulativeVDpct

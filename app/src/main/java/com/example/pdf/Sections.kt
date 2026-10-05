@@ -1,6 +1,74 @@
 package com.example.pdf
 
 import android.graphics.Paint
+import com.example.verdict.CircuitFinalVerdict
+
+/**
+ * ECT-EE-06 (D5) — the **canonical Executive Summary verdict**, extracted from
+ * `ExecutiveSummarySection.render` so that it is unit-testable without an Android
+ * `PdfDocumentRenderer`. `render` calls exactly this function, so there is one source
+ * of truth rather than a report-side re-derivation of the circuit verdicts.
+ *
+ * Every circuit is resolved through [CircuitFinalVerdict] — the same function the
+ * circuit card and the project summary use — so a `ProtectionResult.finalStatus` of
+ * `FAIL` (the `Isc > Icu` case) surfaces here as `FAIL`, and a circuit whose protection
+ * verdict was never evaluated surfaces as `INCOMPLETE`.
+ *
+ * Precedence is FAIL → INCOMPLETE → REVIEW REQUIRED → PASS, which guarantees that no
+ * missing or failed protection verdict can fall through to `PASS`.
+ *
+ * Returns a raw status token suitable for [formatReportStatus].
+ */
+fun executiveSummaryStatus(snapshot: ProjectReportSnapshot): String {
+    val verdicts = snapshot.circuits.map { circuit ->
+        CircuitFinalVerdict.resolve(
+            snapshot.sizingResults[circuit.id],
+            snapshot.protectionResults[circuit.id]
+        )
+    }
+    val sizingHasFail = snapshot.sizingResults.values.any { it.status == "FAIL" }
+    val sizingNeedsReview = snapshot.sizingResults.values.any { it.status == "REVIEW REQUIRED" }
+    val transformerOverloaded = snapshot.transformerResults.values.any { it.loadingPct > 100 }
+    val transformerWarm = snapshot.transformerResults.values.any { it.loadingPct > 80 }
+
+    return when {
+        // Cases B / C, plus the sizing and overload domains — a FAIL always wins.
+        sizingHasFail || transformerOverloaded ||
+            verdicts.any { it == CircuitFinalVerdict.FAIL || it == CircuitFinalVerdict.ERROR } -> "FAIL"
+
+        // Cases D / E — required protection verdict unavailable. Never PASS.
+        verdicts.any { it == CircuitFinalVerdict.INCOMPLETE } -> "INCOMPLETE"
+
+        // Nothing failed, but something needs engineering attention.
+        sizingNeedsReview || transformerWarm ||
+            verdicts.any { it == CircuitFinalVerdict.WARNING } -> "REVIEW REQUIRED"
+
+        else -> "PASS"
+    }
+}
+
+/**
+ * ECT-EE-06 (D5) — the **canonical per-circuit status** shown in the PDF circuits table.
+ *
+ * Delegates to [CircuitFinalVerdict], so the report cannot disagree with the circuit card.
+ * Falls back to the sizing status only when the circuit has no sizing result at all
+ * (`-`), in which case [CircuitFinalVerdict] already returns STANDBY and no protection
+ * claim is made either way.
+ */
+fun circuitTableStatus(
+    sizingResult: com.example.engine.SizingResult?,
+    protectionResult: com.example.engine.ProtectionResult?
+): String {
+    if (sizingResult == null) return "-"
+    return when (CircuitFinalVerdict.resolve(sizingResult, protectionResult)) {
+        CircuitFinalVerdict.PASS -> sizingResult.status
+        CircuitFinalVerdict.FAIL -> "FAIL"
+        CircuitFinalVerdict.ERROR -> "FAIL"
+        CircuitFinalVerdict.WARNING -> sizingResult.status
+        CircuitFinalVerdict.INCOMPLETE -> "INCOMPLETE"
+        CircuitFinalVerdict.STANDBY -> "-"
+    }
+}
 
 fun formatReportStatus(rawStatus: String?): String {
     if (rawStatus.isNullOrBlank()) return "-"
@@ -104,11 +172,9 @@ class ExecutiveSummarySection : ReportSectionProvider {
         val maxVd = snapshot.sizingResults.values.maxOfOrNull { it.cumulativeVDpct } ?: 0.0
         val maxIsc = snapshot.shortCircuitResults.values.maxOfOrNull { it.iscKA } ?: 0.0
         
-        val rawStatus = when {
-            snapshot.sizingResults.values.any { it.status == "FAIL" } || snapshot.transformerResults.values.any { it.loadingPct > 100 } -> "FAIL"
-            snapshot.sizingResults.values.any { it.status == "REVIEW REQUIRED" } || snapshot.transformerResults.values.any { it.loadingPct > 80 } -> "REVIEW REQUIRED"
-            else -> "PASS"
-        }
+        // ECT-EE-06 (D5): derived by the single canonical verdict function so the report
+        // can never claim PASS while an authoritative ProtectionResult says FAIL.
+        val rawStatus = executiveSummaryStatus(snapshot)
         val cableTxStatus = formatReportStatus(rawStatus)
         
         val clientLine = snapshot.project.clientName?.takeIf { it.isNotBlank() }?.let { "Client: $it\n" } ?: ""
@@ -167,7 +233,9 @@ class CircuitsSection : ReportSectionProvider {
         val rows = snapshot.circuits.map { circuit ->
             val result = snapshot.sizingResults[circuit.id]
             val msgs = result?.failReason ?: ""
-            val formattedStatus = formatReportStatus(result?.status ?: "-")
+            // ECT-EE-06 (D5): the table status comes from the canonical verdict, so the
+            // PDF row can no longer show PASS while protection reports Isc > Icu.
+            val formattedStatus = formatReportStatus(circuitTableStatus(result, snapshot.protectionResults[circuit.id]))
             val statusText = if (msgs.isNotBlank()) "$formattedStatus\n$msgs" else formattedStatus
             val utilPct = result?.utilizationPct?.let { "%.1f".format(it) } ?: "-"
             

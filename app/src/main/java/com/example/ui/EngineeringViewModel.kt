@@ -508,6 +508,9 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
                 conduitResults = currentState.conduitResults,
                 conduitProcurement = currentState.conduitProcurement,
                 adsResults = currentState.adsResults,
+                // ECT-EE-06 (D5): the PDF needs the authoritative protection verdicts or
+                // its Executive Summary and circuits table keep reporting PASS for Isc > Icu.
+                protectionResults = currentState.protectionResults,
                 transformerResults = currentState.transformerResults,
                 boq = currentState.boq,
                 procurement = currentState.procurement,

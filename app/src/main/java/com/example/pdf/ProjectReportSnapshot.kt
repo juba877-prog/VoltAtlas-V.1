@@ -11,6 +11,14 @@ data class ProjectReportSnapshot(
     val conduitResults: Map<Int, com.example.engine.ConduitFillResult>,
     val conduitProcurement: List<com.example.engine.ConduitProcurementGroup>,
     val adsResults: Map<Int, com.example.engine.AdsResult> = emptyMap(),
+    /**
+     * ECT-EE-06 (D5): the authoritative per-circuit protection verdicts.
+     *
+     * Added with a default so every existing construction site stays source-compatible.
+     * When a circuit has a sizing result but no entry here, the report must resolve that
+     * circuit to INCOMPLETE — never to PASS — because protection was not evaluated.
+     */
+    val protectionResults: Map<Int, com.example.engine.ProtectionResult> = emptyMap(),
     val transformerResults: Map<String, com.example.engine.TransformerResult> = emptyMap(),
     val boq: List<com.example.engine.BoqItem> = emptyList(),
     val procurement: List<com.example.engine.ProcurementItem> = emptyList(),
