@@ -279,10 +279,10 @@ class CircuitEntityMapperSpecTest {
     }
 
     @Test
-    fun test11_mechanical62PropertyClassificationCheck() {
+    fun test11_mechanical63PropertyClassificationCheck() {
         val params = CircuitEntity::class.primaryConstructor!!.parameters
-        assertEquals(62, params.size)
+        assertEquals(63, params.size)
         val names = params.map { it.name }.toSet()
-        assertEquals(62, names.size)
+        assertEquals(63, names.size)
     }
 }

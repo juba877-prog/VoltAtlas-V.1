@@ -63,7 +63,8 @@ data class SizingResult(
     val breakerOrderingCode: String? = null,
     val conductorAreaMm2: Double? = null,
     val cpcAreaMm2: Double? = null,
-    val r20: Double? = null
+    val r20: Double? = null,
+    val isClearingTimeOverridden: Boolean = false
 ) {
     val phaseConductorAreaMm2: Double? get() = conductorAreaMm2
 }
@@ -532,6 +533,11 @@ object CableSizingEngine {
             return failedResult("Cable length must be greater than zero.", CableFailureCode.INCOMPLETE_INPUT)
         }
 
+        val overrideClearingTime = circuit.overrideClearingTime_s
+        if (overrideClearingTime != null && (overrideClearingTime <= 0.0 || overrideClearingTime.isNaN() || overrideClearingTime.isInfinite())) {
+            return failedResult("Applied clearing time override must be greater than zero.", CableFailureCode.INCOMPLETE_INPUT)
+        }
+
         val isThreePhase = circuit.phases.trim().uppercase().contains("3P")
         val ibA = if (isThreePhase) {
             circuit.loadKVA * 1000.0 / (sqrt(3.0) * circuit.voltageV)
@@ -912,11 +918,17 @@ object CableSizingEngine {
             "ACB" -> 65.0
             else -> 36.0
         }
-        val clearingTime_s = when (resolvedDeviceType) {
+        val defaultClearingTime_s = when (resolvedDeviceType) {
             "MCB" -> 0.01
             "MCCB" -> 0.1
             "ACB" -> 0.3
             else -> 0.1
+        }
+        val isClearingTimeOverridden = circuit.overrideClearingTime_s != null && circuit.overrideClearingTime_s > 0.0
+        val clearingTime_s = if (isClearingTimeOverridden) {
+            circuit.overrideClearingTime_s!!
+        } else {
+            defaultClearingTime_s
         }
         val allCatalogProducts = if (isLegacy) {
             Catalog.cableCatalog.map { com.example.data.catalog.CableProduct(it.mfg, it.typeCode, it.size, it.model, it.gnd, it.duct, it.air, it.od, it.wt) }
@@ -1004,7 +1016,8 @@ object CableSizingEngine {
             isDeviceFromCatalog = isDeviceFromCatalog,
             breakerOrderingCode = breakerOrderingCode,
             conductorAreaMm2 = selectedEntry.size,
-            cpcAreaMm2 = cpcSize
+            cpcAreaMm2 = cpcSize,
+            isClearingTimeOverridden = isClearingTimeOverridden
         )
     }
 

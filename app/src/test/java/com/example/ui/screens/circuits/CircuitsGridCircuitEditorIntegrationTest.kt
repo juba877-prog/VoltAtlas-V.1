@@ -186,10 +186,13 @@ class CircuitsGridCircuitEditorIntegrationTest {
 
         // 2. Dismiss
         composeTestRule.onNodeWithTag("circuit_editor_close_btn").performClick()
+        composeTestRule.waitForIdle()
 
         // 3. Open Edit B
-        composeTestRule.onNodeWithTag("circuit_card_Circuit-B").performScrollTo().performClick()
-        composeTestRule.onNodeWithTag("edit_circuit_btn_Circuit-B").performScrollTo().performClick()
+        composeTestRule.onNodeWithTag("circuits_lazy_grid").performScrollToNode(hasTestTag("circuit_card_Circuit-B"))
+        composeTestRule.onNodeWithTag("circuit_card_Circuit-B").performClick()
+        composeTestRule.onNodeWithTag("circuits_lazy_grid").performScrollToNode(hasTestTag("edit_circuit_btn_Circuit-B"))
+        composeTestRule.onNodeWithTag("edit_circuit_btn_Circuit-B").performClick()
 
         // Session reset: displays Circuit-B, zero leakage from A
         assertEquals("Circuit-B", getEditableText())

@@ -46,6 +46,7 @@ data class CircuitEntity(
     val overrideCableSize: String? = null,
     val overrideNeutralSize: String? = null,
     val overrideEarthSize: String? = null,
+    val overrideClearingTime_s: Double? = null,
     
     val isHarmonic: Boolean = false,
     val assignedPhase: String? = null,

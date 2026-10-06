@@ -463,6 +463,7 @@ class EngineeringRepository(
             if (c.overrideCableSize != null) obj.put("overrideCableSize", c.overrideCableSize)
             if (c.overrideNeutralSize != null) obj.put("overrideNeutralSize", c.overrideNeutralSize)
             if (c.overrideEarthSize != null) obj.put("overrideEarthSize", c.overrideEarthSize)
+            if (c.overrideClearingTime_s != null) obj.put("overrideClearingTime_s", c.overrideClearingTime_s)
             obj.put("isHarmonic", c.isHarmonic)
             if (c.assignedPhase != null) obj.put("assignedPhase", c.assignedPhase)
             obj.put("upsBacked", c.upsBacked)
@@ -788,6 +789,7 @@ class EngineeringRepository(
                             overrideCableSize = obj.optString("overrideCableSize").takeIf { !it.isNullOrBlank() },
                             overrideNeutralSize = obj.optString("overrideNeutralSize").takeIf { !it.isNullOrBlank() },
                             overrideEarthSize = obj.optString("overrideEarthSize").takeIf { !it.isNullOrBlank() },
+                            overrideClearingTime_s = if (obj.has("overrideClearingTime_s") && !obj.isNull("overrideClearingTime_s") && obj.optDouble("overrideClearingTime_s") > 0) obj.optDouble("overrideClearingTime_s") else null,
                             isHarmonic = obj.optBoolean("isHarmonic", false),
                             assignedPhase = obj.optString("assignedPhase").takeIf { !it.isNullOrBlank() },
                             upsBacked = obj.optBoolean("upsBacked", false),

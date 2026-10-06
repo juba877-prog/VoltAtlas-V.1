@@ -380,6 +380,9 @@ class ProtectionSection : ReportSectionProvider {
         snapshot.shortCircuitResults.forEach { (circuitId, result) ->
             val circuit = snapshot.circuits.find { it.id == circuitId }
             val nodeName = circuit?.circuitName?.takeIf { it.isNotBlank() } ?: result.sourceName
+            val sizing = snapshot.sizingResults[circuitId]
+            val appliedClearingTime = sizing?.clearingTime_s ?: circuit?.overrideClearingTime_s
+            val timeStr = if (appliedClearingTime != null && appliedClearingTime > 0.0) "%.2fs".format(appliedClearingTime) else "-"
             
             // 1. 3-Phase Short Circuit
             rows.add(TableRow(listOf(
@@ -387,7 +390,7 @@ class ProtectionSection : ReportSectionProvider {
                 "3-Phase",
                 "%.2f".format(result.iscKA),
                 "-",
-                "-",
+                timeStr,
                 formatReportStatus(result.status)
             )))
             

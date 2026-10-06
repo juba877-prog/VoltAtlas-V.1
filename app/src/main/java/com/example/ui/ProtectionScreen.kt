@@ -803,8 +803,16 @@ fun ShortCircuitPanel(state: UiState.Success) {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 results.forEach { res ->
-                    val circuitName = state.circuits.find { it.id == res.circuitId }?.circuitName ?: "Circuit ${res.circuitId}"
-                    ShortCircuitCard(res = res, circuitName = circuitName, isDark = isDark)
+                    val circuit = state.circuits.find { it.id == res.circuitId }
+                    val circuitName = circuit?.circuitName ?: "Circuit ${res.circuitId}"
+                    val sizing = state.sizingResults[res.circuitId]
+                    ShortCircuitCard(
+                        res = res,
+                        circuitName = circuitName,
+                        sizing = sizing,
+                        circuit = circuit,
+                        isDark = isDark
+                    )
                 }
             }
         }
@@ -817,6 +825,8 @@ fun ShortCircuitPanel(state: UiState.Success) {
 fun ShortCircuitCard(
     res: com.example.engine.ShortCircuitResult,
     circuitName: String,
+    sizing: com.example.engine.SizingResult? = null,
+    circuit: com.example.data.CircuitEntity? = null,
     isDark: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -979,6 +989,28 @@ fun ShortCircuitCard(
                         value = String.format(java.util.Locale.US, "%.1f", res.deviceKA),
                         unit = "kA",
                         modifier = Modifier.weight(1f)
+                    )
+                }
+
+                // Applied Cable Thermal Clearing Time Disclosure (EE-03)
+                val appliedClearingTime = sizing?.clearingTime_s ?: (circuit?.overrideClearingTime_s ?: 0.1)
+                val isOverride = sizing?.isClearingTimeOverridden == true || circuit?.overrideClearingTime_s != null
+                val sourceLabel = if (isOverride) "User Override" else "Default"
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Thermal clearing time",
+                        style = DsType.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = String.format(java.util.Locale.US, "%.2f s (%s)", appliedClearingTime, sourceLabel),
+                        style = DsType.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isOverride) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 

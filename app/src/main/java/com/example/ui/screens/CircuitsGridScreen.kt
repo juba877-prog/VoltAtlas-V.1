@@ -1123,7 +1123,7 @@ fun CircuitCardV3(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val isOverrideActive = circ.overrideDeviceSize != null || circ.overrideCableSize != null || circ.overrideDeviceType != null
+                        val isOverrideActive = circ.overrideDeviceSize != null || circ.overrideCableSize != null || circ.overrideDeviceType != null || circ.overrideClearingTime_s != null
                         Text(
                             text = if (isOverrideActive) "MODE: OVERRIDE ACTIVE" else "MODE: AUTOMATIC SIZING",
                             color = if (isOverrideActive) MaterialTheme.dsExtendedColors.warning else MaterialTheme.dsExtendedColors.success,
@@ -1137,7 +1137,8 @@ fun CircuitCardV3(
                                     circ.copy(
                                         overrideDeviceSize = null,
                                         overrideCableSize = null,
-                                        overrideDeviceType = null
+                                        overrideDeviceType = null,
+                                        overrideClearingTime_s = null
                                     )
                                 )
                             },
@@ -1342,6 +1343,23 @@ fun CircuitCardV3(
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Thermal Clearing Time Override (s) (EE-03)
+                    OutlinedTextField(
+                        value = circ.overrideClearingTime_s?.toString() ?: "",
+                        onValueChange = { newVal ->
+                            val parsed = newVal.trim().toDoubleOrNull()
+                            viewModel.updateCircuit(circ.copy(overrideClearingTime_s = parsed))
+                        },
+                        label = { Text(if (result != null) "Clearing Time (s) [Auto: %.2fs]".format(result.clearingTime_s) else "Clearing Time (s) [Auto: 0.10s]", style = DsType.labelSmall) },
+                        placeholder = { Text("Auto", style = DsType.bodySmall) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("clearing_time_input_${circ.circuitName}"),
+                        singleLine = true
+                    )
 
                     Spacer(modifier = Modifier.height(8.dp))
 

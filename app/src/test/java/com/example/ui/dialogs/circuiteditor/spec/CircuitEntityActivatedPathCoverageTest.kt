@@ -105,12 +105,12 @@ class CircuitEntityActivatedPathCoverageTest {
     )
 
     // ============================================================================
-    // 1. Mechanical 62-Property Reflection Check
+    // 1. Mechanical 63-Property Reflection Check
     // ============================================================================
     @Test
-    fun test01_mechanicalCompleteness_all62PropertiesAccountedFor() {
+    fun test01_mechanicalCompleteness_all63PropertiesAccountedFor() {
         val constructorParams = CircuitEntity::class.primaryConstructor!!.parameters
-        assertEquals("CircuitEntity must declare exactly 62 constructor properties", 62, constructorParams.size)
+        assertEquals("CircuitEntity must declare exactly 63 constructor properties", 63, constructorParams.size)
 
         val expectedPropertyNames = setOf(
             "id", "circuitName", "loadKVA", "fedFrom", "transformerId", "loadType", "phases",
@@ -124,11 +124,12 @@ class CircuitEntityActivatedPathCoverageTest {
             "active", "panelType", "parentId", "level", "sourceType", "directLoadConfirmed",
             "phaseImbalanceLimitOverridePct", "loadCategory", "busbarRatingA", "scRatingKA",
             "mainIncomingType", "mainIncomingCount", "ipRating", "panelLocation", "cableEntry",
-            "feederDescription", "numberOfWays", "feederType", "buswayMfg", "buswayModel"
+            "feederDescription", "numberOfWays", "feederType", "buswayMfg", "buswayModel",
+            "overrideClearingTime_s"
         )
 
         val actualPropertyNames = constructorParams.mapNotNull { it.name }.toSet()
-        assertEquals("All 62 expected properties must exactly match CircuitEntity properties", expectedPropertyNames, actualPropertyNames)
+        assertEquals("All 63 expected properties must exactly match CircuitEntity properties", expectedPropertyNames, actualPropertyNames)
     }
 
     // ============================================================================
