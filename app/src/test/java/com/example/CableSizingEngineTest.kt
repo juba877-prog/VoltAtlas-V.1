@@ -230,13 +230,16 @@ class CableSizingEngineTest {
     @Test
     fun testSizing_pvcAndXlpeSameSizeAndMaterial_haveIdenticalR20() {
         // r20 is populated by MATERIAL ONLY (Cu -> RCu20), independent of the insulation
-        // column used for the voltage-drop basis (rUsed). So for the same conductor material
-        // and the same conductor size, XLPE and PVC must expose the identical 20 °C value.
+        // operating temperature factor used for the voltage-drop basis (rUsed). So for the same
+        // conductor material and the same conductor size, XLPE and PVC must expose the identical 20 °C value.
         //
         // Hand-derived catalog value: Cu 150 mm² -> RCu20 = 0.124 Ω/km
-        //   (RCu_70_est = 0.149 Ω/km = 0.124 x 1.20, the voltage-drop basis for XLPE)
+        // Under approved D1 operating-temperature basis (IEC 60364-5-52 Annex G / IEC 60228):
+        //   - PVC operating at 70 °C: rUsed = 0.124 * 1.1965 = 0.148366 Ω/km
+        //   - XLPE operating at 90 °C: rUsed = 0.124 * 1.2751 = 0.1581124 Ω/km
         val expectedR20 = 0.124
-        val expectedR20XlpeUsed = 0.149
+        val expectedRUsedXlpe = 0.124 * 1.2751
+        val expectedRUsedPvc = 0.124 * 1.1965
 
         // Both circuits are forced to 150 mm² so the size-identity comparison is unconditional.
         val cXlpe = CircuitEntity(
@@ -257,21 +260,23 @@ class CableSizingEngineTest {
         assertEquals("Both circuits must resolve to the forced 150 mm² size", "150 mm²", resXlpe.cableSize_mm2)
         assertEquals("Both circuits must resolve to the forced 150 mm² size", "150 mm²", resPvc.cableSize_mm2)
 
-        assertNotNull("XLPE r20 must not be null", resXlpe.r20)
-        assertNotNull("PVC r20 must not be null", resPvc.r20)
+        val xlpeR20 = resXlpe.r20
+        val pvcR20 = resPvc.r20
+        assertNotNull("XLPE r20 must not be null", xlpeR20)
+        assertNotNull("PVC r20 must not be null", pvcR20)
 
         // r20 must equal the catalog 20 °C value for Cu 150 mm² in BOTH circuits.
-        assertEquals("XLPE r20 must equal the catalog 20 °C value", expectedR20, resXlpe.r20!!, 1e-9)
-        assertEquals("PVC r20 must equal the catalog 20 °C value", expectedR20, resPvc.r20!!, 1e-9)
+        assertEquals("XLPE r20 must equal the catalog 20 °C value", expectedR20, xlpeR20!!, 1e-9)
+        assertEquals("PVC r20 must equal the catalog 20 °C value", expectedR20, pvcR20!!, 1e-9)
 
         // Same size + same material => identical 20 °C resistance, regardless of insulation.
-        assertEquals("Same size/material must have identical r20", resPvc.r20!!, resXlpe.r20!!, 0.0)
+        assertEquals("Same size/material must have identical r20", pvcR20, xlpeR20, 0.0)
 
-        // The two r20 must be DISTINCT from the XLPE voltage-drop basis (which is the A3 defect
-        // that understated the max-fault Isc): XLPE rUsed = RCu_70_est = 1.20 x RCu20.
-        assertEquals("XLPE rUsed must remain the 70 °C estimated voltage-drop basis", expectedR20XlpeUsed, resXlpe.rUsed, 1e-9)
-        assertTrue("XLPE r20 must be strictly below its 70 °C rUsed basis", resXlpe.r20!! < resXlpe.rUsed)
-        // PVC uses the 20 °C column for voltage drop, so rUsed == r20 there.
-        assertEquals("PVC rUsed must equal r20 (same 20 °C column)", resPvc.r20!!, resPvc.rUsed, 1e-9)
+        // Operating-temperature voltage-drop basis per D1:
+        assertEquals("XLPE rUsed must be 90 °C operating resistance (r20 * 1.2751)", expectedRUsedXlpe, resXlpe.rUsed, 1e-6)
+        assertEquals("PVC rUsed must be 70 °C operating resistance (r20 * 1.1965)", expectedRUsedPvc, resPvc.rUsed, 1e-6)
+        assertTrue("XLPE r20 must be strictly below its 90 °C rUsed basis", xlpeR20 < resXlpe.rUsed)
+        assertTrue("PVC r20 must be strictly below its 70 °C rUsed basis", pvcR20 < resPvc.rUsed)
+        assertTrue("PVC 70 °C rUsed must be strictly below XLPE 90 °C rUsed", resPvc.rUsed < resXlpe.rUsed)
     }
 }

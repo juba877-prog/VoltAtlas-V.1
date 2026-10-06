@@ -76,6 +76,20 @@ object CableSizingEngine {
         1000.0, 1250.0, 1600.0, 2000.0, 2500.0, 3200.0, 4000.0, 5000.0, 6300.0
     )
 
+    /**
+     * Temperature-correction factors for conductor operating temperature
+     * per IEC 60364-5-52 Annex G and IEC 60228:
+     * 1 + α₂₀·(θ − 20), where α₂₀ = 0.00393 /K for Cu and 0.00403 /K for Al.
+     *  - Cu/PVC  (70 °C): 1 + 0.00393 × 50 = 1.1965
+     *  - Cu/XLPE (90 °C): 1 + 0.00393 × 70 = 1.2751
+     *  - Al/PVC  (70 °C): 1 + 0.00403 × 50 = 1.2015
+     *  - Al/XLPE (90 °C): 1 + 0.00403 × 70 = 1.2821
+     */
+    const val TEMP_FACTOR_CU_PVC = 1.1965
+    const val TEMP_FACTOR_CU_XLPE = 1.2751
+    const val TEMP_FACTOR_AL_PVC = 1.2015
+    const val TEMP_FACTOR_AL_XLPE = 1.2821
+
     private val STANDARD_SIZES = listOf(
         1.5, 2.5, 4.0, 6.0, 10.0, 16.0, 25.0, 35.0, 50.0, 70.0,
         95.0, 120.0, 150.0, 185.0, 240.0, 300.0, 400.0, 500.0,
@@ -617,14 +631,12 @@ object CableSizingEngine {
         val cableMaterial = if (isAl && !isCu) "Al" else "Cu"
 
         // IMPORTANT: no fallback to typeCode = 1.
-        var rColumn = ""
         var selectedTypeCode = 0
         
         if (isLegacy) {
             val selectedType = Catalog.cableTypes.firstOrNull {
                 it.cableType.trim().equals(circuit.cableType.trim(), ignoreCase = true)
             } ?: return failedResult("Cable type '${circuit.cableType}' was not found in cable_types.json.", CableFailureCode.CATALOG_MISSING)
-            rColumn = selectedType.rColumn
             selectedTypeCode = selectedType.code
             
             val hasNoCatalogEntries = Catalog.cableCatalog.none { it.typeCode == selectedTypeCode }
@@ -642,15 +654,8 @@ object CableSizingEngine {
             } else null
 
             if (selectedTypeRepo != null) {
-                val insulation = if (isXLPE) "XLPE" else "PVC"
-                rColumn = if (cableMaterial == "Cu") {
-                    if (insulation == "XLPE") "R_Cu_70_est" else "R_Cu20"
-                } else {
-                    if (insulation == "XLPE") "R_Al_70_est" else "R_Al20"
-                }
                 selectedTypeCode = selectedTypeRepo.typeCode
             } else if (selectedTypeLegacy != null) {
-                rColumn = selectedTypeLegacy.rColumn
                 selectedTypeCode = selectedTypeLegacy.code
             } else {
                 return failedResult("Cable type '${circuit.cableType}' was not found in catalog.", CableFailureCode.CATALOG_MISSING)
@@ -717,16 +722,10 @@ object CableSizingEngine {
                     kotlin.math.abs(it.size - entry.size) <= EPSILON
                 } ?: return null
 
-                val resistance = when (rColumn) {
-                    "R_Cu20", "R_Cu70" -> sheet.R_Cu20
-                    "R_Al20", "R_Al70" -> sheet.R_Al20
-                    "R_Cu_70_est", "R_Cu90" -> sheet.R_Cu_70_est
-                    "R_Al_70_est", "R_Al90" -> sheet.R_Al_70_est
-                    else -> return null
-                }
                 val r20Raw = if (cableMaterial == "Al") sheet.R_Al20 else sheet.R_Cu20
                 val r20 = if (r20Raw > 0.0) r20Raw else null
-                Triple(resistance, sheet.X, r20)
+                if (r20 == null || sheet.X <= 0.0) return null
+                Pair(r20, sheet.X)
             } else {
                 val sheet = catalog?.cableTypesData?.firstOrNull {
                     it.typeCode == selectedTypeCode && kotlin.math.abs(it.sizeMm2 - entry.size) <= EPSILON
@@ -734,23 +733,22 @@ object CableSizingEngine {
                     kotlin.math.abs(it.sizeMm2 - entry.size) <= EPSILON
                 } ?: return null
 
-                val resistance = when (rColumn) {
-                    "R_Cu20", "R_Cu70" -> sheet.rCu20
-                    "R_Al20", "R_Al70" -> sheet.rAl20
-                    "R_Cu_70_est", "R_Cu90" -> sheet.rCu_70_est
-                    "R_Al_70_est", "R_Al90" -> sheet.rAl_70_est
-                    else -> 0.0
-                }
-                if (resistance <= 0.0 || sheet.x <= 0.0) return null
                 val r20Raw = if (cableMaterial == "Al") sheet.rAl20 else sheet.rCu20
                 val r20 = if (r20Raw > 0.0) r20Raw else null
-                Triple(resistance, sheet.x, r20)
+                if (r20 == null || sheet.x <= 0.0) return null
+                Pair(r20, sheet.x)
             }
-            val (resistance, reactance, candidateR20) = rxValuesAndR20
+            val (candidateR20, reactance) = rxValuesAndR20
 
-            // IEC 60909-0 — maximum short-circuit: line resistance at 20 °C.
-            val thermalFactor = 1.0
-            val rOperating = resistance * thermalFactor
+            // IEC 60364-5-52 Annex G / IEC 60228: Conductor resistance at maximum
+            // operating temperature (70 °C for PVC, 90 °C for XLPE).
+            val operatingTempFactor = when {
+                cableMaterial == "Al" && isXLPE -> TEMP_FACTOR_AL_XLPE
+                cableMaterial == "Al" -> TEMP_FACTOR_AL_PVC
+                isXLPE -> TEMP_FACTOR_CU_XLPE
+                else -> TEMP_FACTOR_CU_PVC
+            }
+            val rOperating = candidateR20 * operatingTempFactor
 
             val impedanceTerm =
                 rOperating * cosPhi + reactance * sinPhi
@@ -783,7 +781,7 @@ object CableSizingEngine {
                 cumulativeVoltageDropPct = cumulativeVoltageDropPct,
                 ampacityOk = ampacityOk,
                 voltageDropOk = voltageDropOk,
-                resistance = resistance,
+                resistance = rOperating,
                 reactance = reactance,
                 r20 = candidateR20
             )
