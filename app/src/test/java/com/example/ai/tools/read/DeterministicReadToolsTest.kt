@@ -244,7 +244,7 @@ class DeterministicReadToolsTest {
             coordinator.clearCache()
             coordinator.freshnessRegistry.clearAll()
             coordinator.projectRevisionProvider = null
-            AppDatabase.useTestExecutors = false
+            AppDatabase.resetInstanceForTesting()
             if (::database.isInitialized && database.isOpen) {
                 database.close()
             }

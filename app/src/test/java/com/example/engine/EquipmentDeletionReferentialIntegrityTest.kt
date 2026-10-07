@@ -23,9 +23,19 @@ class EquipmentDeletionReferentialIntegrityTest {
 
     @Before
     fun setUp() {
-        AppDatabase.useTestExecutors = true
+        // KT-12: this suite asserts referential-integrity behaviour across many test methods and
+        // needs a genuinely FRESH database per method — not the process-wide
+        // `AppDatabase.getDatabase(context)` singleton, which (a) pins a file path inside whichever
+        // Robolectric sandbox created it (cause 1B -> SQLITE_CANTOPEN), and (b) leaks rows between
+        // methods. A per-test in-memory database removes both problems and is also what the other
+        // referential suites in this module already do.
+        //
+        // Measured justification: with the shared singleton this suite fails 6/9 at the pristine
+        // baseline commit. See docs/audit/KT-12_RESIDUAL_1C.md.
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        database = AppDatabase.getDatabase(context)
+        database = androidx.room.Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
         repository = EngineeringRepository(database)
         EngineeringCalculationCoordinator.clearCache()
     }
@@ -33,7 +43,12 @@ class EquipmentDeletionReferentialIntegrityTest {
     @After
     fun tearDown() {
         EngineeringCalculationCoordinator.clearCache()
-        AppDatabase.useTestExecutors = false
+        // Close only this test's own database. The process-wide singleton is never populated by
+        // this suite, so there is nothing to reset here and no cross-suite contamination to
+        // prevent.
+        if (::database.isInitialized && database.isOpen) {
+            database.close()
+        }
     }
 
     @Test

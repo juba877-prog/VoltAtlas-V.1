@@ -127,7 +127,7 @@ class Gate10TrustedMutationLifecycleTest {
         EngineeringCalculationCoordinator.projectRevisionProvider = null
         EngineeringCalculationCoordinator.clearCache()
         EngineeringCalculationCoordinator.freshnessRegistry.clearAll()
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         database.close()
         Dispatchers.resetMain()
     }

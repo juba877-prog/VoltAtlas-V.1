@@ -108,7 +108,7 @@ class Gate10TrustedMutationRevalidationTest {
         EngineeringCalculationCoordinator.projectRevisionProvider = null
         EngineeringCalculationCoordinator.clearCache()
         EngineeringCalculationCoordinator.freshnessRegistry.clearAll()
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         database.close()
     }
 

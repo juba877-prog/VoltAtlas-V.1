@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.test.core.app.ApplicationProvider
+import com.example.data.AppDatabase
 import com.example.data.CircuitEntity
 import com.example.engine.SizingResult
 import com.example.engine.SizingResultStatus
@@ -22,6 +23,7 @@ import com.example.ui.theme.VoltAtlasTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Before
 import org.junit.Rule
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -133,6 +135,16 @@ class AdaptiveFormFactorScreenshotTest {
     // =========================================================================
     // CIRCUITS ADAPTIVE GRID — 4 FORM FACTORS
     // =========================================================================
+
+    @After
+    fun tearDown() {
+        // KT-12: this class reaches AppDatabase.getDatabase() (directly or via
+        // EngineeringViewModel), which caches the instance process-wide together with an
+        // absolute DB file path inside the current Robolectric sandbox. Robolectric rotates that
+        // sandbox per @Config while Gradle reuses one JVM, so a surviving instance points at a
+        // path that no longer exists and later suites fail with SQLITE_CANTOPEN (code 14).
+        AppDatabase.resetInstanceForTesting()
+    }
 
     @Test
     @Config(sdk = [33], qualifiers = "w360dp-h800dp-xhdpi")

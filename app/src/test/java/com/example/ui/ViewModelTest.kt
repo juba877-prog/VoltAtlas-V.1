@@ -18,6 +18,16 @@ import org.junit.Assert.assertTrue
 @RunWith(AndroidJUnit4::class)
 @Config(manifest=Config.NONE)
 class ViewModelTest {
+    @org.junit.After
+    fun tearDown() {
+        // KT-12: this class reaches AppDatabase.getDatabase() (directly or via
+        // EngineeringViewModel), which caches the instance process-wide together with an
+        // absolute DB file path inside the current Robolectric sandbox. Robolectric rotates that
+        // sandbox per @Config while Gradle reuses one JVM, so a surviving instance points at a
+        // path that no longer exists and later suites fail with SQLITE_CANTOPEN (code 14).
+        AppDatabase.resetInstanceForTesting()
+    }
+
     @Test
     fun testViewModelState() = runBlocking {
         val viewModel = EngineeringViewModel(ApplicationProvider.getApplicationContext())

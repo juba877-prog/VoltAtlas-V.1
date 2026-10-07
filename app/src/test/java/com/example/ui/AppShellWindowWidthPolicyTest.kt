@@ -61,7 +61,7 @@ class AppShellNarrowWindowBottomNavTest {
 
     @After
     fun tearDown() {
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         Dispatchers.resetMain()
     }
 
@@ -126,7 +126,7 @@ class AppShellMediumPortraitRailTest {
 
     @After
     fun tearDown() {
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         Dispatchers.resetMain()
     }
 

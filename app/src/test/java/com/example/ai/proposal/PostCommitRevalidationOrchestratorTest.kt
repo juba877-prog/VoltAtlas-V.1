@@ -218,6 +218,10 @@ class PostCommitRevalidationOrchestratorTest {
         coordinator.clearCache()
         coordinator.freshnessRegistry.clearProject(projectId)
         coordinator.freshnessRegistry.clearProject(otherProjectId)
+        // KT-12 (test hygiene): this class assigned the process-wide projectRevisionProvider in
+        // setUp() but never restored it, leaking global state into every later suite in this JVM.
+        // null is the production default. See DeterministicWhatIfTest for the full rationale.
+        coordinator.projectRevisionProvider = null
     }
 
     private fun createValidImpact(

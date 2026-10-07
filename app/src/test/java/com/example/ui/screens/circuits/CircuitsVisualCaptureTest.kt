@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
+import com.example.data.AppDatabase
 import com.example.data.CircuitEntity
 import com.example.engine.ShortCircuitResult
 import com.example.engine.SizingResult
@@ -22,6 +23,7 @@ import com.example.ui.screens.CircuitsGridScreen
 import com.example.ui.theme.VoltAtlasTheme
 import org.junit.Before
 import org.junit.Rule
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -154,6 +156,16 @@ class CircuitsVisualCaptureTest {
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<android.app.Application>()
         viewModel = EngineeringViewModel(context)
+    }
+
+    @After
+    fun tearDown() {
+        // KT-12: this class reaches AppDatabase.getDatabase() (directly or via
+        // EngineeringViewModel), which caches the instance process-wide together with an
+        // absolute DB file path inside the current Robolectric sandbox. Robolectric rotates that
+        // sandbox per @Config while Gradle reuses one JVM, so a surviving instance points at a
+        // path that no longer exists and later suites fail with SQLITE_CANTOPEN (code 14).
+        AppDatabase.resetInstanceForTesting()
     }
 
     @Test

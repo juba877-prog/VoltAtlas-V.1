@@ -51,6 +51,11 @@ class SldProjectResolutionTest {
     fun tearDown() {
         // Never leak persisted active-project state into other suites sharing this JVM.
         seedActiveProject(null)
+        // KT-12: this class calls AppDatabase.getDatabase() directly, which pins the process-wide
+        // INSTANCE (and its absolute DB file path inside the current Robolectric sandbox). Robolectric
+        // rotates its temp app-data dir per @Config, so a surviving instance points at a path that no
+        // longer exists and later suites fail with SQLITE_CANTOPEN (code 14). Drop it.
+        AppDatabase.resetInstanceForTesting()
     }
 
     // ---- pure resolver rules (discriminate the old fallback inline) ----

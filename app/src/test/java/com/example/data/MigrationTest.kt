@@ -8,6 +8,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,6 +38,16 @@ class MigrationTest {
     private suspend fun delayAndIdle(ms: Long = 100) {
         kotlinx.coroutines.delay(ms)
         ShadowLooper.idleMainLooper()
+    }
+
+    @After
+    fun tearDown() {
+        // KT-12: this class calls AppDatabase.getDatabase() directly, which caches the instance
+        // process-wide together with an absolute DB file path inside the current Robolectric
+        // sandbox. Robolectric rotates that sandbox per @Config while Gradle reuses one JVM, so a
+        // surviving instance points at a path that no longer exists and later suites fail with
+        // SQLITE_CANTOPEN (code 14). AppDatabase needs no import: same package.
+        AppDatabase.resetInstanceForTesting()
     }
 
     @Test

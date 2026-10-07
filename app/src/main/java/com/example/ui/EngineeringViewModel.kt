@@ -29,7 +29,28 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class EngineeringViewModel(application: Application) : AndroidViewModel(application) {
+/**
+ * @param testDatabase TEST-ONLY injection point. When `null` (the production path, and the path
+ *   `ViewModelProvider` uses via the single-argument [Application] constructor) the real
+ *   file-backed `AppDatabase.getDatabase(application)` singleton is used, exactly as before.
+ *   Robolectric UI tests pass an in-memory Room instance because Robolectric's native SQLite
+ *   shadow cannot create a file-backed database inside its per-test sandbox directory
+ *   (`SQLITE_CANTOPEN`). Those tests validate UI/navigation behaviour, not filesystem
+ *   persistence. This seam changes no production behaviour and adds no second repository.
+ */
+class EngineeringViewModel private constructor(
+    application: Application,
+    injectedDatabase: AppDatabase?,
+    @Suppress("UNUSED_PARAMETER") seamMarker: Unit
+) : AndroidViewModel(application) {
+
+    /** Production constructor — preserved so `ViewModelProvider` keeps working unchanged. */
+    constructor(application: Application) : this(application, null, Unit)
+
+    /** TEST-ONLY injection constructor. */
+    @androidx.annotation.VisibleForTesting
+    constructor(application: Application, testDatabase: AppDatabase) :
+        this(application, testDatabase, Unit)
 
     companion object {
         /**
@@ -54,7 +75,7 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
         _showGlobalSettings.value = false
     }
 
-    private val db = AppDatabase.getDatabase(application)
+    private val db = injectedDatabase ?: AppDatabase.getDatabase(application)
     private val repository = EngineeringRepository(
         db,
         db.circuitDao(),
@@ -249,6 +270,26 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun retryStartup() {
+        // KT-12 RACE FIX (verified: docs/audit/KT-12_RACE_PROOF.md).
+        //
+        // The invariant is "startup forces the app to the project-picker state". Previously that
+        // reset was performed INSIDE the asynchronous startup coroutine, at
+        // `initializeNewInstallationIfRequired()`, which runs only AFTER the suspending
+        // `withContext(Dispatchers.IO) { repository.getAllProjectsList() }`. That suspension left a
+        // window in which a caller could already have opened a project, and the late
+        // `switchActiveProject(null)` then silently clobbered it.
+        //
+        // Proven event ordering in AppShellWorkspaceAdaptiveWideTest (single trace file):
+        //   STARTUP_BEGIN
+        //   STARTUP_BEFORE_IO        <- startup suspends here on Dispatchers.IO
+        //   CREATE_BEGIN activeBefore=null   <- project creation starts INSIDE that window
+        //   (startup never reached STARTUP_AFTER_IO, so its switchActiveProject(null) had not run
+        //    yet; the create coroutine was still parked, leaving activeProjectId null)
+        //
+        // Fix: perform the reset SYNCHRONOUSLY, before any asynchronous startup work is launched,
+        // so no project operation can ever interleave with it. This changes ordering only; the
+        // intended end state ("never auto-open a project on startup") is unchanged.
+        switchActiveProject(null)
         viewModelScope.launch {
             try {
                 val warnings = mutableListOf<String>()
@@ -312,7 +353,10 @@ class EngineeringViewModel(application: Application) : AndroidViewModel(applicat
 
     private suspend fun initializeNewInstallationIfRequired() {
         try {
-            switchActiveProject(null) // Never auto-open project on startup
+            // KT-12 RACE FIX: the "never auto-open project on startup" reset now happens
+            // SYNCHRONOUSLY at the top of retryStartup(), before this suspending function runs.
+            // Leaving a second, late reset here reintroduced the race described in
+            // docs/audit/KT-12_RACE_PROOF.md, so it is deliberately removed.
 
             preferences.awaitLoaded()
 

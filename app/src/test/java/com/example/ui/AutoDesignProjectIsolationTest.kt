@@ -44,7 +44,7 @@ class AutoDesignProjectIsolationTest {
     @After
     fun tearDown() {
         org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         try {
             Dispatchers.resetMain()
         } catch (_: IllegalStateException) {

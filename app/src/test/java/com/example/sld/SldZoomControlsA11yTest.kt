@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import com.example.data.AppDatabase
 import com.example.data.AtsEntity
 import com.example.data.CircuitEntity
 import com.example.data.TransformerEntity
@@ -14,6 +15,7 @@ import com.example.engine.GeneratorResult
 import com.example.engine.TransformerResult
 import com.example.ui.theme.VoltAtlasTheme
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
+import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -90,6 +92,15 @@ class SldZoomControlsA11yTest {
             }
         }
         composeTestRule.waitForIdle()
+    }
+
+    @After
+    fun tearDown() {
+        // KT-12 EXPERIMENT (documented in docs/audit/KT-12_GATE_ACCEPTANCE.md): SldScreen captures
+        // AppDatabase.getDatabase(context) inside remember { } (SldScreen.kt:96). Whether the reset
+        // belongs in @After (close+null, invalidating a still-composed screen) or @Before (null only,
+        // before any screen is built) is decided by measurement, not intuition — see that file.
+        AppDatabase.resetInstanceForTesting()
     }
 
     private fun touchBoundsByTag(tag: String): Rect =

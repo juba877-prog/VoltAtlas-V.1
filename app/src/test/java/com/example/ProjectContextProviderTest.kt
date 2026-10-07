@@ -196,7 +196,7 @@ class ProjectContextProviderTest {
 
     @After
     fun tearDown() {
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         coordinator.clearCache()
         coordinator.freshnessRegistry.clearAll()
         // Phase 6 Batch 3 fix (test-hygiene, root cause of an order-dependent failure):

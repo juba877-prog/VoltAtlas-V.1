@@ -135,7 +135,7 @@ class TrustedProposalApprovalGatewayTest {
     @After
     fun tearDown() {
         EngineeringCalculationCoordinator.projectRevisionProvider = null
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         database.close()
     }
 

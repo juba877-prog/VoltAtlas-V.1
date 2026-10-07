@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.core.app.ApplicationProvider
+import com.example.data.AppDatabase
 import com.example.data.CircuitEntity
 import com.example.engine.CableFailureCode
 import com.example.engine.ShortCircuitResult
@@ -117,6 +118,16 @@ class CircuitsGridScreenC3Test {
             .fetchSemanticsNodes()
         return candidates.map { it.boundsInRoot }.firstOrNull { rectContains(card, it) }
             ?: error("text '$text' not found inside card '$cardTag' (candidates=${candidates.size})")
+    }
+
+    @org.junit.After
+    fun tearDown() {
+        // KT-12: this class reaches AppDatabase.getDatabase() (directly or via
+        // EngineeringViewModel), which caches the instance process-wide together with an
+        // absolute DB file path inside the current Robolectric sandbox. Robolectric rotates that
+        // sandbox per @Config while Gradle reuses one JVM, so a surviving instance points at a
+        // path that no longer exists and later suites fail with SQLITE_CANTOPEN (code 14).
+        AppDatabase.resetInstanceForTesting()
     }
 
     @Test

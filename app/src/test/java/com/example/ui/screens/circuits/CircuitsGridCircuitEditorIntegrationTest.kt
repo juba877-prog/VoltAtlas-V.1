@@ -10,6 +10,7 @@ import com.example.ui.UiState
 import com.example.ui.screens.CircuitsGridScreen
 import com.example.ui.theme.VoltAtlasTheme
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Rule
@@ -82,6 +83,11 @@ class CircuitsGridCircuitEditorIntegrationTest {
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<android.app.Application>()
         viewModel = EngineeringViewModel(context)
+    }
+
+    @After
+    fun tearDown() {
+        com.example.data.AppDatabase.resetInstanceForTesting()
     }
 
     private fun nameInputField() =

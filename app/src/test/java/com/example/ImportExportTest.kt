@@ -37,7 +37,7 @@ class ImportExportTest {
     @After
     fun tearDown() {
         org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
-        com.example.data.AppDatabase.useTestExecutors = false
+        com.example.data.AppDatabase.resetInstanceForTesting()
         try {
             Dispatchers.resetMain()
         } catch (_: IllegalStateException) {

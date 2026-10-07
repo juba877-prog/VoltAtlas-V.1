@@ -23,8 +23,10 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -48,18 +50,32 @@ class HierarchicalBackNavigationTest {
     val composeTestRule = createAndroidComposeRule<ComponentActivity>()
 
     private lateinit var viewModel: EngineeringViewModel
+    private lateinit var database: AppDatabase
 
     @Before
     fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
-        AppDatabase.useTestExecutors = true
+
         val context = ApplicationProvider.getApplicationContext<Application>()
-        viewModel = EngineeringViewModel(context)
+        // KT-12: inject a per-test in-memory Room database. Robolectric's native SQLite shadow
+        // cannot create a file-backed database inside its sandbox directory (SQLITE_CANTOPEN),
+        // which aborted this test before any navigation assertion ran. Production still uses the
+        // real file-backed database. See docs/audit/KT-12_DB_PATH_PROVENANCE.md (classification C).
+        database = androidx.room.Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .setQueryExecutor { it.run() }
+            .setTransactionExecutor { it.run() }
+            .allowMainThreadQueries()
+            .build()
+
+        viewModel = EngineeringViewModel(context, database)
         viewModel.preferences.setHasCompletedFirstLaunch(true)
     }
 
     @After
     fun tearDown() {
+        if (::database.isInitialized && database.isOpen) {
+            database.close()
+        }
         AppDatabase.useTestExecutors = false
         Dispatchers.resetMain()
     }
@@ -79,10 +95,13 @@ class HierarchicalBackNavigationTest {
     }
 
     private fun openTestProject(name: String) {
-        viewModel.createAndOpenProject(name)
-        composeTestRule.waitUntil(timeoutMillis = 15_000) {
-            viewModel.activeProjectId.value != null
-        }
+        // KT-12: await the project-open Job instead of polling a StateFlow against a 15s timeout.
+        // The timeout could only ever mask the underlying SQLite failure.
+        val job = viewModel.createAndOpenProject(name)
+        kotlinx.coroutines.runBlocking { job.join() }
+        assertTrue("project-open coroutine should have completed", job.isCompleted)
+        assertFalse("project-open coroutine must not have failed", job.isCancelled)
+        assertNotNull("createAndOpenProject must publish activeProjectId", viewModel.activeProjectId.value)
         composeTestRule.waitForIdle()
     }
 

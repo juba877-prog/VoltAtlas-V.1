@@ -62,7 +62,7 @@ class Step7LightModeGoldenTest {
 
     @After
     fun tearDown() {
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         if (mainDispatchersOverride) Dispatchers.resetMain()
     }
 

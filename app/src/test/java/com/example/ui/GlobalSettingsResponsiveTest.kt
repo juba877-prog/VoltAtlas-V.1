@@ -56,7 +56,7 @@ class GlobalSettingsNarrowWidthTest {
 
     @After
     fun tearDown() {
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         Dispatchers.resetMain()
     }
 
@@ -110,7 +110,7 @@ class GlobalSettingsEnlargedFontTest {
 
     @After
     fun tearDown() {
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         Dispatchers.resetMain()
     }
 
@@ -166,7 +166,7 @@ class GlobalSettingsMediumInlineRegressionTest {
 
     @After
     fun tearDown() {
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         Dispatchers.resetMain()
     }
 

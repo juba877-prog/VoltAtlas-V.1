@@ -59,7 +59,7 @@ class QuickEngineeringListDetailSceneTest {
 
     @After
     fun tearDown() {
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         Dispatchers.resetMain()
     }
 

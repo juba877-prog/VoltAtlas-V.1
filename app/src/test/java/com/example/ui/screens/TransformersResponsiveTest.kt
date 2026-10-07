@@ -70,7 +70,7 @@ class TransformersNarrowWidthTest {
 
     @After
     fun tearDown() {
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         Dispatchers.resetMain()
     }
 
@@ -162,7 +162,7 @@ class TransformersMediumWidthTest {
 
     @After
     fun tearDown() {
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         Dispatchers.resetMain()
     }
 

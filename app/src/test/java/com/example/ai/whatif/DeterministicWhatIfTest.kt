@@ -125,6 +125,14 @@ class DeterministicWhatIfTest {
     fun tearDown() {
         EngineeringCalculationCoordinator.clearCache()
         EngineeringCalculationCoordinator.freshnessRegistry.clearAll()
+        // KT-12 (test hygiene): EngineeringCalculationCoordinator is a process-wide object
+        // singleton and projectRevisionProvider is GLOBAL state. setUp() bound it to a repository
+        // over the in-memory database that is closed below; without restoring the production
+        // default, every later test class in this JVM inherits a revision provider pointing at a
+        // CLOSED database, the coordinator's revision lookup throws, and EngineeringViewModel
+        // circuits flows silently stop emitting (observed as ProjectIsolationTest failing only
+        // when this class ran first in the same JVM). Restore the production default (null).
+        EngineeringCalculationCoordinator.projectRevisionProvider = null
         database.close()
     }
 

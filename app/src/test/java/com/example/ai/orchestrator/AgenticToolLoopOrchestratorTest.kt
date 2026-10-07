@@ -139,6 +139,10 @@ class AgenticToolLoopOrchestratorTest {
         CloudLlmFeatureGate.resetToDefaults()
         EngineeringCalculationCoordinator.clearCache()
         EngineeringCalculationCoordinator.freshnessRegistry.clearAll()
+        // KT-12 (test hygiene): restore the production default for the process-wide
+        // projectRevisionProvider so no later suite inherits a repository bound to the
+        // in-memory database closed below. See DeterministicWhatIfTest for the full rationale.
+        EngineeringCalculationCoordinator.projectRevisionProvider = null
         database.close()
     }
 

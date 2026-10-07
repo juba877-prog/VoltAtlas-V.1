@@ -36,7 +36,7 @@ class ProjectRevisionTest {
 
     @After
     fun tearDown() {
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         if (::database.isInitialized && database.isOpen) {
             database.close()
         }

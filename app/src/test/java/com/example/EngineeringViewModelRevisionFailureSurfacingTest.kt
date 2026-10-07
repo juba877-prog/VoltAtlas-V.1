@@ -70,7 +70,7 @@ class EngineeringViewModelRevisionFailureSurfacingTest {
         EngineeringCalculationCoordinator.clearCache()
         EngineeringCalculationCoordinator.freshnessRegistry.clearAll()
         EngineeringCalculationCoordinator.projectRevisionProvider = null
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
     }
 
     @Test

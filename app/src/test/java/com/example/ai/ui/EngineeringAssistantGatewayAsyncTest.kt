@@ -20,6 +20,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.ai.approval.DefaultTrustedPrincipalProvider
 import com.example.ai.proposal.DurableMutationWorkflow
 import com.example.data.AppDatabase
+import com.example.data.GlobalPreferences
 import com.example.data.catalog.CatalogRepository
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -56,6 +57,17 @@ class EngineeringAssistantGatewayAsyncTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+        // KT-12: testFactory_createsViewModelWithAsyncGatewayProvider_zeroRunBlockingOnCreation
+        // calls EngineeringAssistantViewModelFactory.production(app), which resolves
+        // AppDatabase.getDatabase(app) and GlobalPreferences.getInstance(app). Both cache
+        // process-wide (no maxParallelForks => one JVM for the whole module), binding an
+        // absolute DB path inside THIS Robolectric sandbox. Later suites in a different sandbox
+        // then failed with:
+        //   SQLiteCantOpenDatabaseException ... '...\robolectric-EngineeringAssistantGatewayAsyncTest_...\
+        //   com.voltatlas.app.v1.debug-dataDir\databases\electrical_engineering_db' doesn't exist
+        // This class was the polluter named in that stack trace. Drop both singletons.
+        AppDatabase.resetInstanceForTesting()
+        GlobalPreferences.resetInstanceForTesting()
     }
 
     @Test

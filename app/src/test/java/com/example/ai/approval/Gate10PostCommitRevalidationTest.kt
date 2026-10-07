@@ -137,7 +137,7 @@ class Gate10PostCommitRevalidationTest {
         EngineeringCalculationCoordinator.projectRevisionProvider = null
         EngineeringCalculationCoordinator.clearCache()
         EngineeringCalculationCoordinator.freshnessRegistry.clearAll()
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         database.close()
     }
 

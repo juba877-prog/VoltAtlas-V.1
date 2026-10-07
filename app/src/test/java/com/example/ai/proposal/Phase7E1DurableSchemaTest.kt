@@ -65,7 +65,7 @@ class Phase7E1DurableSchemaTest {
 
     @After
     fun tearDown() {
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
         database.close()
     }
 

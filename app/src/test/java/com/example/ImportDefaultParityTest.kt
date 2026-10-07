@@ -40,7 +40,7 @@ class ImportDefaultParityTest {
 
     @After
     fun tearDown() {
-        AppDatabase.useTestExecutors = false
+        AppDatabase.resetInstanceForTesting()
     }
 
     private fun ProjectImportResult.defaulted(
