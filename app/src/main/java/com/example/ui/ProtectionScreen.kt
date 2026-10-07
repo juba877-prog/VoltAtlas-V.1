@@ -1014,6 +1014,16 @@ fun ShortCircuitCard(
                     )
                 }
 
+                // Protective Conductor (CPC) Sizing Disclosure (EE-07)
+                Text(
+                    text = "CPC sized per IEC 60364-5-54 Table 54.7 geometric method. Separate CPC adiabatic fault withstand verification is not performed when conductor-specific fault-current model is unavailable.",
+                    style = DsType.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                )
+
                 // Margin Line
                 Row(
                     modifier = Modifier.fillMaxWidth(),

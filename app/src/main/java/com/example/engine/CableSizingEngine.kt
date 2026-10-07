@@ -64,7 +64,9 @@ data class SizingResult(
     val conductorAreaMm2: Double? = null,
     val cpcAreaMm2: Double? = null,
     val r20: Double? = null,
-    val isClearingTimeOverridden: Boolean = false
+    val isClearingTimeOverridden: Boolean = false,
+    val isNeutralOverridden: Boolean = false,
+    val isEarthOverridden: Boolean = false
 ) {
     val phaseConductorAreaMm2: Double? get() = conductorAreaMm2
 }
@@ -91,11 +93,14 @@ object CableSizingEngine {
     const val TEMP_FACTOR_AL_PVC = 1.2015
     const val TEMP_FACTOR_AL_XLPE = 1.2821
 
-    private val STANDARD_SIZES = listOf(
+    val STANDARD_SIZES = listOf(
         1.5, 2.5, 4.0, 6.0, 10.0, 16.0, 25.0, 35.0, 50.0, 70.0,
         95.0, 120.0, 150.0, 185.0, 240.0, 300.0, 400.0, 500.0,
         630.0, 800.0, 1000.0
     )
+
+    fun isStandardSize(size: Double): Boolean =
+        STANDARD_SIZES.any { kotlin.math.abs(it - size) <= EPSILON }
 
     /**
      * Reduced-neutral sizing used by the workbook.
@@ -538,6 +543,42 @@ object CableSizingEngine {
             return failedResult("Applied clearing time override must be greater than zero.", CableFailureCode.INCOMPLETE_INPUT)
         }
 
+        val overrideNeutralText = circuit.overrideNeutralSize?.trim()
+        val parsedOverrideNeutral: Double?
+        val isNeutralOverridden: Boolean
+        if (!overrideNeutralText.isNullOrEmpty() && !overrideNeutralText.equals("AUTO", ignoreCase = true)) {
+            val parsed = parseCableSize(overrideNeutralText)
+            if (parsed == null || parsed <= 0.0 || parsed.isNaN() || parsed.isInfinite() || !isStandardSize(parsed)) {
+                return failedResult(
+                    "Manual neutral size '$overrideNeutralText' is invalid.",
+                    CableFailureCode.INCOMPLETE_INPUT
+                )
+            }
+            parsedOverrideNeutral = parsed
+            isNeutralOverridden = true
+        } else {
+            parsedOverrideNeutral = null
+            isNeutralOverridden = false
+        }
+
+        val overrideEarthText = circuit.overrideEarthSize?.trim()
+        val parsedOverrideEarth: Double?
+        val isEarthOverridden: Boolean
+        if (!overrideEarthText.isNullOrEmpty() && !overrideEarthText.equals("AUTO", ignoreCase = true)) {
+            val parsed = parseCableSize(overrideEarthText)
+            if (parsed == null || parsed <= 0.0 || parsed.isNaN() || parsed.isInfinite() || !isStandardSize(parsed)) {
+                return failedResult(
+                    "Manual earth size '$overrideEarthText' is invalid.",
+                    CableFailureCode.INCOMPLETE_INPUT
+                )
+            }
+            parsedOverrideEarth = parsed
+            isEarthOverridden = true
+        } else {
+            parsedOverrideEarth = null
+            isEarthOverridden = false
+        }
+
         val isThreePhase = circuit.phases.trim().uppercase().contains("3P")
         val ibA = if (isThreePhase) {
             circuit.loadKVA * 1000.0 / (sqrt(3.0) * circuit.voltageV)
@@ -849,7 +890,9 @@ object CableSizingEngine {
         val selectedEntry = selectedCheck.entry
         val cableSizeDouble = selectedEntry.size
         val cableSizeMm2 = formatSize(cableSizeDouble)
-        val neutralSize = if (isThreePhase) {
+        val neutralSize = if (isNeutralOverridden) {
+            parsedOverrideNeutral!!
+        } else if (isThreePhase) {
             if (circuit.isHarmonic) {
                 cableSizeDouble
             } else {
@@ -858,7 +901,11 @@ object CableSizingEngine {
         } else {
             cableSizeDouble
         }
-        val cpcSize = getCPCSize(cableSizeDouble)
+        val cpcSize = if (isEarthOverridden) {
+            parsedOverrideEarth!!
+        } else {
+            getCPCSize(cableSizeDouble)
+        }
 
         val utilizationPct = if (selectedCheck.izDeratedA > 0.0) {
             ibA / selectedCheck.izDeratedA * 100.0
@@ -1017,7 +1064,9 @@ object CableSizingEngine {
             breakerOrderingCode = breakerOrderingCode,
             conductorAreaMm2 = selectedEntry.size,
             cpcAreaMm2 = cpcSize,
-            isClearingTimeOverridden = isClearingTimeOverridden
+            isClearingTimeOverridden = isClearingTimeOverridden,
+            isNeutralOverridden = isNeutralOverridden,
+            isEarthOverridden = isEarthOverridden
         )
     }
 

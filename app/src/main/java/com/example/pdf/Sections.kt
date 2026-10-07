@@ -409,6 +409,13 @@ class ProtectionSection : ReportSectionProvider {
         }
         
         renderer.drawTable(headers, rows, renderer.marginX)
+        renderer.currentY += 8f
+        renderer.drawWrappedText(
+            "Note: CPC sized per IEC 60364-5-54 Table 54.7 geometric method. Separate CPC adiabatic fault withstand verification is not performed when conductor-specific fault-current model is unavailable.",
+            renderer.marginX,
+            renderer.pageWidth - 2 * renderer.marginX,
+            renderer.theme.tableBodyPaint
+        )
     }
 }
 
