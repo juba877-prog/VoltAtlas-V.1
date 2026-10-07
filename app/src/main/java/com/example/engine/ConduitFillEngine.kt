@@ -245,7 +245,7 @@ object ConduitFillEngine {
         }
 
         val availableConduits = catalog.filter {
-            it.conduitType.trim().equals(input.conduitType.trim(), ignoreCase = true) || input.conduitType == "Rigid PVC"
+            it.conduitType.trim().equals(input.conduitType.trim(), ignoreCase = true)
         }.sortedBy { it.internalAreaMm2 }
 
         val candidateList = if (availableConduits.isNotEmpty()) availableConduits else catalog.sortedBy { it.internalAreaMm2 }

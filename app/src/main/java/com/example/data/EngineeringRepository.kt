@@ -249,17 +249,20 @@ class EngineeringRepository(
     suspend fun getTransformerById(projectId: String, id: String): TransformerEntity? = transformerDao.getTransformerById(projectId, id)
 
     suspend fun insertCircuit(circuit: CircuitEntity) = withProjectMutation(circuit.projectId) {
-        circuitDao.insertCircuit(circuit)
+        val normalized = DomainNormalization.run { circuit.normalized() }
+        circuitDao.insertCircuit(normalized)
     }
     suspend fun insertCircuits(circuits: List<CircuitEntity>) {
         if (circuits.isEmpty()) return
-        val projectIds = circuits.map { it.projectId }.distinct()
+        val normalizedList = circuits.map { DomainNormalization.run { it.normalized() } }
+        val projectIds = normalizedList.map { it.projectId }.distinct()
         withProjectsMutation(projectIds) {
-            circuitDao.insertCircuits(circuits)
+            circuitDao.insertCircuits(normalizedList)
         }
     }
     suspend fun updateCircuit(circuit: CircuitEntity) = withProjectMutation(circuit.projectId) {
-        circuitDao.updateCircuit(circuit)
+        val normalized = DomainNormalization.run { circuit.normalized() }
+        circuitDao.updateCircuit(normalized)
     }
     suspend fun deleteCircuit(circuit: CircuitEntity) = withProjectMutation(circuit.projectId) {
         circuitDao.deleteCircuitWithCascade(circuit)

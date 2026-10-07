@@ -23,6 +23,7 @@
 > | D9 | **APPROVED — REMOVE** | NOT EXECUTED in Phase C by owner instruction (belongs to the later architecture/security phase) |
 > | D10 | **APPROVED** — revised deferral list (below) | Recorded |
 | D-EE-07 | **APPROVED** — Option B (Transparent Standard Disclosure) | **IMPLEMENTED/VERIFIED** (Phase D, EE-07) |
+| D-EE-11 | **APPROVED** — Fix ConduitFillEngine Conduit Material Filtering (P1-08) | **IMPLEMENTED/VERIFIED** (Phase D, ECT-D-EE-11) |
 >
 > ### D4 — governing-basis constraint (binding on implementation)
 >
@@ -241,3 +242,28 @@ Rationale:
 | Ticket | EE-07 |
 | Owner Decision | D-EE-07: APPROVE OPTION B — TRANSPARENT STANDARD DISCLOSURE |
 | Implementation State | IN PROGRESS |
+---
+
+## D-EE-11 OWNER DECISION — ConduitFillEngine Material Filtering Fix (P1-08) (added 2026-10-07)
+
+Decision ID:
+    D-EE-11 / P1-08
+
+Decision:
+    APPROVED — FIX CONDUITFILLENGINE CONDUIT-TYPE MATERIAL FILTERING (ECT-D-EE-11)
+
+Implementation Scope:
+- Tier-F engine `app/src/main/java/com/example/engine/ConduitFillEngine.kt:247-249` corrected.
+- Removed defective disjunction `|| input.conduitType == "Rigid PVC"` from catalog filter predicate.
+- Restored strict conduit material filtering parity with `QuickConduitFillEngine`.
+- Only catalog rows matching requested canonical conduit type are eligible; metallic EMT/GI conduits are strictly excluded for PVC queries.
+- Manifest `docs/audit/protected_files.sha256` updated with new blob hash.
+- Verified across double full gate (332 suites, 2943 tests, 0 failures), release compilation, and lint.
+
+| Field | Value |
+|---|---|
+| Date | 2026-10-07 |
+| Ticket | ECT-D-EE-11 / P1-08 |
+| Owner Decision | D-EE-11: APPROVED — Fix ConduitFillEngine conduit-type material filtering |
+| Implementation State | IMPLEMENTED/VERIFIED |
+| Tier-F Scope | AUTHORIZED: app/src/main/java/com/example/engine/ConduitFillEngine.kt only |

@@ -484,3 +484,83 @@ Full evidence: `EE-06.md` PART D **D7** (D0–D6 preserved as the historical blo
     Golden Differential:
                        - EMPTY. Zero changes to baseline reference cases.
     Final Status:      CLOSED — VERIFIED
+
+---
+
+### ECT-KT-06 — String-Typed Engineering Domain State Normalization (R1)
+
+    ECT id:            ECT-KT-06
+    Finding / decision: KT-06 (Approved Boundary Normalization)
+    Tier F files:      NONE
+                       (Tier F engines remain strictly frozen: 0 drift)
+    Files (production):
+                       NEW app/src/main/java/com/example/data/DomainNormalization.kt
+                       MODIFIED app/src/main/java/com/example/data/EngineeringRepository.kt
+                       MODIFIED app/src/main/java/com/example/ui/dialogs/circuiteditor/mapper/CircuitEntityMapper.kt
+                       MODIFIED app/src/main/java/com/example/ui/dialogs/CircuitEditDialog.kt
+    Files (test):      NEW app/src/test/java/com/example/engine/DomainStringNormalizationCharacterizationTest.kt
+                       NEW app/src/test/java/com/example/engine/DomainStringNormalizationTargetTest.kt
+    Files (audit):     docs/audit/KT-06.md, docs/audit/DECISIONS.md, docs/audit/ECT_LEDGER.md
+    Characterization test: DomainStringNormalizationCharacterizationTest
+                           (PASSED 3/3: harmonicPhaseFactor startsWith("3") vulnerability, conductorMaterial synonym catalog lookup failure, phases contains("3P") vulnerability)
+    Target test:       DomainStringNormalizationTargetTest
+                           (PASSED 8/8: phase normalization to 3P calculation across variants, single phase normalization, material synonyms Cu/Al, insulation synonyms XLPE/PVC, harmonic derating across variants, conduit catalog equivalence, authoritative engine conduit filtering)
+    Expected Golden diff: EMPTY (Golden tests evaluate calculation results; normalization ensures inputs match catalog expectations)
+    Rollback:          git checkout <commit> -- app/src/main/java/com/example/data/EngineeringRepository.kt app/src/main/java/com/example/ui/dialogs/circuiteditor/mapper/CircuitEntityMapper.kt app/src/main/java/com/example/ui/dialogs/CircuitEditDialog.kt; rm app/src/main/java/com/example/data/DomainNormalization.kt
+    Owner signature / date: 2026-10-07 — Phase E KT-06 boundary normalization authorized.
+    Engineering basis:
+                       - Critical electrical domain strings (phase systems, conductor materials, insulation types, cable catalog keys, conduit types) normalized at entity ingestion and UI boundaries.
+                       - Room schema preserved (no column type alterations or migration required, AppDatabase hash unchanged).
+                       - Frozen Tier-F calculation engines preserved (ConduitFillEngine defect P1-08 resolved under companion ECT-D-EE-11).
+                       - Preserves lossless round-trip serialization in importProjectFromJsonDetailed per SEC-02 / D6.
+    Gate Verification:
+                       - Full Gate Run #1: 332 suites / 2943 tests / 0 failures / 0 errors / 17 skipped (8m 24s, EXITCODE=0)
+                       - Full Gate Run #2: 332 suites / 2943 tests / 0 failures / 0 errors / 17 skipped (8m 01s, EXITCODE=0)
+                       - lintDebug: BUILD SUCCESSFUL (0 errors, 0 fatal)
+                       - lintRelease: BUILD SUCCESSFUL (0 errors, 0 fatal)
+                       - compileReleaseKotlin: BUILD SUCCESSFUL (EXITCODE=0)
+    Tier-F Manifest Verification:
+                       - Exactly 1 Tier-F engine file (ConduitFillEngine.kt) opened under authorized ECT-D-EE-11; all other 26 files untouched.
+    Golden Differential:
+                       - EMPTY. Zero changes to baseline reference cases.
+    Final Status:      CLOSED — VERIFIED
+
+---
+
+### ECT-D-EE-11 / P1-08 — ConduitFillEngine Conduit Material Filter Restoration
+
+    ECT id:            ECT-D-EE-11
+    Finding / defect:  P1-08 (I-03 / AB-B09) / D-EE-11
+    Tier F files:      MODIFIED app/src/main/java/com/example/engine/ConduitFillEngine.kt
+                       (Lines 247–249: removed defective disjunction '|| input.conduitType == "Rigid PVC"')
+    Files (production):
+                       MODIFIED app/src/main/java/com/example/engine/ConduitFillEngine.kt
+    Files (test):      MODIFIED app/src/test/java/com/example/ConduitFillMaterialFilterCharacterizationTest.kt
+                       MODIFIED app/src/test/java/com/example/engine/DomainStringNormalizationTargetTest.kt
+    Files (audit):     docs/audit/protected_files.sha256, docs/audit/DECISIONS.md, docs/audit/ECT_LEDGER.md, docs/audit/KT-06.md
+    Characterization test: ConduitFillMaterialFilterCharacterizationTest (historically locked defective EMT selection)
+    Target test:       ConduitFillMaterialFilterCharacterizationTest.rigidPvcRequestStrictlyFiltersMaterial_targetRegression
+                       DomainStringNormalizationTargetTest.testConduitTypeNormalization_authoritativeEngineFiltering
+                       (PASSED: proves strict material filtering across PVC, Rigid PVC, EMT, GI/RMC, and regression boundary)
+    Expected Golden diff: EMPTY / NOT APPLICABLE (Golden baseline does not track conduit fill sizing)
+    Rollback:          git checkout <commit> -- app/src/main/java/com/example/engine/ConduitFillEngine.kt app/src/test/java/com/example/ConduitFillMaterialFilterCharacterizationTest.kt app/src/test/java/com/example/engine/DomainStringNormalizationTargetTest.kt
+    SHA-256 before:    ConduitFillEngine.kt = 98e49d23c758938cc75f092c0c90e314071fbc5361ddfd249cc3010773b7a3dc
+    SHA-256 after:     ConduitFillEngine.kt = bed51dcce14c70d4a9c21c14e2f8c330d7135002585f0ba8e06da4376d0aa317
+    Owner signature / date: 2026-10-07 — Owner explicitly authorized ECT-D-EE-11 / P1-08 Tier-F scope.
+    Engineering basis:
+                       - Removed defective disjunction '|| input.conduitType == "Rigid PVC"' from ConduitFillEngine.kt:248.
+                       - Restored strict conduit material filtering parity with QuickConduitFillEngine.
+                       - PVC requests strictly consider only Rigid PVC candidates; metallic EMT/GI rows are fully excluded.
+                       - No modifications to formulas, fill ratios, cable areas, or catalog data.
+    Gate Verification:
+                       - Full Gate Run #1: 332 suites / 2943 tests / 0 failures / 0 errors / 17 skipped (8m 24s, EXITCODE=0)
+                       - Full Gate Run #2: 332 suites / 2943 tests / 0 failures / 0 errors / 17 skipped (8m 01s, EXITCODE=0)
+                       - lintDebug: BUILD SUCCESSFUL (0 errors, 0 fatal)
+                       - lintRelease: BUILD SUCCESSFUL (0 errors, 0 fatal)
+                       - compileReleaseKotlin: BUILD SUCCESSFUL (EXITCODE=0)
+    Tier-F Manifest Verification:
+                       - Line 6 of docs/audit/protected_files.sha256 updated to bed51dcce14c70d4a9c21c14e2f8c330d7135002585f0ba8e06da4376d0aa317.
+                       - Exactly 1 Tier-F engine file modified under owner authorization.
+    Golden Differential:
+                       - EMPTY / NOT APPLICABLE. Zero changes to baseline calculation cases.
+    Final Status:      CLOSED — VERIFIED

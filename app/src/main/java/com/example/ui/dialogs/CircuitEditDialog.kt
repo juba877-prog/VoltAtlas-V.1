@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.Catalog
 import com.example.data.CircuitEntity
+import com.example.data.DomainNormalization
 import com.example.data.LoadCategories
 import com.example.data.SourceType
 import com.example.data.resolveCableType
@@ -1225,12 +1226,12 @@ private fun LegacyCircuitEditDialogInternal(
                         fedFrom = fedFrom,
                         transformerId = finalTxId,
                         loadType = loadType,
-                        phases = phases,
+                        phases = DomainNormalization.normalizePhases(phases),
                         voltageV = intVoltage,
                         pf = doublePf,
                         safetyFactor = doubleSafety,
                         manufacturer = manufacturer,
-                        cableType = cableType,
+                        cableType = DomainNormalization.normalizeCableType(cableType),
                         installation = installation,
                         parallelRuns = intParallel,
                         airTempC = intAirTemp,
@@ -1276,12 +1277,12 @@ private fun LegacyCircuitEditDialogInternal(
                         fedFrom = fedFrom,
                         transformerId = finalTxId,
                         loadType = loadType,
-                        phases = phases,
+                        phases = DomainNormalization.normalizePhases(phases),
                         voltageV = intVoltage,
                         pf = doublePf,
                         safetyFactor = doubleSafety,
                         manufacturer = manufacturer,
-                        cableType = cableType,
+                        cableType = DomainNormalization.normalizeCableType(cableType),
                         installation = installation,
                         parallelRuns = intParallel,
                         airTempC = intAirTemp,

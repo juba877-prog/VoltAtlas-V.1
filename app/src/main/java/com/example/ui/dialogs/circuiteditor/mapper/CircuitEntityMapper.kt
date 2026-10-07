@@ -1,6 +1,7 @@
 package com.example.ui.dialogs.circuiteditor.mapper
 
 import com.example.data.CircuitEntity
+import com.example.data.DomainNormalization
 import com.example.ui.dialogs.circuiteditor.model.CircuitEditorDraft
 import kotlin.math.max
 
@@ -61,12 +62,12 @@ object CircuitEntityMapper {
             fedFrom = draft.fedFrom,
             transformerId = resolution.finalTxId,
             loadType = draft.supplyCategory,
-            phases = draft.phases,
+            phases = DomainNormalization.normalizePhases(draft.phases),
             voltageV = intVoltage,
             pf = doublePf,
             safetyFactor = doubleSafety,
             manufacturer = draft.manufacturer,
-            cableType = draft.cableType,
+            cableType = DomainNormalization.normalizeCableType(draft.cableType),
             installation = draft.installation,
             parallelRuns = intParallel,
             airTempC = intAirTemp,
@@ -112,12 +113,12 @@ object CircuitEntityMapper {
             fedFrom = draft.fedFrom,
             transformerId = resolution.finalTxId,
             loadType = draft.supplyCategory,
-            phases = draft.phases,
+            phases = DomainNormalization.normalizePhases(draft.phases),
             voltageV = intVoltage,
             pf = doublePf,
             safetyFactor = doubleSafety,
             manufacturer = draft.manufacturer,
-            cableType = draft.cableType,
+            cableType = DomainNormalization.normalizeCableType(draft.cableType),
             installation = draft.installation,
             parallelRuns = intParallel,
             airTempC = intAirTemp,

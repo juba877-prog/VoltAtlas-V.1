@@ -11,25 +11,20 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * P1-8 (I-03 / AB-B09) CHARACTERIZATION — protected engine.
+ * P1-8 (I-03 / AB-B09) / ECT-D-EE-11 TARGET REGRESSION — protected engine.
  *
- * The strict-conformance engine (ConduitFillEngine.kt:247-249) filters its catalog with
- * `type == input.type || input.conduitType == "Rigid PVC"` — the disjunct makes the material
- * filter a NO-OP for Rigid PVC requests, admitting EMT/GI rows. The quick tool
- * (QuickConduitFillEngine.kt:217-219) filters strictly by material.
+ * Previously, the strict-conformance engine (ConduitFillEngine.kt:247-249) filtered its catalog with
+ * `type == input.type || input.conduitType == "Rigid PVC"` — the disjunct made the material
+ * filter a NO-OP for Rigid PVC requests, admitting EMT/GI rows.
  *
- * `com.example.engine.*` is PROTECTED by the Phase 6 protected-engine rule, so this file
- * LOCKS today's defective behavior instead of changing it. If an assertion here fails, the
- * protected engine's material filter changed — that is either the landed fix (update these
- * expectations to the strict-material contract consciously) or a regression. Do not weaken
- * the assertions to keep them green.
+ * Authorized by ECT-D-EE-11 (P1-08), strict material filtering was restored.
+ * Both ConduitFillEngine and QuickConduitFillEngine now strictly filter by requested material.
  */
 class ConduitFillMaterialFilterCharacterizationTest {
 
     /**
      * Areas (mm2, pi*d^2/4): PVC_20 = 196.07, GI_20 = 232.35, EMT_20 = 343.07, PVC_25 = 346.36.
-     * EMT_20 is both early in the list and the smallest adequate area, so the engine's
-     * area-sorted `firstOrNull { fill <= allowed }` picks it under EITHER ordering hypothesis.
+     * With strict filtering, EMT_20 and GI_20 are excluded for Rigid PVC requests.
      */
     private val mixedCatalog = listOf(
         ConduitCatalogEntry("PVC_20", "Rigid PVC", "20 mm", 15.8),
@@ -53,21 +48,22 @@ class ConduitFillMaterialFilterCharacterizationTest {
     )
 
     @Test
-    fun rigidPvcRequestRecommendsEmtRow_characterizesProtectedDefect() {
+    fun rigidPvcRequestStrictlyFiltersMaterial_targetRegression() {
         val res = ConduitFillEngine.calculate(pvcRequest(), mixedCatalog)
 
-        // fill ratios: 94.75/196.07 = 48.3%, 94.75/232.35 = 40.8%, 94.75/343.07 = 27.6% (<= 31 OK)
+        // Strict material filtering admits only PVC rows:
+        // PVC_20 (196.07 mm2) has 48.3% fill > 31% (fails).
+        // PVC_25 (346.36 mm2) has 27.4% fill <= 31% (passes).
+        // EMT_20 (343.07 mm2) is strictly rejected because it is EMT Steel.
         assertEquals(
-            "CHARACTERIZATION (P1-8 / I-03 / AB-B09): a 'Rigid PVC' request recommends an EMT " +
-                "Steel conduit because the protected filter ORs in every catalog row for Rigid " +
-                "PVC. This assertion LOCKS the current DEFECTIVE behavior — if it fails, the " +
-                "protected engine's material filter changed; update this test consciously.",
-            "20 mm EMT",
+            "ECT-D-EE-11 / P1-08 target: a 'Rigid PVC' request strictly recommends a PVC " +
+                "conduit and rejects EMT/GI candidates.",
+            "25 mm",
             res.recommendedTradeSize
         )
         assertEquals(
-            "Characterization companion: the recommended row is the EMT entry itself.",
-            "EMT_20",
+            "Target companion: the recommended row is PVC_25, not an EMT/GI entry.",
+            "PVC_25",
             res.recommendedConduitId
         )
     }
