@@ -1127,6 +1127,41 @@ abstract class AppDatabase : RoomDatabase() {
                 instance
             }
         }
+
+        /**
+         * Drops the cached [INSTANCE] and resets [useTestExecutors] so the next [getDatabase] call
+         * rebuilds against the current context.
+         *
+         * **Test-infrastructure affordance only — never call this from production code.**
+         *
+         * Why this exists (KT-12): Robolectric gives each distinct `@Config` (sdk + qualifiers) its
+         * own sandbox with its own temporary application data directory, but Gradle runs every test
+         * class in a SINGLE JVM. [INSTANCE] is process-wide, so the first suite to call
+         * [getDatabase] pins the instance — and therefore the absolute database file path inside
+         * that suite's temp directory — for every later suite. Once Robolectric rotates to a
+         * sandbox whose temp directory differs, the cached instance points at a path that no longer
+         * exists and Room fails with `SQLiteCantOpenDatabaseException (code 14 SQLITE_CANTOPEN)`.
+         * The same staleness also makes `useTestExecutors` (a global flag read at build time)
+         * ineffective, because a cached instance keeps whatever executor configuration it was
+         * created with — which surfaces downstream as `ComposeTimeoutException`.
+         *
+         * This mirrors the existing [GlobalPreferences.resetInstanceForTesting] convention. It adds
+         * no production behaviour: production calls [getDatabase] once per process and never
+         * resets, exactly as before.
+         */
+        @androidx.annotation.VisibleForTesting
+        fun resetInstanceForTesting() {
+            synchronized(this) {
+                INSTANCE?.let { cached ->
+                    if (cached.isOpen) {
+                        // Best-effort: a test may already have closed it.
+                        runCatching { cached.close() }
+                    }
+                }
+                INSTANCE = null
+                useTestExecutors = false
+            }
+        }
     }
 }
 
