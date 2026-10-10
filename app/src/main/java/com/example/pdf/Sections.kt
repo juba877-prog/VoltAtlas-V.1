@@ -2,6 +2,23 @@ package com.example.pdf
 
 import android.graphics.Paint
 import com.example.verdict.CircuitFinalVerdict
+import java.util.Locale
+
+/**
+ * KT-03 (D7) — Deterministic engineering number formatters.
+ *
+ * Enforces [Locale.US] so that PDF deliverables always emit dot decimal separators
+ * and ASCII digits regardless of the host device's locale (French, German, Arabic, etc.).
+ */
+fun String.formatEng(vararg args: Any?): String =
+    String.format(Locale.US, this, *args)
+
+fun Double.formatEng(pattern: String = "%.2f"): String =
+    String.format(Locale.US, pattern, this)
+
+fun Float.formatEng(pattern: String = "%.2f"): String =
+    String.format(Locale.US, pattern, this)
+
 
 /**
  * ECT-EE-06 (D5) — the **canonical Executive Summary verdict**, extracted from
@@ -115,7 +132,7 @@ fun powerSystemsReportBlocks(snapshot: ProjectReportSnapshot): List<PowerSystemR
                     typeLabel = "GENERATOR",
                     instanceId = id,
                     keyValues = listOf(
-                        "Design kVA" to "%.1f".format(gen.designCapacity),
+                        "Design kVA" to "%.1f".formatEng(gen.designCapacity),
                         "Status" to formatReportStatus(gen.status)
                     )
                 )
@@ -127,7 +144,7 @@ fun powerSystemsReportBlocks(snapshot: ProjectReportSnapshot): List<PowerSystemR
                     typeLabel = "ATS",
                     instanceId = id,
                     keyValues = listOf(
-                        "Governing Current" to "%.1f A".format(ats.governingCurrent),
+                        "Governing Current" to "%.1f A".formatEng(ats.governingCurrent),
                         "Status" to formatReportStatus(ats.status)
                     )
                 )
@@ -139,7 +156,7 @@ fun powerSystemsReportBlocks(snapshot: ProjectReportSnapshot): List<PowerSystemR
                     typeLabel = "UPS",
                     instanceId = id,
                     keyValues = listOf(
-                        "Design kVA" to "%.1f".format(ups.designUpsKVA),
+                        "Design kVA" to "%.1f".formatEng(ups.designUpsKVA),
                         "Status" to formatReportStatus(ups.status)
                     )
                 )
@@ -159,43 +176,77 @@ class ExecutiveSummarySection : ReportSectionProvider {
     override fun render(renderer: PdfDocumentRenderer, snapshot: ProjectReportSnapshot) {
         renderer.beginPage(true) // Portrait
         renderer.markSectionStart(sectionName)
-        renderer.ensureSpace(40f, true) 
+        renderer.ensureSpace(40f, true)
         renderer.drawText("1. EXECUTIVE SUMMARY", renderer.marginX, renderer.currentY - renderer.theme.headerPaint.ascent(), renderer.theme.headerPaint)
         renderer.currentY += 20f
-        
+
         if (!renderer.isPass1) {
             renderer.canvas?.drawLine(renderer.marginX, renderer.currentY, renderer.pageWidth - renderer.marginX, renderer.currentY, renderer.theme.dividerPaint)
         }
         renderer.currentY += 15f
-        
+
         val maxLoading = snapshot.transformerResults.values.maxOfOrNull { it.loadingPct } ?: 0.0
         val maxVd = snapshot.sizingResults.values.maxOfOrNull { it.cumulativeVDpct } ?: 0.0
         val maxIsc = snapshot.shortCircuitResults.values.maxOfOrNull { it.iscKA } ?: 0.0
-        
+
         // ECT-EE-06 (D5): derived by the single canonical verdict function so the report
         // can never claim PASS while an authoritative ProtectionResult says FAIL.
         val rawStatus = executiveSummaryStatus(snapshot)
         val cableTxStatus = formatReportStatus(rawStatus)
-        
+
         val clientLine = snapshot.project.clientName?.takeIf { it.isNotBlank() }?.let { "Client: $it\n" } ?: ""
         val content = """
             Project Name: ${snapshot.project.projectName}
             ${clientLine}Cable & Transformer Validation: $cableTxStatus
-            
+
             Key Metrics:
             - Active Circuits: ${snapshot.circuits.size}
             - Active Transformers: ${snapshot.transformers.size}
-            - Max Transformer Loading: ${"%.1f".format(maxLoading)} %
-            - Max Cumulative Voltage Drop: ${"%.2f".format(maxVd)} %
-            - Max Short Circuit Current (3φ): ${"%.2f".format(maxIsc)} kA
+            - Max Transformer Loading: ${"%.1f".formatEng(maxLoading)} %
+            - Max Cumulative Voltage Drop: ${"%.2f".formatEng(maxVd)} %
+            - Max Short Circuit Current (3φ): ${"%.2f".formatEng(maxIsc)} kA
         """.trimIndent()
-        
+
         val p = renderer.theme.bodyPaint
-        
+
         content.split("\n").forEach { text ->
             renderer.drawWrappedText(text, renderer.marginX, renderer.pageWidth - 2 * renderer.marginX, p)
             renderer.currentY += 15f
         }
+    }
+}
+
+fun buildCircuitsTableRows(snapshot: ProjectReportSnapshot): List<TableRow> {
+    return snapshot.circuits.map { circuit ->
+        val result = snapshot.sizingResults[circuit.id]
+        val msgs = result?.failReason ?: ""
+        // ECT-EE-06 (D5): the table status comes from the canonical verdict, so the
+        // PDF row can no longer show PASS while protection reports Isc > Icu.
+        val formattedStatus = formatReportStatus(circuitTableStatus(result, snapshot.protectionResults[circuit.id]))
+        val statusText = if (msgs.isNotBlank()) "$formattedStatus\n$msgs" else formattedStatus
+        val utilPct = result?.utilizationPct?.let { "%.1f".formatEng(it) } ?: "-"
+
+        val devType = result?.deviceType?.takeIf { it.isNotBlank() } ?: "CB"
+        val devSize = result?.deviceSize_A?.let { "%.0f".formatEng(it) } ?: "-"
+        val deviceText = "$devType $devSize A"
+
+        val cableText = if (result?.cableSize_mm2 != null) "${circuit.cableType} ${result.cableSize_mm2}" else "-"
+        val panelType = circuit.panelType?.takeIf { it.isNotBlank() } ?: "-"
+
+        TableRow(listOf(
+            circuit.circuitName,
+            circuit.fedFrom,
+            panelType,
+            "%.1f".formatEng(circuit.loadKVA),
+            result?.Ib_A?.let { "%.1f".formatEng(it) } ?: "-",
+            deviceText,
+            cableText,
+            result?.capacity_derated_Iz_A?.let { "%.1f".formatEng(it) } ?: "-",
+            utilPct,
+            result?.vdPct?.let { "%.2f".formatEng(it) } ?: "-",
+            result?.cumulativeVDpct?.let { "%.2f".formatEng(it) } ?: "-",
+            statusText
+        ))
     }
 }
 
@@ -204,17 +255,17 @@ class CircuitsSection : ReportSectionProvider {
     override fun render(renderer: PdfDocumentRenderer, snapshot: ProjectReportSnapshot) {
         renderer.beginPage(false) // Landscape
         renderer.markSectionStart(sectionName)
-        
+
         renderer.drawText("2. CIRCUITS & CABLE SIZING", renderer.marginX, renderer.currentY - renderer.theme.headerPaint.ascent(), renderer.theme.headerPaint)
         renderer.currentY += 20f
         if (!renderer.isPass1) {
             renderer.canvas?.drawLine(renderer.marginX, renderer.currentY, renderer.pageWidth - renderer.marginX, renderer.currentY, renderer.theme.dividerPaint)
         }
         renderer.currentY += 15f
-        
+
         val contentWidth = renderer.pageWidth - 2 * renderer.marginX
         val colWidth = contentWidth / 7.5f
-        
+
         val headers = listOf(
             TableColumn("Circuit", colWidth * 0.8f, renderer.theme.tableHeaderPaint),
             TableColumn("Fed From", colWidth * 0.7f, renderer.theme.tableHeaderPaint),
@@ -229,39 +280,9 @@ class CircuitsSection : ReportSectionProvider {
             TableColumn("Cum. VD %", colWidth * 0.5f, renderer.theme.tableHeaderPaint, TextAlign.RIGHT),
             TableColumn("Status", colWidth * 0.7f, renderer.theme.tableHeaderPaint)
         )
-        
-        val rows = snapshot.circuits.map { circuit ->
-            val result = snapshot.sizingResults[circuit.id]
-            val msgs = result?.failReason ?: ""
-            // ECT-EE-06 (D5): the table status comes from the canonical verdict, so the
-            // PDF row can no longer show PASS while protection reports Isc > Icu.
-            val formattedStatus = formatReportStatus(circuitTableStatus(result, snapshot.protectionResults[circuit.id]))
-            val statusText = if (msgs.isNotBlank()) "$formattedStatus\n$msgs" else formattedStatus
-            val utilPct = result?.utilizationPct?.let { "%.1f".format(it) } ?: "-"
-            
-            val devType = result?.deviceType?.takeIf { it.isNotBlank() } ?: "CB"
-            val devSize = result?.deviceSize_A?.let { "%.0f".format(it) } ?: "-"
-            val deviceText = "$devType $devSize A"
-            
-            val cableText = if (result?.cableSize_mm2 != null) "${circuit.cableType} ${result.cableSize_mm2}" else "-"
-            val panelType = circuit.panelType?.takeIf { it.isNotBlank() } ?: "-"
-            
-            TableRow(listOf(
-                circuit.circuitName,
-                circuit.fedFrom,
-                panelType,
-                "%.1f".format(circuit.loadKVA),
-                result?.Ib_A?.let { "%.1f".format(it) } ?: "-",
-                deviceText,
-                cableText,
-                result?.capacity_derated_Iz_A?.let { "%.1f".format(it) } ?: "-",
-                utilPct,
-                result?.vdPct?.let { "%.2f".format(it) } ?: "-",
-                result?.cumulativeVDpct?.let { "%.2f".format(it) } ?: "-",
-                statusText
-            ))
-        }
-        
+
+        val rows = buildCircuitsTableRows(snapshot)
+
         renderer.drawTable(headers, rows, renderer.marginX)
         renderer.currentY += 8f
         renderer.drawWrappedText(
@@ -273,22 +294,37 @@ class CircuitsSection : ReportSectionProvider {
     }
 }
 
+fun buildTransformersTableRows(snapshot: ProjectReportSnapshot): List<TableRow> {
+    return snapshot.transformers.map { tx ->
+        val result = snapshot.transformerResults[tx.transformerId]
+        TableRow(listOf(
+            "${tx.transformerId}\n(${tx.txType})",
+            "${tx.percentZ}% / ${tx.vectorGroup}",
+            "${tx.kVA}",
+            result?.flc?.let { "%.1f".formatEng(it) } ?: "-",
+            result?.isc3Phase?.let { "%.2f".formatEng(it) } ?: "-",
+            result?.zt?.let { "%.1f".formatEng(it) } ?: "-",
+            result?.loadingPct?.let { "%.1f".formatEng(it) } ?: "-"
+        ))
+    }
+}
+
 class TransformersSection : ReportSectionProvider {
     override val sectionName = "Transformers"
     override fun render(renderer: PdfDocumentRenderer, snapshot: ProjectReportSnapshot) {
         renderer.beginPage(true) // Portrait
         renderer.markSectionStart(sectionName)
-        
+
         renderer.drawText("3. TRANSFORMERS", renderer.marginX, renderer.currentY - renderer.theme.headerPaint.ascent(), renderer.theme.headerPaint)
         renderer.currentY += 20f
         if (!renderer.isPass1) {
             renderer.canvas?.drawLine(renderer.marginX, renderer.currentY, renderer.pageWidth - renderer.marginX, renderer.currentY, renderer.theme.dividerPaint)
         }
         renderer.currentY += 15f
-        
+
         val contentWidth = renderer.pageWidth - 2 * renderer.marginX
         val colWidth = contentWidth / 6f
-        
+
         val headers = listOf(
             TableColumn("Transformer", colWidth, renderer.theme.tableHeaderPaint),
             TableColumn("%Z / Vector", colWidth, renderer.theme.tableHeaderPaint),
@@ -298,20 +334,9 @@ class TransformersSection : ReportSectionProvider {
             TableColumn("Zt (mΩ)", colWidth * 0.6f, renderer.theme.tableHeaderPaint, TextAlign.RIGHT),
             TableColumn("Loading %", colWidth, renderer.theme.tableHeaderPaint, TextAlign.RIGHT)
         )
-        
-        val rows = snapshot.transformers.map { tx ->
-            val result = snapshot.transformerResults[tx.transformerId]
-            TableRow(listOf(
-                "${tx.transformerId}\n(${tx.txType})",
-                "${tx.percentZ}% / ${tx.vectorGroup}",
-                "${tx.kVA}",
-                result?.flc?.let { "%.1f".format(it) } ?: "-",
-                result?.isc3Phase?.let { "%.2f".format(it) } ?: "-",
-                result?.zt?.let { "%.1f".format(it) } ?: "-",
-                result?.loadingPct?.let { "%.1f".format(it) } ?: "-"
-            ))
-        }
-        
+
+        val rows = buildTransformersTableRows(snapshot)
+
         renderer.drawTable(headers, rows, renderer.marginX)
     }
 }
@@ -331,7 +356,7 @@ class PowerSystemsSection : ReportSectionProvider {
             renderer.drawText("$key: $value", renderer.marginX, currentY, renderer.theme.bodyPaint)
             currentY += 15f
         }
-        
+
         // One block per instance, keyed by the instance identifier — no ordinal selection.
         // The block structure comes from the deterministic powerSystemsReportBlocks() so
         // the rendered content is exactly what the structural report test asserts.
@@ -346,18 +371,54 @@ class PowerSystemsSection : ReportSectionProvider {
             renderer.drawText("PF CORRECTION", renderer.marginX, currentY, renderer.theme.tableHeaderPaint)
             currentY += 15f
             snapshot.pfCorrectionResults.forEach { pf ->
-                drawKeyValue(pf.transformerId, "Existing PF: ${"%.2f".format(pf.existingPF)} -> Target PF: ${"%.2f".format(pf.targetPf)} | Bank: ${"%.1f".format(pf.bankCapacity)} kVAR | Status: ${formatReportStatus(pf.status)}")
+                drawKeyValue(pf.transformerId, "Existing PF: ${"%.2f".formatEng(pf.existingPF)} -> Target PF: ${"%.2f".formatEng(pf.targetPf)} | Bank: ${"%.1f".formatEng(pf.bankCapacity)} kVAR | Status: ${formatReportStatus(pf.status)}")
             }
             currentY += 10f
         }
-        
+
         if (powerSystemsReportNotConfigured(snapshot)) {
             renderer.drawText("Not configured", renderer.marginX, currentY, renderer.theme.tableBodyPaint)
             currentY += 15f
         }
-        
+
         renderer.currentY = currentY
     }
+}
+
+fun buildProtectionTableRows(snapshot: ProjectReportSnapshot): List<TableRow> {
+    val rows = mutableListOf<TableRow>()
+
+    snapshot.shortCircuitResults.forEach { (circuitId, result) ->
+        val circuit = snapshot.circuits.find { it.id == circuitId }
+        val nodeName = circuit?.circuitName?.takeIf { it.isNotBlank() } ?: result.sourceName
+        val sizing = snapshot.sizingResults[circuitId]
+        val appliedClearingTime = sizing?.clearingTime_s ?: circuit?.overrideClearingTime_s
+        val timeStr = if (appliedClearingTime != null && appliedClearingTime > 0.0) "%.2fs".formatEng(appliedClearingTime) else "-"
+
+        // 1. 3-Phase Short Circuit
+        rows.add(TableRow(listOf(
+            nodeName,
+            "3-Phase",
+            "%.2f".formatEng(result.iscKA),
+            "-",
+            timeStr,
+            formatReportStatus(result.status)
+        )))
+
+        // 2. Earth Fault / ADS (if present for this circuit)
+        val ads = snapshot.adsResults[circuitId]
+        if (ads != null) {
+            rows.add(TableRow(listOf(
+                nodeName,
+                "Earth Fault (ADS)",
+                "-",
+                "%.4f".formatEng(ads.calculatedZs),
+                ads.disconnectionTime,
+                formatReportStatus(ads.status)
+            )))
+        }
+    }
+    return rows
 }
 
 class ProtectionSection : ReportSectionProvider {
@@ -372,7 +433,7 @@ class ProtectionSection : ReportSectionProvider {
         renderer.currentY += 15f
         val contentWidth = renderer.pageWidth - 2 * renderer.marginX
         val colWidth = contentWidth / 6f
-        
+
         val headers = listOf(
             TableColumn("Node / Circuit", colWidth * 1.2f, renderer.theme.tableHeaderPaint),
             TableColumn("Fault Type", colWidth * 0.8f, renderer.theme.tableHeaderPaint),
@@ -381,40 +442,9 @@ class ProtectionSection : ReportSectionProvider {
             TableColumn("Disc. Time (s)", colWidth * 0.8f, renderer.theme.tableHeaderPaint, TextAlign.RIGHT),
             TableColumn("Status", colWidth * 0.6f, renderer.theme.tableHeaderPaint)
         )
-        
-        val rows = mutableListOf<TableRow>()
-        
-        snapshot.shortCircuitResults.forEach { (circuitId, result) ->
-            val circuit = snapshot.circuits.find { it.id == circuitId }
-            val nodeName = circuit?.circuitName?.takeIf { it.isNotBlank() } ?: result.sourceName
-            val sizing = snapshot.sizingResults[circuitId]
-            val appliedClearingTime = sizing?.clearingTime_s ?: circuit?.overrideClearingTime_s
-            val timeStr = if (appliedClearingTime != null && appliedClearingTime > 0.0) "%.2fs".format(appliedClearingTime) else "-"
-            
-            // 1. 3-Phase Short Circuit
-            rows.add(TableRow(listOf(
-                nodeName,
-                "3-Phase",
-                "%.2f".format(result.iscKA),
-                "-",
-                timeStr,
-                formatReportStatus(result.status)
-            )))
-            
-            // 2. Earth Fault / ADS (if present for this circuit)
-            val ads = snapshot.adsResults[circuitId]
-            if (ads != null) {
-                rows.add(TableRow(listOf(
-                    nodeName,
-                    "Earth Fault (ADS)",
-                    "-",
-                    "%.4f".format(ads.calculatedZs),
-                    ads.disconnectionTime,
-                    formatReportStatus(ads.status)
-                )))
-            }
-        }
-        
+
+        val rows = buildProtectionTableRows(snapshot)
+
         renderer.drawTable(headers, rows, renderer.marginX)
         renderer.currentY += 8f
         renderer.drawWrappedText(
@@ -438,7 +468,7 @@ class ConduitsSection : ReportSectionProvider {
         renderer.currentY += 15f
         val contentWidth = renderer.pageWidth - 2 * renderer.marginX
         val colWidth = contentWidth / 6f
-        
+
         val headers = listOf(
             TableColumn("Circuit", colWidth * 1.5f, renderer.theme.tableHeaderPaint),
             TableColumn("Cable OD (mm)", colWidth, renderer.theme.tableHeaderPaint, TextAlign.RIGHT),
@@ -447,18 +477,18 @@ class ConduitsSection : ReportSectionProvider {
             TableColumn("Fill %", colWidth, renderer.theme.tableHeaderPaint, TextAlign.RIGHT),
             TableColumn("Status", colWidth, renderer.theme.tableHeaderPaint)
         )
-        
+
         val rows = snapshot.conduitResults.map { (circuitId, result) ->
             TableRow(listOf(
                 result.circuitName,
-                "%.1f".format(result.mainCableOD_mm),
+                "%.1f".formatEng(result.mainCableOD_mm),
                 result.recommendedTradeSize,
                 "${result.conduitsRequired}",
-                "%.1f".format(result.fillRatioPercent),
+                "%.1f".formatEng(result.fillRatioPercent),
                 formatReportStatus(result.status)
             ))
         }
-        
+
         renderer.drawTable(headers, rows, renderer.marginX)
     }
 }
@@ -482,12 +512,12 @@ class BoqSection : ReportSectionProvider {
         renderer.currentY += 15f
         val contentWidth = renderer.pageWidth - 2 * renderer.marginX
         val colWidth = contentWidth / 4f
-        
+
         // 1. Cables
         renderer.ensureSpace(40f, false)
         renderer.drawText("CABLES", renderer.marginX, renderer.currentY, renderer.theme.tableHeaderPaint)
         renderer.currentY += 15f
-        
+
         val cableHeaders = listOf(
             TableColumn("Cable", colWidth * 2, renderer.theme.tableHeaderPaint),
             TableColumn("Length (m)", colWidth, renderer.theme.tableHeaderPaint, TextAlign.RIGHT),
@@ -496,25 +526,25 @@ class BoqSection : ReportSectionProvider {
         val cableRows = snapshot.boq.map { item ->
             TableRow(listOf(
                 "${item.cableType} ${item.size}",
-                "%.1f".format(item.totalLength_m),
-                "%.1f".format(item.totalWeight_kg)
+                "%.1f".formatEng(item.totalLength_m),
+                "%.1f".formatEng(item.totalWeight_kg)
             ))
         }
         if (cableRows.isNotEmpty()) renderer.drawTable(cableHeaders, cableRows, renderer.marginX)
-        
+
         renderer.currentY += 20f
-        
+
         // 2. Accessories
         renderer.ensureSpace(40f, false)
         renderer.drawText("ACCESSORIES (GLANDS, LUGS, TRAYS)", renderer.marginX, renderer.currentY, renderer.theme.tableHeaderPaint)
         renderer.currentY += 15f
-        
+
         val accHeaders = listOf(
             TableColumn("Item", colWidth * 2, renderer.theme.tableHeaderPaint),
             TableColumn("Type / Size", colWidth, renderer.theme.tableHeaderPaint),
             TableColumn("Qty", colWidth, renderer.theme.tableHeaderPaint, TextAlign.RIGHT)
         )
-        
+
         val accRows = mutableListOf<TableRow>()
 
         // Cable Glands
@@ -552,14 +582,14 @@ class BoqSection : ReportSectionProvider {
         }
 
         if (accRows.isNotEmpty()) renderer.drawTable(accHeaders, accRows, renderer.marginX)
-        
+
         renderer.currentY += 20f
-        
+
         // 3. Drums
         renderer.ensureSpace(40f, false)
         renderer.drawText("DRUM SCHEDULE", renderer.marginX, renderer.currentY, renderer.theme.tableHeaderPaint)
         renderer.currentY += 15f
-        
+
         val drumHeaders = listOf(
             TableColumn("Drum ID", colWidth, renderer.theme.tableHeaderPaint),
             TableColumn("Cable", colWidth * 1.5f, renderer.theme.tableHeaderPaint),
@@ -571,9 +601,9 @@ class BoqSection : ReportSectionProvider {
             TableRow(listOf(
                 "Drum ${drum.drumIndex}",
                 "${drum.cableType} ${drum.size}",
-                "%.1f".format(drum.drumCapacity_m),
-                "%.1f".format(drum.totalUsedLength_m),
-                "%.1f".format(if (drum.drumCapacity_m > 0) (drum.wasteLength_m / drum.drumCapacity_m) * 100.0 else 0.0)
+                "%.1f".formatEng(drum.drumCapacity_m),
+                "%.1f".formatEng(drum.totalUsedLength_m),
+                "%.1f".formatEng(if (drum.drumCapacity_m > 0) (drum.wasteLength_m / drum.drumCapacity_m) * 100.0 else 0.0)
             ))
         }
         if (drumRows.isNotEmpty()) renderer.drawTable(drumHeaders, drumRows, renderer.marginX)
@@ -599,17 +629,17 @@ class EarthingSection : ReportSectionProvider {
         val items = mutableListOf(
             "Status" to earthing.status,
             "Soil Classification" to earthing.soilClass,
-            "Single Rod Resistance (R1)" to "%.2f Ω".format(earthing.singleRodResistance_ohm),
+            "Single Rod Resistance (R1)" to "%.2f Ω".formatEng(earthing.singleRodResistance_ohm),
             "Required Rods / Earth Pits" to "${earthing.requiredRods} rods / ${earthing.earthPits} pits",
-            "Achieved / Target Resistance" to "%.2f Ω / %.2f Ω".format(earthing.achievedResistance_ohm, earthing.targetResistance_ohm),
-            "Prospective / Corrected Fault" to "%.2f A / %.2f A".format(earthing.prospectiveFault_A, earthing.correctedFault_A),
-            "Earth Conductor (Exact → Std)" to "%.2f mm² → ${earthing.earthConductorStandard_mm2.toInt()} mm²".format(earthing.earthConductorExact_mm2),
+            "Achieved / Target Resistance" to "%.2f Ω / %.2f Ω".formatEng(earthing.achievedResistance_ohm, earthing.targetResistance_ohm),
+            "Prospective / Corrected Fault" to "%.2f A / %.2f A".formatEng(earthing.prospectiveFault_A, earthing.correctedFault_A),
+            "Earth Conductor (Exact → Std)" to "%.2f mm² → ${earthing.earthConductorStandard_mm2.toInt()} mm²".formatEng(earthing.earthConductorExact_mm2),
             "Equipotential Bonding" to "${earthing.equipotentialBonding_mm2.toInt()} mm²",
             "Earth Loop Zs / Zs_max" to if (earthing.loopCheck == "DATA MISSING") {
                 // P0-10: no main-breaker basis ⇒ Zs_max is withheld, never a fabricated number.
-                "%.4f Ω / DATA MISSING".format(earthing.zs_ohm)
+                "%.4f Ω / DATA MISSING".formatEng(earthing.zs_ohm)
             } else {
-                "%.4f Ω / %.4f Ω".format(earthing.zs_ohm, earthing.zsMax_ohm)
+                "%.4f Ω / %.4f Ω".formatEng(earthing.zs_ohm, earthing.zsMax_ohm)
             },
             "Loop Check" to earthing.loopCheck
         )
@@ -618,8 +648,8 @@ class EarthingSection : ReportSectionProvider {
         if (autoRes != null) {
             items.add("Auto-Design Mode" to "ENABLED")
             items.add("Soil Data Source" to autoRes.soilResistivitySource)
-            items.add("Effective Target Resistance" to "%.2f Ω".format(autoRes.effectiveTargetResistance_ohm))
-            items.add("Design Limit (Margin Guard)" to "%.2f Ω".format(autoRes.designLimitResistance_ohm))
+            items.add("Effective Target Resistance" to "%.2f Ω".formatEng(autoRes.effectiveTargetResistance_ohm))
+            items.add("Design Limit (Margin Guard)" to "%.2f Ω".formatEng(autoRes.designLimitResistance_ohm))
             autoRes.recommended?.let { rec ->
                 items.add("Recommended Layout" to rec.title)
             }

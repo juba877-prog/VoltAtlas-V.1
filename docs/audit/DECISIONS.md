@@ -18,7 +18,7 @@
 > | D4 | **APPROVED — IEC basic basis** | NOT IMPLEMENTED (Phase D, EE-04). **See the D4 constraint below.** |
 > | D5 | **APPROVED** — Option A | **IMPLEMENTED/VERIFIED** (Phase D, EE-06) |
 > | D6 | **APPROVED** — Option A | **IMPLEMENTED/VERIFIED in Phase C** (SEC-02) |
-> | D7 | **APPROVED** — UI device locale; engineering files/PDF/DXF/JSON deterministic numeric formatting | NOT IMPLEMENTED (later phase, KT-03) |
+> | D7 | **APPROVED** — UI device locale; engineering files/PDF/DXF/JSON deterministic numeric formatting | **IMPLEMENTED/VERIFIED** (KT-03) |
 > | D8 | **PENDING** — owner has no API server / HTTPS reporting endpoint | **NOT IMPLEMENTED. Explicitly out of scope for Phase C.** |
 > | D9 | **APPROVED — REMOVE** | NOT EXECUTED in Phase C by owner instruction (belongs to the later architecture/security phase) |
 > | D10 | **APPROVED** — revised deferral list (below) | Recorded |
@@ -293,6 +293,32 @@ Approved basis:
 | Owner Decision | D-EE-08: APPROVE OPTION B — CONTROLLED HARMONIC SCOPE + TRANSPARENT DISCLOSURE + SAFE BUSBAR FALLBACK + PFC INPUT WORKFLOW FIX |
 | Implementation State | IMPLEMENTED/VERIFIED |
 | Tier-F Scope | NONE (Tier-F engine files remain strictly frozen) |
+
+---
+
+## D7 OWNER DECISION — Number Locale Policy (KT-03) (added 2026-10-07)
+
+Decision ID:
+    D7
+
+Decision:
+    APPROVED — UI DEVICE LOCALE; ENGINEERING FILES / PDF / DXF / JSON DETERMINISTIC NUMERIC FORMATTING
+
+Implementation Scope:
+- PDF export (`Sections.kt`, `PdfReportService.kt`, `GlobalPreferences.kt`) enforces `Locale.US` for all numeric and engineering outputs, preventing decimal comma leakage in European/Arabic locales.
+- Pure table row builders `buildCircuitsTableRows`, `buildTransformersTableRows`, and `buildProtectionTableRows` extracted and verified with headless tests under `Locale.US`, `Locale.GERMANY`, and `Locale.forLanguageTag("ar-EG")`.
+- DXF export (`SldDxfExporter.kt`) already strictly enforces `Locale.US`.
+- JSON export adheres to RFC 8259 format invariant.
+- UI continues to follow device locale for general presentation.
+
+| Field | Value |
+|---|---|
+| Date | 2026-10-07 |
+| Ticket | KT-03 |
+| Owner Decision | D7: APPROVED — UI device locale; engineering files / PDF / DXF / JSON deterministic numeric formatting |
+| Implementation State | IMPLEMENTED/VERIFIED |
+| Tier-F Scope | NONE (Tier-F engine files remain strictly frozen) |
+
 ---
 
 ## D-EE-11 OWNER DECISION — ConduitFillEngine Material Filtering Fix (P1-08) (added 2026-10-07)

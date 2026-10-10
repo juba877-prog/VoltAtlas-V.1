@@ -415,7 +415,7 @@ class GlobalPreferences(
     fun setReportOwner(projectId: String, value: String) = sharedPrefs.edit().putString("report_owner_$projectId", value).apply()
 
     fun getReportDate(projectId: String): String {
-        val defaultDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        val defaultDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
         return sharedPrefs.getString("report_date_$projectId", defaultDate) ?: defaultDate
     }
     fun setReportDate(projectId: String, value: String) = sharedPrefs.edit().putString("report_date_$projectId", value).apply()

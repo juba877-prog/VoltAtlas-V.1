@@ -228,7 +228,7 @@ class PdfReportService(private val context: Context) {
         drawOverviewRow("Total Transformers:", "${snapshot.transformers.size} Active Units")
         
         val dateStr = snapshot.options.date.ifBlank {
-            java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+            java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
         }
         drawOverviewRow("Export Date:", dateStr)
         

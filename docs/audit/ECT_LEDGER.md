@@ -512,12 +512,50 @@ Full evidence: `EE-06.md` PART D **D7** (D0–D6 preserved as the historical blo
     Owner signature / date: 2026-10-07 — owner authorized D-EE-08 Option B explicitly.
     Engineering basis:
                        - Cable harmonic Boolean mode strictly models 15–33% 3rd-harmonic band (phase derated x0.86, full neutral per IEC 60364-5-52 Annex E Table E.52.1).
-                       - Disclose in UI and PDF reports: >33% harmonic content requires manual neutral-current sizing.
+                       - Disclose in UI and PDF that >33% harmonic content requires manual neutral-current sizing.
                        - Busbar sizing for harmonic boards: do NOT return potentially incorrect reduced (50%) neutral; disclose as NOT EVALUATED / MANUAL REVIEW.
                        - PFC harmonicFilter and detuningReactor become editable in PowerSystemsScreen through onSaveTx(...) without modifying PfCorrectionEngine.
     Gate Verification:
                        - Full Gate Run #1: 326 suites / 2923 tests / 0 failures / 0 errors / 17 skipped (6m 50s, EXITCODE=0)
                        - Full Gate Run #2: 326 suites / 2923 tests / 0 failures / 0 errors / 17 skipped (6m 19s, EXITCODE=0)
+                       - lintDebug: BUILD SUCCESSFUL (0 errors, 0 fatal)
+                       - lintRelease: BUILD SUCCESSFUL (0 errors, 0 fatal)
+                       - compileReleaseKotlin: BUILD SUCCESSFUL (EXITCODE=0)
+    Tier-F Manifest Verification:
+                       - 27/27 PASS, 0 working-tree drift.
+    Golden Differential:
+                       - EMPTY. Zero changes to baseline reference cases.
+    Final Status:      CLOSED — VERIFIED
+
+---
+
+### ECT-KT-03 — Deterministic Engineering Number Formatting (R1)
+
+    ECT id:            ECT-KT-03
+    Finding / decision: KT-03 / D7 (Approved)
+    Tier F files:      NONE
+                       (Tier F engines remain strictly frozen: 0 drift)
+    Files (production):
+                       MODIFIED app/src/main/java/com/example/data/GlobalPreferences.kt
+                       MODIFIED app/src/main/java/com/example/pdf/PdfReportService.kt
+                       MODIFIED app/src/main/java/com/example/pdf/Sections.kt
+    Files (test):      NEW app/src/test/java/com/example/pdf/PdfReportLocaleCharacterizationTest.kt
+                       NEW app/src/test/java/com/example/pdf/PdfReportLocaleTargetTest.kt
+    Files (audit):     docs/audit/KT-03.md, docs/audit/DECISIONS.md, docs/audit/ECT_LEDGER.md
+    Characterization test: PdfReportLocaleCharacterizationTest
+                           (PASSED 5/5: JVM default locale leakage in Germany vs US, DXF Locale.US invariance, JSON RFC 8259 period invariance, SimpleDateFormat leakage, pure row builder baseline)
+    Target test:       PdfReportLocaleTargetTest
+                           (PASSED 4/4: formatEng helper invariance, Circuits table rows invariance across en-US/de-DE/ar-EG, Transformers table rows invariance, Protection table rows invariance)
+    Expected Golden diff: EMPTY (Golden tests evaluate calculation results; no report string formatting diff)
+    Rollback:          git checkout <commit> -- app/src/main/java/com/example/data/GlobalPreferences.kt app/src/main/java/com/example/pdf/PdfReportService.kt app/src/main/java/com/example/pdf/Sections.kt
+    Owner signature / date: 2026-10-07 — owner approved D7.
+    Engineering basis:
+                       - All PDF numeric outputs strictly formatted via Locale.US to prevent European comma decimal leakage or Arabic localized digits from altering official engineering deliverables.
+                       - UI remains responsive to device locale for user interaction.
+                       - Extracted pure table row builders for deterministic headless testability without Android PdfDocument graphics dependencies.
+    Gate Verification:
+                       - Full Gate Run #1: 330 suites / 2932 tests / 0 failures / 0 errors / 17 skipped (6m 47s, EXITCODE=0)
+                       - Full Gate Run #2: 330 suites / 2932 tests / 0 failures / 0 errors / 17 skipped (6m 25s, EXITCODE=0)
                        - lintDebug: BUILD SUCCESSFUL (0 errors, 0 fatal)
                        - lintRelease: BUILD SUCCESSFUL (0 errors, 0 fatal)
                        - compileReleaseKotlin: BUILD SUCCESSFUL (EXITCODE=0)
