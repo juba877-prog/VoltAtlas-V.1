@@ -23,6 +23,7 @@
 > | D9 | **APPROVED — REMOVE** | NOT EXECUTED in Phase C by owner instruction (belongs to the later architecture/security phase) |
 > | D10 | **APPROVED** — revised deferral list (below) | Recorded |
 | D-EE-07 | **APPROVED** — Option B (Transparent Standard Disclosure) | **IMPLEMENTED/VERIFIED** (Phase D, EE-07) |
+| D-EE-08 | **APPROVED** — Option B (Controlled Harmonic Scope + Transparent Disclosure + Safe Busbar Fallback + PFC Input Workflow Fix) | **IMPLEMENTED/VERIFIED** (Phase D, EE-08) |
 | D-EE-11 | **APPROVED** — Fix ConduitFillEngine Conduit Material Filtering (P1-08) | **IMPLEMENTED/VERIFIED** (Phase D, ECT-D-EE-11) |
 >
 > ### D4 — governing-basis constraint (binding on implementation)
@@ -241,7 +242,57 @@ Rationale:
 | Date | 2026-10-06 |
 | Ticket | EE-07 |
 | Owner Decision | D-EE-07: APPROVE OPTION B — TRANSPARENT STANDARD DISCLOSURE |
-| Implementation State | IN PROGRESS |
+| Implementation State | IMPLEMENTED/VERIFIED |
+
+---
+
+## D-EE-08 OWNER DECISION — Harmonics Scope, Safe Busbar Fallback & PFC Input Workflow (added 2026-10-07)
+
+Decision ID:
+    D-EE-08
+
+Decision:
+    APPROVE OPTION B — CONTROLLED HARMONIC SCOPE + TRANSPARENT DISCLOSURE
+    + SAFE BUSBAR FALLBACK + PFC INPUT WORKFLOW FIX
+
+Approved basis:
+
+1. Cable harmonic mode is explicitly limited to the existing 15–33% third-harmonic design basis.
+   - Retain existing Boolean `isHarmonic` model on `CircuitEntity` (`isHarmonic = true` signifies 15–33% third-harmonic band per IEC 60364-5-52 Annex E Table E.52.1).
+   - Preserve existing phase derating factor of 0.86 and full-size neutral conductor.
+   - Do NOT add quantitative $h_3\%$ or THD% in this ticket.
+   - Explicitly disclose in UI and PDF reports:
+     "Harmonics mode models the 15–33% third-harmonic band.
+      Harmonic content above 33% requires manual neutral-current sizing."
+
+2. Harmonic content above 33% is outside current automated sizing and requires manual engineering review.
+   - High-harmonic cases MUST NOT be represented as fully sized or verified.
+   - Do not invent an unmodeled harmonic distinction without data model support.
+
+3. Busbar harmonic sizing MUST NOT silently return a potentially incorrect reduced-neutral result.
+   - Where the current `BusbarSizingEngine` cannot represent the harmonic condition safely (lacking a dedicated 100% neutral branch for 15–33% harmonics), the result must be disclosed as NOT EVALUATED / MANUAL REVIEW in the board schedule rather than returning a falsely authoritative numeric neutral size (0.5 × phase section).
+   - Do NOT force `isHarmonic -> hasHighHarmonics` (which would erroneously map the 15–33% band to the >33% / 200% high-harmonic branch).
+
+4. Existing `BusbarSizingEngine` behavior remains frozen unless a future separately authorized Tier-F ECT changes it.
+   - No modification to `BusbarSizingEngine.kt` or other Tier-F engine files without explicit owner scope authorization.
+
+5. Existing PFC `harmonicFilter` and `detuningReactor` fields become editable through the existing Power Systems UI.
+   - `PowerSystemsScreen.kt` / `PfCorrectionPanel` must provide user controls (Yes/No) for `PfTransformerEntity.harmonicFilter` and `PfTransformerEntity.detuningReactor`.
+   - Persist explicitly through the existing `onSaveTx(...)` path.
+   - Do not create new database fields or migrations; reuse existing fields.
+
+6. `PfCorrectionEngine` remains authoritative for final PFC status.
+   - Unedited / Not Provided status correctly yields "REVIEW — HARMONIC/DETUNING INPUTS".
+   - Once user provides `harmonicFilter = "Yes"` or `detuningReactor = "Yes"`, authoritative engine logic proceeds to evaluate COMPLIANT normally.
+   - UI must not fabricate COMPLIANT independently of the engine.
+
+| Field | Value |
+|---|---|
+| Date | 2026-10-07 |
+| Ticket | EE-08 |
+| Owner Decision | D-EE-08: APPROVE OPTION B — CONTROLLED HARMONIC SCOPE + TRANSPARENT DISCLOSURE + SAFE BUSBAR FALLBACK + PFC INPUT WORKFLOW FIX |
+| Implementation State | IMPLEMENTED/VERIFIED |
+| Tier-F Scope | NONE (Tier-F engine files remain strictly frozen) |
 ---
 
 ## D-EE-11 OWNER DECISION — ConduitFillEngine Material Filtering Fix (P1-08) (added 2026-10-07)

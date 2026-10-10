@@ -263,6 +263,13 @@ class CircuitsSection : ReportSectionProvider {
         }
         
         renderer.drawTable(headers, rows, renderer.marginX)
+        renderer.currentY += 8f
+        renderer.drawWrappedText(
+            "Note: Harmonic automated sizing is strictly limited to the 15–33% third-harmonic band per IEC 60364-5-52 Annex E (0.86 phase derating, full-size neutral applied). Harmonic content above 33% is outside automated sizing and requires manual neutral-current sizing and engineering review.",
+            renderer.marginX,
+            renderer.pageWidth - 2 * renderer.marginX,
+            renderer.theme.tableBodyPaint
+        )
     }
 }
 

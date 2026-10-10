@@ -2111,6 +2111,84 @@ fun PfCorrectionPanel(
                     }
                 }
             }
+
+            // Card 3: Transformer Harmonic Mitigation & Detuning Card
+            if (activeTxId.isNotBlank()) {
+                val currentTxSetting = transformerSettings.firstOrNull { it.transformerId == activeTxId }
+                    ?: PfTransformerEntity(transformerId = activeTxId)
+                item {
+                    DsCard {
+                        DsSectionHeader(title = "Harmonic Mitigation & Detuning • $activeTxId")
+                        Spacer(modifier = Modifier.height(DsSpacing.xs))
+                        Text(
+                            text = "Configure detuning reactor and harmonic filter to protect capacitor bank against resonance and satisfy compliance validation.",
+                            style = DsType.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(DsSpacing.md))
+
+                        // Control 1: Detuning Reactor
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(DsShape.card)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .padding(DsSpacing.md)
+                        ) {
+                            Text(
+                                text = "Detuning Reactor:",
+                                style = DsType.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(DsSpacing.xs))
+                            Row(horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                                val currentVal = currentTxSetting.detuningReactor
+                                listOf("Yes", "No", "Not Provided").forEach { opt ->
+                                    DsSelectableChip(
+                                        text = opt,
+                                        selected = currentVal.equals(opt, ignoreCase = true),
+                                        onClick = {
+                                            onSaveTx(currentTxSetting.copy(detuningReactor = opt))
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(DsSpacing.sm))
+
+                        // Control 2: Harmonic Filter
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(DsShape.card)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .padding(DsSpacing.md)
+                        ) {
+                            Text(
+                                text = "Harmonic Filter:",
+                                style = DsType.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(DsSpacing.xs))
+                            Row(horizontalArrangement = Arrangement.spacedBy(DsSpacing.sm)) {
+                                val currentVal = currentTxSetting.harmonicFilter
+                                listOf("Yes", "No", "Not Provided").forEach { opt ->
+                                    DsSelectableChip(
+                                        text = opt,
+                                        selected = currentVal.equals(opt, ignoreCase = true),
+                                        onClick = {
+                                            onSaveTx(currentTxSetting.copy(harmonicFilter = opt))
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

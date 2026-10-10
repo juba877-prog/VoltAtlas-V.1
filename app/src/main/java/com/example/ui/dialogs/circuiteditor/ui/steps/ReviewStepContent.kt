@@ -99,7 +99,7 @@ fun ReviewStepContent(
             if (draft.loadCategory != null) {
                 ReviewField(label = "Load Category", value = draft.loadCategory, isStacked = isStacked)
             }
-            ReviewField(label = "Harmonics", value = if (draft.isHarmonic) "Harmonic Load" else "Standard", isStacked = isStacked)
+            ReviewField(label = "Harmonics (15–33% 3rd Harmonic Band)", value = if (draft.isHarmonic) "15–33% Band (0.86 derating, full neutral)" else "Standard", isStacked = isStacked)
         }
 
         // Section 3: Supply & Backup

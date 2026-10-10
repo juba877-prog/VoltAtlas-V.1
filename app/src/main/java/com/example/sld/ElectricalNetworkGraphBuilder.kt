@@ -1480,7 +1480,12 @@ object ElectricalNetworkGraphBuilder {
             }
             val busbarSizeStr = busbarSizing?.profile?.description
             val busbarIpkStr = busbarSizing?.ipkKA?.let { "$it kA" }
-            val busbarNeutralStr = busbarSizing?.neutralProfile
+            val boardHasHarmonics = circ.isHarmonic || directChildren.any { it.isHarmonic }
+            val busbarNeutralStr = if (busbarSizing != null && boardHasHarmonics) {
+                "NOT EVALUATED (MANUAL REVIEW)"
+            } else {
+                busbarSizing?.neutralProfile
+            }
             val busbarPeStr = busbarSizing?.peProfile
             val busbarMaterialStr = busbarSizing?.material?.displayName
 

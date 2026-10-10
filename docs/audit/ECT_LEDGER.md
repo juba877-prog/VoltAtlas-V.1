@@ -487,6 +487,48 @@ Full evidence: `EE-06.md` PART D **D7** (D0–D6 preserved as the historical blo
 
 ---
 
+### ECT-EE-08 — harmonics scope, safe busbar fallback & PFC input workflow (R1)
+
+    ECT id:            ECT-EE-08
+    Finding / decision: EE-08 / D-EE-08 (Option B)
+    Tier F files:      NONE
+                       (Tier F engines remain strictly frozen: CableSizingEngine.kt,
+                        BusbarSizingEngine.kt, PfCorrectionEngine.kt are untouched)
+    Files (production):
+                       MODIFIED app/src/main/java/com/example/ui/dialogs/circuiteditor/ui/steps/LoadStepContent.kt
+                       MODIFIED app/src/main/java/com/example/ui/dialogs/circuiteditor/ui/steps/ReviewStepContent.kt
+                       MODIFIED app/src/main/java/com/example/sld/ElectricalNetworkGraphBuilder.kt
+                       MODIFIED app/src/main/java/com/example/ui/PowerSystemsScreen.kt
+                       MODIFIED app/src/main/java/com/example/pdf/Sections.kt
+    Files (test):      NEW app/src/test/java/com/example/engine/HarmonicsOptionBCharacterizationTest.kt
+                       NEW app/src/test/java/com/example/engine/HarmonicsOptionBTargetTest.kt
+    Files (audit):     docs/audit/EE-08.md, docs/audit/DECISIONS.md, docs/audit/ECT_LEDGER.md
+    Characterization test: HarmonicsOptionBCharacterizationTest
+                           (PASSED 7/7: C1 non-harmonic baseline, C2 0.86 factor, C3 full-size neutral, C4 busbar current behavior, C5 default PFC REVIEW status, C6/C7 filter/reactor compliance when set)
+    Target test:       HarmonicsOptionBTargetTest
+                           (PASSED 6/6: T1 LoadStep disclosure label, T2 ReviewStep disclosure label, T3 PDF CircuitsSection disclosure, T4 busbar safe status for harmonic board, T5 PFC UI edit controls, T6 PFC engine compliance on save)
+    Expected Golden diff: EMPTY (Golden contains zero harmonic cases; Golden Gap applies)
+    Rollback:          git checkout <commit> -- app/src/main/java/com/example/ui/dialogs/circuiteditor/ui/steps/LoadStepContent.kt app/src/main/java/com/example/ui/dialogs/circuiteditor/ui/steps/ReviewStepContent.kt app/src/main/java/com/example/sld/ElectricalNetworkGraphBuilder.kt app/src/main/java/com/example/ui/PowerSystemsScreen.kt app/src/main/java/com/example/pdf/Sections.kt
+    Owner signature / date: 2026-10-07 — owner authorized D-EE-08 Option B explicitly.
+    Engineering basis:
+                       - Cable harmonic Boolean mode strictly models 15–33% 3rd-harmonic band (phase derated x0.86, full neutral per IEC 60364-5-52 Annex E Table E.52.1).
+                       - Disclose in UI and PDF reports: >33% harmonic content requires manual neutral-current sizing.
+                       - Busbar sizing for harmonic boards: do NOT return potentially incorrect reduced (50%) neutral; disclose as NOT EVALUATED / MANUAL REVIEW.
+                       - PFC harmonicFilter and detuningReactor become editable in PowerSystemsScreen through onSaveTx(...) without modifying PfCorrectionEngine.
+    Gate Verification:
+                       - Full Gate Run #1: 326 suites / 2923 tests / 0 failures / 0 errors / 17 skipped (6m 50s, EXITCODE=0)
+                       - Full Gate Run #2: 326 suites / 2923 tests / 0 failures / 0 errors / 17 skipped (6m 19s, EXITCODE=0)
+                       - lintDebug: BUILD SUCCESSFUL (0 errors, 0 fatal)
+                       - lintRelease: BUILD SUCCESSFUL (0 errors, 0 fatal)
+                       - compileReleaseKotlin: BUILD SUCCESSFUL (EXITCODE=0)
+    Tier-F Manifest Verification:
+                       - 27/27 PASS, 0 working-tree drift.
+    Golden Differential:
+                       - EMPTY. Zero changes to baseline reference cases.
+    Final Status:      CLOSED — VERIFIED
+
+---
+
 ### ECT-KT-06 — String-Typed Engineering Domain State Normalization (R1)
 
     ECT id:            ECT-KT-06

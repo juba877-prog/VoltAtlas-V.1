@@ -264,12 +264,12 @@ fun LoadStepContent(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Non-linear / Harmonic Load",
+                        text = "Harmonics (15–33% 3rd Harmonic Band)",
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                         color = ThemeTextPrimary
                     )
                     Text(
-                        text = "Marks circuit for neutral sizing and harmonic derating considerations",
+                        text = "Models 15–33% 3rd-harmonic band per IEC 60364-5-52 Annex E. Content >33% requires manual neutral-current sizing / review.",
                         style = MaterialTheme.typography.bodySmall,
                         color = ThemeTextSecondary,
                         modifier = Modifier.testTag("harmonic_supporting_text")
